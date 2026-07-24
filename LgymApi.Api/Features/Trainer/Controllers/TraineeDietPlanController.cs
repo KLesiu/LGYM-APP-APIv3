@@ -1,9 +1,10 @@
 using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Features.DietPlans;
-using LgymApi.Application.Features.DietPlans.Models;
 using LgymApi.Application.Mapping.Core;
+using LgymApi.Application.Nutrition.DietPlans.GetCurrentDietPlan;
+using LgymApi.Application.Nutrition.DietPlans.GetCurrentDietPlans;
+using LgymApi.Application.Nutrition.DietPlans.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -14,12 +15,17 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 [Authorize]
 public sealed class TraineeDietPlanController : ControllerBase
 {
-    private readonly IDietPlanService _dietPlanService;
+    private readonly IGetCurrentDietPlansUseCase _getCurrentDietPlans;
+    private readonly IGetCurrentDietPlanUseCase _getCurrentDietPlan;
     private readonly IMapper _mapper;
 
-    public TraineeDietPlanController(IDietPlanService dietPlanService, IMapper mapper)
+    public TraineeDietPlanController(
+        IGetCurrentDietPlansUseCase getCurrentDietPlans,
+        IGetCurrentDietPlanUseCase getCurrentDietPlan,
+        IMapper mapper)
     {
-        _dietPlanService = dietPlanService;
+        _getCurrentDietPlans = getCurrentDietPlans;
+        _getCurrentDietPlan = getCurrentDietPlan;
         _mapper = mapper;
     }
 
@@ -27,17 +33,23 @@ public sealed class TraineeDietPlanController : ControllerBase
     [ProducesResponseType(typeof(List<DietPlanDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCurrentPlans(CancellationToken cancellationToken = default)
     {
-        var trainee = HttpContext.GetCurrentUser();
-        var result = await _dietPlanService.GetCurrentPlansAsync(trainee!, cancellationToken);
-        return result.IsFailure ? result.ToActionResult() : Ok(_mapper.MapList<DietPlanResult, DietPlanDto>(result.Value));
+        var result = await _getCurrentDietPlans.ExecuteAsync(
+            new GetCurrentDietPlansQuery(HttpContext.GetCurrentUserId()),
+            cancellationToken);
+        return result.IsFailure
+            ? result.ToActionResult()
+            : Ok(_mapper.MapList<DietPlanReadModel, DietPlanDto>(result.Value));
     }
 
     [HttpGet("diet-plan/current")]
     [ProducesResponseType(typeof(DietPlanDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCurrentPlan(CancellationToken cancellationToken = default)
     {
-        var trainee = HttpContext.GetCurrentUser();
-        var result = await _dietPlanService.GetCurrentPlanAsync(trainee!, cancellationToken);
-        return result.IsFailure ? result.ToActionResult() : Ok(_mapper.Map<DietPlanResult, DietPlanDto>(result.Value));
+        var result = await _getCurrentDietPlan.ExecuteAsync(
+            new GetCurrentDietPlanQuery(HttpContext.GetCurrentUserId()),
+            cancellationToken);
+        return result.IsFailure
+            ? result.ToActionResult()
+            : Ok(_mapper.Map<DietPlanReadModel, DietPlanDto>(result.Value));
     }
 }
