@@ -3,9 +3,12 @@ using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Features.Supplementation;
-using LgymApi.Application.Features.Supplementation.Models;
 using LgymApi.Application.Mapping.Core;
+using LgymApi.Application.Nutrition.Supplementation.CheckOffIntake.Contracts;
+using LgymApi.Application.Nutrition.Supplementation.CheckOffIntake.Models;
+using LgymApi.Application.Nutrition.Supplementation.GetSchedule.Contracts;
+using LgymApi.Application.Nutrition.Supplementation.GetSchedule.Models;
+using LgymApi.Application.Nutrition.Supplementation.Models;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
 using Microsoft.AspNetCore.Authorization;
@@ -18,12 +21,17 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 [Authorize]
 public sealed class TraineeSupplementationController : ControllerBase
 {
-    private readonly ISupplementationService _supplementationService;
+    private readonly IGetSupplementScheduleUseCase _getSupplementSchedule;
+    private readonly ICheckOffSupplementIntakeUseCase _checkOffSupplementIntake;
     private readonly IMapper _mapper;
 
-    public TraineeSupplementationController(ISupplementationService supplementationService, IMapper mapper)
+    public TraineeSupplementationController(
+        IGetSupplementScheduleUseCase getSupplementSchedule,
+        ICheckOffSupplementIntakeUseCase checkOffSupplementIntake,
+        IMapper mapper)
     {
-        _supplementationService = supplementationService;
+        _getSupplementSchedule = getSupplementSchedule;
+        _checkOffSupplementIntake = checkOffSupplementIntake;
         _mapper = mapper;
     }
 
@@ -31,15 +39,18 @@ public sealed class TraineeSupplementationController : ControllerBase
     [ProducesResponseType(typeof(List<SupplementScheduleEntryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetSchedule([FromQuery] DateOnly? date, CancellationToken cancellationToken = default)
     {
-        var trainee = HttpContext.GetCurrentUser();
-        var result = await _supplementationService.GetActiveScheduleForDateAsync(trainee!, date ?? DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
+        var result = await _getSupplementSchedule.ExecuteAsync(
+            new GetSupplementScheduleQuery(
+                HttpContext.GetCurrentUserId(),
+                date ?? DateOnly.FromDateTime(DateTime.UtcNow)),
+            cancellationToken);
 
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
 
-        return Ok(_mapper.MapList<SupplementScheduleEntryResult, SupplementScheduleEntryDto>(result.Value));
+        return Ok(_mapper.MapList<SupplementScheduleEntryReadModel, SupplementScheduleEntryDto>(result.Value));
     }
 
     [HttpPost("supplements/intakes/check-off")]
@@ -49,19 +60,19 @@ public sealed class TraineeSupplementationController : ControllerBase
     {
         Id<LgymApi.Domain.Entities.SupplementPlanItem>.TryParse(request.PlanItemId, out var parsedPlanItemId);
         
-        var trainee = HttpContext.GetCurrentUser();
-        var result = await _supplementationService.CheckOffIntakeAsync(trainee!, new CheckOffSupplementIntakeCommand
-        {
-            PlanItemId = parsedPlanItemId,
-            IntakeDate = request.IntakeDate,
-            TakenAt = request.TakenAt
-        }, cancellationToken);
+        var result = await _checkOffSupplementIntake.ExecuteAsync(
+            new CheckOffSupplementIntakeCommand(
+                HttpContext.GetCurrentUserId(),
+                parsedPlanItemId,
+                request.IntakeDate,
+                request.TakenAt),
+            cancellationToken);
 
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
 
-        return Ok(_mapper.Map<SupplementScheduleEntryResult, SupplementScheduleEntryDto>(result.Value));
+        return Ok(_mapper.Map<SupplementScheduleEntryReadModel, SupplementScheduleEntryDto>(result.Value));
     }
 }

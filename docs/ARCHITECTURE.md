@@ -42,6 +42,8 @@ The production system has one `AppDbContext`, one database, and one migration st
 
 Workout execution and completed-training history belong to `Workout & Progress`. `Training.TypePlanDayId` may reference the `Training Planning` definition used to perform a workout, but that reference does not give Training Planning write ownership over the completed `Training` row.
 
+Nutrition owns six persisted entities and 18 focused actions: Diet D1 through D9 and Supplementation S1 through S9. Its four existing controller adapters preserve legacy routes and payloads. Nutrition consumes Coaching only through `ICoachingRelationshipAccessService`, uses module-local stage-only persistence ports, and retains the canonical Diet command ID and payload for D3, D4, and D5 after a successful active-plan save. This is logical ownership only, with the same one `AppDbContext`, database, and migration stream.
+
 Workout & Progress exposes its cross-module surface through `ProgressData`, dashboard, ranking, training execution/history, and accepted-progress contracts with explicit read/write models. Foreign modules must not consume its entities, repositories, or implementation classes directly. Existing legacy routes and payloads remain unchanged. For #386, Reporting stages a Reporting-owned accepted-progress command in the existing `CommandEnvelope` outbox, and Workout & Progress owns delivery-side measurement persistence.
 
 Known internal entity references use `Id<T>`. EF Core stores their provider values in PostgreSQL `uuid` columns, while HTTP and JSON UUID values remain strings. The only polymorphic string ID exceptions are `PushNotificationMessage.EntityId` and `PushEventPayload.EntityId`.
@@ -282,6 +284,7 @@ Then register service/repository in both service collection extension files and 
 - `#380` is the current background-contract ownership and project-reference source.
 - `#381` defines the Notifications write-ownership boundary and provider-neutral public contract surface; it does not move projects, entities, or runtime behavior.
 - `#391` codifies Workout & Progress logical ownership and path classification without changing the shared persistence topology or legacy API contracts.
+- `#390` codifies Nutrition's six-entity, 18-action logical boundary and compatibility adapters without changing the shared persistence topology, command identity, or legacy API contracts.
 - `docs/adr/006-lgym-evolves-as-modular-monolith.md` records the decision.
 
 ### Issue #376 links
@@ -292,6 +295,7 @@ Then register service/repository in both service collection extension files and 
 - `docs/modular-monolith/issue-380-background-contract-ownership.md`
 - `docs/modular-monolith/issue-380-project-reference-graph.md`
 - `docs/modular-monolith/issue-381-notifications-boundary.md`
+- `docs/modular-monolith/issue-390-nutrition-boundary.md`
 - `docs/modular-monolith/issue-392-reporting-boundary.md`
 
 The current layered runtime stays in place until a later change explicitly alters it.

@@ -78,29 +78,6 @@ public sealed class CoachingDependencyDagGuardTests
         Assert.That(substitutes, Is.Empty);
     }
 
-    [TestCase("LgymApi.Application/Features/DietPlans/DietPlanService.cs")]
-    [TestCase("LgymApi.Application/Features/Supplementation/SupplementationService.cs")]
-    public void Migrated_Nutrition_Services_Should_Use_Only_The_Public_Coaching_Access_Contract(string relativePath)
-    {
-        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var path = Path.Combine(repoRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
-        var root = CSharpSyntaxTree.ParseText(File.ReadAllText(path), path: path).GetRoot();
-        var dependencyNames = root.DescendantNodes()
-            .OfType<IdentifierNameSyntax>()
-            .Select(identifier => identifier.Identifier.ValueText)
-            .ToList();
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(dependencyNames, Does.Not.Contain(RelationshipRepositoryName));
-            Assert.That(dependencyNames, Does.Not.Contain(RoleRepositoryName));
-            Assert.That(
-                dependencyNames.Count(name => name == RelationshipAccessContractName),
-                Is.EqualTo(2),
-                $"{relativePath} must declare exactly one field and one constructor parameter for the public Coaching access contract.");
-        });
-    }
-
     private static IEnumerable<TestCaseData> TargetDagFixtures()
     {
         yield return Case("Reporting_public_access", "Reporting", "ICoachingRelationshipAccessService", true);

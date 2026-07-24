@@ -10,6 +10,7 @@ Complete
 - `#380` is the current source for background-contract ownership and project references.
 - `#381` clarifies Notifications write ownership and provider-neutral contracts without relocating physical artifacts.
 - `#391` codifies Workout & Progress logical ownership and application-path classification without changing persistence topology or API contracts.
+- `#390` codifies Nutrition's six persisted entities, 18 focused actions, four controller adapters, and unchanged Diet command compatibility without changing persistence topology or ownership totals.
 - `docs/ARCHITECTURE.md` is the integration guide that links the current maps.
 - ADR-006 states the modular-monolith decision this map serves.
 
@@ -101,6 +102,8 @@ This file contains the fixed one-owner matrix for the #375 hotspot and cross-fea
 | Table | `SupplementPlans` | `Nutrition` | Supplement plan rows are owned by nutrition. | Non-owners do not write supplement plans directly. |
 | Table | `SupplementPlanItems` | `Nutrition` | Supplement plan item rows are owned by nutrition. | Non-owners do not write supplement plan items directly. |
 | Table | `SupplementIntakeLogs` | `Nutrition` | Supplement intake log rows are owned by nutrition. | Non-owners do not write supplement intake logs directly. |
+| Focused capability family | Diet D1-D9 and Supplementation S1-S9 | `Nutrition` | The 18 focused Nutrition actions own Diet and Supplementation lifecycle rules through module-local contracts and persistence ports. | The four existing API controllers adapt HTTP requests; non-owners use published contracts and do not write Nutrition entities directly. |
+| Persistence adapters | `IDietPlanPersistence` / `DietPlanPersistenceRepository` and `ISupplementationPersistence` / `SupplementationPersistenceRepository` | `Nutrition` | Nutrition owns stage-only persistence seams for its six entities. | Application use cases own authorization and UoW commits; reads remain no-tracking and repositories do not save or start transactions. |
 
 ## Notes
 
@@ -112,6 +115,7 @@ This file contains the fixed one-owner matrix for the #375 hotspot and cross-fea
 - All owner rows describe logical write ownership only. They do not create a physical database, `DbContext`, schema, or migration-stream split.
 - Completed `Training` rows remain `Workout & Progress`-owned. `Training.TypePlanDayId` references the `Training Planning` definition used for a performed workout; it does not grant Training Planning write ownership over completed training.
 - Workout & Progress publishes `ProgressData`, dashboard, ranking, training execution/history, and the production `#386` accepted-progress consumer surface as explicit contracts/read models. Foreign modules do not reference its entities, repositories, or implementation classes. Reporting stages the accepted-progress command in the shared `CommandEnvelope` outbox, and Workout & Progress owns measurement persistence. Legacy API routes remain unchanged.
+- Nutrition ownership remains six of the 48 persisted entities. Its D1-D9 and S1-S9 actions are logical capability ownership only, with four existing controller adapters and no physical database, `DbContext`, schema, or migration-stream split.
 
 ## Persisted Entity Ownership Catalog
 
@@ -183,3 +187,4 @@ If an artifact appears to touch more than one module, the owner is the module th
 - `docs/modular-monolith/issue-380-background-contract-ownership.md`
 - `docs/modular-monolith/issue-380-project-reference-graph.md`
 - `docs/modular-monolith/issue-381-notifications-boundary.md`
+- `docs/modular-monolith/issue-390-nutrition-boundary.md`

@@ -212,8 +212,8 @@ public sealed class ModuleDependencyGuardTests
             "LgymApi.Application/Repositories/IEloRegistryRepository.cs" or
             "LgymApi.Application/Repositories/IMainRecordRepository.cs"
                 => ArchitectureTestHelpers.WorkoutProgressModuleName,
-            "LgymApi.Application/Repositories/IDietPlanRepository.cs" or
-            "LgymApi.Application/Repositories/ISupplementationRepository.cs"
+            "LgymApi.Application/Nutrition/Persistence/IDietPlanPersistence.cs" or
+            "LgymApi.Application/Nutrition/Persistence/ISupplementationPersistence.cs"
                 => ArchitectureTestHelpers.NutritionModuleName,
             _ => ArchitectureTestHelpers.GetCanonicalModuleNameFromPath(filePath)
         };
