@@ -92,6 +92,7 @@ internal sealed class CheckOffSupplementIntakeUseCase : ICheckOffSupplementIntak
                     throw;
                 }
 
+                _plans.DetachIntakeLog(intakeLog);
                 intakeLog = winner;
             }
         }

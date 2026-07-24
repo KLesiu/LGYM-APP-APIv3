@@ -15,4 +15,5 @@ public interface ISupplementationPersistence
     Task<List<SupplementIntakeLog>> ListIntakeLogsForPlanAsync(Id<User> traineeId, Id<SupplementPlan> planId, DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default);
     Task<SupplementIntakeLog?> FindIntakeLogAsync(Id<User> traineeId, Id<SupplementPlanItem> planItemId, DateOnly intakeDate, CancellationToken cancellationToken = default);
     Task AddIntakeLogAsync(SupplementIntakeLog intakeLog, CancellationToken cancellationToken = default);
+    void DetachIntakeLog(SupplementIntakeLog intakeLog);
 }

@@ -76,4 +76,9 @@ public sealed class SupplementationPersistenceRepository : ISupplementationPersi
 
     public Task AddIntakeLogAsync(SupplementIntakeLog intakeLog, CancellationToken cancellationToken = default)
         => _dbContext.SupplementIntakeLogs.AddAsync(intakeLog, cancellationToken).AsTask();
+
+    public void DetachIntakeLog(SupplementIntakeLog intakeLog)
+    {
+        _dbContext.Entry(intakeLog).State = EntityState.Detached;
+    }
 }

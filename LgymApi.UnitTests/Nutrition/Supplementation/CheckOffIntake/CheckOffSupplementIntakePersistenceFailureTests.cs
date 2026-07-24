@@ -38,6 +38,7 @@ public sealed class CheckOffSupplementIntakePersistenceFailureTests
             item.Id,
             Monday,
             Arg.Any<CancellationToken>());
+        dependencies.Plans.Received(1).DetachIntakeLog(Arg.Any<SupplementIntakeLog>());
         await dependencies.UnitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -61,6 +62,55 @@ public sealed class CheckOffSupplementIntakePersistenceFailureTests
             item.Id,
             Monday,
             Arg.Any<CancellationToken>());
+        await dependencies.UnitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecuteAsync_WhenSqlStateIsNotUnique_PropagatesWithoutWinnerReload()
+    {
+        var dependencies = new Dependencies();
+        var item = dependencies.GrantActiveScheduledPlan();
+        var exception = CreatePostgresFailure(PostgresErrorCodes.ForeignKeyViolation, IntakeLogUniqueIndexName);
+        dependencies.UnitOfWork.SaveChangesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<int>(exception));
+
+        var thrown = await FluentActions.Awaiting(() => dependencies.CreateUseCase().ExecuteAsync(dependencies.Command(item.Id)))
+            .Should().ThrowAsync<DbUpdateException>();
+
+        thrown.Which.Should().BeSameAs(exception);
+        await AssertNoWinnerReloadAsync(dependencies);
+    }
+
+    [Test]
+    public async Task ExecuteAsync_WhenProviderFailureIsNotPostgreSql_PropagatesWithoutWinnerReload()
+    {
+        var dependencies = new Dependencies();
+        var item = dependencies.GrantActiveScheduledPlan();
+        var exception = new DbUpdateException("provider failure", new InvalidOperationException());
+        dependencies.UnitOfWork.SaveChangesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<int>(exception));
+
+        var thrown = await FluentActions.Awaiting(() => dependencies.CreateUseCase().ExecuteAsync(dependencies.Command(item.Id)))
+            .Should().ThrowAsync<DbUpdateException>();
+
+        thrown.Which.Should().BeSameAs(exception);
+        await AssertNoWinnerReloadAsync(dependencies);
+    }
+
+    [Test]
+    public async Task ExecuteAsync_WhenWinnerReloadThrows_PropagatesWithoutDetaching()
+    {
+        var dependencies = new Dependencies();
+        var item = dependencies.GrantActiveScheduledPlan();
+        dependencies.UnitOfWork.SaveChangesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<int>(CreateUniqueViolation(IntakeLogUniqueIndexName)));
+        dependencies.Plans.FindIntakeLogAsync(dependencies.TraineeId, item.Id, Monday, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<SupplementIntakeLog?>(new InvalidOperationException()));
+
+        await FluentActions.Awaiting(() => dependencies.CreateUseCase().ExecuteAsync(dependencies.Command(item.Id)))
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        dependencies.Plans.DidNotReceive().DetachIntakeLog(Arg.Any<SupplementIntakeLog>());
         await dependencies.UnitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -108,14 +158,28 @@ public sealed class CheckOffSupplementIntakePersistenceFailureTests
     }
 
     private static DbUpdateException CreateUniqueViolation(string constraintName)
+        => CreatePostgresFailure(PostgresErrorCodes.UniqueViolation, constraintName);
+
+    private static DbUpdateException CreatePostgresFailure(string sqlState, string constraintName)
     {
         var postgresException = new PostgresException(
             "duplicate key value violates unique constraint",
             "ERROR",
             "ERROR",
-            PostgresErrorCodes.UniqueViolation,
+            sqlState,
             constraintName: constraintName);
         return new DbUpdateException("duplicate intake log", postgresException);
+    }
+
+    private static async Task AssertNoWinnerReloadAsync(Dependencies dependencies)
+    {
+        await dependencies.Plans.DidNotReceive().FindIntakeLogAsync(
+            Arg.Any<Id<UserEntity>>(),
+            Arg.Any<Id<SupplementPlanItem>>(),
+            Arg.Any<DateOnly>(),
+            Arg.Any<CancellationToken>());
+        dependencies.Plans.DidNotReceive().DetachIntakeLog(Arg.Any<SupplementIntakeLog>());
+        await dependencies.UnitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     private sealed class Dependencies
