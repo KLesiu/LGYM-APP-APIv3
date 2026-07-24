@@ -13,7 +13,7 @@ public sealed class ModuleBoundaryDebtAllowlistTests
         Assert.Multiple(() =>
         {
             Assert.That(entries, Is.Not.Empty, "The shrink-only allowlist should contain the currently approved explicit debt entries.");
-            Assert.That(entries, Has.Count.LessThanOrEqualTo(ModuleBoundaryDebtAllowlistRegistry.MaximumAllowedEntryCount), "The approved debt baseline must not grow.");
+            Assert.That(entries, Has.Count.EqualTo(ModuleBoundaryDebtAllowlistRegistry.MaximumAllowedEntryCount), "The approved debt baseline must remain exact.");
             Assert.That(entries.Select(entry => entry.Key.GuardId).Distinct(StringComparer.Ordinal).Count(), Is.GreaterThanOrEqualTo(1));
             Assert.That(entries.All(entry => !string.IsNullOrWhiteSpace(entry.Key.Rationale)), Is.True, "Every centralized debt entry must stay reviewable with a rationale.");
             Assert.That(entries.Select(entry => entry.IdentityKey).Distinct(StringComparer.Ordinal).Count(), Is.EqualTo(entries.Count), "Centralized debt entries must stay exact and non-duplicated.");

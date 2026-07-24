@@ -116,6 +116,7 @@ The #375 baseline already shows these as the current feature-level dependency cl
 ### Responsibility boundary
 
 - Owns diet plans, meals, supplement plans, plan history, and intake logs.
+- Owns 18 focused actions: Diet D1-D9 and Supplementation S1-S9, while retaining the four existing controller adapters.
 - Does not own identity, training planning, workout execution, reporting, or notification business flows beyond the shared events and contracts it consumes.
 
 ### Public contract surface
@@ -123,6 +124,7 @@ The #375 baseline already shows these as the current feature-level dependency cl
 - Exposes diet-plan, meal, supplement-plan, and intake contracts that other modules can read or react to.
 - Publishes nutrition data and nutrition events while keeping nutrition write rules internal.
 - Diet-plan and supplementation authorization consume only Coaching's `ICoachingRelationshipAccessService`; Nutrition adapts its trainer and active-link decision to the existing feature-specific errors without importing Coaching persistence or private implementation types.
+- Uses module-local stage-only Diet and Supplementation persistence ports. D3, D4, and D5 preserve the existing post-save `DietPlanUpdatedInAppNotificationCommand` through the Platform dispatcher and its canonical legacy command ID.
 
 ## Allowed dependencies
 
@@ -211,3 +213,4 @@ The eight-module catalog is the current baseline for those checks, and any later
 - `docs/modular-monolith/issue-380-background-contract-ownership.md`
 - `docs/modular-monolith/issue-380-project-reference-graph.md`
 - `docs/modular-monolith/issue-381-notifications-boundary.md`
+- `docs/modular-monolith/issue-390-nutrition-boundary.md`
