@@ -31,8 +31,8 @@ public sealed class CrossModuleEntityLeakageGuardTests
         ["LgymApi.Application.Repositories.ITrainingExerciseScoreRepository"] = "Workout & Progress",
         ["LgymApi.Application.Repositories.IMainRecordRepository"] = "Workout & Progress",
         ["LgymApi.Application.Repositories.IMeasurementRepository"] = "Workout & Progress",
-        ["LgymApi.Application.Repositories.IDietPlanRepository"] = "Nutrition",
-        ["LgymApi.Application.Repositories.ISupplementationRepository"] = "Nutrition"
+        ["LgymApi.Application.Nutrition.Persistence.IDietPlanPersistence"] = "Nutrition",
+        ["LgymApi.Application.Nutrition.Persistence.ISupplementationPersistence"] = "Nutrition"
     };
 
     [TestCase("LgymApi.Application.Repositories.IEloRegistryRepository", "Workout & Progress")]

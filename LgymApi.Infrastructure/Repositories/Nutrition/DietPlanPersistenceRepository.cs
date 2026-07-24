@@ -1,16 +1,16 @@
-using LgymApi.Application.Repositories;
+using LgymApi.Application.Nutrition.Persistence;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace LgymApi.Infrastructure.Repositories;
+namespace LgymApi.Infrastructure.Repositories.Nutrition;
 
-public sealed class DietPlanRepository : IDietPlanRepository
+public sealed class DietPlanPersistenceRepository : IDietPlanPersistence
 {
     private readonly AppDbContext _dbContext;
 
-    public DietPlanRepository(AppDbContext dbContext)
+    public DietPlanPersistenceRepository(AppDbContext dbContext)
     {
         _dbContext = dbContext;
     }
@@ -21,13 +21,20 @@ public sealed class DietPlanRepository : IDietPlanRepository
     public Task AddHistoryEntryAsync(DietPlanHistory historyEntry, CancellationToken cancellationToken = default)
         => _dbContext.DietPlanHistories.AddAsync(historyEntry, cancellationToken).AsTask();
 
-    public Task<DietPlan?> FindPlanByIdAsync(Id<DietPlan> planId, CancellationToken cancellationToken = default)
+    public Task<DietPlan?> FindTrackedPlanByIdAsync(Id<DietPlan> planId, CancellationToken cancellationToken = default)
         => _dbContext.DietPlans
             .Include(x => x.Meals.OrderBy(m => m.Order).ThenBy(m => m.CreatedAt))
             .FirstOrDefaultAsync(x => x.Id == planId, cancellationToken);
 
-    public Task<List<DietPlan>> GetPlansByTrainerAndTraineeAsync(Id<User> trainerId, Id<User> traineeId, CancellationToken cancellationToken = default)
+    public Task<DietPlan?> GetPlanByIdAsync(Id<DietPlan> planId, CancellationToken cancellationToken = default)
         => _dbContext.DietPlans
+            .AsNoTracking()
+            .Include(x => x.Meals.OrderBy(m => m.Order).ThenBy(m => m.CreatedAt))
+            .FirstOrDefaultAsync(x => x.Id == planId, cancellationToken);
+
+    public Task<List<DietPlan>> ListPlansByTrainerAndTraineeAsync(Id<User> trainerId, Id<User> traineeId, CancellationToken cancellationToken = default)
+        => _dbContext.DietPlans
+            .AsNoTracking()
             .Where(x => x.TrainerId == trainerId && x.TraineeId == traineeId && !x.IsDeleted)
             .Include(x => x.Meals.OrderBy(m => m.Order).ThenBy(m => m.CreatedAt))
             .OrderByDescending(x => x.IsActive)
@@ -35,8 +42,9 @@ public sealed class DietPlanRepository : IDietPlanRepository
             .ThenByDescending(x => x.CreatedAt)
             .ToListAsync(cancellationToken);
 
-    public Task<List<DietPlan>> GetActivePlansForTraineeAsync(Id<User> traineeId, CancellationToken cancellationToken = default)
+    public Task<List<DietPlan>> ListActivePlansForTraineeAsync(Id<User> traineeId, CancellationToken cancellationToken = default)
         => _dbContext.DietPlans
+            .AsNoTracking()
             .Where(x => x.TraineeId == traineeId && x.IsActive && !x.IsDeleted)
             .Include(x => x.Meals.OrderBy(m => m.Order).ThenBy(m => m.CreatedAt))
             .OrderByDescending(x => x.UpdatedAt)
@@ -45,14 +53,16 @@ public sealed class DietPlanRepository : IDietPlanRepository
 
     public Task<DietPlan?> GetActivePlanForTraineeAsync(Id<User> traineeId, CancellationToken cancellationToken = default)
         => _dbContext.DietPlans
+            .AsNoTracking()
             .Where(x => x.TraineeId == traineeId && x.IsActive && !x.IsDeleted)
             .Include(x => x.Meals.OrderBy(m => m.Order).ThenBy(m => m.CreatedAt))
             .OrderByDescending(x => x.UpdatedAt)
             .ThenByDescending(x => x.StartDate)
             .FirstOrDefaultAsync(cancellationToken);
 
-    public Task<List<DietPlanHistory>> GetPlanHistoryAsync(Id<DietPlan> planId, CancellationToken cancellationToken = default)
+    public Task<List<DietPlanHistory>> ListPlanHistoryAsync(Id<DietPlan> planId, CancellationToken cancellationToken = default)
         => _dbContext.DietPlanHistories
+            .AsNoTracking()
             .Where(x => x.DietPlanId == planId && !x.IsDeleted)
             .OrderByDescending(x => x.ChangeDate)
             .ToListAsync(cancellationToken);

@@ -26,7 +26,9 @@ public sealed class ModulePersistenceOwnershipGuardTests
         new("IEloRegistryRepository", "EloRegistryRepository", "WorkoutProgress"),
         new("IMainRecordRepository", "MainRecordRepository", "WorkoutProgress"),
         new("IEmailNotificationLogRepository", "EmailNotificationLogRepository", "Notifications"),
-        new("IEmailNotificationSubscriptionRepository", "EmailNotificationSubscriptionRepository", "Notifications")
+        new("IEmailNotificationSubscriptionRepository", "EmailNotificationSubscriptionRepository", "Notifications"),
+        new("IDietPlanPersistence", "DietPlanPersistenceRepository", "Nutrition"),
+        new("ISupplementationPersistence", "SupplementationPersistenceRepository", "Nutrition")
     };
 
     [Test]
