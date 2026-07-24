@@ -9,8 +9,6 @@ using LgymApi.Application.Coaching.Progress.TrainingByDate;
 using LgymApi.Application.Coaching.Relationships.TrainerDashboard;
 using LgymApi.Application.Coaching.ManagedPlans.Create;
 using LgymApi.Application.Coaching.ManagedPlans.Update;
-using LgymApi.Application.Features.DietPlans.Models;
-using LgymApi.Application.Features.Supplementation.Models;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Pagination;
 using LgymApi.Application.TrainingPlanning.Contracts.ManagedPlans;
@@ -89,115 +87,6 @@ public sealed class TrainerProfile : IMappingProfile
             Name = source.Name,
             IsActive = source.IsActive,
             CreatedAt = source.CreatedAt
-        });
-
-        configuration.CreateMap<UpsertDietMealRequest, UpsertDietMealCommand>((source, _) => new UpsertDietMealCommand
-        {
-            Name = source.Name,
-            Order = source.Order,
-            Description = source.Description,
-            EstimatedCalories = source.EstimatedCalories,
-            ProteinGrams = source.ProteinGrams,
-            CarbsGrams = source.CarbsGrams,
-            FatGrams = source.FatGrams
-        });
-
-        configuration.CreateMap<UpsertDietPlanRequest, UpsertDietPlanCommand>((source, context) => new UpsertDietPlanCommand
-        {
-            Name = source.Name,
-            StartDate = source.StartDate,
-            EndDate = source.EndDate,
-            EstimatedCalories = source.EstimatedCalories,
-            ProteinGrams = source.ProteinGrams,
-            CarbsGrams = source.CarbsGrams,
-            FatGrams = source.FatGrams,
-            Notes = source.Notes,
-            IsActive = source.IsActive,
-            Meals = context?.MapList<UpsertDietMealRequest, UpsertDietMealCommand>(source.Meals) ?? []
-        });
-
-        configuration.CreateMap<SupplementPlanItemResult, SupplementPlanItemDto>((source, _) => new SupplementPlanItemDto
-        {
-            Id = source.Id.ToString(),
-            SupplementName = source.SupplementName,
-            Dosage = source.Dosage,
-            TimeOfDay = source.TimeOfDay,
-            DaysOfWeekMask = source.DaysOfWeekMask,
-            Order = source.Order
-        });
-
-        configuration.CreateMap<SupplementPlanResult, SupplementPlanDto>((source, mapper) => new SupplementPlanDto
-        {
-            Id = source.Id.ToString(),
-            TrainerId = source.TrainerId.ToString(),
-            TraineeId = source.TraineeId.ToString(),
-            Name = source.Name,
-            Notes = source.Notes,
-            IsActive = source.IsActive,
-            CreatedAt = source.CreatedAt,
-            Items = mapper?.MapList<SupplementPlanItemResult, SupplementPlanItemDto>(source.Items) ?? []
-        });
-
-        configuration.CreateMap<SupplementScheduleEntryResult, SupplementScheduleEntryDto>((source, _) => new SupplementScheduleEntryDto
-        {
-            PlanItemId = source.PlanItemId.ToString(),
-            SupplementName = source.SupplementName,
-            Dosage = source.Dosage,
-            TimeOfDay = source.TimeOfDay,
-            IntakeDate = source.IntakeDate,
-            Taken = source.Taken,
-            TakenAt = source.TakenAt
-        });
-
-        configuration.CreateMap<SupplementComplianceSummaryResult, SupplementComplianceSummaryDto>((source, _) => new SupplementComplianceSummaryDto
-        {
-            TraineeId = source.TraineeId.ToString(),
-            FromDate = source.FromDate,
-            ToDate = source.ToDate,
-            PlannedDoses = source.PlannedDoses,
-            TakenDoses = source.TakenDoses,
-            AdherenceRate = source.AdherenceRate
-        });
-
-        configuration.CreateMap<DietMealResult, DietMealDto>((source, _) => new DietMealDto
-        {
-            Id = source.Id.ToString(),
-            Name = source.Name,
-            Order = source.Order,
-            Description = source.Description,
-            EstimatedCalories = source.EstimatedCalories,
-            ProteinGrams = source.ProteinGrams,
-            CarbsGrams = source.CarbsGrams,
-            FatGrams = source.FatGrams
-        });
-
-        configuration.CreateMap<DietPlanResult, DietPlanDto>((source, mapper) => new DietPlanDto
-        {
-            Id = source.Id.ToString(),
-            TrainerId = source.TrainerId.ToString(),
-            TraineeId = source.TraineeId.ToString(),
-            Name = source.Name,
-            StartDate = source.StartDate,
-            EndDate = source.EndDate,
-            EstimatedCalories = source.EstimatedCalories,
-            ProteinGrams = source.ProteinGrams,
-            CarbsGrams = source.CarbsGrams,
-            FatGrams = source.FatGrams,
-            Notes = source.Notes,
-            IsActive = source.IsActive,
-            CreatedAt = source.CreatedAt,
-            UpdatedAt = source.UpdatedAt,
-            Meals = mapper?.MapList<DietMealResult, DietMealDto>(source.Meals) ?? []
-        });
-
-        configuration.CreateMap<DietPlanHistoryResult, DietPlanHistoryDto>((source, _) => new DietPlanHistoryDto
-        {
-            Id = source.Id.ToString(),
-            DietPlanId = source.DietPlanId.ToString(),
-            ChangedByUserId = source.ChangedByUserId.ToString(),
-            ChangeDate = source.ChangeDate,
-            ChangeType = source.ChangeType,
-            SnapshotJson = source.SnapshotJson
         });
 
     }

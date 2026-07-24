@@ -10,7 +10,9 @@ public sealed class ApplicationCommandProducerContractTests
     public static IEnumerable<TestCaseData> ProducerContractCases()
     {
         yield return CreateCase("WorkoutProgress/TrainingExecution/CompleteTrainingUseCase.cs", "LgymApi.Application.WorkoutProgress.Contracts.BackgroundCommands");
-        yield return CreateCase("Features/DietPlans/DietPlanService.cs", "LgymApi.Application.Platform.Contracts.BackgroundCommands", "LgymApi.Application.Nutrition.Contracts.BackgroundCommands");
+        yield return CreateCase("Nutrition/DietPlans/CreateTraineePlan/CreateTraineeDietPlanUseCase.cs", "LgymApi.Application.Platform.Contracts.BackgroundCommands", "LgymApi.Application.Nutrition.Contracts.BackgroundCommands");
+        yield return CreateCase("Nutrition/DietPlans/UpdateTraineePlan/UpdateTraineeDietPlanUseCase.cs", "LgymApi.Application.Platform.Contracts.BackgroundCommands", "LgymApi.Application.Nutrition.Contracts.BackgroundCommands");
+        yield return CreateCase("Nutrition/DietPlans/ActivateTraineePlan/ActivateTraineeDietPlanUseCase.cs", "LgymApi.Application.Platform.Contracts.BackgroundCommands", "LgymApi.Application.Nutrition.Contracts.BackgroundCommands");
         yield return CreateCase("Features/Reporting/ReportingService.cs", "LgymApi.Application.Platform.Contracts.BackgroundCommands");
         yield return CreateCase("Features/Reporting/ReportingService.Requests.cs", "LgymApi.Application.Reporting.Contracts.BackgroundCommands");
         yield return CreateCase("Features/Reporting/ReportingService.Submissions.cs", "LgymApi.Application.Reporting.Contracts.BackgroundCommands");
