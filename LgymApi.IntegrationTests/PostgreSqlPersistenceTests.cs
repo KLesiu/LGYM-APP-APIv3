@@ -1,4 +1,6 @@
 using FluentAssertions;
+using LgymApi.Application.Nutrition.Supplementation.CheckOffIntake.Contracts;
+using LgymApi.Application.Nutrition.Supplementation.CheckOffIntake.Models;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
@@ -121,6 +123,80 @@ public sealed class PostgreSqlPersistenceTests : PostgreSqlIntegrationTestBase
                 .ToListAsync())
                 .Should().HaveCount(2);
         }
+    }
+
+    [Test]
+    public async Task SupplementIntakeCheckOff_ConcurrentRequestsRecoverTheWinnerAndLeaveOneActiveRow()
+    {
+        var trainee = await SeedUserAsync(
+            name: $"intake-trainee-{Id<User>.New()}",
+            email: $"intake-trainee-{Id<User>.New()}@test.local");
+        var intakeDate = new DateOnly(2026, 7, 27);
+        Id<SupplementPlanItem> planItemId;
+
+        using (var seedScope = Factory.Services.CreateScope())
+        {
+            var database = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var plan = new SupplementPlan
+            {
+                Id = Id<SupplementPlan>.New(),
+                TrainerId = trainee.Id,
+                TraineeId = trainee.Id,
+                Name = "Concurrent intake plan",
+                IsActive = true
+            };
+            var item = new SupplementPlanItem
+            {
+                Id = Id<SupplementPlanItem>.New(),
+                PlanId = plan.Id,
+                SupplementName = "Magnesium",
+                Dosage = "1 tablet",
+                Order = 1,
+                DaysOfWeekMask = DaysOfWeekSet.Monday,
+                TimeOfDay = new TimeSpan(8, 0, 0)
+            };
+            plan.Items.Add(item);
+            database.SupplementPlans.Add(plan);
+            await database.SaveChangesAsync();
+            planItemId = item.Id;
+        }
+
+        using var firstScope = Factory.Services.CreateScope();
+        using var secondScope = Factory.Services.CreateScope();
+        var first = firstScope.ServiceProvider.GetRequiredService<ICheckOffSupplementIntakeUseCase>();
+        var second = secondScope.ServiceProvider.GetRequiredService<ICheckOffSupplementIntakeUseCase>();
+        var command = new CheckOffSupplementIntakeCommand(
+            trainee.Id,
+            planItemId,
+            intakeDate,
+            new DateTimeOffset(2026, 7, 27, 8, 30, 0, TimeSpan.Zero));
+        using var barrier = new Barrier(2);
+
+        var results = await Task.WhenAll(
+            Task.Run(async () =>
+            {
+                barrier.SignalAndWait();
+                return await first.ExecuteAsync(command);
+            }),
+            Task.Run(async () =>
+            {
+                barrier.SignalAndWait();
+                return await second.ExecuteAsync(command);
+            }));
+
+        results.Should().OnlyContain(result => result.IsSuccess);
+        results.Select(result => result.Value.Taken).Should().OnlyContain(taken => taken);
+        results.Select(result => result.Value.PlanItemId).Should().OnlyContain(id => id == planItemId);
+        results.Select(result => result.Value.TakenAt).Distinct().Should().ContainSingle();
+
+        using var readScope = Factory.Services.CreateScope();
+        var readDatabase = readScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var intakeLogs = await readDatabase.SupplementIntakeLogs
+            .AsNoTracking()
+            .Where(log => log.TraineeId == trainee.Id && log.PlanItemId == planItemId && log.IntakeDate == intakeDate)
+            .ToListAsync();
+        intakeLogs.Should().ContainSingle();
+        intakeLogs[0].TakenAt.Should().Be(results[0].Value.TakenAt);
     }
 
     [Test]
