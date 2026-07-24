@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
 using LgymApi.Domain.Entities;
@@ -7,6 +9,7 @@ using LgymApi.Domain.Notifications;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Data.SeedData;
+using LgymApi.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -106,7 +109,7 @@ public sealed class DietPlansApiTests : IntegrationTestBase
     }
 
     [Test]
-    public async Task ActivateDietPlan_DeactivatesPreviousActivePlan()
+    public async Task ActivateDietPlan_PreservesExistingActivePlanCharacterization()
     {
         var trainer = await SeedTrainerAsync("trainer-activate-diet", "trainer-activate-diet@example.com");
         var trainee = await SeedUserAsync(name: "trainee-activate-diet", email: "trainee-activate-diet@example.com", password: "password123");
@@ -123,6 +126,170 @@ public sealed class DietPlansApiTests : IntegrationTestBase
         var plans = await listResponse.Content.ReadFromJsonAsync<List<DietPlanResponse>>();
         plans.Should().Contain(x => x.IsActive && x.Id == second.Id);
         plans.Should().Contain(x => x.IsActive && x.Id == first.Id);
+    }
+
+    [Test]
+    public async Task DietRoutes_PreserveMalformedIdAndMessageContracts()
+    {
+        var trainer = await SeedTrainerAsync("trainer-malformed-diet", "trainer-malformed-diet@example.com");
+        SetAuthorizationHeader(trainer.Id);
+        var validTraineeId = Id<User>.New();
+
+        await AssertExactMessageAsync(
+            await Client.GetAsync("/api/trainer/trainees/not-a-guid/diet-plans"),
+            HttpStatusCode.BadRequest,
+            EnglishMessage(() => Messages.UserIdRequired));
+        await AssertExactMessageAsync(
+            await Client.PostAsJsonAsync("/api/trainer/trainees/not-a-guid/diet-plans", ValidDietRequest()),
+            HttpStatusCode.BadRequest,
+            EnglishMessage(() => Messages.UserIdRequired));
+
+        foreach (var response in new[]
+                 {
+                     await Client.GetAsync($"/api/trainer/trainees/not-a-guid/diet-plans/{Id<DietPlan>.New()}"),
+                     await Client.PostAsJsonAsync($"/api/trainer/trainees/not-a-guid/diet-plans/{Id<DietPlan>.New()}/update", ValidDietRequest()),
+                     await Client.PostAsync($"/api/trainer/trainees/not-a-guid/diet-plans/{Id<DietPlan>.New()}/activate", null),
+                     await Client.PostAsync($"/api/trainer/trainees/not-a-guid/diet-plans/{Id<DietPlan>.New()}/delete", null),
+                     await Client.GetAsync($"/api/trainer/trainees/not-a-guid/diet-plans/{Id<DietPlan>.New()}/history")
+                 })
+        {
+            await AssertExactMessageAsync(response, HttpStatusCode.BadRequest, EnglishMessage(() => Messages.UserIdRequired));
+        }
+
+        foreach (var response in new[]
+                 {
+                     await Client.GetAsync($"/api/trainer/trainees/{validTraineeId}/diet-plans/not-a-guid"),
+                     await Client.PostAsJsonAsync($"/api/trainer/trainees/{validTraineeId}/diet-plans/not-a-guid/update", ValidDietRequest()),
+                     await Client.PostAsync($"/api/trainer/trainees/{validTraineeId}/diet-plans/not-a-guid/activate", null),
+                     await Client.PostAsync($"/api/trainer/trainees/{validTraineeId}/diet-plans/not-a-guid/delete", null),
+                     await Client.GetAsync($"/api/trainer/trainees/{validTraineeId}/diet-plans/not-a-guid/history")
+                 })
+        {
+            await AssertExactMessageAsync(response, HttpStatusCode.BadRequest, EnglishMessage(() => Messages.FieldRequired));
+        }
+    }
+
+    [Test]
+    public async Task DietDeleteAndSingleRead_PreserveContracts()
+    {
+        var owner = await SeedTrainerAsync("trainer-diet-owner", "trainer-diet-owner@example.com");
+        var otherTrainer = await SeedTrainerAsync("trainer-diet-other", "trainer-diet-other@example.com");
+        var trainee = await SeedUserAsync("trainee-diet-owned", "trainee-diet-owned@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(owner.Id, trainee.Id);
+        await LinkTrainerAndTraineeAsync(otherTrainer.Id, trainee.Id);
+
+        SetAuthorizationHeader(owner.Id);
+        var plan = await CreateDietAsync(trainee.Id, "Owner plan", true);
+
+        var singleRead = await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}");
+        singleRead.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var document = JsonDocument.Parse(await singleRead.Content.ReadAsStringAsync()))
+        {
+            document.RootElement.GetProperty("_id").GetString().Should().Be(plan.Id);
+            document.RootElement.TryGetProperty("id", out _).Should().BeFalse();
+            document.RootElement.GetProperty("name").GetString().Should().Be("Owner plan");
+        }
+
+        SetAuthorizationHeader(otherTrainer.Id);
+        await AssertExactMessageAsync(
+            await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}"),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+        await AssertExactMessageAsync(
+            await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/delete", null),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+
+        SetAuthorizationHeader(owner.Id);
+        await AssertExactMessageAsync(
+            await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/delete", null),
+            HttpStatusCode.OK,
+            EnglishMessage(() => Messages.Deleted));
+        await AssertExactMessageAsync(
+            await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}"),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+
+        var listAfterDelete = await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans");
+        listAfterDelete.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await listAfterDelete.Content.ReadAsStringAsync()).Should().Be("[]");
+    }
+
+    [Test]
+    public async Task TraineeCurrentDietRoutes_PreservePluralAndSingularSemantics()
+    {
+        var trainer = await SeedTrainerAsync("trainer-current-contract", "trainer-current-contract@example.com");
+        var trainee = await SeedUserAsync("trainee-current-contract", "trainee-current-contract@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
+
+        SetAuthorizationHeader(trainee.Id);
+        var emptyPlural = await Client.GetAsync("/api/trainee/diet-plans/current");
+        emptyPlural.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await emptyPlural.Content.ReadAsStringAsync()).Should().Be("[]");
+        await AssertExactMessageAsync(
+            await Client.GetAsync("/api/trainee/diet-plan/current"),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+
+        SetAuthorizationHeader(trainer.Id);
+        var first = await CreateDietAsync(trainee.Id, "Training day", true);
+        var second = await CreateDietAsync(trainee.Id, "Rest day", true);
+
+        SetAuthorizationHeader(trainee.Id);
+        var plural = await Client.GetAsync("/api/trainee/diet-plans/current");
+        plural.StatusCode.Should().Be(HttpStatusCode.OK);
+        var plans = await plural.Content.ReadFromJsonAsync<List<DietPlanResponse>>();
+        plans.Should().NotBeNull();
+        plans!.Select(plan => plan.Id).Should().Contain(new[] { first.Id, second.Id });
+        plans.Should().OnlyContain(plan => plan.IsActive);
+
+        var singular = await Client.GetAsync("/api/trainee/diet-plan/current");
+        singular.StatusCode.Should().Be(HttpStatusCode.OK);
+        var current = await singular.Content.ReadFromJsonAsync<DietPlanResponse>();
+        current.Should().NotBeNull();
+        current!.Id.Should().BeOneOf(first.Id, second.Id);
+    }
+
+    [Test]
+    public async Task DietFailures_DoNotWriteOrQueueCommands()
+    {
+        var trainer = await SeedTrainerAsync("trainer-diet-failure", "trainer-diet-failure@example.com");
+        var trainee = await SeedUserAsync("trainee-diet-failure", "trainee-diet-failure@example.com", "password123");
+        var foreignTrainee = await SeedUserAsync("trainee-diet-foreign", "trainee-diet-foreign@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
+        SetAuthorizationHeader(trainer.Id);
+
+        var beforeInvalidShape = await GetDietPersistenceCountsAsync();
+        await AssertExactMessageAsync(
+            await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans", new
+            {
+                name = " ",
+                startDate = new DateOnly(2026, 7, 23),
+                isActive = true,
+                meals = new[] { new { name = "Meal", order = 0, estimatedCalories = 500 } }
+            }),
+            HttpStatusCode.BadRequest,
+            EnglishMessage(() => Messages.FieldRequired));
+        (await GetDietPersistenceCountsAsync()).Should().Be(beforeInvalidShape);
+
+        await AssertExactMessageAsync(
+            await Client.PostAsJsonAsync($"/api/trainer/trainees/{foreignTrainee.Id}/diet-plans", ValidDietRequest()),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+        (await GetDietPersistenceCountsAsync()).Should().Be(beforeInvalidShape);
+
+        var plan = await CreateDietAsync(trainee.Id, "Deleted failure plan", true);
+        await AssertExactMessageAsync(
+            await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/delete", null),
+            HttpStatusCode.OK,
+            EnglishMessage(() => Messages.Deleted));
+        var afterDelete = await GetDietPersistenceCountsAsync();
+
+        await AssertExactMessageAsync(
+            await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/update", ValidDietRequest()),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+        (await GetDietPersistenceCountsAsync()).Should().Be(afterDelete);
     }
 
     [Test]
@@ -217,6 +384,45 @@ public sealed class DietPlansApiTests : IntegrationTestBase
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         return (await response.Content.ReadFromJsonAsync<DietPlanResponse>())!;
+    }
+
+    private async Task<(int Plans, int Histories, int Commands)> GetDietPersistenceCountsAsync()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        return (
+            await db.DietPlans.CountAsync(),
+            await db.DietPlanHistories.CountAsync(),
+            await db.CommandEnvelopes.CountAsync());
+    }
+
+    private static object ValidDietRequest()
+        => new
+        {
+            name = "Valid diet",
+            startDate = new DateOnly(2026, 7, 23),
+            isActive = true,
+            meals = new[] { new { name = "Meal", order = 0, estimatedCalories = 500 } }
+        };
+
+    private static async Task AssertExactMessageAsync(HttpResponseMessage response, HttpStatusCode expectedStatus, string expectedMessage)
+    {
+        response.StatusCode.Should().Be(expectedStatus);
+        (await response.Content.ReadAsStringAsync()).Should().Be(JsonSerializer.Serialize(new { msg = expectedMessage }));
+    }
+
+    private static string EnglishMessage(Func<string> getMessage)
+    {
+        var originalCulture = CultureInfo.CurrentUICulture;
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en");
+        try
+        {
+            return getMessage();
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = originalCulture;
+        }
     }
 
     private async Task<User> SeedTrainerAsync(string name, string email)
