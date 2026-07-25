@@ -17,7 +17,7 @@ public sealed class WelcomeEmailTemplateComposerTests
     [SetUp]
     public void SetUp()
     {
-         _templateRootPath = Path.Combine(Path.GetTempPath(), $"lgym-welcome-email-templates-{Id<WelcomeEmailTemplateComposerTests>.New():N}");
+        _templateRootPath = Path.Combine(Path.GetTempPath(), $"lgym-welcome-email-templates-{Id<WelcomeEmailTemplateComposerTests>.New():N}");
         Directory.CreateDirectory(Path.Combine(_templateRootPath, "Welcome"));
         File.WriteAllText(
             Path.Combine(_templateRootPath, "Welcome", "en.email"),
@@ -42,17 +42,17 @@ public sealed class WelcomeEmailTemplateComposerTests
         var composer = CreateComposer();
         var payload = new WelcomeEmailPayload
         {
-             UserId = Id<LgymApi.Domain.Entities.User>.New(),
+            UserId = Id<LgymApi.Domain.Entities.User>.New(),
             UserName = "Alicja",
             RecipientEmail = "alicja@example.com",
             CultureName = "pl-PL"
         };
 
-         var message = composer.ComposeWelcome(payload);
+        var message = composer.ComposeWelcome(payload);
 
-         message.To.Should().Be("alicja@example.com");
-         message.Subject.Should().Be("Witaj Alicja");
-         message.Body.Should().Be("Cześć Alicja!");
+        message.To.Should().Be("alicja@example.com");
+        message.Subject.Should().Be("Witaj Alicja");
+        message.Body.Should().Be("Cześć Alicja!");
     }
 
     [Test]
@@ -61,16 +61,16 @@ public sealed class WelcomeEmailTemplateComposerTests
         var composer = CreateComposer();
         var payload = new WelcomeEmailPayload
         {
-             UserId = Id<LgymApi.Domain.Entities.User>.New(),
+            UserId = Id<LgymApi.Domain.Entities.User>.New(),
             UserName = "Alex",
             RecipientEmail = "alex@example.com",
             CultureName = "de-DE"
         };
 
-         var message = composer.ComposeWelcome(payload);
+        var message = composer.ComposeWelcome(payload);
 
-         message.Subject.Should().Be("Welcome Alex");
-         message.Body.Should().Be("Hi Alex!");
+        message.Subject.Should().Be("Welcome Alex");
+        message.Body.Should().Be("Hi Alex!");
     }
 
     private WelcomeEmailTemplateComposer CreateComposer()

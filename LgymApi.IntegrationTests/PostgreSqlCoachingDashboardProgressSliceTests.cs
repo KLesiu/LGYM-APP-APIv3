@@ -176,17 +176,17 @@ internal sealed class PostgreSqlCoachingDashboardProgressSliceTests : PostgreSql
         User trainee,
         DateTimeOffset createdAt,
         DateTimeOffset expiresAt) => new()
-    {
-        Id = ParseInvitationId(id),
-        TrainerId = trainerId,
-        TraineeId = trainee.Id,
-        InviteeEmail = trainee.Email,
-        Code = id[..12],
-        Status = TrainerInvitationStatus.Pending,
-        CreatedAt = createdAt,
-        UpdatedAt = createdAt,
-        ExpiresAt = expiresAt
-    };
+        {
+            Id = ParseInvitationId(id),
+            TrainerId = trainerId,
+            TraineeId = trainee.Id,
+            InviteeEmail = trainee.Email,
+            Code = id[..12],
+            Status = TrainerInvitationStatus.Pending,
+            CreatedAt = createdAt,
+            UpdatedAt = createdAt,
+            ExpiresAt = expiresAt
+        };
 
     private static Id<TrainerInvitation> ParseInvitationId(string value) =>
         Id<TrainerInvitation>.TryParse(value, out var invitationId)

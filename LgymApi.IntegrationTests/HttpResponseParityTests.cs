@@ -82,7 +82,7 @@ public sealed class HttpResponseParityTests : IntegrationTestBase
             email: "create_test@example.com");
         SetAuthorizationHeader(user.Id);
 
-        var response = await Client.PostAsJsonAsync($"/api/gym/{user.Id}/addGym", 
+        var response = await Client.PostAsJsonAsync($"/api/gym/{user.Id}/addGym",
             new { name = "Test Gym for Create" });
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -159,7 +159,7 @@ public sealed class HttpResponseParityTests : IntegrationTestBase
 
         // For array responses, we just verify the status code
         await _harness.AssertSuccessResponseHasRequiredFieldsAsync(
-            response, 
+            response,
             HttpStatusCode.OK,
             new string[] { },  // Empty array has no required root-level fields
             because: "array responses should return 200 OK");

@@ -5,7 +5,8 @@ using LgymApi.Application.Coaching.Progress.MainRecordsHistory;
 using LgymApi.Application.Coaching.Progress.TrainingByDate;
 using LgymApi.Application.Coaching.Progress.TrainingDates;
 using LgymApi.Application.Coaching.Relationships.TrainerDashboard;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Coaching.Errors;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
@@ -195,17 +196,17 @@ public sealed class CoachingDashboardProgressSliceIntegrationTests : Integration
         string email,
         DateTimeOffset createdAt,
         DateTimeOffset expiresAt) => new()
-    {
-        Id = ParseInvitationId(id),
-        TrainerId = trainerId,
-        TraineeId = traineeId,
-        InviteeEmail = email,
-        Code = id[..12],
-        Status = TrainerInvitationStatus.Pending,
-        CreatedAt = createdAt,
-        UpdatedAt = createdAt,
-        ExpiresAt = expiresAt
-    };
+        {
+            Id = ParseInvitationId(id),
+            TrainerId = trainerId,
+            TraineeId = traineeId,
+            InviteeEmail = email,
+            Code = id[..12],
+            Status = TrainerInvitationStatus.Pending,
+            CreatedAt = createdAt,
+            UpdatedAt = createdAt,
+            ExpiresAt = expiresAt
+        };
 
     private static Id<TrainerInvitation> ParseInvitationId(string value) =>
         Id<TrainerInvitation>.TryParse(value, out var invitationId)

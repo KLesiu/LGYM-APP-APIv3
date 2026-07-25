@@ -1,5 +1,6 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Identity.Errors;
 using LgymApi.Application.ExternalAuth;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Services;

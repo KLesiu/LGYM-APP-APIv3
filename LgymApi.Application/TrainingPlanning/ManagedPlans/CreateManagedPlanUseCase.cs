@@ -1,5 +1,6 @@
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.TrainingPlanning.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.TrainingPlanning.Contracts.ManagedPlans;
@@ -29,13 +30,13 @@ internal sealed class CreateManagedPlanUseCase : ICreateManagedPlanUseCase
         if (command is null || command.TrainerId.IsEmpty || command.TraineeId.IsEmpty)
         {
             return Result<ManagedPlanReadModel, AppError>.Failure(
-                new InvalidTrainerRelationshipError(Messages.UserIdRequired));
+                new InvalidPlanError(Messages.UserIdRequired));
         }
 
         if (string.IsNullOrWhiteSpace(command.Name))
         {
             return Result<ManagedPlanReadModel, AppError>.Failure(
-                new InvalidTrainerRelationshipError(Messages.FieldRequired));
+                new InvalidPlanError(Messages.FieldRequired));
         }
 
         var plan = new PlanEntity

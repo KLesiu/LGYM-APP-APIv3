@@ -9,12 +9,12 @@ namespace LgymApi.TestUtils;
 public sealed class TestEmailSender : IEmailSender
 {
     public List<EmailMessage> SentMessages { get; } = new();
-    
+
     /// <summary>
     /// Controls how many consecutive SendAsync calls should throw exceptions before succeeding.
     /// </summary>
     public int FailuresRemaining { get; set; }
-    
+
     /// <summary>
     /// Forces SendAsync to return false instead of true after capturing the message.
     /// </summary>

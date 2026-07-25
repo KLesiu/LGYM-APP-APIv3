@@ -9,7 +9,7 @@ public sealed class SupplementPlan : EntityBase<SupplementPlan>
     public string Name { get; set; } = string.Empty;
     public string? Notes { get; set; }
     public bool IsActive { get; set; }
-    
+
     public User Trainer { get; set; } = null!;
     public User Trainee { get; set; } = null!;
     public ICollection<SupplementPlanItem> Items { get; set; } = new List<SupplementPlanItem>();

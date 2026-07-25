@@ -5,10 +5,15 @@
 - Rules: keep controllers thin and preserve legacy payload shapes.
 - Boundary: do not move application or infrastructure business logic here.
 - Composition: `Program.cs` wires named module helpers, `AddPlatformServices(...)`, and Worker services. Host-only bindings stay in the API project.
+- Authentication registration is API-owned in `Configuration/ApiAuthenticationExtensions.cs`; `Program.cs` delegates signing-key validation and JWT bearer setup to `AddApiAuthentication(...)` while retaining only host composition.
+- `AddApiLocalization(...)` is the host-only localization helper: it registers localization and builds the English-default `en`/`pl` request options with `Accept-Language` as the sole culture provider; `Program.cs` keeps its middleware invocation first in the pipeline.
+- `Program.cs` invokes `AddStrictHttpJsonOptions(...)`, `AddApiLocalization(...)`, `AddApiAuthentication(...)`, and `AddApiAuthorizationPolicies(...)` exactly once; their JSON, localization, JWT, and policy registrations do not appear inline in the composition root.
+- API host helpers own HTTP serialization, request localization, JWT registration, authorization-policy registration, API idempotency, and logging bootstrap. Persisted payload serialization remains a Technical Platform concern, not an API options bag.
 - Exercise read and legacy write contracts stay without `eloFormula`; privileged exercise create/update endpoints use separate DTOs and `ManageGlobalExercises` policy.
 - Enum-backed choice lists must return `LookupItem`-style payloads with stable enum-string `id`; `name` and `displayName` both carry translated display text.
 - Exercise ELO formulas must be sourced from the enum lookup API (`/api/enums/enumType/ExerciseEloFormula`) and must not be hardcoded in the front-end.
 - Lookup-backed request values such as `ExerciseExtendedFormDto.EloFormula` must be mapped in API mapping profiles from lookup ids to application enums; controllers should not parse them.
+- Enum API adapters consume the Reference Data lookup contract. Lookup responses keep the raw enum member as `id`, translated text in both `name` and `displayName`, hidden-value filtering, and case-insensitive enum-type lookup.
 - Push installation endpoints live under `/api/push/installations/*`, rely on middleware-authenticated `User` plus `sid` claims, and never trust client-supplied user identity for device registration or disassociation.
 - Push sender configuration follows the existing `appsettings.json` convention under `PushNotifications:*`; the API host composes Infrastructure FCM and Worker scheduling through module helpers but does not send push notifications synchronously inside controllers.
 - Notifications composition is host-facing: the API calls Infrastructure `AddNotificationsModule(...)` before `AddBackgroundWorkerServices(...)`; password and push scheduler adapters are supplied only by the Worker helper, not direct `Program.cs` bindings.

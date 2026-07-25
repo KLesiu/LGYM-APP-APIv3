@@ -1,5 +1,6 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.WorkoutProgress.Errors;
 using LgymApi.Application.Features.AdminManagement.Models;
 using LgymApi.Application.Features.Exercise;
 using LgymApi.Application.Features.Exercise.Models;
@@ -26,7 +27,7 @@ public sealed class ExerciseServiceTests
             new NoOpUnitOfWork());
 
         var result = await service.AddExerciseAsync("   ", BodyParts.Chest, null, null);
-        
+
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<InvalidExerciseError>();
     }
@@ -42,7 +43,7 @@ public sealed class ExerciseServiceTests
             new NoOpUnitOfWork());
 
         var result = await service.AddExerciseAsync("Bench Press", BodyParts.Unknown, null, null);
-        
+
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<InvalidExerciseError>();
     }
@@ -59,7 +60,7 @@ public sealed class ExerciseServiceTests
 
         var input = new AddUserExerciseInput(Id<User>.Empty, "Bench Press", BodyParts.Chest, null, null);
         var result = await service.AddUserExerciseAsync(input);
-        
+
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<InvalidExerciseError>();
     }
@@ -76,7 +77,7 @@ public sealed class ExerciseServiceTests
             new NoOpUnitOfWork());
 
         var result = await service.DeleteExerciseAsync(Id<User>.Empty, exerciseId);
-        
+
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<InvalidExerciseError>();
     }
@@ -93,7 +94,7 @@ public sealed class ExerciseServiceTests
             new NoOpUnitOfWork());
 
         var result = await service.DeleteExerciseAsync(userId, Id<Exercise>.Empty);
-        
+
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<InvalidExerciseError>();
     }
@@ -111,7 +112,7 @@ public sealed class ExerciseServiceTests
         var currentUser = new User { Id = Id<User>.New(), Name = "CurrentUser", Email = "current@example.com" };
         var input = new UpdateExerciseInput(Id<Exercise>.Empty, "Bench Press", BodyParts.Chest, null, null);
         var result = await service.UpdateExerciseAsync(currentUser, input);
-        
+
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<InvalidExerciseError>();
     }

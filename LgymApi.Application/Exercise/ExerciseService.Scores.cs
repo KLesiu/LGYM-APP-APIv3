@@ -1,5 +1,6 @@
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.WorkoutProgress.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Exercise.Models;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
@@ -14,10 +15,10 @@ public sealed partial class ExerciseService : IExerciseService
     {
         var (routeUserId, currentUserId, exerciseId, series, gymId, exerciseName) = input;
 
-         if (routeUserId.IsEmpty || currentUserId.IsEmpty || exerciseId.IsEmpty)
-         {
-             return Result<LastExerciseScoresResult, AppError>.Failure(new InvalidExerciseError(Messages.InvalidId));
-         }
+        if (routeUserId.IsEmpty || currentUserId.IsEmpty || exerciseId.IsEmpty)
+        {
+            return Result<LastExerciseScoresResult, AppError>.Failure(new InvalidExerciseError(Messages.InvalidId));
+        }
 
         var latestScores = await _exerciseScoreRepository.GetLatestByUserExerciseSeriesAsync(
             currentUserId,

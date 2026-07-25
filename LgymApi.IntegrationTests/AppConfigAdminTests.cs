@@ -38,18 +38,18 @@ public sealed class AppConfigAdminTests : IntegrationTestBase
         paginatedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var json = await ReadJsonAsync(paginatedResponse);
-        
+
         // Verify pagination metadata
         json.RootElement.TryGetProperty("items", out var items).Should().BeTrue();
         items.ValueKind.Should().Be(JsonValueKind.Array);
         items.GetArrayLength().Should().BeGreaterThan(0);
-        
+
         json.RootElement.TryGetProperty("page", out var page).Should().BeTrue();
         page.GetInt32().Should().Be(1);
-        
+
         json.RootElement.TryGetProperty("pageSize", out var pageSize).Should().BeTrue();
         pageSize.GetInt32().Should().Be(20);
-        
+
         json.RootElement.TryGetProperty("totalCount", out var totalCount).Should().BeTrue();
         totalCount.GetInt32().Should().BeGreaterThan(0);
 
@@ -95,7 +95,7 @@ public sealed class AppConfigAdminTests : IntegrationTestBase
 
         using var json = await ReadJsonAsync(paginatedResponse);
         json.RootElement.TryGetProperty("items", out var items).Should().BeTrue();
-        
+
         var itemsArray = items.EnumerateArray().ToList();
         itemsArray.Should().HaveCountGreaterThanOrEqualTo(2, "at least 2 configs should exist");
 
@@ -110,87 +110,87 @@ public sealed class AppConfigAdminTests : IntegrationTestBase
         platforms.Should().Contain(Platforms.Ios.ToString());
     }
 
-     [Test]
-     public async Task GetPaginated_ReturnsConfigsInCorrectOrder()
-     {
-         var admin = await SeedAdminAsync();
-         SetAuthorizationHeader(admin.Id);
+    [Test]
+    public async Task GetPaginated_ReturnsConfigsInCorrectOrder()
+    {
+        var admin = await SeedAdminAsync();
+        SetAuthorizationHeader(admin.Id);
 
-         // Create 3 AppConfigs with different timestamps
-         var create1Response = await Client.PostAsJsonAsync($"/api/appConfig/createNewAppVersion/{admin.Id}", new
-         {
-             platform = Platforms.Android.ToString(),
-             minRequiredVersion = "1.0.0",
-             latestVersion = "1.1.0",
-             forceUpdate = false,
-             updateUrl = "https://example.com/android",
-             releaseNotes = "First config"
-         });
-         create1Response.StatusCode.Should().Be(HttpStatusCode.Created);
+        // Create 3 AppConfigs with different timestamps
+        var create1Response = await Client.PostAsJsonAsync($"/api/appConfig/createNewAppVersion/{admin.Id}", new
+        {
+            platform = Platforms.Android.ToString(),
+            minRequiredVersion = "1.0.0",
+            latestVersion = "1.1.0",
+            forceUpdate = false,
+            updateUrl = "https://example.com/android",
+            releaseNotes = "First config"
+        });
+        create1Response.StatusCode.Should().Be(HttpStatusCode.Created);
 
-         // Small delay to ensure different timestamps
-         await Task.Delay(100);
+        // Small delay to ensure different timestamps
+        await Task.Delay(100);
 
-         var create2Response = await Client.PostAsJsonAsync($"/api/appConfig/createNewAppVersion/{admin.Id}", new
-         {
-             platform = Platforms.Ios.ToString(),
-             minRequiredVersion = "2.0.0",
-             latestVersion = "2.1.0",
-             forceUpdate = true,
-             updateUrl = "https://example.com/ios",
-             releaseNotes = "Second config"
-         });
-         create2Response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var create2Response = await Client.PostAsJsonAsync($"/api/appConfig/createNewAppVersion/{admin.Id}", new
+        {
+            platform = Platforms.Ios.ToString(),
+            minRequiredVersion = "2.0.0",
+            latestVersion = "2.1.0",
+            forceUpdate = true,
+            updateUrl = "https://example.com/ios",
+            releaseNotes = "Second config"
+        });
+        create2Response.StatusCode.Should().Be(HttpStatusCode.Created);
 
-         // Small delay to ensure different timestamps
-         await Task.Delay(100);
+        // Small delay to ensure different timestamps
+        await Task.Delay(100);
 
-         var create3Response = await Client.PostAsJsonAsync($"/api/appConfig/createNewAppVersion/{admin.Id}", new
-         {
-             platform = Platforms.Android.ToString(),
-             minRequiredVersion = "3.0.0",
-             latestVersion = "3.1.0",
-             forceUpdate = false,
-             updateUrl = "https://example.com/android2",
-             releaseNotes = "Third config"
-         });
-         create3Response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var create3Response = await Client.PostAsJsonAsync($"/api/appConfig/createNewAppVersion/{admin.Id}", new
+        {
+            platform = Platforms.Android.ToString(),
+            minRequiredVersion = "3.0.0",
+            latestVersion = "3.1.0",
+            forceUpdate = false,
+            updateUrl = "https://example.com/android2",
+            releaseNotes = "Third config"
+        });
+        create3Response.StatusCode.Should().Be(HttpStatusCode.Created);
 
-         // Call paginated endpoint
-         var paginatedResponse = await Client.PostAsJsonAsync("/api/appconfig/paginated", new
-         {
-             page = 1,
-             pageSize = 20
-         });
-         paginatedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        // Call paginated endpoint
+        var paginatedResponse = await Client.PostAsJsonAsync("/api/appconfig/paginated", new
+        {
+            page = 1,
+            pageSize = 20
+        });
+        paginatedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-         using var json = await ReadJsonAsync(paginatedResponse);
-         json.RootElement.TryGetProperty("items", out var items).Should().BeTrue();
-         
-         var itemsArray = items.EnumerateArray().ToList();
-         itemsArray.Count.Should().BeGreaterThanOrEqualTo(3, "at least 3 configs should exist");
+        using var json = await ReadJsonAsync(paginatedResponse);
+        json.RootElement.TryGetProperty("items", out var items).Should().BeTrue();
 
-         // Verify pagination metadata
-         json.RootElement.TryGetProperty("page", out var page).Should().BeTrue();
-         page.GetInt32().Should().Be(1);
+        var itemsArray = items.EnumerateArray().ToList();
+        itemsArray.Count.Should().BeGreaterThanOrEqualTo(3, "at least 3 configs should exist");
 
-         json.RootElement.TryGetProperty("pageSize", out var pageSize).Should().BeTrue();
-         pageSize.GetInt32().Should().Be(20);
+        // Verify pagination metadata
+        json.RootElement.TryGetProperty("page", out var page).Should().BeTrue();
+        page.GetInt32().Should().Be(1);
 
-         json.RootElement.TryGetProperty("totalCount", out var totalCount).Should().BeTrue();
-         totalCount.GetInt32().Should().BeGreaterThanOrEqualTo(3);
+        json.RootElement.TryGetProperty("pageSize", out var pageSize).Should().BeTrue();
+        pageSize.GetInt32().Should().Be(20);
 
-         // Verify items have expected properties (createdAt values should exist and be comparable)
-         var createdAtValues = itemsArray.Select(item =>
-         {
-             item.TryGetProperty("createdAt", out var createdAt).Should().BeTrue();
-             var createdAtString = createdAt.GetString();
-             createdAtString.Should().NotBeNullOrWhiteSpace();
-             return createdAtString;
-         }).ToList();
+        json.RootElement.TryGetProperty("totalCount", out var totalCount).Should().BeTrue();
+        totalCount.GetInt32().Should().BeGreaterThanOrEqualTo(3);
 
-         createdAtValues.Should().HaveCount(itemsArray.Count);
-     }
+        // Verify items have expected properties (createdAt values should exist and be comparable)
+        var createdAtValues = itemsArray.Select(item =>
+        {
+            item.TryGetProperty("createdAt", out var createdAt).Should().BeTrue();
+            var createdAtString = createdAt.GetString();
+            createdAtString.Should().NotBeNullOrWhiteSpace();
+            return createdAtString;
+        }).ToList();
+
+        createdAtValues.Should().HaveCount(itemsArray.Count);
+    }
 
     [Test]
     public async Task GetById_ReturnsExpectedJsonShape()

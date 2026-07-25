@@ -14,7 +14,7 @@ public static class RouteUserAccessGuard
             throw new UnauthorizedAccessException(Messages.Forbidden);
         }
 
-       
+
         if (!Id<User>.TryParse(routeUserId, out var parsedRouteUserId))
         {
             throw new UnauthorizedAccessException(Messages.Forbidden);

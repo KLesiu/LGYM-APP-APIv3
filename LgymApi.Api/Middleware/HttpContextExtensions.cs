@@ -19,7 +19,7 @@ public static class HttpContextExtensions
 
     public static Id<User> GetCurrentUserId(this HttpContext context)
         => context.GetCurrentUser()?.Id ?? Id<User>.Empty;
-    
+
     public static IReadOnlyList<string> GetCulturePreferences(this HttpContext context)
     {
         var cultures = new List<string>();

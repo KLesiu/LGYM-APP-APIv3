@@ -2,7 +2,7 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.AppConfig.Contracts;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.AppConfig;
+using LgymApi.Application.Platform.ReferenceData.AppConfig;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Pagination;
 using LgymApi.Domain.Security;
@@ -40,7 +40,7 @@ public sealed class AppConfigAdminController : ControllerBase
         };
         var userId = HttpContext.GetCurrentUserId();
         var result = await _appConfigService.GetPaginatedAsync(userId, filterInput, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -57,7 +57,7 @@ public sealed class AppConfigAdminController : ControllerBase
             HasNextPage = pagination.HasNextPage,
             HasPreviousPage = pagination.HasPreviousPage
         };
-        
+
         return Ok(response);
     }
 
@@ -69,12 +69,12 @@ public sealed class AppConfigAdminController : ControllerBase
         var configId = Id<AppConfigEntity>.TryParse(id, out var parsedConfigId) ? parsedConfigId : Id<AppConfigEntity>.Empty;
         var userId = HttpContext.GetCurrentUserId();
         var result = await _appConfigService.GetByIdAsync(userId, configId, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(_mapper.Map<AppConfigEntity, AppConfigDetailDto>(result.Value));
     }
 
@@ -94,12 +94,12 @@ public sealed class AppConfigAdminController : ControllerBase
             request.UpdateUrl,
             request.ReleaseNotes);
         var result = await _appConfigService.UpdateAsync(userId, configId, input, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Updated));
     }
 
@@ -111,12 +111,12 @@ public sealed class AppConfigAdminController : ControllerBase
         var configId = Id<AppConfigEntity>.TryParse(id, out var parsedConfigId) ? parsedConfigId : Id<AppConfigEntity>.Empty;
         var userId = HttpContext.GetCurrentUserId();
         var result = await _appConfigService.DeleteAsync(userId, configId, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Deleted));
     }
 }

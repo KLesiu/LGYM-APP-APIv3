@@ -1,4 +1,4 @@
-using LgymApi.Api.Features.Enum;
+using LgymApi.Api.Features.Enum.Contracts;
 using LgymApi.Api.Features.Measurements.Contracts;
 using LgymApi.Application.Features.Measurements.Models;
 using LgymApi.Application.Mapping.Core;
@@ -12,21 +12,21 @@ public sealed class MeasurementProfile : IMappingProfile
 {
     public void Configure(MappingConfiguration configuration)
     {
-        configuration.CreateMap<Measurement, MeasurementResponseDto>((source, _) => new MeasurementResponseDto
+        configuration.CreateMap<Measurement, MeasurementResponseDto>((source, context) => new MeasurementResponseDto
         {
             UserId = source.UserId.ToString(),
-            BodyPart = source.BodyPart.ToLookup(),
-            Unit = ParseUnit(source.Unit).ToLookup(),
+            BodyPart = context!.Map<BodyParts, EnumLookupDto>(source.BodyPart),
+            Unit = context.Map<MeasurementUnits, EnumLookupDto>(ParseUnit(source.Unit)),
             Value = source.Value,
             CreatedAt = source.CreatedAt.UtcDateTime,
             UpdatedAt = source.UpdatedAt.UtcDateTime
         });
 
-        configuration.CreateMap<MeasurementReadModel, MeasurementResponseDto>((source, _) => new MeasurementResponseDto
+        configuration.CreateMap<MeasurementReadModel, MeasurementResponseDto>((source, context) => new MeasurementResponseDto
         {
             UserId = source.UserId.ToString(),
-            BodyPart = source.BodyPart.ToLookup(),
-            Unit = source.Unit.ToLookup(),
+            BodyPart = context!.Map<BodyParts, EnumLookupDto>(source.BodyPart),
+            Unit = context.Map<MeasurementUnits, EnumLookupDto>(source.Unit),
             Value = source.Value,
             CreatedAt = source.CreatedAt.UtcDateTime,
             UpdatedAt = source.UpdatedAt.UtcDateTime
@@ -57,10 +57,10 @@ public sealed class MeasurementProfile : IMappingProfile
             Trends = context!.MapList<MeasurementTrendResult, MeasurementTrendDto>(source)
         });
 
-        configuration.CreateMap<MeasurementTrendResult, MeasurementTrendDto>((source, _) => new MeasurementTrendDto
+        configuration.CreateMap<MeasurementTrendResult, MeasurementTrendDto>((source, context) => new MeasurementTrendDto
         {
-            BodyPart = source.BodyPart.ToLookup(),
-            Unit = source.Unit.ToLookup(),
+            BodyPart = context!.Map<BodyParts, EnumLookupDto>(source.BodyPart),
+            Unit = context.Map<MeasurementUnits, EnumLookupDto>(source.Unit),
             FirstMeasurementValue = source.FirstMeasurementValue,
             FirstMeasurementDate = source.FirstMeasurementDate?.UtcDateTime,
             LastMeasurementValue = source.LastMeasurementValue,
@@ -79,10 +79,10 @@ public sealed class MeasurementProfile : IMappingProfile
             Trends = context!.MapList<MeasurementTrendReadModel, MeasurementTrendDto>(source)
         });
 
-        configuration.CreateMap<MeasurementTrendReadModel, MeasurementTrendDto>((source, _) => new MeasurementTrendDto
+        configuration.CreateMap<MeasurementTrendReadModel, MeasurementTrendDto>((source, context) => new MeasurementTrendDto
         {
-            BodyPart = source.BodyPart.ToLookup(),
-            Unit = source.Unit.ToLookup(),
+            BodyPart = context!.Map<BodyParts, EnumLookupDto>(source.BodyPart),
+            Unit = context.Map<MeasurementUnits, EnumLookupDto>(source.Unit),
             FirstMeasurementValue = source.FirstMeasurementValue,
             FirstMeasurementDate = source.FirstMeasurementDate?.UtcDateTime,
             LastMeasurementValue = source.LastMeasurementValue,

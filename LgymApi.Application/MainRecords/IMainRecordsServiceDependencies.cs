@@ -1,5 +1,5 @@
 using LgymApi.Application.Repositories;
-using LgymApi.Application.Units;
+using LgymApi.Application.Platform.ReferenceData.Units;
 using LgymApi.Domain.Enums;
 
 namespace LgymApi.Application.Features.MainRecords;

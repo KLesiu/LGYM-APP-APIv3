@@ -96,11 +96,11 @@ public sealed class DispatcherContractTests
     [Test]
     public void ICommandDispatcher_GenericConstraint_EnforcesCommandInterface()
     {
-         // This test validates compile-time contract via type system.
-         // If ICommandDispatcher.Enqueue<TCommand> where TCommand : ICommand
-         // is correctly defined, this will compile. Otherwise it won't.
-         var dispatcher = new FakeCommandDispatcher();
-         var command = new TestCommand { Value = 99 };
+        // This test validates compile-time contract via type system.
+        // If ICommandDispatcher.Enqueue<TCommand> where TCommand : ICommand
+        // is correctly defined, this will compile. Otherwise it won't.
+        var dispatcher = new FakeCommandDispatcher();
+        var command = new TestCommand { Value = 99 };
 
         // Act & Assert: compiler enforces ICommand constraint
         dispatcher.EnqueueAsync(command);

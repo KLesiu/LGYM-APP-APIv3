@@ -53,10 +53,10 @@ public sealed class PlanDayExerciseSeeder : IEntitySeeder
                     continue;
                 }
 
-                 var entry = new PlanDayExercise
-                 {
-                     Id = Id<PlanDayExercise>.New(),
-                     PlanDayId = day.Id,
+                var entry = new PlanDayExercise
+                {
+                    Id = Id<PlanDayExercise>.New(),
+                    PlanDayId = day.Id,
                     ExerciseId = exercise.Id,
                     Order = order,
                     Series = 3,

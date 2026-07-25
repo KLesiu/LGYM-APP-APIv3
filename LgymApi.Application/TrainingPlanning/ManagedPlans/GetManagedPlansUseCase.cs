@@ -1,5 +1,6 @@
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.TrainingPlanning.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.TrainingPlanning.Contracts.ManagedPlans;
@@ -26,7 +27,7 @@ internal sealed class GetManagedPlansUseCase : IGetManagedPlansUseCase
         if (query is null || query.TraineeId.IsEmpty)
         {
             return Result<IReadOnlyList<ManagedPlanReadModel>, AppError>.Failure(
-                new InvalidTrainerRelationshipError(Messages.UserIdRequired));
+                new InvalidPlanError(Messages.UserIdRequired));
         }
 
         var plans = await _planRepository.GetByUserIdAsync(query.TraineeId, cancellationToken);

@@ -2,8 +2,9 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Plan.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.TrainingPlanning.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.TrainingPlanning.Plan.CheckIsUserHavePlan;
 using LgymApi.Application.TrainingPlanning.Plan.CopyPlan;
@@ -273,4 +274,3 @@ public sealed class PlanController : ControllerBase
         return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Deleted));
     }
 }
-

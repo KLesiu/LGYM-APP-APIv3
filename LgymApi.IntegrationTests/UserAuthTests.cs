@@ -65,7 +65,7 @@ public sealed class UserAuthTests : IntegrationTestBase
         SetIdempotencyKey("test-register-bob-en");
         var response = await Client.PostAsJsonAsync("/api/register", request);
         ClearIdempotencyKey();
-        
+
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         await ProcessPendingCommandsAsync();

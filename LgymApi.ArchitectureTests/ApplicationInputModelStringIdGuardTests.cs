@@ -220,7 +220,7 @@ public sealed class ApplicationInputModelStringIdGuardTests
     private static bool IsInputModelPath(string path)
     {
         var normalized = path.Replace('\\', '/');
-        
+
         // Must be under LgymApi.Application
         if (!normalized.Contains("/LgymApi.Application/", StringComparison.OrdinalIgnoreCase))
         {

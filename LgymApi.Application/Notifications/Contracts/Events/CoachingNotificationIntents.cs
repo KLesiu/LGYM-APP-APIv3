@@ -1,4 +1,4 @@
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Identity.Contracts.Accounts;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Notifications;

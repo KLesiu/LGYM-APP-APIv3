@@ -252,7 +252,7 @@ public sealed partial class BackgroundActionOrchestratorService
                     currentAttemptNumber + 1,
                     CommandEnvelope.MaxRetryAttempts,
                     envelope.NextAttemptAt);
-                
+
                 // Throw exception to trigger Hangfire AutomaticRetry (60/300/900s delays)
                 // This ensures backoff delays are enforced at the job level
                 throw new InvalidOperationException(

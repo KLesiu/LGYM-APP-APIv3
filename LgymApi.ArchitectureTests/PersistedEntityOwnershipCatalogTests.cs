@@ -7,18 +7,39 @@ namespace LgymApi.ArchitectureTests;
 public sealed class PersistedEntityOwnershipCatalogTests
 {
     [Test]
-    public void Catalog_Should_Match_Reflected_DbSet_Entity_Types()
+    public void Catalog_And_Public_DbSets_Should_Match_The_Exact_Persistence_Identity_Contract()
     {
-        var dbSetEntityTypes = GetDbSetEntityTypes();
-        var catalogEntityTypes = PersistedEntityOwnershipCatalog.Entries
-            .Select(entry => entry.EntityType)
+        var dbSetProperties = GetPublicDbSetProperties();
+        var dbSetEntityTypes = dbSetProperties
+            .Select(property => property.PropertyType.GetGenericArguments()[0])
+            .OrderBy(entityType => entityType.FullName, StringComparer.Ordinal)
+            .ToList();
+        var dbSetIdentities = dbSetProperties
+            .Select(property => new PersistedDbSetIdentity(
+                property.Name,
+                property.PropertyType.GetGenericArguments()[0].FullName!))
+            .OrderBy(identity => identity.PropertyName, StringComparer.Ordinal)
+            .ToList();
+        var expectedDbSetIdentities = PersistenceIdentityContract.DbSets
+            .OrderBy(identity => identity.PropertyName, StringComparer.Ordinal)
+            .ToList();
+        var expectedEntityTypeNames = expectedDbSetIdentities
+            .Select(identity => identity.EntityType)
+            .OrderBy(entityType => entityType, StringComparer.Ordinal)
+            .ToList();
+        var catalogEntityTypeNames = PersistedEntityOwnershipCatalog.Entries
+            .Select(entry => entry.EntityType.FullName)
+            .OrderBy(entityType => entityType, StringComparer.Ordinal)
             .ToList();
 
         Assert.Multiple(() =>
         {
             Assert.That(PersistedEntityOwnershipCatalog.Entries, Has.Count.EqualTo(48));
-            Assert.That(catalogEntityTypes.Distinct().ToList(), Has.Count.EqualTo(catalogEntityTypes.Count));
-            Assert.That(catalogEntityTypes, Is.EquivalentTo(dbSetEntityTypes));
+            Assert.That(PersistenceIdentityContract.DbSets, Has.Count.EqualTo(48));
+            Assert.That(expectedDbSetIdentities.Select(identity => identity.PropertyName), Is.Unique);
+            Assert.That(expectedEntityTypeNames, Is.Unique);
+            Assert.That(catalogEntityTypeNames, Is.EqualTo(expectedEntityTypeNames));
+            Assert.That(dbSetIdentities, Is.EqualTo(expectedDbSetIdentities));
             Assert.That(PersistedEntityOwnershipCatalog.CanonicalOwners, Has.Count.EqualTo(8));
             Assert.That(PersistedEntityOwnershipCatalog.CanonicalOwners.Distinct().ToList(), Has.Count.EqualTo(8));
             Assert.That(
@@ -80,7 +101,7 @@ public sealed class PersistedEntityOwnershipCatalogTests
         return PersistedEntityOwnershipCatalog.Entries.Count(entry => entry.Owner == owner);
     }
 
-    private static IReadOnlyList<Type> GetDbSetEntityTypes()
+    private static IReadOnlyList<System.Reflection.PropertyInfo> GetPublicDbSetProperties()
     {
         return typeof(AppDbContext)
             .GetProperties(System.Reflection.BindingFlags.Instance |
@@ -88,6 +109,13 @@ public sealed class PersistedEntityOwnershipCatalogTests
                            System.Reflection.BindingFlags.DeclaredOnly)
             .Where(property => property.PropertyType.IsGenericType &&
                                property.PropertyType.GetGenericTypeDefinition() == typeof(DbSet<>))
+            .OrderBy(property => property.Name, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private static IReadOnlyList<Type> GetDbSetEntityTypes()
+    {
+        return GetPublicDbSetProperties()
             .Select(property => property.PropertyType.GetGenericArguments()[0])
             .OrderBy(entityType => entityType.FullName, StringComparer.Ordinal)
             .ToList();

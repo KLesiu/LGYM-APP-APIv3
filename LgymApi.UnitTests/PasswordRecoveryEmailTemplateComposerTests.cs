@@ -26,18 +26,18 @@ public sealed class PasswordRecoveryEmailTemplateComposerTests
             CultureName = "en-US"
         };
 
-         var message = composer.ComposePasswordRecovery(payload);
+        var message = composer.ComposePasswordRecovery(payload);
 
-         message.To.Should().Be("alex@example.com");
-         message.Subject.Should().Be("Reset your LGYM password");
-         message.Body.Should().Contain("Hi Alex,");
-         message.Body.Should().Contain("Click the link below to reset your password:");
-         message.Body.Should().Contain("ABC123DEF456");
-         message.Body.Should().Contain("This link will expire in 30 minutes.");
-         message.Body.Should().NotContain("{{UserName}}");
-         message.Body.Should().NotContain("{{ResetToken}}");
-         message.Body.Should().NotContain("{{ResetUrl}}");
-         message.Body.Should().NotContain("{{ExpiryMinutes}}");
+        message.To.Should().Be("alex@example.com");
+        message.Subject.Should().Be("Reset your LGYM password");
+        message.Body.Should().Contain("Hi Alex,");
+        message.Body.Should().Contain("Click the link below to reset your password:");
+        message.Body.Should().Contain("ABC123DEF456");
+        message.Body.Should().Contain("This link will expire in 30 minutes.");
+        message.Body.Should().NotContain("{{UserName}}");
+        message.Body.Should().NotContain("{{ResetToken}}");
+        message.Body.Should().NotContain("{{ResetUrl}}");
+        message.Body.Should().NotContain("{{ExpiryMinutes}}");
     }
 
     [Test]
@@ -54,18 +54,18 @@ public sealed class PasswordRecoveryEmailTemplateComposerTests
             CultureName = "pl-PL"
         };
 
-         var message = composer.ComposePasswordRecovery(payload);
+        var message = composer.ComposePasswordRecovery(payload);
 
-         message.To.Should().Be("piotr@example.pl");
-         message.Subject.Should().Be("Zresetuj hasło do konta LGYM");
-         message.Body.Should().Contain("Cześć Piotr,");
-         message.Body.Should().Contain("Kliknij poniższy link, aby zresetować hasło:");
-         message.Body.Should().Contain("XYZ789GHI012");
-         message.Body.Should().Contain("Ten link wygaśnie za 30 minut.");
-         message.Body.Should().NotContain("{{UserName}}");
-         message.Body.Should().NotContain("{{ResetToken}}");
-         message.Body.Should().NotContain("{{ResetUrl}}");
-         message.Body.Should().NotContain("{{ExpiryMinutes}}");
+        message.To.Should().Be("piotr@example.pl");
+        message.Subject.Should().Be("Zresetuj hasło do konta LGYM");
+        message.Body.Should().Contain("Cześć Piotr,");
+        message.Body.Should().Contain("Kliknij poniższy link, aby zresetować hasło:");
+        message.Body.Should().Contain("XYZ789GHI012");
+        message.Body.Should().Contain("Ten link wygaśnie za 30 minut.");
+        message.Body.Should().NotContain("{{UserName}}");
+        message.Body.Should().NotContain("{{ResetToken}}");
+        message.Body.Should().NotContain("{{ResetUrl}}");
+        message.Body.Should().NotContain("{{ExpiryMinutes}}");
     }
 
     [Test]
@@ -83,33 +83,33 @@ public sealed class PasswordRecoveryEmailTemplateComposerTests
             }
             """;
 
-         var message = composer.Compose(payloadJson);
+        var message = composer.Compose(payloadJson);
 
-         message.To.Should().Be("test@example.com");
-         message.Subject.Should().Be("Reset your LGYM password");
-         message.Body.Should().Contain("Hi TestUser,");
-         message.Body.Should().Contain("Click the link below to reset your password:");
-         message.Body.Should().Contain("TOKEN123456");
+        message.To.Should().Be("test@example.com");
+        message.Subject.Should().Be("Reset your LGYM password");
+        message.Body.Should().Contain("Hi TestUser,");
+        message.Body.Should().Contain("Click the link below to reset your password:");
+        message.Body.Should().Contain("TOKEN123456");
     }
 
     [Test]
     public void Compose_WithInvalidJson_ThrowsInvalidOperationException()
     {
         var composer = CreateComposer();
-         var invalidJson = "{ invalid json ";
+        var invalidJson = "{ invalid json ";
 
-         var ex = FluentActions.Invoking(() => composer.Compose(invalidJson)).Should().Throw<InvalidOperationException>().Which;
-         ex.Message.Should().Contain("Failed to deserialize password recovery email payload");
+        var ex = FluentActions.Invoking(() => composer.Compose(invalidJson)).Should().Throw<InvalidOperationException>().Which;
+        ex.Message.Should().Contain("Failed to deserialize password recovery email payload");
     }
 
     [Test]
     public void Compose_WithNullPayload_ThrowsInvalidOperationException()
     {
         var composer = CreateComposer();
-         var nullPayloadJson = "null";
+        var nullPayloadJson = "null";
 
-         var ex = FluentActions.Invoking(() => composer.Compose(nullPayloadJson)).Should().Throw<InvalidOperationException>().Which;
-         ex.Message.Should().Contain("Failed to deserialize password recovery email payload");
+        var ex = FluentActions.Invoking(() => composer.Compose(nullPayloadJson)).Should().Throw<InvalidOperationException>().Which;
+        ex.Message.Should().Contain("Failed to deserialize password recovery email payload");
     }
 
     [Test]
@@ -126,10 +126,10 @@ public sealed class PasswordRecoveryEmailTemplateComposerTests
             CultureName = "en-US"
         };
 
-         var message = composer.ComposePasswordRecovery(payload);
+        var message = composer.ComposePasswordRecovery(payload);
 
-         message.Body.Should().Contain("O'Connor");
-         message.Body.Should().NotBeEmpty();
+        message.Body.Should().Contain("O'Connor");
+        message.Body.Should().NotBeEmpty();
     }
 
     [Test]
@@ -146,19 +146,19 @@ public sealed class PasswordRecoveryEmailTemplateComposerTests
             CultureName = "fr-FR" // French culture, but only en/pl templates exist
         };
 
-         // Should fall back to en-US default culture based on EmailOptions.DefaultCulture
-         var message = composer.ComposePasswordRecovery(payload);
+        // Should fall back to en-US default culture based on EmailOptions.DefaultCulture
+        var message = composer.ComposePasswordRecovery(payload);
 
-         (message.Subject.Contains("Reset your LGYM password") || message.Subject.Contains("Zresetuj hasło")).Should().BeTrue();
-         message.Body.Should().NotBeEmpty();
+        (message.Subject.Contains("Reset your LGYM password") || message.Subject.Contains("Zresetuj hasło")).Should().BeTrue();
+        message.Body.Should().NotBeEmpty();
     }
 
     [Test]
     public void NotificationType_ReturnsPasswordRecoveryType()
     {
-         var composer = CreateComposer();
-         
-         composer.NotificationType.Value.Should().Be("user.password.recovery");
+        var composer = CreateComposer();
+
+        composer.NotificationType.Value.Should().Be("user.password.recovery");
     }
 
     [Test]
@@ -175,11 +175,11 @@ public sealed class PasswordRecoveryEmailTemplateComposerTests
             CultureName = "en-US"
         };
 
-         var message = composer.ComposePasswordRecovery(payload);
+        var message = composer.ComposePasswordRecovery(payload);
 
-         message.To.Should().Be("test@example.com");
-         message.Subject.Should().NotBeEmpty();
-         message.Body.Should().NotBeEmpty();
+        message.To.Should().Be("test@example.com");
+        message.Subject.Should().NotBeEmpty();
+        message.Body.Should().NotBeEmpty();
     }
 
     [Test]

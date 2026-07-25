@@ -110,17 +110,17 @@ public class CommandEnvelopePersistenceTests
         _context.ActionExecutionLogs.AddRange(log1, log2);
         await _context.SaveChangesAsync();
 
-         // Assert
-         var logs = await _context.ActionExecutionLogs
-             .Where(l => l.CommandEnvelopeId == envelopeId)
-             .OrderBy(l => l.AttemptNumber)
-             .ToListAsync();
+        // Assert
+        var logs = await _context.ActionExecutionLogs
+            .Where(l => l.CommandEnvelopeId == envelopeId)
+            .OrderBy(l => l.AttemptNumber)
+            .ToListAsync();
 
-         logs.Should().HaveCount(2);
-         logs[0].AttemptNumber.Should().Be(1);
-         logs[0].Status.Should().Be(ActionExecutionStatus.Failed);
-         logs[1].AttemptNumber.Should().Be(2);
-         logs[1].Status.Should().Be(ActionExecutionStatus.Processing);
+        logs.Should().HaveCount(2);
+        logs[0].AttemptNumber.Should().Be(1);
+        logs[0].Status.Should().Be(ActionExecutionStatus.Failed);
+        logs[1].AttemptNumber.Should().Be(2);
+        logs[1].Status.Should().Be(ActionExecutionStatus.Processing);
     }
 
     [Test]
@@ -141,17 +141,17 @@ public class CommandEnvelopePersistenceTests
         _context.CommandEnvelopes.Add(envelope);
         await _context.SaveChangesAsync();
 
-         // Act - transition from Pending to Processing
-         var retrieved = await _context.CommandEnvelopes.FindAsync(envelope.Id);
-         retrieved.Should().NotBeNull();
-         retrieved!.Status = ActionExecutionStatus.Processing;
-         retrieved.LastAttemptAt = DateTimeOffset.UtcNow;
-         await _context.SaveChangesAsync();
+        // Act - transition from Pending to Processing
+        var retrieved = await _context.CommandEnvelopes.FindAsync(envelope.Id);
+        retrieved.Should().NotBeNull();
+        retrieved!.Status = ActionExecutionStatus.Processing;
+        retrieved.LastAttemptAt = DateTimeOffset.UtcNow;
+        await _context.SaveChangesAsync();
 
-         // Assert - transition persisted
-         var final = await _context.CommandEnvelopes.FindAsync(envelope.Id);
-         final!.Status.Should().Be(ActionExecutionStatus.Processing);
-         final.LastAttemptAt.Should().NotBeNull();
+        // Assert - transition persisted
+        var final = await _context.CommandEnvelopes.FindAsync(envelope.Id);
+        final!.Status.Should().Be(ActionExecutionStatus.Processing);
+        final.LastAttemptAt.Should().NotBeNull();
     }
 
     [Test]
@@ -172,17 +172,17 @@ public class CommandEnvelopePersistenceTests
         _context.CommandEnvelopes.Add(envelope);
         await _context.SaveChangesAsync();
 
-         // Act - mark as completed
-         var retrieved = await _context.CommandEnvelopes.FindAsync(envelope.Id);
-         retrieved.Should().NotBeNull();
-         retrieved!.Status = ActionExecutionStatus.Completed;
-         retrieved.CompletedAt = DateTimeOffset.UtcNow;
-         await _context.SaveChangesAsync();
+        // Act - mark as completed
+        var retrieved = await _context.CommandEnvelopes.FindAsync(envelope.Id);
+        retrieved.Should().NotBeNull();
+        retrieved!.Status = ActionExecutionStatus.Completed;
+        retrieved.CompletedAt = DateTimeOffset.UtcNow;
+        await _context.SaveChangesAsync();
 
-         // Assert
-         var final = await _context.CommandEnvelopes.FindAsync(envelope.Id);
-         final!.Status.Should().Be(ActionExecutionStatus.Completed);
-         final.CompletedAt.Should().NotBeNull();
+        // Assert
+        var final = await _context.CommandEnvelopes.FindAsync(envelope.Id);
+        final!.Status.Should().Be(ActionExecutionStatus.Completed);
+        final.CompletedAt.Should().NotBeNull();
     }
 
     [Test]
@@ -219,10 +219,10 @@ public class CommandEnvelopePersistenceTests
         _context.ActionExecutionLogs.Add(log);
         await _context.SaveChangesAsync();
 
-         // Assert
-         var retrieved = await _context.ActionExecutionLogs.FirstAsync();
-         retrieved.ErrorMessage.Should().Be("Connection timeout");
-         retrieved.ErrorDetails.Should().Contain("TimeoutException");
+        // Assert
+        var retrieved = await _context.ActionExecutionLogs.FirstAsync();
+        retrieved.ErrorMessage.Should().Be("Connection timeout");
+        retrieved.ErrorDetails.Should().Contain("TimeoutException");
     }
 
     [Test]
@@ -258,13 +258,13 @@ public class CommandEnvelopePersistenceTests
         _context.CommandEnvelopes.AddRange(envelopes);
         await _context.SaveChangesAsync();
 
-         // Assert - all related envelopes retrievable by correlation
-         var related = await _context.CommandEnvelopes
-             .Where(e => e.CorrelationId == correlationId)
-             .ToListAsync();
+        // Assert - all related envelopes retrievable by correlation
+        var related = await _context.CommandEnvelopes
+            .Where(e => e.CorrelationId == correlationId)
+            .ToListAsync();
 
-         related.Should().HaveCount(2);
-         related.Select(e => e.CommandTypeFullName).Distinct().ToList().Should().HaveCount(2);
+        related.Should().HaveCount(2);
+        related.Select(e => e.CommandTypeFullName).Distinct().ToList().Should().HaveCount(2);
     }
 
     [Test]
@@ -314,13 +314,13 @@ public class CommandEnvelopePersistenceTests
 
         // Act - find work ready for retry (status Failed AND NextAttemptAt <= now)
         var readyForWork = await _context.CommandEnvelopes
-            .Where(e => e.Status == ActionExecutionStatus.Failed && 
-                        e.NextAttemptAt.HasValue && 
+            .Where(e => e.Status == ActionExecutionStatus.Failed &&
+                        e.NextAttemptAt.HasValue &&
                         e.NextAttemptAt <= now.AddSeconds(10))
             .ToListAsync();
 
-         // Assert
-         readyForWork.Should().HaveCount(1);
-         readyForWork[0].CommandTypeFullName.Should().Be("Cmd1, Asm");
+        // Assert
+        readyForWork.Should().HaveCount(1);
+        readyForWork[0].CommandTypeFullName.Should().Be("Cmd1, Asm");
     }
 }

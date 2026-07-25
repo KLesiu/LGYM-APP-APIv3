@@ -1,3 +1,4 @@
+using LgymApi.Infrastructure.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -13,6 +14,8 @@ public static partial class ServiceCollectionExtensions
         bool hostBackgroundServer = false)
     {
         var isDevelopmentOrTesting = enableSensitiveLogging || isTesting;
+        EmailOptionsFactory.Validate(
+            EmailOptionsFactory.Create(configuration, AppDefaultsOptionsFactory.Resolve(configuration)));
 
         services.AddPlatformServices(configuration, enableSensitiveLogging, isTesting, hostBackgroundServer);
         services.AddIdentityInfrastructure();

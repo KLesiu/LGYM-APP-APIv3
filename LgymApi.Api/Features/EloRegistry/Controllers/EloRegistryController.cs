@@ -32,7 +32,7 @@ public sealed class EloRegistryController : ControllerBase
     {
         var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
         var result = await _eloRegistryService.GetChartAsync(userId, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();

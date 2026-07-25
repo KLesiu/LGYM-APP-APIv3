@@ -1,5 +1,5 @@
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Training.Models;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;

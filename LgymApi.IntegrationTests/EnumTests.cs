@@ -24,27 +24,55 @@ public sealed class EnumTests : IntegrationTestBase
 
         var body = await response.Content.ReadFromJsonAsync<EnumLookupResponse>();
         body.Should().NotBeNull();
-        body!.Values.Select(v => v.Name).Should().NotContain("Unknown");
+        body!.Values.Select(value => value.Id).Should().Equal(
+            System.Enum.GetNames<BodyParts>().Where(name => name != "Unknown"));
+        body.Values.Should().NotContain(value => value.Id == "Unknown" || value.Name == "Unknown");
     }
 
-    [Test]
-    public async Task GetEnumLookup_Returns_Enum_String_Id_And_Translated_Labels()
+    [TestCase("en", "enumuser3en", "enum3-en@example.com", "Pull-up weighted")]
+    [TestCase("pl", "enumuser3pl", "enum3-pl@example.com", "Podciąganie: im mniejszy ciężar, tym lepiej")]
+    public async Task GetEnumLookup_Returns_Exact_PullupWeighted_Wire_Values_For_Culture(
+        string culture,
+        string userName,
+        string email,
+        string expectedLabel)
     {
         var (userId, _) = await RegisterUserViaEndpointAsync(
-            name: "enumuser3",
-            email: "enum3@example.com",
+            name: userName,
+            email: email,
             password: "password123");
         SetAuthorizationHeader(userId);
 
-        var response = await Client.GetAsync("/api/enums/ExerciseEloFormula");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/enums/ExerciseEloFormula");
+        request.Headers.AcceptLanguage.ParseAdd(culture);
+        var response = await Client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var body = await response.Content.ReadFromJsonAsync<EnumLookupResponse>();
         body.Should().NotBeNull();
-        var pullupWeighted = body!.Values.Single(v => v.Id == ExerciseEloFormula.PullupWeighted.ToString());
-        pullupWeighted.DisplayName.Should().NotBeNullOrWhiteSpace();
-        pullupWeighted.DisplayName.Should().NotBe(ExerciseEloFormula.PullupWeighted.ToString());
+        var pullupWeighted = body!.Values.Single(value => value.Id == "PullupWeighted");
+        pullupWeighted.Id.Should().Be("PullupWeighted");
+        pullupWeighted.Name.Should().Be(expectedLabel);
+        pullupWeighted.DisplayName.Should().Be(expectedLabel);
+    }
+
+    [Test]
+    public async Task GetEnumLookup_Matches_Enum_Type_Case_Insensitively()
+    {
+        var (userId, _) = await RegisterUserViaEndpointAsync(
+            name: "enumusercase",
+            email: "enum-case@example.com",
+            password: "password123");
+        SetAuthorizationHeader(userId);
+
+        var response = await Client.GetAsync("/api/enums/eXeRcIsEeLoFoRmUlA");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<EnumLookupResponse>();
+        body.Should().NotBeNull();
+        body!.EnumType.Should().Be(nameof(ExerciseEloFormula));
+        body.Values.Select(value => value.Id).Should().Contain("PullupWeighted");
     }
 
     [Test]
@@ -62,7 +90,8 @@ public sealed class EnumTests : IntegrationTestBase
 
         var body = await response.Content.ReadFromJsonAsync<List<EnumLookupResponse>>();
         body.Should().NotBeNull();
-        body!.SelectMany(x => x.Values).Select(v => v.Name).Should().NotContain("Unknown");
+        body!.SelectMany(lookup => lookup.Values)
+            .Should().NotContain(value => value.Id == "Unknown" || value.Name == "Unknown");
     }
 
     private sealed class EnumLookupResponse

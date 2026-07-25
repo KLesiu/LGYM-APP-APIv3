@@ -22,6 +22,21 @@ public sealed class ModulePublicSurfaceGuardTests
         ArchitectureTestHelpers.AssertNoUnexpectedModuleBoundaryViolations(GuardId, observedViolations);
     }
 
+    [Test]
+    public void Public_Delegate_In_BuildingBlocks_Result_Fixture_Is_Rejected()
+    {
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var path = Path.Combine(repoRoot, "LgymApi.Application", "BuildingBlocks", "Results", "Result.cs");
+        var tree = CSharpSyntaxTree.ParseText(
+            "namespace LgymApi.Application.BuildingBlocks.Results; public delegate void ResultCallback();",
+            path: path);
+        var compilation = ArchitectureTestHelpers.CreateCompilation([tree]);
+
+        var violations = CollectViolationsForTree(repoRoot, compilation, tree).ToList();
+
+        Assert.That(violations, Is.Not.Empty);
+    }
+
     private static IEnumerable<ModuleBoundaryObservedViolation> CollectViolationsForTree(
         string repoRoot,
         Compilation compilation,
@@ -37,14 +52,19 @@ public sealed class ModulePublicSurfaceGuardTests
         var root = tree.GetCompilationUnitRoot();
         var relativePath = ArchitectureTestHelpers.NormalizePath(Path.GetRelativePath(repoRoot, tree.FilePath));
 
-        foreach (var declaration in root.Members.OfType<BaseTypeDeclarationSyntax>())
+        var declarations = root.Members.OfType<BaseTypeDeclarationSyntax>()
+            .Cast<MemberDeclarationSyntax>()
+            .Concat(root.DescendantNodes().OfType<DelegateDeclarationSyntax>());
+        foreach (var declaration in declarations)
         {
             if (semanticModel.GetDeclaredSymbol(declaration) is not INamedTypeSymbol declaredSymbol)
             {
                 continue;
             }
 
-            if (declaredSymbol.DeclaredAccessibility != Accessibility.Public || IsAllowedPublicSurface(relativePath, declaration, declaredSymbol))
+            if (declaredSymbol.DeclaredAccessibility != Accessibility.Public
+                || (declaration is not DelegateDeclarationSyntax
+                    && IsAllowedPublicSurface(relativePath, (BaseTypeDeclarationSyntax)declaration, declaredSymbol)))
             {
                 continue;
             }

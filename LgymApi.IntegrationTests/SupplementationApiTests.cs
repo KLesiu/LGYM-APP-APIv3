@@ -200,9 +200,9 @@ public sealed class SupplementationApiTests : IntegrationTestBase
     [Test]
     public async Task Compliance_WithTooLargeDateRange_ReturnsBadRequest()
     {
-         var trainer = await SeedTrainerAsync("trainer-supp-range", "trainer-supp-range@example.com");
-         var trainee = await SeedUserAsync(name: "trainee-supp-range", email: "trainee-supp-range@example.com", password: "password123");
-         await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
+        var trainer = await SeedTrainerAsync("trainer-supp-range", "trainer-supp-range@example.com");
+        var trainee = await SeedUserAsync(name: "trainee-supp-range", email: "trainee-supp-range@example.com", password: "password123");
+        await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
 
         SetAuthorizationHeader(trainer.Id);
         var response = await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/supplements/compliance?fromDate=2025-01-01&toDate=2026-12-31");
@@ -212,9 +212,9 @@ public sealed class SupplementationApiTests : IntegrationTestBase
     [Test]
     public async Task Compliance_WithoutRequiredQueryDates_ReturnsBadRequest()
     {
-         var trainer = await SeedTrainerAsync("trainer-supp-missing-dates", "trainer-supp-missing-dates@example.com");
-         var trainee = await SeedUserAsync(name: "trainee-supp-missing-dates", email: "trainee-supp-missing-dates@example.com", password: "password123");
-         await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
+        var trainer = await SeedTrainerAsync("trainer-supp-missing-dates", "trainer-supp-missing-dates@example.com");
+        var trainee = await SeedUserAsync(name: "trainee-supp-missing-dates", email: "trainee-supp-missing-dates@example.com", password: "password123");
+        await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
 
         SetAuthorizationHeader(trainer.Id);
         var response = await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/supplements/compliance");
@@ -225,9 +225,9 @@ public sealed class SupplementationApiTests : IntegrationTestBase
     [Test]
     public async Task CreatePlan_WithNullItems_ReturnsBadRequest()
     {
-         var trainer = await SeedTrainerAsync("trainer-supp-null-items", "trainer-supp-null-items@example.com");
-         var trainee = await SeedUserAsync(name: "trainee-supp-null-items", email: "trainee-supp-null-items@example.com", password: "password123");
-         await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
+        var trainer = await SeedTrainerAsync("trainer-supp-null-items", "trainer-supp-null-items@example.com");
+        var trainee = await SeedUserAsync(name: "trainee-supp-null-items", email: "trainee-supp-null-items@example.com", password: "password123");
+        await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
 
         SetAuthorizationHeader(trainer.Id);
         var response = await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans", new
@@ -783,17 +783,17 @@ public sealed class SupplementationApiTests : IntegrationTestBase
         var trainer = await SeedUserAsync(name: name, email: email, password: "password123");
 
         using var scope = Factory.Services.CreateScope();
-         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-         var alreadyLinked = await db.UserRoles.AnyAsync(ur => ur.UserId == trainer.Id && ur.RoleId == RoleSeedDataConfiguration.TrainerRoleSeedId);
-         if (!alreadyLinked)
-         {
-              db.UserRoles.Add(new UserRole
-              {
-                  UserId = trainer.Id,
-                  RoleId = RoleSeedDataConfiguration.TrainerRoleSeedId
-              });
-             await db.SaveChangesAsync();
-         }
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var alreadyLinked = await db.UserRoles.AnyAsync(ur => ur.UserId == trainer.Id && ur.RoleId == RoleSeedDataConfiguration.TrainerRoleSeedId);
+        if (!alreadyLinked)
+        {
+            db.UserRoles.Add(new UserRole
+            {
+                UserId = trainer.Id,
+                RoleId = RoleSeedDataConfiguration.TrainerRoleSeedId
+            });
+            await db.SaveChangesAsync();
+        }
 
         return trainer;
     }
@@ -802,12 +802,12 @@ public sealed class SupplementationApiTests : IntegrationTestBase
     {
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-         db.TrainerTraineeLinks.Add(new TrainerTraineeLink
-         {
-             Id = Id<TrainerTraineeLink>.New(),
-             TrainerId = trainerId,
-             TraineeId = traineeId
-         });
+        db.TrainerTraineeLinks.Add(new TrainerTraineeLink
+        {
+            Id = Id<TrainerTraineeLink>.New(),
+            TrainerId = trainerId,
+            TraineeId = traineeId
+        });
         await db.SaveChangesAsync();
     }
 

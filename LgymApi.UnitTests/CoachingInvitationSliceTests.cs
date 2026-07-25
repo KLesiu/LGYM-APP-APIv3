@@ -8,7 +8,7 @@ using LgymApi.Application.Coaching.Invitations.ListPaginated;
 using LgymApi.Application.Coaching.Invitations.Models;
 using LgymApi.Application.Coaching.Invitations.PublicStatus;
 using LgymApi.Application.Coaching.Persistence;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Identity.Contracts.Access;
 using LgymApi.Application.Identity.Contracts.Accounts;
 using LgymApi.Application.Mapping;
@@ -106,7 +106,7 @@ public sealed class CoachingInvitationSliceTests
         facts.GetInvitationFactsAsync(trainerId, Arg.Any<CancellationToken>()).Returns([active, missing, emailOnly]);
         accounts.GetByIdsAsync(Arg.Any<IReadOnlyList<Id<User>>>(), Arg.Any<CancellationToken>()).Returns([Account(activeTraineeId)]);
         pagination.ExecuteAsync<InvitationReadModel>(Arg.Any<Func<IQueryable<InvitationReadModel>>>(), Arg.Any<FilterInput>(), Arg.Any<CancellationToken>())
-            .Returns(call => Result<Pagination<InvitationReadModel>, LgymApi.Application.Common.Errors.AppError>.Success(new Pagination<InvitationReadModel>
+            .Returns(call => Result<Pagination<InvitationReadModel>, LgymApi.Application.BuildingBlocks.Errors.AppError>.Success(new Pagination<InvitationReadModel>
             {
                 Items = call.Arg<Func<IQueryable<InvitationReadModel>>>()().ToList(),
                 Page = 1,

@@ -23,7 +23,7 @@ internal static class TypedIdConventionApplier
         // T5: Register typed-ID value converters for all entity types.
         // These converters enable Id<TEntity> and Id<TEntity>? to map to/from GUID columns
         // in the database without changing schema (GUID columns remain GUID-backed).
-        
+
         // Discover all entity types that inherit from EntityBase<T>
         // Load types from Domain assembly where entities are defined
         var domainAssembly = typeof(EntityBase<>).Assembly;
@@ -36,7 +36,7 @@ internal static class TypedIdConventionApplier
                 while (baseType != null)
                 {
                     // Check if this is EntityBase<T> by looking at generic type definition
-                    if (baseType.IsGenericType && 
+                    if (baseType.IsGenericType &&
                         baseType.GetGenericTypeDefinition().Name == "EntityBase`1")
                     {
                         return true;
@@ -52,13 +52,13 @@ internal static class TypedIdConventionApplier
         {
             var idType = typeof(Id<>).MakeGenericType(entityType);
             var nullableIdType = typeof(Nullable<>).MakeGenericType(idType);
-            
+
             var converterType = typeof(TypedIdValueConverter<>).MakeGenericType(entityType);
             var nullableConverterType = typeof(NullableTypedIdValueConverter<>).MakeGenericType(entityType);
 
             // Register conversion for Id<TEntity> properties
             configurationBuilder.Properties(idType).HaveConversion(converterType);
-            
+
             // Register conversion for nullable Id<TEntity>? properties
             configurationBuilder.Properties(nullableIdType).HaveConversion(nullableConverterType);
         }
@@ -84,7 +84,7 @@ internal static class TypedIdConventionApplier
                 var baseType = t.BaseType;
                 while (baseType != null)
                 {
-                    if (baseType.IsGenericType && 
+                    if (baseType.IsGenericType &&
                         baseType.GetGenericTypeDefinition().Name == "EntityBase`1")
                     {
                         return true;
@@ -99,7 +99,7 @@ internal static class TypedIdConventionApplier
         {
             var converterType = typeof(TypedIdValueConverter<>).MakeGenericType(entityType);
             var nullableConverterType = typeof(NullableTypedIdValueConverter<>).MakeGenericType(entityType);
-            
+
             var converterInstance = (dynamic)Activator.CreateInstance(converterType)!;
             var nullableConverterInstance = (dynamic)Activator.CreateInstance(nullableConverterType)!;
 
@@ -108,42 +108,42 @@ internal static class TypedIdConventionApplier
                 .GetMethods(BindingFlags.Public | BindingFlags.Instance)
                 .FirstOrDefault(m => m.Name == "Entity" && m.IsGenericMethodDefinition && m.GetParameters().Length == 0)
                 ?.MakeGenericMethod(entityType);
-            
+
             if (entityMethod == null)
                 continue;
 
             dynamic entityBuilder = entityMethod.Invoke(modelBuilder, null)!;
-            
+
             // Configure Id property
             Type entityBuilderType = entityBuilder.GetType();
             MethodInfo[] allMethods = entityBuilderType.GetMethods(BindingFlags.Public | BindingFlags.Instance);
-            MethodInfo? propertyMethodInfo = allMethods.FirstOrDefault(m => 
-                m.Name == "Property" && 
-                m.IsGenericMethodDefinition && 
+            MethodInfo? propertyMethodInfo = allMethods.FirstOrDefault(m =>
+                m.Name == "Property" &&
+                m.IsGenericMethodDefinition &&
                 m.GetParameters().Length == 1 &&
                 m.GetParameters()[0].ParameterType.Name.StartsWith("Expression`1"));
-            
+
             var propertyMethod = propertyMethodInfo
                 ?.MakeGenericMethod(typeof(Id<>).MakeGenericType(entityType));
-            
+
             if (propertyMethod == null)
                 continue;
 
             var idParam = System.Linq.Expressions.Expression.Parameter(entityType, "e");
             var idProp = System.Linq.Expressions.Expression.Property(idParam, "Id");
             var idLambda = System.Linq.Expressions.Expression.Lambda(idProp, idParam);
-             
-             dynamic propBuilder = propertyMethod.Invoke(entityBuilder, new object[] { idLambda })!;
-             
-             Type propBuilderType = propBuilder.GetType();
-             MethodInfo? hasConversionMethod = propBuilderType
-                 .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                 .FirstOrDefault(m => m.Name == "HasConversion" && !m.IsGenericMethodDefinition && m.GetParameters().Length == 1 && m.GetParameters()[0].ParameterType == typeof(Type));
-             
-             if (hasConversionMethod != null)
-             {
-                 hasConversionMethod.Invoke(propBuilder, new object[] { converterInstance.GetType() });
-             }
+
+            dynamic propBuilder = propertyMethod.Invoke(entityBuilder, new object[] { idLambda })!;
+
+            Type propBuilderType = propBuilder.GetType();
+            MethodInfo? hasConversionMethod = propBuilderType
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .FirstOrDefault(m => m.Name == "HasConversion" && !m.IsGenericMethodDefinition && m.GetParameters().Length == 1 && m.GetParameters()[0].ParameterType == typeof(Type));
+
+            if (hasConversionMethod != null)
+            {
+                hasConversionMethod.Invoke(propBuilder, new object[] { converterInstance.GetType() });
+            }
         }
     }
 }

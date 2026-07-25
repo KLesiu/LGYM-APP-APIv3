@@ -2,7 +2,6 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Enum.Contracts;
 using LgymApi.Api.Features.Exercise.Contracts;
-using LgymApi.Api.Features.Enum;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.Features.Exercise.Models;
 using LgymApi.Application.Mapping.Core;
@@ -66,8 +65,8 @@ public sealed class ExerciseProfile : IMappingProfile
             {
                 Id = source.Id.ToString(),
                 Name = name,
-                BodyPart = source.BodyPart.ToLookup(),
-                EloFormula = context!.Map<EnumLookupDto, LookupItemVm>(source.EloFormula.ToLookup()),
+                BodyPart = context!.Map<BodyParts, EnumLookupDto>(source.BodyPart),
+                EloFormula = context.Map<EnumLookupDto, LookupItemVm>(context.Map<ExerciseEloFormula, EnumLookupDto>(source.EloFormula)),
                 Description = source.Description,
                 Image = source.Image,
                 UserId = source.UserId?.ToString()

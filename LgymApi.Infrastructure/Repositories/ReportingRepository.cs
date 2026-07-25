@@ -174,8 +174,8 @@ public sealed class ReportingRepository : IReportingRepository
     public async Task SavePhotoAsync(Photo photo, CancellationToken cancellationToken = default)
     {
         var existingPhoto = await _dbContext.Photos
-            .Where(p => p.ReportRequestId == photo.ReportRequestId 
-                     && p.ViewType == photo.ViewType 
+            .Where(p => p.ReportRequestId == photo.ReportRequestId
+                     && p.ViewType == photo.ViewType
                      && !p.IsDeleted)
             .FirstOrDefaultAsync(cancellationToken);
 

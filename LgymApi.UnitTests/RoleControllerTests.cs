@@ -1,8 +1,8 @@
 using System.Reflection;
 using FluentAssertions;
 using LgymApi.Api;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Pagination;
 using LgymApi.Domain.Entities;
 using LgymApi.Api.Features.Role.Contracts;
@@ -22,38 +22,38 @@ public sealed class RoleControllerTests
 {
     private static readonly List<string> ManageUserRolesClaim = ["users.roles.manage"];
 
-     [Test]
-      public async Task CreateRole_ReturnsMappedRoleDto()
-      {
-          var roleId = Id<LgymApi.Domain.Entities.Role>.New();
-          var fakeService = new StubRoleService
-          {
-              CreateRoleHandler = (_, _, _) => Task.FromResult(Result<RoleResult, AppError>.Success(new RoleResult
-              {
-                  Id = roleId,
-                  Name = "Coach",
-                  Description = "desc",
-                  PermissionClaims = ManageUserRolesClaim
-              }))
-          };
-          var controller = new RoleController(fakeService, BuildMapper());
+    [Test]
+    public async Task CreateRole_ReturnsMappedRoleDto()
+    {
+        var roleId = Id<LgymApi.Domain.Entities.Role>.New();
+        var fakeService = new StubRoleService
+        {
+            CreateRoleHandler = (_, _, _) => Task.FromResult(Result<RoleResult, AppError>.Success(new RoleResult
+            {
+                Id = roleId,
+                Name = "Coach",
+                Description = "desc",
+                PermissionClaims = ManageUserRolesClaim
+            }))
+        };
+        var controller = new RoleController(fakeService, BuildMapper());
 
-          var action = await controller.CreateRole(new UpsertRoleRequest
-          {
-              Name = "Coach",
-              Description = "desc",
-              PermissionClaims = ManageUserRolesClaim
-          });
+        var action = await controller.CreateRole(new UpsertRoleRequest
+        {
+            Name = "Coach",
+            Description = "desc",
+            PermissionClaims = ManageUserRolesClaim
+        });
 
-          var ok = action as OkObjectResult;
-          ok.Should().NotBeNull();
-          var dto = ok!.Value as RoleDto;
-          
-          dto.Should().NotBeNull();
-          dto!.Id.Should().Be($"{roleId:N}");
-          dto.Name.Should().Be("Coach");
-          dto.PermissionClaims.Should().BeEquivalentTo(ManageUserRolesClaim);
-      }
+        var ok = action as OkObjectResult;
+        ok.Should().NotBeNull();
+        var dto = ok!.Value as RoleDto;
+
+        dto.Should().NotBeNull();
+        dto!.Id.Should().Be($"{roleId:N}");
+        dto.Name.Should().Be("Coach");
+        dto.PermissionClaims.Should().BeEquivalentTo(ManageUserRolesClaim);
+    }
 
     private static IMapper BuildMapper()
     {
@@ -129,10 +129,10 @@ public sealed class RoleControllerTests
         public Func<string, string?, IReadOnlyCollection<string>, Task<Result<RoleResult, AppError>>>? CreateRoleHandler { get; init; }
         public Func<Id<Domain.Entities.User>, IReadOnlyCollection<string>, CancellationToken, Task<Result<Unit, AppError>>>? UpdateUserRolesHandler { get; init; }
 
-        public Task<Result<List<RoleResult>, AppError>> GetRolesAsync(CancellationToken cancellationToken = default) 
+        public Task<Result<List<RoleResult>, AppError>> GetRolesAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(Result<List<RoleResult>, AppError>.Success(new List<RoleResult>()));
-        
-        public Task<Result<RoleResult, AppError>> GetRoleAsync(Id<Domain.Entities.Role> roleId, CancellationToken cancellationToken = default) 
+
+        public Task<Result<RoleResult, AppError>> GetRoleAsync(Id<Domain.Entities.Role> roleId, CancellationToken cancellationToken = default)
             => Task.FromResult(Result<RoleResult, AppError>.Success(new RoleResult { Id = roleId }));
 
         public Task<Result<RoleResult, AppError>> CreateRoleAsync(string name, string? description, IReadOnlyCollection<string> permissionClaims, CancellationToken cancellationToken = default)

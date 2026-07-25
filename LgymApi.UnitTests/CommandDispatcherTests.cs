@@ -71,7 +71,7 @@ public sealed class CommandDispatcherTests
         {
             var cmd = new InvitationAcceptedCommand { InvitationId = invitationId };
             await dispatcher.EnqueueAsync(cmd);
-            
+
             // Get the correlation ID from the repository
             var envelopes = _repository.GetAllEnvelopes();
             var lastEnvelope = envelopes.LastOrDefault();
@@ -367,7 +367,7 @@ public sealed class CommandDispatcherTests
             {
                 return Task.FromResult(existing);
             }
-            
+
             _envelopes[envelope.Id] = envelope;
             return Task.FromResult(envelope);
         }
@@ -389,7 +389,7 @@ public sealed class CommandDispatcherTests
             var toDelete = _envelopes.Values
                 .Where(e => e.Status == ActionExecutionStatus.Completed && e.CompletedAt.HasValue && e.CompletedAt < cutoffDate)
                 .ToList();
-            
+
             var count = toDelete.Count;
             foreach (var e in toDelete)
             {

@@ -31,12 +31,12 @@ public sealed class RoleController : ControllerBase
     public async Task<IActionResult> GetRoles(CancellationToken cancellationToken = default)
     {
         var result = await _roleService.GetRolesAsync(cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(_mapper.MapList<RoleResult, RoleDto>(result.Value));
     }
 
@@ -52,7 +52,7 @@ public sealed class RoleController : ControllerBase
             SortDescriptors = request.SortDescriptors
         };
         var result = await _roleService.GetRolesPaginatedAsync(filterInput, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -69,7 +69,7 @@ public sealed class RoleController : ControllerBase
             HasNextPage = pagination.HasNextPage,
             HasPreviousPage = pagination.HasPreviousPage
         };
-        
+
         return Ok(response);
     }
 
@@ -80,12 +80,12 @@ public sealed class RoleController : ControllerBase
     {
         var roleId = Id<Domain.Entities.Role>.TryParse(id, out var parsedRoleId) ? parsedRoleId : Id<Domain.Entities.Role>.Empty;
         var result = await _roleService.GetRoleAsync(roleId, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(_mapper.Map<RoleResult, RoleDto>(result.Value));
     }
 
@@ -103,12 +103,12 @@ public sealed class RoleController : ControllerBase
     public async Task<IActionResult> CreateRole([FromBody] UpsertRoleRequest request, CancellationToken cancellationToken = default)
     {
         var result = await _roleService.CreateRoleAsync(request.Name, request.Description, request.PermissionClaims, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(_mapper.Map<RoleResult, RoleDto>(result.Value));
     }
 
@@ -120,12 +120,12 @@ public sealed class RoleController : ControllerBase
     {
         var roleId = Id<Domain.Entities.Role>.TryParse(id, out var parsedRoleId) ? parsedRoleId : Id<Domain.Entities.Role>.Empty;
         var result = await _roleService.UpdateRoleAsync(roleId, request.Name, request.Description, request.PermissionClaims, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Updated));
     }
 
@@ -136,12 +136,12 @@ public sealed class RoleController : ControllerBase
     {
         var roleId = Id<Domain.Entities.Role>.TryParse(id, out var parsedRoleId) ? parsedRoleId : Id<Domain.Entities.Role>.Empty;
         var result = await _roleService.DeleteRoleAsync(roleId, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Deleted));
     }
 
@@ -153,12 +153,12 @@ public sealed class RoleController : ControllerBase
     {
         var userId = Id<Domain.Entities.User>.TryParse(id, out var parsedUserId) ? parsedUserId : Id<Domain.Entities.User>.Empty;
         var result = await _roleService.UpdateUserRolesAsync(userId, request.Roles, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Updated));
     }
 

@@ -39,21 +39,21 @@ public sealed class TrainingController : ControllerBase
         var planDayId = form.TypePlanDayId.ToIdOrEmpty<LgymApi.Domain.Entities.PlanDay>();
         var exercises = form.Exercises.Select(exercise => new TrainingExerciseInput
         {
-                ExerciseId = exercise.ExerciseId.ToIdOrEmpty<ExerciseEntity>(),
-                Series = exercise.Series,
-                Reps = exercise.Reps,
-                Weight = exercise.Weight,
-                Unit = exercise.Unit
-            }).ToList();
+            ExerciseId = exercise.ExerciseId.ToIdOrEmpty<ExerciseEntity>(),
+            Series = exercise.Series,
+            Reps = exercise.Reps,
+            Weight = exercise.Weight,
+            Unit = exercise.Unit
+        }).ToList();
 
         var input = new AddTrainingInput(gymId, planDayId, form.CreatedAt, exercises);
         var result = await _trainingService.AddTrainingAsync(userId, input, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         var mapped = _mapper.Map<TrainingSummaryResult, TrainingSummaryDto>(result.Value);
         return Ok(mapped);
     }
@@ -66,12 +66,12 @@ public sealed class TrainingController : ControllerBase
     {
         var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
         var result = await _trainingService.GetLastTrainingAsync(userId, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(_mapper.Map<LgymApi.Domain.Entities.Training, LastTrainingInfoDto>(result.Value));
     }
 
@@ -83,12 +83,12 @@ public sealed class TrainingController : ControllerBase
     {
         var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
         var result = await _trainingService.GetTrainingByDateAsync(userId, request.CreatedAt, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         var mapped = _mapper.MapList<TrainingByDateDetails, TrainingByDateDetailsDto>(result.Value);
         return Ok(mapped);
     }
@@ -101,12 +101,12 @@ public sealed class TrainingController : ControllerBase
     {
         var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
         var result = await _trainingService.GetTrainingDatesAsync(userId, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(result.Value);
     }
 }

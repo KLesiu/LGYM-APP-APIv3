@@ -1,5 +1,6 @@
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.TrainingPlanning.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Identity.Contracts.Accounts;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.TrainingPlanning.Contracts.ManagedPlans;
@@ -33,23 +34,23 @@ internal sealed class DeleteManagedPlanUseCase : IDeleteManagedPlanUseCase
     {
         if (command is null || command.TrainerId.IsEmpty || command.TraineeId.IsEmpty)
         {
-            return Result<Unit, AppError>.Failure(new InvalidTrainerRelationshipError(Messages.UserIdRequired));
+            return Result<Unit, AppError>.Failure(new InvalidPlanError(Messages.UserIdRequired));
         }
 
         if (command.PlanId.IsEmpty)
         {
-            return Result<Unit, AppError>.Failure(new InvalidTrainerRelationshipError(Messages.FieldRequired));
+            return Result<Unit, AppError>.Failure(new InvalidPlanError(Messages.FieldRequired));
         }
 
         var plan = await _planRepository.FindByIdAsync(command.PlanId, cancellationToken);
         if (plan is null || (plan.UserId != command.TraineeId && plan.UserId != command.TrainerId))
         {
-            return Result<Unit, AppError>.Failure(new TrainerRelationshipNotFoundError(Messages.DidntFind));
+            return Result<Unit, AppError>.Failure(new PlanNotFoundError(Messages.DidntFind));
         }
 
         if (await _accountReadService.GetByIdAsync(command.TraineeId, cancellationToken) is null)
         {
-            return Result<Unit, AppError>.Failure(new TrainerRelationshipNotFoundError(Messages.DidntFind));
+            return Result<Unit, AppError>.Failure(new PlanNotFoundError(Messages.DidntFind));
         }
 
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);

@@ -1,6 +1,7 @@
 using System.Text.Json;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Reporting.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Reporting.Models;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
@@ -113,10 +114,10 @@ public sealed partial class ReportingService : IReportingService
                      .OrderBy(x => x.Order)
                      .ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
         {
-                template.Fields.Add(new ReportTemplateField
-                {
-                    Id = Id<ReportTemplateField>.New(),
-                    TemplateId = template.Id,
+            template.Fields.Add(new ReportTemplateField
+            {
+                Id = Id<ReportTemplateField>.New(),
+                TemplateId = template.Id,
                 Key = field.Key.Trim(),
                 Label = field.Label.Trim(),
                 Type = field.Type,
@@ -229,8 +230,8 @@ public sealed partial class ReportingService : IReportingService
                     Type = x.Type,
                     IsRequired = x.IsRequired,
                     Order = x.Order,
-                    ModuleConfig = string.IsNullOrWhiteSpace(x.ModuleConfig) 
-                        ? null 
+                    ModuleConfig = string.IsNullOrWhiteSpace(x.ModuleConfig)
+                        ? null
                         : JsonSerializer.Deserialize<JsonElement>(x.ModuleConfig)
                 })
                 .ToList()

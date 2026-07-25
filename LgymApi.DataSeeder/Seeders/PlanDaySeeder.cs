@@ -41,10 +41,10 @@ public sealed class PlanDaySeeder : IEntitySeeder
                     continue;
                 }
 
-                 var day = new PlanDay
-                 {
-                     Id = Id<PlanDay>.New(),
-                     PlanId = plan.Id,
+                var day = new PlanDay
+                {
+                    Id = Id<PlanDay>.New(),
+                    PlanId = plan.Id,
                     Name = name
                 };
 

@@ -1,4 +1,3 @@
-using LgymApi.Api.Features.Enum;
 using LgymApi.Api.Features.Enum.Contracts;
 using LgymApi.Api.Features.Exercise.Contracts;
 using LgymApi.Api.Features.MainRecords.Contracts;
@@ -6,6 +5,7 @@ using LgymApi.Application.Features.MainRecords.Models;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.WorkoutProgress.ProgressData.Models;
 using LgymApi.Domain.Entities;
+using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 
 namespace LgymApi.Api.Mapping.Profiles;
@@ -21,21 +21,21 @@ public sealed class MainRecordProfile : IMappingProfile
     {
         configuration.AllowContextKey(Keys.ExerciseMap);
 
-        configuration.CreateMap<MainRecord, MainRecordResponseDto>((source, _) => new MainRecordResponseDto
+        configuration.CreateMap<MainRecord, MainRecordResponseDto>((source, context) => new MainRecordResponseDto
         {
             Id = source.Id.ToString(),
             ExerciseId = source.ExerciseId.ToString(),
             Weight = source.Weight.Value,
-            Unit = source.Weight.Unit.ToLookup(),
+            Unit = context!.Map<WeightUnits, EnumLookupDto>(source.Weight.Unit),
             Date = source.Date.UtcDateTime
         });
 
-        configuration.CreateMap<MainRecordReadModel, MainRecordResponseDto>((source, _) => new MainRecordResponseDto
+        configuration.CreateMap<MainRecordReadModel, MainRecordResponseDto>((source, context) => new MainRecordResponseDto
         {
             Id = source.Id.ToString(),
             ExerciseId = source.ExerciseId.ToString(),
             Weight = source.Weight,
-            Unit = source.Unit.ToLookup(),
+            Unit = context!.Map<WeightUnits, EnumLookupDto>(source.Unit),
             Date = source.Date
         });
 
@@ -51,7 +51,7 @@ public sealed class MainRecordProfile : IMappingProfile
                 Id = source.Id.ToString(),
                 ExerciseId = source.ExerciseId.ToString(),
                 Weight = source.Weight.Value,
-                Unit = source.Weight.Unit.ToLookup(),
+                Unit = context!.Map<WeightUnits, EnumLookupDto>(source.Weight.Unit),
                 Date = source.Date.UtcDateTime,
                 ExerciseDetails = exercise == null
                     ? new ExerciseResponseDto()
@@ -64,33 +64,35 @@ public sealed class MainRecordProfile : IMappingProfile
             Id = source.Record.Id.ToString(),
             ExerciseId = source.Record.ExerciseId.ToString(),
             Weight = source.Record.Weight,
-            Unit = source.Record.Unit.ToLookup(),
+            Unit = context!.Map<WeightUnits, EnumLookupDto>(source.Record.Unit),
             Date = source.Record.Date,
             ExerciseDetails = new ExerciseResponseDto
             {
                 Id = source.Exercise.Id.ToString(),
                 Name = source.Exercise.Name,
                 UserId = source.Exercise.UserId?.ToString(),
-                BodyPart = source.Exercise.BodyPart.ToLookup(),
-                EloFormula = context!.Map<EnumLookupDto, LgymApi.Api.Features.Common.Contracts.LookupItemVm>(source.Exercise.EloFormula.ToLookup()),
+                BodyPart = context.Map<BodyParts, EnumLookupDto>(source.Exercise.BodyPart),
+                EloFormula = source.Exercise.EloFormula == null
+                    ? null
+                    : context.Map<EnumLookupDto, LgymApi.Api.Features.Common.Contracts.LookupItemVm>(context.Map<ExerciseEloFormula, EnumLookupDto>(source.Exercise.EloFormula.Value)),
                 Description = source.Exercise.Description,
                 Image = source.Exercise.Image
             }
         });
 
-        configuration.CreateMap<PossibleRecordResult, PossibleRecordForExerciseDto>((source, _) => new PossibleRecordForExerciseDto
+        configuration.CreateMap<PossibleRecordResult, PossibleRecordForExerciseDto>((source, context) => new PossibleRecordForExerciseDto
         {
             Weight = source.Weight,
             Reps = source.Reps,
-            Unit = source.Unit.ToLookup(),
+            Unit = context!.Map<WeightUnits, EnumLookupDto>(source.Unit),
             Date = source.Date
         });
 
-        configuration.CreateMap<PossibleRecordReadModel, PossibleRecordForExerciseDto>((source, _) => new PossibleRecordForExerciseDto
+        configuration.CreateMap<PossibleRecordReadModel, PossibleRecordForExerciseDto>((source, context) => new PossibleRecordForExerciseDto
         {
             Weight = source.Weight,
             Reps = source.Reps,
-            Unit = source.Unit.ToLookup(),
+            Unit = context!.Map<WeightUnits, EnumLookupDto>(source.Unit),
             Date = source.Date
         });
     }

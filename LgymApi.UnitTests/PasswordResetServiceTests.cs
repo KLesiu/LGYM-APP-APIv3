@@ -1,5 +1,5 @@
 using LgymApi.Application.Features.AdminManagement.Models;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.PasswordReset;
 using LgymApi.Application.Features.PasswordReset.Contracts;
 using LgymApi.Application.Models;

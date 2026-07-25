@@ -39,7 +39,7 @@ public class CommandEnvelopeStatusPolicyTests
         // Arrange
         var errorMsg = "Timeout on first attempt";
         var errorDetails = "System.TimeoutException: The operation timed out";
-        
+
         // Simulate orchestrator adding HandlerExecution log for first attempt
         AddMockHandlerExecutionLog(_envelope, 0, ActionExecutionStatus.Failed, errorMsg, errorDetails);
 
@@ -60,7 +60,7 @@ public class CommandEnvelopeStatusPolicyTests
     {
         // Arrange
         var now = DateTimeOffset.UtcNow;
-        
+
         // Simulate orchestrator adding HandlerExecution log for first attempt
         AddMockHandlerExecutionLog(_envelope, 0, ActionExecutionStatus.Failed, "Attempt 1 failed");
 
@@ -69,11 +69,11 @@ public class CommandEnvelopeStatusPolicyTests
         var firstRetryTime = _envelope.NextAttemptAt;
 
         // Assert - should schedule 60 second backoff for first retry
-         firstRetryTime.Should().NotBeNull();
-         var expectedDelay = TimeSpan.FromSeconds(60);
-         var actualDelay = firstRetryTime!.Value - now;
-         actualDelay.Should().BeGreaterThanOrEqualTo(expectedDelay - TimeSpan.FromMilliseconds(100));
-         actualDelay.Should().BeLessThanOrEqualTo(expectedDelay + TimeSpan.FromMilliseconds(100));
+        firstRetryTime.Should().NotBeNull();
+        var expectedDelay = TimeSpan.FromSeconds(60);
+        var actualDelay = firstRetryTime!.Value - now;
+        actualDelay.Should().BeGreaterThanOrEqualTo(expectedDelay - TimeSpan.FromMilliseconds(100));
+        actualDelay.Should().BeLessThanOrEqualTo(expectedDelay + TimeSpan.FromMilliseconds(100));
     }
 
     [Test]
@@ -92,12 +92,12 @@ public class CommandEnvelopeStatusPolicyTests
         // Act
         _envelope.RecordAttemptFailure("Attempt 2 failed");
 
-         // Assert - should schedule 300 second (5m) backoff for second retry
-         var secondRetryTime = _envelope.NextAttemptAt;
-         var expectedDelay = TimeSpan.FromSeconds(300);
-         var actualDelay = secondRetryTime!.Value - now;
-         actualDelay.Should().BeGreaterThanOrEqualTo(expectedDelay - TimeSpan.FromMilliseconds(100));
-         actualDelay.Should().BeLessThanOrEqualTo(expectedDelay + TimeSpan.FromMilliseconds(100));
+        // Assert - should schedule 300 second (5m) backoff for second retry
+        var secondRetryTime = _envelope.NextAttemptAt;
+        var expectedDelay = TimeSpan.FromSeconds(300);
+        var actualDelay = secondRetryTime!.Value - now;
+        actualDelay.Should().BeGreaterThanOrEqualTo(expectedDelay - TimeSpan.FromMilliseconds(100));
+        actualDelay.Should().BeLessThanOrEqualTo(expectedDelay + TimeSpan.FromMilliseconds(100));
 
         // Verify execution logs accumulated (from simulated orchestrator)
         _envelope.ExecutionLogs.Count(log => log.ActionType == ActionExecutionLogType.HandlerExecution).Should().Be(2);
@@ -140,10 +140,10 @@ public class CommandEnvelopeStatusPolicyTests
         // Simulate orchestrator adding HandlerExecution logs
         AddMockHandlerExecutionLog(_envelope, 0, ActionExecutionStatus.Failed, "Attempt 1 failed");
         _envelope.RecordAttemptFailure("Attempt 1 failed");
-        
+
         AddMockHandlerExecutionLog(_envelope, 1, ActionExecutionStatus.Failed, "Attempt 2 failed");
         _envelope.RecordAttemptFailure("Attempt 2 failed");
-        
+
         AddMockHandlerExecutionLog(_envelope, 2, ActionExecutionStatus.Completed);
 
         // Act
@@ -166,7 +166,7 @@ public class CommandEnvelopeStatusPolicyTests
         // Arrange - simulate 3 failed attempts
         AddMockHandlerExecutionLog(_envelope, 0, ActionExecutionStatus.Failed, "Attempt 1 failed");
         _envelope.RecordAttemptFailure("Attempt 1 failed");
-        
+
         AddMockHandlerExecutionLog(_envelope, 1, ActionExecutionStatus.Failed, "Attempt 2 failed");
         _envelope.RecordAttemptFailure("Attempt 2 failed");
 
@@ -179,9 +179,9 @@ public class CommandEnvelopeStatusPolicyTests
         _envelope.NextAttemptAt.Should().NotBeNull();
         _envelope.Status.Should().Be(ActionExecutionStatus.Failed);
 
-         // Verify 900-second delay is used
-         var expectedNextAttempt = DateTimeOffset.UtcNow.AddSeconds(900);
-         _envelope.NextAttemptAt!.Value.Should().BeCloseTo(expectedNextAttempt, TimeSpan.FromSeconds(2));
+        // Verify 900-second delay is used
+        var expectedNextAttempt = DateTimeOffset.UtcNow.AddSeconds(900);
+        _envelope.NextAttemptAt!.Value.Should().BeCloseTo(expectedNextAttempt, TimeSpan.FromSeconds(2));
 
         // Verify 3 logs recorded
         var handlerLogs = _envelope.ExecutionLogs.Where(log => log.ActionType == ActionExecutionLogType.HandlerExecution).ToList();
@@ -194,13 +194,13 @@ public class CommandEnvelopeStatusPolicyTests
         // Arrange - simulate 4 failed attempts
         AddMockHandlerExecutionLog(_envelope, 0, ActionExecutionStatus.Failed, "Attempt 1 failed");
         _envelope.RecordAttemptFailure("Attempt 1 failed");
-        
+
         AddMockHandlerExecutionLog(_envelope, 1, ActionExecutionStatus.Failed, "Attempt 2 failed");
         _envelope.RecordAttemptFailure("Attempt 2 failed");
-        
+
         AddMockHandlerExecutionLog(_envelope, 2, ActionExecutionStatus.Failed, "Attempt 3 failed");
         _envelope.RecordAttemptFailure("Attempt 3 failed");
-        
+
         AddMockHandlerExecutionLog(_envelope, 3, ActionExecutionStatus.Failed, "Attempt 4 failed");
 
         // Act
@@ -256,11 +256,11 @@ public class CommandEnvelopeStatusPolicyTests
         // Assert - all error details preserved in HandlerExecution logs
         var logs = _envelope.ExecutionLogs.ToList();
         var errorLogs = logs.Where(log => log.ActionType == ActionExecutionLogType.HandlerExecution && log.Status == ActionExecutionStatus.Failed).ToList();
-        
+
         errorLogs.Count.Should().Be(4);
         errorLogs[0].ErrorMessage.Should().Be("Network error");
         errorLogs[0].ErrorDetails.Should().Be("System.Net.Http.HttpRequestException");
-        
+
         errorLogs[1].ErrorMessage.Should().Be("Timeout error");
         errorLogs[2].ErrorMessage.Should().Be("Service error");
 
@@ -369,16 +369,16 @@ public class CommandEnvelopeStatusPolicyTests
     [Test]
     public void RecordAttemptFailure_OnDeadLetteredEnvelope_ThrowsInvalidOperation()
     {
-         // Arrange
-         _envelope.MarkDeadLettered();
+        // Arrange
+        _envelope.MarkDeadLettered();
 
-          // Act & Assert
-          var act = new Action(() =>
-              _envelope.RecordAttemptFailure("Should fail"));
+        // Act & Assert
+        var act = new Action(() =>
+            _envelope.RecordAttemptFailure("Should fail"));
 
-          var ex = act.Should().Throw<InvalidOperationException>().And;
-          ex.Message.Should().Contain("dead-lettered");
-     }
+        var ex = act.Should().Throw<InvalidOperationException>().And;
+        ex.Message.Should().Contain("dead-lettered");
+    }
 
     [Test]
     public void MarkCompleted_OnDeadLetteredEnvelope_Idempotent()

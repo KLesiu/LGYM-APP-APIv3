@@ -33,7 +33,7 @@ public sealed class ExerciseScoresController : ControllerBase
         var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
         Id<LgymApi.Domain.Entities.Exercise>.TryParse(request.ExerciseId, out var parsedExerciseId);
         var result = await _exerciseScoresService.GetExerciseScoresChartDataAsync(userId, parsedExerciseId, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();

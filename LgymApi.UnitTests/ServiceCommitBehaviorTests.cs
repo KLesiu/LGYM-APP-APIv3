@@ -1,6 +1,7 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Identity.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.EloRegistry;
 using LgymApi.Application.Features.Role;
 using LgymApi.Application.Features.User;
@@ -18,7 +19,7 @@ using LgymApi.Application.Options;
 using LgymApi.Application.Pagination;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Services;
-using LgymApi.Application.Units;
+using LgymApi.Application.Platform.ReferenceData.Units;
 using LgymApi.Application.TrainingPlanning.Plan.ActivePlanPointer;
 using LgymApi.Application.TrainingPlanning.Plan.CreatePlan;
 using LgymApi.Application.WorkoutProgress.ProgressData;
@@ -376,7 +377,7 @@ public sealed class ServiceCommitBehaviorTests
             "Coach",
             "Role for coaching",
             [AuthConstants.Permissions.ManageGlobalExercises, AuthConstants.Permissions.ManageAppConfig]);
-        
+
         var created = result.Value;
 
         var savedRole = await dbContext.Roles.FirstOrDefaultAsync(r => r.Id == (Id<Role>)created.Id);

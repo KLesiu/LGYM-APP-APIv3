@@ -1,6 +1,7 @@
 using System.Net;
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Identity.Errors;
 using LgymApi.Application.Features.AdminManagement;
 using LgymApi.Application.Features.AdminManagement.Models;
 using LgymApi.Application.Models;

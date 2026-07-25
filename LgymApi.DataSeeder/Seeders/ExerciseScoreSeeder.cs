@@ -27,28 +27,28 @@ public sealed class ExerciseScoreSeeder : IEntitySeeder
             return;
         }
 
-         var existingPairs = await context.ExerciseScores
-             .AsNoTracking()
-             .Select(score => new { score.TrainingId, score.ExerciseId })
-             .ToListAsync(cancellationToken);
- 
-         var existingSet = new HashSet<(Id<Training> TrainingId, Id<Exercise> ExerciseId)>(
-             existingPairs.Select(pair => (pair.TrainingId, pair.ExerciseId)));
+        var existingPairs = await context.ExerciseScores
+            .AsNoTracking()
+            .Select(score => new { score.TrainingId, score.ExerciseId })
+            .ToListAsync(cancellationToken);
+
+        var existingSet = new HashSet<(Id<Training> TrainingId, Id<Exercise> ExerciseId)>(
+            existingPairs.Select(pair => (pair.TrainingId, pair.ExerciseId)));
 
         var scoreIndex = 0;
         var addedAny = false;
-         foreach (var training in trainings)
-         {
-             var exercise = exercises[scoreIndex % exercises.Count];
-             if (!existingSet.Add((training.Id, exercise.Id)))
+        foreach (var training in trainings)
+        {
+            var exercise = exercises[scoreIndex % exercises.Count];
+            if (!existingSet.Add((training.Id, exercise.Id)))
             {
                 scoreIndex++;
                 continue;
             }
-             var score = new ExerciseScore
-             {
-                 Id = Id<ExerciseScore>.New(),
-                 ExerciseId = exercise.Id,
+            var score = new ExerciseScore
+            {
+                Id = Id<ExerciseScore>.New(),
+                ExerciseId = exercise.Id,
                 UserId = training.UserId,
                 TrainingId = training.Id,
                 Series = 3,

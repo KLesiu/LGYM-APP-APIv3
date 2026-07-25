@@ -1,7 +1,8 @@
 using LgymApi.Application.Coaching.Contracts.BackgroundCommands;
 using LgymApi.Application.Coaching.Persistence;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Coaching.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using LgymApi.Application.Repositories;
 using LgymApi.Resources;

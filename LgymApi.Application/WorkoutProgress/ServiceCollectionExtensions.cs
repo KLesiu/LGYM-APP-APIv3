@@ -1,4 +1,4 @@
-using LgymApi.Application.Common.Training.Elo;
+using LgymApi.Application.WorkoutProgress.Scoring.Elo;
 using LgymApi.Application.Features.Exercise;
 using LgymApi.Application.Features.EloRegistry;
 using LgymApi.Application.Features.Gym;
@@ -7,7 +7,7 @@ using LgymApi.Application.Features.MainRecords;
 using LgymApi.Application.Features.ExerciseScores;
 using LgymApi.Application.Features.Training;
 using LgymApi.Application.Repositories;
-using LgymApi.Application.Units;
+using LgymApi.Application.Platform.ReferenceData.Units;
 using LgymApi.Application.WorkoutProgress.ProgressData;
 using LgymApi.Application.WorkoutProgress.Dashboard;
 using LgymApi.Application.WorkoutProgress.Ranking;

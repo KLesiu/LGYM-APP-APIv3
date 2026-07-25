@@ -2,7 +2,7 @@ namespace LgymApi.ArchitectureTests;
 
 public static class ModuleBoundaryDebtAllowlistRegistry
 {
-    public const int MaximumAllowedEntryCount = 132;
+    public const int MaximumAllowedEntryCount = 130;
 
     private static readonly IReadOnlyList<ModuleBoundaryDebtEntry> Entries =
     [
@@ -34,20 +34,6 @@ public static class ModuleBoundaryDebtAllowlistRegistry
             sourceSymbolOrPath: "LgymApi.Application/Features/Reporting/ReportSubmissionAcceptedProgressCommandFactory.cs",
             targetSymbolOrPath: "LgymApi.Domain.Entities.User",
             rationale: "Reporting constructs the accepted-progress publication using the established trainee typed ID required by the explicit event contract.")),
-        new ModuleBoundaryDebtEntry(ModuleBoundaryDebtKey.Create(
-            guardId: "ModuleDependencyGuardTests",
-            sourceModule: "Platform / Reference Data",
-            targetModule: "Identity & Accounts",
-            sourceSymbolOrPath: "LgymApi.Application.AppConfig.AppConfigService @ LgymApi.Application/AppConfig/AppConfigService.cs",
-            targetSymbolOrPath: "LgymApi.Application.Repositories.IRoleRepository @ LgymApi.Application/Repositories/IRoleRepository.cs",
-            rationale: "Current modular-boundary debt: platform app-config reads still query identity-owned role data directly.")),
-        new ModuleBoundaryDebtEntry(ModuleBoundaryDebtKey.Create(
-            guardId: "ModuleDependencyGuardTests",
-            sourceModule: "Platform / Reference Data",
-            targetModule: "Identity & Accounts",
-            sourceSymbolOrPath: "LgymApi.Application.AppConfig.AppConfigService @ LgymApi.Application/AppConfig/AppConfigService.cs",
-            targetSymbolOrPath: "LgymApi.Application.Repositories.IUserRepository @ LgymApi.Application/Repositories/IUserRepository.cs",
-            rationale: "Current modular-boundary debt: platform app-config reads still query identity-owned user data directly.")),
         new ModuleBoundaryDebtEntry(ModuleBoundaryDebtKey.Create(
             guardId: "ModuleDependencyGuardTests",
             sourceModule: "Training Planning",

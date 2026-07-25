@@ -1,5 +1,6 @@
 using LgymApi.Application.ExternalAuth;
 using LgymApi.Application.Identity.Authentication;
+using LgymApi.Application.Identity.Adapters;
 using LgymApi.Application.Identity.Contracts.Authentication;
 using LgymApi.Application.Identity.Contracts.Administration;
 using LgymApi.Application.Identity.Contracts.Access;
@@ -19,6 +20,7 @@ using LgymApi.Application.Features.PasswordReset;
 using LgymApi.Application.Features.Tutorial;
 using LgymApi.Application.Features.Role;
 using LgymApi.Application.Notifications;
+using LgymApi.Application.Platform.ReferenceData.AppConfig.Contracts;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -51,6 +53,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUserRankingService, UserRankingService>();
         services.AddScoped<IRankingAccountProfileReadService, RankingAccountProfileReadService>();
         services.AddScoped<IUserAdminAccessService, UserAdminAccessService>();
+        services.AddScoped<IAppConfigAuthorizationPort, AppConfigAuthorizationAdapter>();
         services.AddScoped<IUserAccessReadService, UserAccessReadService>();
         services.AddScoped<IAccountReadService, AccountReadService>();
         services.AddScoped<IUserRoleAdministrationService, UserRoleAdministrationService>();

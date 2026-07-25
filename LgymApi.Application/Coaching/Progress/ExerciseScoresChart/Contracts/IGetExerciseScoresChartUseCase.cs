@@ -1,5 +1,5 @@
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.WorkoutProgress.ProgressData.Models;
 
 namespace LgymApi.Application.Coaching.Progress.ExerciseScoresChart;

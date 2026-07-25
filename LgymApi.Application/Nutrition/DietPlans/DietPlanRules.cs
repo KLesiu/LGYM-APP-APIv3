@@ -1,4 +1,4 @@
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Nutrition.DietPlans.Models;
 using LgymApi.Resources;
 

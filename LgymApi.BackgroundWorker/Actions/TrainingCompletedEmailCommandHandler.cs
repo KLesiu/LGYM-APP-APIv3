@@ -142,6 +142,6 @@ public sealed partial class TrainingCompletedEmailCommandHandler : global::LgymA
             "Training completed email scheduled for Training {TrainingId} to {Email}",
             command.TrainingId,
             user.Email);
-}
+    }
 
 }

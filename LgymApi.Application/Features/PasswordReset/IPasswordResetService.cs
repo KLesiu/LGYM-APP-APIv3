@@ -1,7 +1,7 @@
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 
-using Result = LgymApi.Application.Common.Results.Result<LgymApi.Application.Common.Results.Unit, LgymApi.Application.Common.Errors.AppError>;
+using Result = LgymApi.Application.BuildingBlocks.Results.Result<LgymApi.Application.BuildingBlocks.Results.Unit, LgymApi.Application.BuildingBlocks.Errors.AppError>;
 
 namespace LgymApi.Application.Features.PasswordReset;
 

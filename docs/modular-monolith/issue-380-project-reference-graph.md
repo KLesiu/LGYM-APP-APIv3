@@ -54,7 +54,6 @@ graph TD
   DataSeeder --> Infrastructure
   DataSeederTests --> DataSeeder
   DataSeederTests --> Infrastructure
-  Domain --> Resources
   Infrastructure --> Application
   Infrastructure --> BackgroundWorkerCommon
   Infrastructure --> Domain
@@ -84,7 +83,7 @@ Sources are in solution order. Targets are alphabetical within each source.
 - `LgymApi.BackgroundWorker.Common` -> `LgymApi.Domain`
 - `LgymApi.DataSeeder` -> `LgymApi.Infrastructure`
 - `LgymApi.DataSeeder.Tests` -> `LgymApi.DataSeeder`, `LgymApi.Infrastructure`
-- `LgymApi.Domain` -> `LgymApi.Resources`
+- `LgymApi.Domain` -> _no outgoing project references_
 - `LgymApi.Infrastructure` -> `LgymApi.Application`, `LgymApi.BackgroundWorker.Common`, `LgymApi.Domain`
 - `LgymApi.IntegrationTests` -> `LgymApi.Api`, `LgymApi.Infrastructure`, `LgymApi.TestUtils`
 - `LgymApi.Resources` -> `LgymApi.Resources.Generator`
@@ -94,8 +93,8 @@ Sources are in solution order. Targets are alphabetical within each source.
 
 ## Historical comparison and audit
 
-The graph has exactly 14 projects and 33 `ProjectReference` edges. Compared with the historical #375 capture, the only edge removed is:
+The graph has exactly 14 projects and 32 `ProjectReference` edges. The sole current delta from the immediately preceding 33-edge manifest is:
 
-- `LgymApi.Application` -> `LgymApi.BackgroundWorker.Common`
+- `LgymApi.Domain` -> `LgymApi.Resources`
 
-All 33 remaining edges are unchanged from the #375 capture. [issue-375-project-reference-graph.md](issue-375-project-reference-graph.md) preserves that historical edge list. The live `ApplicationBackgroundWorkerDependencyGuardTests` independently verifies that Application has neither the removed project edge nor a semantic source dependency on `LgymApi.BackgroundWorker` namespaces.
+`LgymApi.Domain` is localization-neutral and has no project reference to `LgymApi.Resources`. [issue-375-project-reference-graph.md](issue-375-project-reference-graph.md) is an unchanged historical capture. The live `ApplicationBackgroundWorkerDependencyGuardTests` independently verifies that Application has neither its prior project edge nor a semantic source dependency on `LgymApi.BackgroundWorker` namespaces.

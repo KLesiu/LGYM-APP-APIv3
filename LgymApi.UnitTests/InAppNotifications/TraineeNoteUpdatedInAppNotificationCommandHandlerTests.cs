@@ -1,6 +1,6 @@
 using FluentAssertions;
 using LgymApi.Application.Coaching.Contracts.BackgroundCommands;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Identity.Contracts.Accounts;
 using LgymApi.Application.Notifications.Contracts.Events;
 using LgymApi.BackgroundWorker.Actions;

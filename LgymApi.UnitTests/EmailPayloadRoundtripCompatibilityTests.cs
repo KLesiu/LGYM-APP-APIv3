@@ -395,23 +395,23 @@ public sealed class EmailPayloadRoundtripCompatibilityTests
         deserialized!.Exercises.Should().NotBeNull();
         deserialized.Exercises.Count.Should().Be(2);
 
-         // Verify first exercise
-         var firstExercise = deserialized.Exercises.First();
-         firstExercise.ExerciseId.Should().Be(ParseTestId<LgymApi.Domain.Entities.Exercise>("d50e8400-e29b-41d4-a716-446655440002"));
-         firstExercise.ExerciseName.Should().Be("Bench Press");
-         firstExercise.Series.Should().Be(1);
-         firstExercise.Reps.Should().Be(8);
-         firstExercise.Weight.Should().Be(80);
-         firstExercise.Unit.Should().Be(WeightUnits.Kilograms);
+        // Verify first exercise
+        var firstExercise = deserialized.Exercises.First();
+        firstExercise.ExerciseId.Should().Be(ParseTestId<LgymApi.Domain.Entities.Exercise>("d50e8400-e29b-41d4-a716-446655440002"));
+        firstExercise.ExerciseName.Should().Be("Bench Press");
+        firstExercise.Series.Should().Be(1);
+        firstExercise.Reps.Should().Be(8);
+        firstExercise.Weight.Should().Be(80);
+        firstExercise.Unit.Should().Be(WeightUnits.Kilograms);
 
-         // Verify second exercise
-         var secondExercise = deserialized.Exercises.Skip(1).First();
-         secondExercise.ExerciseId.Should().Be(ParseTestId<LgymApi.Domain.Entities.Exercise>("d50e8400-e29b-41d4-a716-446655440003"));
-         secondExercise.ExerciseName.Should().Be("Squat");
-         secondExercise.Series.Should().Be(2);
-         secondExercise.Reps.Should().Be(6);
-         secondExercise.Weight.Should().Be(120);
-         secondExercise.Unit.Should().Be(WeightUnits.Kilograms);
+        // Verify second exercise
+        var secondExercise = deserialized.Exercises.Skip(1).First();
+        secondExercise.ExerciseId.Should().Be(ParseTestId<LgymApi.Domain.Entities.Exercise>("d50e8400-e29b-41d4-a716-446655440003"));
+        secondExercise.ExerciseName.Should().Be("Squat");
+        secondExercise.Series.Should().Be(2);
+        secondExercise.Reps.Should().Be(6);
+        secondExercise.Weight.Should().Be(120);
+        secondExercise.Unit.Should().Be(WeightUnits.Kilograms);
     }
 
     [Test]

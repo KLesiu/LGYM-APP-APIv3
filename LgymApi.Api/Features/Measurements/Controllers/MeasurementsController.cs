@@ -78,7 +78,7 @@ public sealed class MeasurementsController : ControllerBase
         var user = HttpContext.GetCurrentUser();
         var measurementId = Id<LgymApi.Domain.Entities.Measurement>.TryParse(id, out var parsedId) ? parsedId : Id<LgymApi.Domain.Entities.Measurement>.Empty;
         var result = await _measurementsService.GetMeasurementDetailAsync(user!, measurementId, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -97,7 +97,7 @@ public sealed class MeasurementsController : ControllerBase
         var user = HttpContext.GetCurrentUser();
         Id<UserEntity>.TryParse(id, out var parsedUserId);
         var result = await _measurementsService.GetMeasurementsHistoryAsync(user!, parsedUserId, request?.BodyPart, request?.Unit, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -117,7 +117,7 @@ public sealed class MeasurementsController : ControllerBase
         var user = HttpContext.GetCurrentUser();
         Id<UserEntity>.TryParse(id, out var parsedUserId);
         var result = await _measurementsService.GetMeasurementsListAsync(user!, parsedUserId, request?.BodyPart, request?.Unit, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -137,7 +137,7 @@ public sealed class MeasurementsController : ControllerBase
         var user = HttpContext.GetCurrentUser();
         Id<UserEntity>.TryParse(id, out var parsedUserId);
         var result = await _measurementsService.GetMeasurementsTrendAsync(user!, parsedUserId, request.BodyPart, request.Unit, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();

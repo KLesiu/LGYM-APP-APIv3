@@ -38,21 +38,21 @@ public sealed class TrainingCompletedEmailTemplateComposerTests
         }
     }
 
-     [Test]
-     public void ComposeTrainingCompleted_ShouldRenderTableWithNames()
-     {
-         CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
-         var composer = CreateComposer();
-         var payload = new TrainingCompletedEmailPayload
-         {
-             UserId = Id<LgymApi.Domain.Entities.User>.New(),
-             TrainingId = Id<LgymApi.Domain.Entities.Training>.New(),
-             RecipientEmail = "user@example.com",
-             CultureName = "en-US",
-             PreferredTimeZone = "Europe/Warsaw",
-             PlanDayName = "Upper Body A",
-             TrainingDate = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
-             Exercises = new List<TrainingExerciseSummary>
+    [Test]
+    public void ComposeTrainingCompleted_ShouldRenderTableWithNames()
+    {
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
+        var composer = CreateComposer();
+        var payload = new TrainingCompletedEmailPayload
+        {
+            UserId = Id<LgymApi.Domain.Entities.User>.New(),
+            TrainingId = Id<LgymApi.Domain.Entities.Training>.New(),
+            RecipientEmail = "user@example.com",
+            CultureName = "en-US",
+            PreferredTimeZone = "Europe/Warsaw",
+            PlanDayName = "Upper Body A",
+            TrainingDate = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
+            Exercises = new List<TrainingExerciseSummary>
              {
                  new()
                  {
@@ -71,61 +71,61 @@ public sealed class TrainingCompletedEmailTemplateComposerTests
                      Unit = WeightUnits.Kilograms
                  }
              }
-         };
+        };
 
-         var message = composer.ComposeTrainingCompleted(payload);
+        var message = composer.ComposeTrainingCompleted(payload);
 
-         message.To.Should().Be("user@example.com");
-         message.Subject.Should().Be("Training completed - Upper Body A");
-         message.IsHtml.Should().BeTrue();
-         message.Body.Should().Contain("<table");
-         message.Body.Should().Contain("Bench Press");
-         message.Body.Should().Contain("Date: 2026-03-01 11:00");
-         message.Body.Should().Contain($"{Emails.TrainingSeriesLabel} #1");
-         message.Body.Should().Contain($"{Emails.TrainingSeriesLabel} #2");
-         message.Body.Should().Contain(">8<");
-         message.Body.Should().Contain(">80<");
-     }
+        message.To.Should().Be("user@example.com");
+        message.Subject.Should().Be("Training completed - Upper Body A");
+        message.IsHtml.Should().BeTrue();
+        message.Body.Should().Contain("<table");
+        message.Body.Should().Contain("Bench Press");
+        message.Body.Should().Contain("Date: 2026-03-01 11:00");
+        message.Body.Should().Contain($"{Emails.TrainingSeriesLabel} #1");
+        message.Body.Should().Contain($"{Emails.TrainingSeriesLabel} #2");
+        message.Body.Should().Contain(">8<");
+        message.Body.Should().Contain(">80<");
+    }
 
-     [Test]
-     public void ComposeTrainingCompleted_ShouldFallbackToDefaultLanguage_WhenTemplateMissing()
-     {
-         CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
-         var composer = CreateComposer();
-         var payload = new TrainingCompletedEmailPayload
-         {
-             UserId = Id<LgymApi.Domain.Entities.User>.New(),
-             TrainingId = Id<LgymApi.Domain.Entities.Training>.New(),
-             RecipientEmail = "user@example.com",
-             CultureName = "de-DE",
-             PreferredTimeZone = "Europe/Warsaw",
-             PlanDayName = "Lower Body B",
-             TrainingDate = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
-             Exercises = new List<TrainingExerciseSummary>()
-         };
+    [Test]
+    public void ComposeTrainingCompleted_ShouldFallbackToDefaultLanguage_WhenTemplateMissing()
+    {
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
+        var composer = CreateComposer();
+        var payload = new TrainingCompletedEmailPayload
+        {
+            UserId = Id<LgymApi.Domain.Entities.User>.New(),
+            TrainingId = Id<LgymApi.Domain.Entities.Training>.New(),
+            RecipientEmail = "user@example.com",
+            CultureName = "de-DE",
+            PreferredTimeZone = "Europe/Warsaw",
+            PlanDayName = "Lower Body B",
+            TrainingDate = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
+            Exercises = new List<TrainingExerciseSummary>()
+        };
 
-         var message = composer.ComposeTrainingCompleted(payload);
+        var message = composer.ComposeTrainingCompleted(payload);
 
-         message.Subject.Should().Be("Training completed - Lower Body B");
-         message.IsHtml.Should().BeTrue();
-         message.Body.Should().Contain(Emails.TrainingNoExercises);
-     }
+        message.Subject.Should().Be("Training completed - Lower Body B");
+        message.IsHtml.Should().BeTrue();
+        message.Body.Should().Contain(Emails.TrainingNoExercises);
+    }
 
-     [Test]
-     public void ComposeTrainingCompleted_ShouldPreserveExerciseGroupOrder_NotAlphabetical()
-     {
-         CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
-         var composer = CreateComposer();
-         var payload = new TrainingCompletedEmailPayload
-         {
-             UserId = Id<LgymApi.Domain.Entities.User>.New(),
-             TrainingId = Id<LgymApi.Domain.Entities.Training>.New(),
-             RecipientEmail = "user@example.com",
-             CultureName = "en-US",
-             PreferredTimeZone = "Europe/Warsaw",
-             PlanDayName = "Full Body",
-             TrainingDate = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
-             Exercises = new List<TrainingExerciseSummary>
+    [Test]
+    public void ComposeTrainingCompleted_ShouldPreserveExerciseGroupOrder_NotAlphabetical()
+    {
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
+        var composer = CreateComposer();
+        var payload = new TrainingCompletedEmailPayload
+        {
+            UserId = Id<LgymApi.Domain.Entities.User>.New(),
+            TrainingId = Id<LgymApi.Domain.Entities.Training>.New(),
+            RecipientEmail = "user@example.com",
+            CultureName = "en-US",
+            PreferredTimeZone = "Europe/Warsaw",
+            PlanDayName = "Full Body",
+            TrainingDate = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
+            Exercises = new List<TrainingExerciseSummary>
              {
                  // Order in list: Squats, Bench Press, Deadlifts
                  // Alphabetical would be: Bench Press, Deadlifts, Squats
@@ -154,38 +154,38 @@ public sealed class TrainingCompletedEmailTemplateComposerTests
                      Unit = WeightUnits.Kilograms
                  }
              }
-         };
+        };
 
-         var message = composer.ComposeTrainingCompleted(payload);
+        var message = composer.ComposeTrainingCompleted(payload);
 
-         // Find the positions of exercise names in the HTML body
-         var squatsPos = message.Body.IndexOf(">Squats<", StringComparison.Ordinal);
-         var benchPos = message.Body.IndexOf(">Bench Press<", StringComparison.Ordinal);
-         var deadliftsPos = message.Body.IndexOf(">Deadlifts<", StringComparison.Ordinal);
+        // Find the positions of exercise names in the HTML body
+        var squatsPos = message.Body.IndexOf(">Squats<", StringComparison.Ordinal);
+        var benchPos = message.Body.IndexOf(">Bench Press<", StringComparison.Ordinal);
+        var deadliftsPos = message.Body.IndexOf(">Deadlifts<", StringComparison.Ordinal);
 
-         squatsPos.Should().BeGreaterThan(-1, "Squats not found in body");
-         benchPos.Should().BeGreaterThan(-1, "Bench Press not found in body");
-         deadliftsPos.Should().BeGreaterThan(-1, "Deadlifts not found in body");
-         // Verify the order: Squats should appear before Bench Press, which should appear before Deadlifts
-         squatsPos.Should().BeLessThan(benchPos, "Squats should appear before Bench Press (payload order, not alphabetical)");
-         benchPos.Should().BeLessThan(deadliftsPos, "Bench Press should appear before Deadlifts (payload order, not alphabetical)");
-     }
+        squatsPos.Should().BeGreaterThan(-1, "Squats not found in body");
+        benchPos.Should().BeGreaterThan(-1, "Bench Press not found in body");
+        deadliftsPos.Should().BeGreaterThan(-1, "Deadlifts not found in body");
+        // Verify the order: Squats should appear before Bench Press, which should appear before Deadlifts
+        squatsPos.Should().BeLessThan(benchPos, "Squats should appear before Bench Press (payload order, not alphabetical)");
+        benchPos.Should().BeLessThan(deadliftsPos, "Bench Press should appear before Deadlifts (payload order, not alphabetical)");
+    }
 
-     [Test]
-     public void ComposeTrainingCompleted_ShouldRenderLocalizedUnitDisplayName()
-     {
-         CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
-         var composer = CreateComposer();
-         var payload = new TrainingCompletedEmailPayload
-         {
-             UserId = Id<LgymApi.Domain.Entities.User>.New(),
-             TrainingId = Id<LgymApi.Domain.Entities.Training>.New(),
-             RecipientEmail = "user@example.com",
-             CultureName = "en-US",
-             PreferredTimeZone = "Europe/Warsaw",
-             PlanDayName = "Testing Units",
-             TrainingDate = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
-             Exercises = new List<TrainingExerciseSummary>
+    [Test]
+    public void ComposeTrainingCompleted_ShouldRenderLocalizedUnitDisplayName()
+    {
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
+        var composer = CreateComposer();
+        var payload = new TrainingCompletedEmailPayload
+        {
+            UserId = Id<LgymApi.Domain.Entities.User>.New(),
+            TrainingId = Id<LgymApi.Domain.Entities.Training>.New(),
+            RecipientEmail = "user@example.com",
+            CultureName = "en-US",
+            PreferredTimeZone = "Europe/Warsaw",
+            PlanDayName = "Testing Units",
+            TrainingDate = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
+            Exercises = new List<TrainingExerciseSummary>
              {
                  new()
                  {
@@ -204,59 +204,59 @@ public sealed class TrainingCompletedEmailTemplateComposerTests
                      Unit = WeightUnits.Pounds
                  }
              }
-         };
+        };
 
-         var message = composer.ComposeTrainingCompleted(payload);
+        var message = composer.ComposeTrainingCompleted(payload);
 
-         message.Body.Should().Contain(">kg<", "Should render localized name for Kilograms");
-         message.Body.Should().Contain(">lbs<", "Should render localized name for Pounds");
-         message.Body.Should().NotContain(">Kilograms<", "Should not render enum name for Kilograms");
-         message.Body.Should().NotContain(">Pounds<", "Should not render enum name for Pounds");
-     }
+        message.Body.Should().Contain(">kg<", "Should render localized name for Kilograms");
+        message.Body.Should().Contain(">lbs<", "Should render localized name for Pounds");
+        message.Body.Should().NotContain(">Kilograms<", "Should not render enum name for Kilograms");
+        message.Body.Should().NotContain(">Pounds<", "Should not render enum name for Pounds");
+    }
 
-     [Test]
-     public void ComposeTrainingCompleted_ShouldUseConfiguredFallbackTimeZone_WhenPreferredTimeZoneInvalid()
-     {
-         CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
-         var composer = CreateComposer(new AppDefaultsOptions { PreferredLanguage = "en-US", PreferredTimeZone = "UTC" });
-         var payload = new TrainingCompletedEmailPayload
-         {
-             UserId = Id<LgymApi.Domain.Entities.User>.New(),
-             TrainingId = Id<LgymApi.Domain.Entities.Training>.New(),
-             RecipientEmail = "user@example.com",
-             CultureName = "en-US",
-             PreferredTimeZone = "Invalid/Zone",
-             PlanDayName = "Fallback TZ",
-             TrainingDate = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
-             Exercises = new List<TrainingExerciseSummary>()
-         };
+    [Test]
+    public void ComposeTrainingCompleted_ShouldUseConfiguredFallbackTimeZone_WhenPreferredTimeZoneInvalid()
+    {
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
+        var composer = CreateComposer(new AppDefaultsOptions { PreferredLanguage = "en-US", PreferredTimeZone = "UTC" });
+        var payload = new TrainingCompletedEmailPayload
+        {
+            UserId = Id<LgymApi.Domain.Entities.User>.New(),
+            TrainingId = Id<LgymApi.Domain.Entities.Training>.New(),
+            RecipientEmail = "user@example.com",
+            CultureName = "en-US",
+            PreferredTimeZone = "Invalid/Zone",
+            PlanDayName = "Fallback TZ",
+            TrainingDate = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
+            Exercises = new List<TrainingExerciseSummary>()
+        };
 
-         var message = composer.ComposeTrainingCompleted(payload);
+        var message = composer.ComposeTrainingCompleted(payload);
 
-         message.Body.Should().Contain("Date: 2026-03-01 10:00");
-     }
+        message.Body.Should().Contain("Date: 2026-03-01 10:00");
+    }
 
-     [Test]
-     public void ComposeTrainingCompleted_ShouldUseConfiguredFallbackTimeZone_WhenPreferredTimeZoneEmpty()
-     {
-         CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
-         var composer = CreateComposer(new AppDefaultsOptions { PreferredLanguage = "en-US", PreferredTimeZone = "UTC" });
-         var payload = new TrainingCompletedEmailPayload
-         {
-             UserId = Id<LgymApi.Domain.Entities.User>.New(),
-             TrainingId = Id<LgymApi.Domain.Entities.Training>.New(),
-             RecipientEmail = "user@example.com",
-             CultureName = "en-US",
-             PreferredTimeZone = string.Empty,
-             PlanDayName = "Fallback TZ",
-             TrainingDate = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
-             Exercises = new List<TrainingExerciseSummary>()
-         };
+    [Test]
+    public void ComposeTrainingCompleted_ShouldUseConfiguredFallbackTimeZone_WhenPreferredTimeZoneEmpty()
+    {
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
+        var composer = CreateComposer(new AppDefaultsOptions { PreferredLanguage = "en-US", PreferredTimeZone = "UTC" });
+        var payload = new TrainingCompletedEmailPayload
+        {
+            UserId = Id<LgymApi.Domain.Entities.User>.New(),
+            TrainingId = Id<LgymApi.Domain.Entities.Training>.New(),
+            RecipientEmail = "user@example.com",
+            CultureName = "en-US",
+            PreferredTimeZone = string.Empty,
+            PlanDayName = "Fallback TZ",
+            TrainingDate = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
+            Exercises = new List<TrainingExerciseSummary>()
+        };
 
-         var message = composer.ComposeTrainingCompleted(payload);
+        var message = composer.ComposeTrainingCompleted(payload);
 
-         message.Body.Should().Contain("Date: 2026-03-01 10:00");
-     }
+        message.Body.Should().Contain("Date: 2026-03-01 10:00");
+    }
 
     private TrainingCompletedEmailTemplateComposer CreateComposer(AppDefaultsOptions? appDefaultsOptions = null)
     {

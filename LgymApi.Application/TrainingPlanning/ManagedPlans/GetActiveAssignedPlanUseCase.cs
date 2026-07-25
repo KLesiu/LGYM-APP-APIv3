@@ -1,5 +1,6 @@
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.TrainingPlanning.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.TrainingPlanning.Contracts.ManagedPlans;
@@ -26,14 +27,14 @@ internal sealed class GetActiveAssignedPlanUseCase : IGetActiveAssignedPlanUseCa
         if (query is null || query.TraineeId.IsEmpty)
         {
             return Result<ManagedPlanReadModel, AppError>.Failure(
-                new InvalidTrainerRelationshipError(Messages.UserIdRequired));
+                new InvalidPlanError(Messages.UserIdRequired));
         }
 
         var activePlan = await _planRepository.FindActiveByUserIdAsync(query.TraineeId, cancellationToken);
         if (activePlan is null)
         {
             return Result<ManagedPlanReadModel, AppError>.Failure(
-                new TrainerRelationshipNotFoundError(Messages.DidntFind));
+                new PlanNotFoundError(Messages.DidntFind));
         }
 
         return Result<ManagedPlanReadModel, AppError>.Success(

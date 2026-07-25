@@ -43,10 +43,10 @@ public sealed class SupplementIntakeLogSeeder : IEntitySeeder
                 continue;
             }
 
-             var log = new SupplementIntakeLog
-             {
-                 Id = Id<SupplementIntakeLog>.New(),
-                 TraineeId = trainee.Id,
+            var log = new SupplementIntakeLog
+            {
+                Id = Id<SupplementIntakeLog>.New(),
+                TraineeId = trainee.Id,
                 PlanItemId = item.Id,
                 IntakeDate = intakeDate,
                 TakenAt = DateTimeOffset.UtcNow

@@ -34,11 +34,51 @@ public sealed class WorkoutProgressOwnershipTests
     [TestCase("/LgymApi.Application/Measurements/MeasurementsService.cs")]
     [TestCase("/LgymApi.Application/MainRecords/MainRecordsService.cs")]
     [TestCase("/LgymApi.Application/EloRegistry/EloRegistryService.cs")]
+    [TestCase("/LgymApi.Application/WorkoutProgress/Errors/TrainingErrors.cs")]
+    [TestCase("/LgymApi.Application/WorkoutProgress/Errors/ExerciseErrors.cs")]
+    [TestCase("/LgymApi.Application/WorkoutProgress/Errors/ExerciseScoreErrors.cs")]
+    [TestCase("/LgymApi.Application/WorkoutProgress/Errors/MeasurementErrors.cs")]
+    [TestCase("/LgymApi.Application/WorkoutProgress/Errors/MainRecordsErrors.cs")]
+    [TestCase("/LgymApi.Application/WorkoutProgress/Errors/GymErrors.cs")]
+    [TestCase("/LgymApi.Application/WorkoutProgress/Errors/EloRegistryErrors.cs")]
     public void Workout_Progress_Application_Paths_Should_Have_Canonical_Ownership(string path)
     {
         Assert.That(
             ArchitectureTestHelpers.GetCanonicalModuleNameFromPath(path),
             Is.EqualTo(PersistedEntityOwnershipCatalog.WorkoutProgressModuleName));
+    }
+
+    [TestCase("/LgymApi.Application/Common/Errors/TrainingErrors.cs")]
+    [TestCase("/LgymApi.Application/Common/Errors/ExerciseErrors.cs")]
+    [TestCase("/LgymApi.Application/Common/Errors/ExerciseScoreErrors.cs")]
+    [TestCase("/LgymApi.Application/Common/Errors/MeasurementErrors.cs")]
+    [TestCase("/LgymApi.Application/Common/Errors/MainRecordsErrors.cs")]
+    [TestCase("/LgymApi.Application/Common/Errors/GymErrors.cs")]
+    [TestCase("/LgymApi.Application/Common/Errors/EloRegistryErrors.cs")]
+    public void Workout_Progress_Error_Ownership_Fixtures_Outside_Workout_Progress_Are_Rejected(string path)
+    {
+        Assert.That(
+            () => AssertWorkoutProgressErrorOwnership(path),
+            Throws.TypeOf<AssertionException>());
+    }
+
+    [TestCase("TrainingErrors.cs")]
+    [TestCase("ExerciseErrors.cs")]
+    [TestCase("ExerciseScoreErrors.cs")]
+    [TestCase("MeasurementErrors.cs")]
+    [TestCase("MainRecordsErrors.cs")]
+    [TestCase("GymErrors.cs")]
+    [TestCase("EloRegistryErrors.cs")]
+    public void Workout_Progress_Error_Sources_Should_Not_Remain_In_Common(string fileName)
+    {
+        var path = Path.Combine(
+            ArchitectureTestHelpers.ResolveRepositoryRoot(),
+            "LgymApi.Application",
+            "Common",
+            "Errors",
+            fileName);
+
+        Assert.That(File.Exists(path), Is.False, "Workout & Progress errors must not retain Common compatibility sources.");
     }
 
     [Test]
@@ -88,5 +128,12 @@ public sealed class WorkoutProgressOwnershipTests
             Assert.That(exception!.Message, Does.Contain("Training Planning expected 3"));
             Assert.That(exception.Message, Does.Contain("Workout & Progress expected 10"));
         });
+    }
+
+    private static void AssertWorkoutProgressErrorOwnership(string path)
+    {
+        Assert.That(
+            ArchitectureTestHelpers.GetCanonicalModuleNameFromPath(path),
+            Is.EqualTo(PersistedEntityOwnershipCatalog.WorkoutProgressModuleName));
     }
 }

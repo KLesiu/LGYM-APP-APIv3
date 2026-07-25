@@ -2,7 +2,7 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Nutrition.Supplementation.CheckOffIntake.Contracts;
 using LgymApi.Application.Nutrition.Supplementation.CheckOffIntake.Models;
@@ -59,7 +59,7 @@ public sealed class TraineeSupplementationController : ControllerBase
     public async Task<IActionResult> CheckOffIntake([FromBody] CheckOffSupplementIntakeRequest request, CancellationToken cancellationToken = default)
     {
         Id<LgymApi.Domain.Entities.SupplementPlanItem>.TryParse(request.PlanItemId, out var parsedPlanItemId);
-        
+
         var result = await _checkOffSupplementIntake.ExecuteAsync(
             new CheckOffSupplementIntakeCommand(
                 HttpContext.GetCurrentUserId(),

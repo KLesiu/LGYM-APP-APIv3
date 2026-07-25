@@ -42,10 +42,10 @@ public sealed class EloRegistrySeeder : IEntitySeeder
                 continue;
             }
 
-             var entry = new EloRegistry
-             {
-                 Id = Id<EloRegistry>.New(),
-                 UserId = user.Id,
+            var entry = new EloRegistry
+            {
+                Id = Id<EloRegistry>.New(),
+                UserId = user.Id,
                 Date = DateTimeOffset.UtcNow,
                 Elo = 1000
             };

@@ -96,7 +96,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
             // Conflict: unique constraint violation on CorrelationId (concurrent duplicate insert)
             // This handles the race condition where two concurrent callers passed the read phase
             // but both attempted insert - DB constraint ensures only one succeeds
-            
+
             _logger.LogInformation(
                 ex,
                 "Unique constraint violation on CorrelationId {CorrelationId}. Concurrent duplicate detected. Fetching existing envelope.",
@@ -107,7 +107,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
 
             // Fetch the winning envelope that was persisted by concurrent caller
             var existing = await _commandEnvelopeRepository.FindByCorrelationIdAsync(envelope.CorrelationId);
-            
+
             if (existing == null)
             {
                 // Edge case: constraint violation but envelope not found
@@ -122,7 +122,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
                 "Concurrent duplicate resolved: using existing envelope {EnvelopeId} for correlation {CorrelationId}. Skipping persistence.",
                 existing.Id,
                 envelope.CorrelationId);
-            
+
             return; // Idempotent path: conflict resolved, skip persistence
         }
 

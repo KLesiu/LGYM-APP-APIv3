@@ -45,17 +45,17 @@ public sealed class TrainingTests : IntegrationTestBase
             new() { ExerciseId = exerciseId.ToString(), Series = 2, Reps = "8" }
         });
 
-         using (var scope = Factory.Services.CreateScope())
-         {
-             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-             await db.EmailNotificationSubscriptions.AddAsync(new EmailNotificationSubscription
-             {
-                 Id = Domain.ValueObjects.Id<EmailNotificationSubscription>.New(),
-                 UserId = (Domain.ValueObjects.Id<User>)userId,
-                 NotificationType = EmailNotificationTypes.TrainingCompleted.Value
-             });
-             await db.SaveChangesAsync();
-         }
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await db.EmailNotificationSubscriptions.AddAsync(new EmailNotificationSubscription
+            {
+                Id = Domain.ValueObjects.Id<EmailNotificationSubscription>.New(),
+                UserId = (Domain.ValueObjects.Id<User>)userId,
+                NotificationType = EmailNotificationTypes.TrainingCompleted.Value
+            });
+            await db.SaveChangesAsync();
+        }
 
         var request = new
         {
@@ -676,7 +676,7 @@ public sealed class TrainingTests : IntegrationTestBase
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-         var record = await db.MainRecords.SingleAsync(r => r.UserId == (Domain.ValueObjects.Id<User>)userId && r.ExerciseId == (Domain.ValueObjects.Id<Exercise>)exerciseId);
+        var record = await db.MainRecords.SingleAsync(r => r.UserId == (Domain.ValueObjects.Id<User>)userId && r.ExerciseId == (Domain.ValueObjects.Id<Exercise>)exerciseId);
 
         record.Weight.Value.Should().Be(85.0);
         record.Unit.Should().Be(WeightUnits.Kilograms);
@@ -729,7 +729,7 @@ public sealed class TrainingTests : IntegrationTestBase
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-         var records = await db.MainRecords.Where(r => r.UserId == (Domain.ValueObjects.Id<User>)userId && r.ExerciseId == (Domain.ValueObjects.Id<Exercise>)exerciseId).ToListAsync();
+        var records = await db.MainRecords.Where(r => r.UserId == (Domain.ValueObjects.Id<User>)userId && r.ExerciseId == (Domain.ValueObjects.Id<Exercise>)exerciseId).ToListAsync();
 
         records.Should().HaveCount(2);
         records.Should().Contain(r => r.Weight.Value == 100.0 && r.Unit == WeightUnits.Kilograms);
@@ -785,7 +785,7 @@ public sealed class TrainingTests : IntegrationTestBase
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-         var records = await db.MainRecords.Where(r => r.UserId == (Domain.ValueObjects.Id<User>)userId && r.ExerciseId == (Domain.ValueObjects.Id<Exercise>)exerciseId).ToListAsync();
+        var records = await db.MainRecords.Where(r => r.UserId == (Domain.ValueObjects.Id<User>)userId && r.ExerciseId == (Domain.ValueObjects.Id<Exercise>)exerciseId).ToListAsync();
 
         records.Should().HaveCount(1);
         records[0].Weight.Value.Should().Be(100.0);
@@ -839,7 +839,7 @@ public sealed class TrainingTests : IntegrationTestBase
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-         var record = await db.MainRecords.SingleAsync(r => r.UserId == (Domain.ValueObjects.Id<User>)userId && r.ExerciseId == (Domain.ValueObjects.Id<Exercise>)exerciseId);
+        var record = await db.MainRecords.SingleAsync(r => r.UserId == (Domain.ValueObjects.Id<User>)userId && r.ExerciseId == (Domain.ValueObjects.Id<Exercise>)exerciseId);
 
         record.Weight.Value.Should().Be(100.0);
         record.Unit.Should().Be(WeightUnits.Kilograms);
@@ -949,7 +949,7 @@ public sealed class TrainingTests : IntegrationTestBase
         using (var scope = Factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-             var eloEntries = await db.EloRegistries.Where(e => e.UserId == (Domain.ValueObjects.Id<User>)userId).ToListAsync();
+            var eloEntries = await db.EloRegistries.Where(e => e.UserId == (Domain.ValueObjects.Id<User>)userId).ToListAsync();
             db.EloRegistries.RemoveRange(eloEntries);
             await db.SaveChangesAsync();
         }
@@ -979,8 +979,8 @@ public sealed class TrainingTests : IntegrationTestBase
         using (var scope = Factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-             var trainings = await db.Trainings.Where(t => t.UserId == (Domain.ValueObjects.Id<User>)userId).ToListAsync();
-             var scores = await db.ExerciseScores.Where(s => s.UserId == (Domain.ValueObjects.Id<User>)userId).ToListAsync();
+            var trainings = await db.Trainings.Where(t => t.UserId == (Domain.ValueObjects.Id<User>)userId).ToListAsync();
+            var scores = await db.ExerciseScores.Where(s => s.UserId == (Domain.ValueObjects.Id<User>)userId).ToListAsync();
             var links = await db.TrainingExerciseScores.ToListAsync();
 
             trainings.Should().BeEmpty();
@@ -1282,8 +1282,8 @@ public sealed class TrainingTests : IntegrationTestBase
             {
                 throw new InvalidOperationException($"Failed to parse exercise score ID: {ex.ExerciseScoreId}");
             }
-             var score = await db.ExerciseScores.FirstAsync(s => s.Id == scoreId);
-             returnedExercises.Add(score.ExerciseId);
+            var score = await db.ExerciseScores.FirstAsync(s => s.Id == scoreId);
+            returnedExercises.Add(score.ExerciseId);
         }
 
         returnedExercises[0].Should().Be(exerciseIdShoulders);

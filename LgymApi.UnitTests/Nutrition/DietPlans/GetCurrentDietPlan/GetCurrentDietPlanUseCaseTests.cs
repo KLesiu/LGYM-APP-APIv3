@@ -1,5 +1,5 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Nutrition.DietPlans.GetCurrentDietPlan;
 using LgymApi.Application.Nutrition.DietPlans.Models;

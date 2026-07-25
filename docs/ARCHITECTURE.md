@@ -224,9 +224,27 @@ The solution uses module-owned registration helpers composed by the host, enforc
 
 1. **Application Layer**: owns its interfaces, implementation classes, and module-specific business-service helpers.
 2. **Infrastructure Layer**: owns repository implementations, external client adapters, and module-specific technical helpers.
-3. **Platform carve-out**: shared roots that multiple modules consume stay in `AddPlatformServices(...)` instead of being forced into one feature module.
+3. **Platform carve-out**: shared roots that multiple modules consume stay in `AddPlatformServices(...)` instead of being forced into one feature module. AppConfig, enum lookup, and unit conversion live in the non-canonical `Application/Platform/ReferenceData` sub-boundary; its internal registration helper is composed only by public `AddPlatformModule`.
+
+Neutral application primitives are public only through `BuildingBlocks/Results` and `BuildingBlocks/Errors`; feature-specific services, repositories, DTOs, errors, and provider details do not belong in that shared surface.
+
+### Final Platform boundaries
+
+`Platform / Reference Data` remains one canonical module. It contains three internal sub-boundaries, none of which is a module or a project:
+
+- `LgymApi.Application/BuildingBlocks/` contains only the neutral public manifest: `Result<T, TError>`, `Result`, `Unit`, `AppError`, `NotFoundError`, `BadRequestError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `UnprocessableEntityError`, and `InternalServerError`.
+- `LgymApi.Application/Platform/Contracts/` is Technical Platform. It owns the established background-command and serialization contracts, pagination contracts, the Unit of Work and reliability ports, and the public `AddPlatformModule` facade.
+- `LgymApi.Application/Platform/ReferenceData/` owns AppConfig, enum lookup, and unit conversion. `IAppConfigRepository` retains its legacy `Application/Repositories` path for source compatibility but is classified as an AppConfig-specific Reference Data port. Its internal `AddReferenceDataServices` helper is composed only by `AddPlatformModule`.
+
+Reference Data may depend on its approved Technical Platform contracts, BuildingBlocks, and Domain types. BuildingBlocks may depend only on the BCL. Technical Platform and Reference Data do not gain feature-workflow ownership through those roots.
+
+AppConfig owns `IAppConfigAuthorizationPort` and calls it once for protected operations. Identity implements the scoped adapter with its own user and role repositories, preserving the ID-only boundary. AppConfig no longer consumes Identity repositories directly; its unauthenticated latest-by-platform lookup remains outside that authorization flow.
+
+Enum lookup is owned by Reference Data. `EnumLookupMappingProfile` registers the six concrete enum mappings, and `EnumService` keeps raw member `id`, translated `name` and `displayName`, hidden-value filtering, and case-insensitive type lookup. API mapping composes those Application lookup models rather than formatting enum values in controllers or feature profiles.
 
 Notification delivery follows the same ownership rule: Notifications owns its provider-neutral intent policy, including the six typed Coaching intents. Application owns password plus provider-neutral push event/result/scheduling contracts, delivery claims, state transitions, retry policy, and UoW commits. Worker owns command runtime plus environment-selected password, push, and Coaching email scheduling adapters. Infrastructure owns the private FCM implementation and raw tokens, and `Program.cs` composes module-owned helpers in module-before-Worker order without direct adapter bindings.
+
+Infrastructure registration ownership is explicit: Notifications owns email registration and selection of Dummy or SMTP senders; Reporting owns its photo-storage registration and Local or Cloudflare R2 selection; Identity owns Google-token validation registration; Notifications owns the FCM provider registration; and API logging owns the optional Elasticsearch sink. Provider SDKs, credentials, and raw provider responses do not belong in Application or BuildingBlocks.
 
 ### Background Contract Ownership
 
@@ -285,6 +303,7 @@ Then register service/repository in both service collection extension files and 
 - `#381` defines the Notifications write-ownership boundary and provider-neutral public contract surface; it does not move projects, entities, or runtime behavior.
 - `#391` codifies Workout & Progress logical ownership and path classification without changing the shared persistence topology or legacy API contracts.
 - `#390` codifies Nutrition's six-entity, 18-action logical boundary and compatibility adapters without changing the shared persistence topology, command identity, or legacy API contracts.
+- `#393` defines the executable concern-owner matrix for Platform and Reference Data.
 - `docs/adr/006-lgym-evolves-as-modular-monolith.md` records the decision.
 
 ### Issue #376 links
@@ -297,6 +316,8 @@ Then register service/repository in both service collection extension files and 
 - `docs/modular-monolith/issue-381-notifications-boundary.md`
 - `docs/modular-monolith/issue-390-nutrition-boundary.md`
 - `docs/modular-monolith/issue-392-reporting-boundary.md`
+- `docs/modular-monolith/issue-393-platform-reference-data-boundary.md`
 
-The current layered runtime stays in place until a later change explicitly alters it.
+The project-reference manifest fixes the current solution at 14 projects and 32 edges. Its sole approved delta is removal of `LgymApi.Domain -> LgymApi.Resources`; Domain no longer depends on Resources. The current layered runtime stays in place until a later change explicitly alters it.
+The production topology remains one `AppDbContext`, one PostgreSQL database, and one migration stream. The eight owner totals remain Identity & Accounts 9, Notifications 5, Reporting 7, Training Planning 3, Workout & Progress 10, Coaching 4, Nutrition 6, and Platform / Reference Data 4, for 48 persisted entities.
 The compatibility, persistence, and Unit of Work guidance elsewhere in this guide continues to apply and is not restated here.

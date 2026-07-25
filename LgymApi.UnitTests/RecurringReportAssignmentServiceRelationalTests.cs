@@ -188,10 +188,10 @@ public sealed class RecurringReportAssignmentServiceRelationalTests
     {
         // Arrange
         var collection = new List<int> { 10, 20, 30 };
-        
+
         // Act
         var firstElement = collection.First();
-        
+
         // Assert
         firstElement.Should().Be(10);
         firstElement.Should().NotBe(20); // Ensure we're not getting the wrong element

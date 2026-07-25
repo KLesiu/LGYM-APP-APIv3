@@ -1,6 +1,7 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Training.Elo;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.WorkoutProgress.Errors;
+using LgymApi.Application.WorkoutProgress.Scoring.Elo;
 using LgymApi.Application.Features.Training;
 using LgymApi.Application.Features.Training.Models;
 using LgymApi.Application.Repositories;
@@ -122,24 +123,24 @@ public sealed class TrainingServiceAddTrainingTests
         result.Error.Message.Should().Be(Messages.TryAgain);
     }
 
-     [Test]
-     public async Task Should_PropagateException_When_RepositoryThrowsException()
-     {
-         // Arrange
-         var userId = Id<User>.New();
-         var gymId = Id<Gym>.New();
-         var planDayId = Id<PlanDay>.New();
+    [Test]
+    public async Task Should_PropagateException_When_RepositoryThrowsException()
+    {
+        // Arrange
+        var userId = Id<User>.New();
+        var gymId = Id<Gym>.New();
+        var planDayId = Id<PlanDay>.New();
 
-         var input = new AddTrainingInput(gymId, planDayId, DateTime.UtcNow, new List<TrainingExerciseInput>());
+        var input = new AddTrainingInput(gymId, planDayId, DateTime.UtcNow, new List<TrainingExerciseInput>());
 
-         _userRepository.FindByIdAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
-             .Throws(new InvalidOperationException("Database connection failed"));
+        _userRepository.FindByIdAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
+            .Throws(new InvalidOperationException("Database connection failed"));
 
-         // Act & Assert
-         var action = () => _service.AddTrainingAsync(userId, ToCompleteInput(input));
-         var ex = await action.Should().ThrowAsync<InvalidOperationException>();
-         ex.And.Message.Should().Be("Database connection failed");
-     }
+        // Act & Assert
+        var action = () => _service.AddTrainingAsync(userId, ToCompleteInput(input));
+        var ex = await action.Should().ThrowAsync<InvalidOperationException>();
+        ex.And.Message.Should().Be("Database connection failed");
+    }
 
     [Test]
     public async Task Should_ReturnInvalidTrainingDataError_When_UserIdIsEmpty()
