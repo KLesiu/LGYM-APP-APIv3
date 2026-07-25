@@ -27,11 +27,11 @@ public class ReliabilityUniquenessCheckTests : IntegrationTestBase
     {
         // Arrange
         var correlationId = Id<CorrelationScope>.New();
-        
+
         // Create a CommandEnvelope directly in the database
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         var envelope = new CommandEnvelope
         {
             CorrelationId = correlationId,
@@ -39,7 +39,7 @@ public class ReliabilityUniquenessCheckTests : IntegrationTestBase
             CommandTypeFullName = typeof(object).FullName!,
             Status = ActionExecutionStatus.Pending
         };
-        
+
         db.CommandEnvelopes.Add(envelope);
         await db.SaveChangesAsync();
 
@@ -47,7 +47,7 @@ public class ReliabilityUniquenessCheckTests : IntegrationTestBase
         // The fixture should correctly count and assert uniqueness
         var count = await CountCommandEnvelopesByCorrelationIdAsync(correlationId);
         count.Should().Be(1, "Fixture should count exactly one envelope for the correlation ID");
-        
+
         // This should succeed without throwing
         await AssertCommandEnvelopeUniquenessAsync(correlationId);
     }
@@ -61,10 +61,10 @@ public class ReliabilityUniquenessCheckTests : IntegrationTestBase
     {
         // Arrange
         var correlationId = Id<CorrelationScope>.New();
-        
+
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         // Insert first envelope
         var envelope1 = new CommandEnvelope
         {
@@ -74,10 +74,10 @@ public class ReliabilityUniquenessCheckTests : IntegrationTestBase
             CommandTypeFullName = typeof(object).FullName!,
             Status = ActionExecutionStatus.Pending
         };
-        
+
         db.CommandEnvelopes.Add(envelope1);
         await db.SaveChangesAsync();
-        
+
         // Act & Assert
         // Insert a second envelope with the same CorrelationId so the fixture helper
         // can detect the duplicate durable-intent state.
@@ -89,7 +89,7 @@ public class ReliabilityUniquenessCheckTests : IntegrationTestBase
             CommandTypeFullName = typeof(object).FullName!,
             Status = ActionExecutionStatus.Pending
         };
-        
+
         db.CommandEnvelopes.Add(envelope2);
         await db.SaveChangesAsync();
 
@@ -111,10 +111,10 @@ public class ReliabilityUniquenessCheckTests : IntegrationTestBase
         var correlationId = Id<CorrelationScope>.New();
         var recipient = new Email("test@example.com");
         var notificationType = EmailNotificationTypes.Welcome;
-        
+
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         var notification = new NotificationMessage
         {
             Type = notificationType,
@@ -124,14 +124,14 @@ public class ReliabilityUniquenessCheckTests : IntegrationTestBase
             Status = EmailNotificationStatus.Pending,
             Channel = NotificationChannel.Email
         };
-        
+
         db.NotificationMessages.Add(notification);
         await db.SaveChangesAsync();
 
         // Act & Assert
         var count = await CountNotificationMessagesByKeyAsync(notificationType, correlationId, recipient);
         count.Should().Be(1, "Fixture should count exactly one notification for the key tuple");
-        
+
         // This should succeed without throwing
         await AssertNotificationMessageUniquenessAsync(notificationType, correlationId, recipient);
     }
@@ -147,10 +147,10 @@ public class ReliabilityUniquenessCheckTests : IntegrationTestBase
         var correlationId = Id<CorrelationScope>.New();
         var recipient = new Email("test@example.com");
         var notificationType = EmailNotificationTypes.Welcome;
-        
+
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         // Insert first notification
         var notification1 = new NotificationMessage
         {
@@ -162,10 +162,10 @@ public class ReliabilityUniquenessCheckTests : IntegrationTestBase
             Status = EmailNotificationStatus.Pending,
             Channel = NotificationChannel.Email
         };
-        
+
         db.NotificationMessages.Add(notification1);
         await db.SaveChangesAsync();
-        
+
         // Act & Assert
         // Insert a second notification with the same key tuple so the fixture helper
         // can detect the duplicate notification state.
@@ -179,7 +179,7 @@ public class ReliabilityUniquenessCheckTests : IntegrationTestBase
             Status = EmailNotificationStatus.Pending,
             Channel = NotificationChannel.Email
         };
-        
+
         db.NotificationMessages.Add(notification2);
         await db.SaveChangesAsync();
 
@@ -205,7 +205,7 @@ public class ReliabilityUniquenessCheckTests : IntegrationTestBase
         var correlationId = Id<CorrelationScope>.New();
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         var envelope = new CommandEnvelope
         {
             CorrelationId = correlationId,
@@ -219,7 +219,7 @@ public class ReliabilityUniquenessCheckTests : IntegrationTestBase
         // Assert
         var afterEnvelopes = await CountAllCommandEnvelopesAsync();
         afterEnvelopes.Should().Be(baselineEnvelopes + 1, "Envelope count should increment by 1");
-        
+
         // Notification count should remain unchanged
         var afterNotifications = await CountAllNotificationMessagesAsync();
         afterNotifications.Should().Be(baselineNotifications, "Notification count should remain unchanged");
@@ -234,10 +234,10 @@ public class ReliabilityUniquenessCheckTests : IntegrationTestBase
     {
         // Arrange
         var correlationId = Id<CorrelationScope>.New();
-        
+
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         var envelope = new CommandEnvelope
         {
             CorrelationId = correlationId,

@@ -136,7 +136,7 @@ public sealed class ModulePersistenceOwnershipGuardTests
             string.Join(Environment.NewLine, configurationsWithoutCatalogOwners.Select(configuration => configuration.ToString())));
 
         var configurationsOutsideCatalogOwners = configurationDeclarations
-            .Where(configuration => configuration.CatalogOwner is not null && configuration.Module != GetConfigurationModule(configuration.CatalogOwner))
+            .Where(configuration => configuration.CatalogOwner is not null && configuration.Module != GetConfigurationModule(configuration.CatalogOwner, configuration.ConfigurationType))
             .ToList();
 
         Assert.That(
@@ -214,7 +214,7 @@ public sealed class ModulePersistenceOwnershipGuardTests
             CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest));
         var configuration = configurations.Single(item => item.ConfigurationType == configurationType);
         var expectedOwner = PersistedEntityOwnershipCatalog.Entries.Single(entry => entry.EntityType == entityType).Owner;
-        var expectedModule = GetConfigurationModule(expectedOwner);
+        var expectedModule = GetConfigurationModule(expectedOwner, configurationType);
 
         Assert.That(configuration.Module, Is.EqualTo(expectedModule), $"{configuration}; catalog owner: {expectedOwner}");
     }
@@ -271,7 +271,7 @@ public sealed class ModulePersistenceOwnershipGuardTests
             .SetName("Canonical_Repository_Registration_Guard_Should_Reject_Duplicate_Fixture");
     }
 
-    private static string GetConfigurationModule(string catalogOwner)
+    private static string GetConfigurationModule(string catalogOwner, string configurationType)
     {
         return catalogOwner switch
         {
@@ -279,6 +279,7 @@ public sealed class ModulePersistenceOwnershipGuardTests
             PersistedEntityOwnershipCatalog.NotificationsModuleName => "Notifications",
             PersistedEntityOwnershipCatalog.ReportingModuleName => "Reporting",
             PersistedEntityOwnershipCatalog.TrainingPlanningModuleName => "TrainingPlanning",
+            PersistedEntityOwnershipCatalog.PlatformModuleName when configurationType == "AppConfigEntityTypeConfiguration" => "ReferenceData",
             PersistedEntityOwnershipCatalog.PlatformModuleName => "Platform",
             PersistedEntityOwnershipCatalog.WorkoutProgressModuleName => "WorkoutProgress",
             PersistedEntityOwnershipCatalog.CoachingModuleName => "Coaching",

@@ -1,5 +1,6 @@
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.WorkoutProgress.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Measurements.Models;
 using LgymApi.Application.Identity.Contracts.Access;
 using LgymApi.Application.WorkoutProgress.Contracts.Measurements;

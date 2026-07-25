@@ -17,17 +17,17 @@ public static class TestDataFactory
     /// Default username for admin test accounts.
     /// </summary>
     public const string DefaultAdminName = "testadmin";
-    
+
     /// <summary>
     /// Default email address for admin test accounts.
     /// </summary>
     public const string DefaultAdminEmail = "testadmin@example.com";
-    
+
     /// <summary>
     /// Default password for admin test accounts.
     /// </summary>
     public const string DefaultAdminSecret = "AdminSecret123!";
-    
+
     /// <summary>
     /// Default password for standard user test accounts.
     /// </summary>

@@ -1,4 +1,3 @@
-using System.Text;
 using System.Threading.RateLimiting;
 using FluentValidation;
 using FluentValidation.AspNetCore;
@@ -10,20 +9,14 @@ using LgymApi.Application.Identity;
 using LgymApi.Application.Notifications;
 using LgymApi.Application.Nutrition;
 using LgymApi.Application.Platform;
-using LgymApi.Application.Platform.Contracts.Serialization;
 using LgymApi.Application.Reporting;
 using LgymApi.Application.TrainingPlanning;
 using LgymApi.Application.WorkoutProgress;
 using LgymApi.Infrastructure;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.IdentityModel.Tokens;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.Globalization;
 using LgymApi.Api;
 using LgymApi.Api.Configuration;
-using Microsoft.AspNetCore.Localization;
+using LgymApi.Api.Extensions;
 using LgymApi.Api.Middleware;
 using LgymApi.Domain.Security;
 using LgymApi.Api.Constants;
@@ -31,10 +24,7 @@ using Hangfire;
 using LgymApi.Api.Serialization;
 using LgymApi.Api.Logging;
 using LgymApi.BackgroundWorker.Common.Jobs;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.AspNetCore.Http.Json;
-using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Debugging;
@@ -53,25 +43,7 @@ SelfLog.Enable(msg => Console.Error.WriteLine(msg));
 
 SerilogBootstrap.ConfigureSerilog(builder);
 
-builder.Services
-    .AddControllers()
-    .AddJsonOptions(options =>
-    {
-        options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-        options.JsonSerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;
-        options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
-        options.JsonSerializerOptions.Converters.Add(new TypedIdJsonConverterFactory());
-        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(namingPolicy: null, allowIntegerValues: false));
-    });
-
-builder.Services.Configure<JsonOptions>(options =>
-{
-    options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-    options.SerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;
-    options.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
-    options.SerializerOptions.Converters.Add(new TypedIdJsonConverterFactory());
-    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(namingPolicy: null, allowIntegerValues: false));
-});
+builder.Services.AddStrictHttpJsonOptions();
 
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
@@ -95,11 +67,11 @@ builder.Services.AddCors(options =>
             return;
         }
 
-         throw new InvalidOperationException($"No CORS allowed origins are configured. Configure '{ConfigKeys.CorsAllowedOrigins}' or disable CORS explicitly.");
+        throw new InvalidOperationException($"No CORS allowed origins are configured. Configure '{ConfigKeys.CorsAllowedOrigins}' or disable CORS explicitly.");
     });
 });
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddLocalization();
+var localizationOptions = builder.Services.AddApiLocalization();
 builder.Services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
 var isTesting = builder.Environment.IsEnvironment(TestingEnvironment);
 
@@ -134,73 +106,9 @@ builder.Services.AddSignalR();
 builder.Services.AddSingleton<IUserIdProvider, LgymApi.Api.Hubs.NotificationHubUserIdProvider>();
 builder.Services.AddScoped<IInAppNotificationPushPublisher, LgymApi.Api.Features.InAppNotification.SignalRNotificationPushPublisher>();
 
-var jwtSigningKey = builder.Configuration[ConfigKeys.JwtSigningKey];
-if (string.IsNullOrWhiteSpace(jwtSigningKey) || jwtSigningKey.Length < 32)
-{
-    throw new InvalidOperationException($"{ConfigKeys.JwtSigningKey} is not configured or is too short. Set a strong key value.");
-}
+builder.Services.AddApiAuthentication(builder.Configuration);
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = false,
-            ValidateAudience = false,
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSigningKey)),
-            ClockSkew = TimeSpan.Zero
-        };
-        options.Events = new JwtBearerEvents
-        {
-            OnMessageReceived = context =>
-            {
-                var accessToken = context.Request.Query["access_token"];
-                var path = context.HttpContext.Request.Path;
-                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
-                {
-                    context.Token = accessToken;
-                }
-                return Task.CompletedTask;
-            },
-            OnAuthenticationFailed = context =>
-            {
-                if (context.Exception is SecurityTokenExpiredException)
-                {
-                    return ErrorResponseWriter.WriteAsync(context.HttpContext, StatusCodes.Status401Unauthorized, Messages.ExpiredToken, context.HttpContext.RequestAborted);
-                }
-
-                return Task.CompletedTask;
-            },
-            OnChallenge = context =>
-            {
-                if (!context.Response.HasStarted)
-                {
-                    context.HandleResponse();
-                    return ErrorResponseWriter.WriteAsync(context.HttpContext, StatusCodes.Status401Unauthorized, Messages.InvalidToken, context.HttpContext.RequestAborted);
-                }
-
-                return Task.CompletedTask;
-            },
-            OnForbidden = context =>
-            {
-                return ErrorResponseWriter.WriteAsync(context.HttpContext, StatusCodes.Status403Forbidden, Messages.Unauthorized, context.HttpContext.RequestAborted);
-            }
-        };
-    });
-
-builder.Services
-    .AddAuthorizationBuilder()
-    .AddPolicy(AuthConstants.Policies.AdminAccess, policy =>
-        policy.RequireClaim(AuthConstants.PermissionClaimType, AuthConstants.Permissions.AdminAccess))
-    .AddPolicy(AuthConstants.Policies.ManageUserRoles, policy =>
-        policy.RequireClaim(AuthConstants.PermissionClaimType, AuthConstants.Permissions.ManageUserRoles))
-    .AddPolicy(AuthConstants.Policies.ManageAppConfig, policy =>
-        policy.RequireClaim(AuthConstants.PermissionClaimType, AuthConstants.Permissions.ManageAppConfig))
-    .AddPolicy(AuthConstants.Policies.ManageGlobalExercises, policy =>
-        policy.RequireClaim(AuthConstants.PermissionClaimType, AuthConstants.Permissions.ManageGlobalExercises))
-    .AddPolicy(AuthConstants.Policies.TrainerAccess, policy =>
-        policy.RequireClaim(AuthConstants.PermissionClaimType, AuthConstants.Permissions.TrainerAccess));
+builder.Services.AddApiAuthorizationPolicies();
 
 if (!builder.Environment.IsEnvironment(TestingEnvironment))
 {
@@ -210,7 +118,7 @@ if (!builder.Environment.IsEnvironment(TestingEnvironment))
         options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
         {
             var path = context.Request.Path.Value ?? string.Empty;
-            
+
             // Stricter rate limit for password recovery endpoints
             var isPasswordRecovery = path.Contains("/forgot-password", StringComparison.OrdinalIgnoreCase)
                                      || path.Contains("/reset-password", StringComparison.OrdinalIgnoreCase);
@@ -254,24 +162,6 @@ if (!builder.Environment.IsEnvironment(TestingEnvironment))
         });
     });
 }
-
-var supportedCultures = new[]
-{
-    new CultureInfo("en"),
-    new CultureInfo("pl")
-};
-
-var localizationOptions = new RequestLocalizationOptions
-{
-    DefaultRequestCulture = new RequestCulture("en"),
-    SupportedCultures = supportedCultures,
-    SupportedUICultures = supportedCultures
-};
-
-localizationOptions.RequestCultureProviders = new List<IRequestCultureProvider>
-{
-    new AcceptLanguageHeaderRequestCultureProvider()
-};
 
 var app = builder.Build();
 

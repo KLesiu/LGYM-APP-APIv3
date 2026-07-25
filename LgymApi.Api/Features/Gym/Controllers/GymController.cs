@@ -32,7 +32,7 @@ public sealed class GymController : ControllerBase
     {
         var user = HttpContext.GetCurrentUser();
         var routeUserId = Id<LgymApi.Domain.Entities.User>.TryParse(id, out var parsedUserId) ? parsedUserId : Id<LgymApi.Domain.Entities.User>.Empty;
-        
+
         var result = await _gymService.AddGymAsync(user!, routeUserId, form.Name, form.Address, cancellationToken);
         if (result.IsFailure)
         {
@@ -51,7 +51,7 @@ public sealed class GymController : ControllerBase
     {
         var user = HttpContext.GetCurrentUser();
         var gymId = Id<LgymApi.Domain.Entities.Gym>.TryParse(id, out var parsedGymId) ? parsedGymId : Id<LgymApi.Domain.Entities.Gym>.Empty;
-        
+
         var result = await _gymService.DeleteGymAsync(user!, gymId, cancellationToken);
         if (result.IsFailure)
         {
@@ -69,7 +69,7 @@ public sealed class GymController : ControllerBase
     {
         var user = HttpContext.GetCurrentUser();
         var routeUserId = Id<LgymApi.Domain.Entities.User>.TryParse(id, out var parsedUserId) ? parsedUserId : Id<LgymApi.Domain.Entities.User>.Empty;
-        
+
         var result = await _gymService.GetGymsAsync(user!, routeUserId, cancellationToken);
         if (result.IsFailure)
         {
@@ -94,7 +94,7 @@ public sealed class GymController : ControllerBase
     {
         var user = HttpContext.GetCurrentUser();
         var gymId = Id<LgymApi.Domain.Entities.Gym>.TryParse(id, out var parsedGymId) ? parsedGymId : Id<LgymApi.Domain.Entities.Gym>.Empty;
-        
+
         var result = await _gymService.GetGymAsync(user!, gymId, cancellationToken);
         if (result.IsFailure)
         {
@@ -113,7 +113,7 @@ public sealed class GymController : ControllerBase
     {
         var user = HttpContext.GetCurrentUser();
         var gymId = Id<LgymApi.Domain.Entities.Gym>.TryParse(form.Id, out var parsedGymId) ? parsedGymId : Id<LgymApi.Domain.Entities.Gym>.Empty;
-        
+
         var result = await _gymService.UpdateGymAsync(user!, gymId, form.Name, form.Address, cancellationToken);
         if (result.IsFailure)
         {

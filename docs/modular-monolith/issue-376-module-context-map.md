@@ -33,6 +33,22 @@ The #375 baseline already shows these as the current feature-level dependency cl
 - Exposes shared bootstrapping, DI registration, lookup data, and other stable platform services that the feature modules consume.
 - Publishes only cross-module primitives and lookup payloads, not feature commands or feature-specific read models.
 
+### Final internal sub-boundaries
+
+`Platform / Reference Data` is one canonical module with three non-canonical internal sub-boundaries. None is a project or a ninth module.
+
+| Sub-boundary | Final root | Responsibility |
+| --- | --- | --- |
+| BuildingBlocks | `LgymApi.Application/BuildingBlocks/` | Exact neutral public manifest: results, `Unit`, and the eight base application errors only. |
+| Technical Platform | `LgymApi.Application/Platform/Contracts/` | Shared background-command and serialization contracts, pagination, reliability, Unit of Work ports, and the public Platform facade. |
+| Reference Data | `LgymApi.Application/Platform/ReferenceData/` | AppConfig, enum lookup, unit conversion, and the internal registration helper composed only by `AddPlatformModule`. |
+
+BuildingBlocks may consume only the BCL. Technical Platform may consume BuildingBlocks and approved Domain-neutral primitives. Reference Data may consume BuildingBlocks, approved Technical Platform contracts, and Domain types. These classifications do not change the canonical owner name in the eight-module catalog.
+
+AppConfig owns the ID-only `IAppConfigAuthorizationPort`. Identity implements the port from Identity-owned repositories and registers the adapter. AppConfig has no direct Identity-repository dependency. Its latest-by-platform read remains unauthenticated.
+
+Reference Data owns the six concrete enum-to-lookup mappings and the lookup service. API consumers compose those maps, preserving raw `id`, translated `name` and `displayName`, hidden-value filtering, and case-insensitive enum type lookup.
+
 ## Identity & Accounts
 
 ### Responsibility boundary
@@ -147,6 +163,8 @@ Platform / Reference Data may host application startup, composition-root wiring,
 
 It must not absorb feature-specific commands, business workflows, or module-owned write models, because those belong to the fixed feature modules and stay under their own contract surfaces.
 
+Provider and registration ownership remains module-specific: Notifications owns email registration and Dummy or SMTP selection and owns FCM registration; Reporting owns Local or Cloudflare R2 photo-storage registration; Identity owns Google-token validation registration; API logging owns the optional Elasticsearch sink. Provider SDKs, credentials, and raw provider responses remain outside Application and BuildingBlocks.
+
 ### Background-contract path rules
 
 Platform owns `LgymApi.Application/Platform/Contracts/BackgroundCommands/` and `LgymApi.Application/Platform/Contracts/Serialization/`. Feature commands belong only under `LgymApi.Application/Identity/Contracts/BackgroundCommands/`, `LgymApi.Application/WorkoutProgress/Contracts/BackgroundCommands/`, `LgymApi.Application/Coaching/Contracts/BackgroundCommands/`, `LgymApi.Application/Reporting/Contracts/BackgroundCommands/`, and `LgymApi.Application/Nutrition/Contracts/BackgroundCommands/`. Notifications owns `LgymApi.Application/Notifications/Contracts/Push/`. Identity owns `LgymApi.Application/Features/PasswordReset/Contracts/`.
@@ -206,6 +224,12 @@ Extraction is justified only when all of these conditions are true:
 
 The eight-module catalog is the current baseline for those checks, and any later split must stay compatible with the #311 constraints.
 
+## Executable topology and concern matrix
+
+`ProjectReferenceGraphGuardTests` fixes the current graph at 14 projects and 32 edges. The only approved graph delta is removal of `LgymApi.Domain -> LgymApi.Resources`; Domain no longer depends on Resources. The system remains one production `AppDbContext`, one PostgreSQL database, and one migration stream.
+
+`issue-393-platform-reference-data-boundary.md` is the executable concern-owner matrix for authentication, authorization, serialization, localization, logging, providers, pagination, clock, correlation, idempotency, enum lookup, AppConfig, and persistence topology. It supplements this map without adding an owner, project, provider, or persistence root.
+
 ## Links
 
 - `docs/adr/006-lgym-evolves-as-modular-monolith.md`
@@ -214,3 +238,4 @@ The eight-module catalog is the current baseline for those checks, and any later
 - `docs/modular-monolith/issue-380-project-reference-graph.md`
 - `docs/modular-monolith/issue-381-notifications-boundary.md`
 - `docs/modular-monolith/issue-390-nutrition-boundary.md`
+- `docs/modular-monolith/issue-393-platform-reference-data-boundary.md`

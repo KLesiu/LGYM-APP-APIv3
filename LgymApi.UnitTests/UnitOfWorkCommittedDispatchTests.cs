@@ -54,7 +54,7 @@ public sealed class UnitOfWorkCommittedDispatchTests
 
         var action = async () => await transaction.CommitAsync();
         await action.Should().NotThrowAsync();
-        
+
         dbTransaction.CommitCalls.Should().Be(1);
         dispatcher.CallCount.Should().Be(1);
     }

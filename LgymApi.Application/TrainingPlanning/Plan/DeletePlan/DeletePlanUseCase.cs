@@ -1,5 +1,6 @@
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.TrainingPlanning.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.TrainingPlanning.Plan.ActivePlanPointer;
 using LgymApi.Resources;

@@ -346,7 +346,7 @@ public sealed class BackgroundActionDispatcherTests
             var toDelete = Envelopes
                 .Where(e => e.Status == ActionExecutionStatus.Completed && e.CompletedAt.HasValue && e.CompletedAt < cutoffDate)
                 .ToList();
-            
+
             var count = toDelete.Count;
             foreach (var e in toDelete)
             {

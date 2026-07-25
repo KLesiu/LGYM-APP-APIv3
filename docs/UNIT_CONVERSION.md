@@ -40,7 +40,7 @@ Current implementation:
 
 ## Dependency Injection
 
-Registered in `LgymApi.Application/ServiceCollectionExtensions.cs`:
+Registered by the internal `LgymApi.Application/Platform/ReferenceData/ServiceCollectionExtensions.cs` helper, composed only through public `AddPlatformModule`:
 
 - `ILinearUnitStrategy<WeightUnits> -> WeightLinearUnitStrategy`
 - `IUnitConverter<WeightUnits> -> LinearUnitConverter<WeightUnits>`

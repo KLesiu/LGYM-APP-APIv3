@@ -67,12 +67,12 @@ public sealed class ExerciseTranslationSeeder : IEntitySeeder
         SeedOperationConsole.Done("exercise translations");
     }
 
-     private static ExerciseTranslation CreateTranslation(Id<Exercise> exerciseId, string culture, string name)
-     {
-         return new ExerciseTranslation
-         {
-             Id = Id<ExerciseTranslation>.New(),
-             ExerciseId = exerciseId,
+    private static ExerciseTranslation CreateTranslation(Id<Exercise> exerciseId, string culture, string name)
+    {
+        return new ExerciseTranslation
+        {
+            Id = Id<ExerciseTranslation>.New(),
+            ExerciseId = exerciseId,
             Culture = culture,
             Name = name
         };

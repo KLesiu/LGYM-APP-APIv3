@@ -1,5 +1,6 @@
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Identity.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Role.Models;
 using LgymApi.Application.Pagination;
 using LgymApi.Application.Repositories;
@@ -40,7 +41,7 @@ public sealed class RoleService : IRoleService
                 role,
                 claimsByRole.TryGetValue(role.Id, out var claims) ? claims : new List<string>()))
             .ToList();
-        
+
         return Result<List<RoleResult>, AppError>.Success(result);
     }
 
@@ -89,7 +90,7 @@ public sealed class RoleService : IRoleService
         {
             return Result<RoleResult, AppError>.Failure(normalizedNameResult.Error);
         }
-        
+
         var normalizedClaimsResult = NormalizeAndValidateClaims(permissionClaims);
         if (normalizedClaimsResult.IsFailure)
         {
@@ -147,7 +148,7 @@ public sealed class RoleService : IRoleService
         {
             return Result<Unit, AppError>.Failure(normalizedNameResult.Error);
         }
-        
+
         var normalizedClaimsResult = NormalizeAndValidateClaims(permissionClaims);
         if (normalizedClaimsResult.IsFailure)
         {

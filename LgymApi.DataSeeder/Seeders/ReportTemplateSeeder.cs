@@ -34,10 +34,10 @@ public sealed class ReportTemplateSeeder : IEntitySeeder
         var existingSet = new HashSet<(Id<User> TrainerId, string Name)>(
             existing.Select(entry => (entry.TrainerId, entry.Name)));
 
-         var template = new ReportTemplate
-         {
-             Id = Id<ReportTemplate>.New(),
-             TrainerId = trainer.Id,
+        var template = new ReportTemplate
+        {
+            Id = Id<ReportTemplate>.New(),
+            TrainerId = trainer.Id,
             Name = "Weekly Check-in",
             Description = "Default weekly progress report"
         };
@@ -54,19 +54,19 @@ public sealed class ReportTemplateSeeder : IEntitySeeder
             ? template.Id
             : seedContext.ReportTemplates.FirstOrDefault(t => t.TrainerId == trainer.Id && t.Name == template.Name)?.Id;
 
-         if (fieldTemplateId == null)
-         {
-             SeedOperationConsole.Skip("report templates");
-             return;
-         }
- 
-         var fieldExisting = await context.ReportTemplateFields
-             .AsNoTracking()
-             .Where(field => field.TemplateId == fieldTemplateId.Value)
-             .Select(field => field.Key)
-            .ToListAsync(cancellationToken);
+        if (fieldTemplateId == null)
+        {
+            SeedOperationConsole.Skip("report templates");
+            return;
+        }
 
-          var fields = new List<ReportTemplateField>
+        var fieldExisting = await context.ReportTemplateFields
+            .AsNoTracking()
+            .Where(field => field.TemplateId == fieldTemplateId.Value)
+            .Select(field => field.Key)
+           .ToListAsync(cancellationToken);
+
+        var fields = new List<ReportTemplateField>
           {
               new()
               {

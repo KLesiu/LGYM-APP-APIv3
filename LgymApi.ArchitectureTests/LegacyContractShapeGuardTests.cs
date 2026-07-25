@@ -92,7 +92,7 @@ public sealed class LegacyContractShapeGuardTests
         Assert.That(
             violations,
             Is.Empty,
-            "Legacy response DTOs must preserve required property naming conventions (e.g., _id for IDs, msg for messages)." + 
+            "Legacy response DTOs must preserve required property naming conventions (e.g., _id for IDs, msg for messages)." +
             Environment.NewLine +
             string.Join(Environment.NewLine, violations.Select(v => v.ToString())));
     }
@@ -227,7 +227,7 @@ public sealed class LegacyContractShapeGuardTests
         // and is of type string
         var isStringType = property.Type.SpecialType == SpecialType.System_String;
         var isMessageNamed = property.Name.Contains("Message") || property.Name == "Msg";
-        
+
         return isStringType && isMessageNamed;
     }
 

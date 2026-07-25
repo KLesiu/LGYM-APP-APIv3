@@ -1,7 +1,6 @@
 using LgymApi.Api.Features.PlanDay.Contracts;
 using LgymApi.Api.Features.Training.Contracts;
 using LgymApi.Api.Features.User.Contracts;
-using LgymApi.Api.Features.Enum;
 using LgymApi.Api.Features.Enum.Contracts;
 using LgymApi.Api.Features.Exercise.Contracts;
 using LgymApi.Application.Features.Training.Models;
@@ -9,6 +8,7 @@ using LgymApi.Application.Features.User.Models;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.WorkoutProgress.Dashboard.Models;
 using LgymApi.Domain.Entities;
+using LgymApi.Domain.Enums;
 
 namespace LgymApi.Api.Mapping.Profiles;
 
@@ -16,11 +16,11 @@ public sealed class TrainingProfile : IMappingProfile
 {
     public void Configure(MappingConfiguration configuration)
     {
-        configuration.CreateMap<ScoreResult, ScoreResultDto>((source, _) => new ScoreResultDto
+        configuration.CreateMap<ScoreResult, ScoreResultDto>((source, context) => new ScoreResultDto
         {
             Reps = source.Reps,
             Weight = source.Weight,
-            Unit = source.Unit.ToLookup()
+            Unit = context!.Map<WeightUnits, EnumLookupDto>(source.Unit)
         });
 
         configuration.CreateMap<SeriesComparison, SeriesComparisonDto>((source, context) => new SeriesComparisonDto
@@ -85,10 +85,10 @@ public sealed class TrainingProfile : IMappingProfile
                     Id = exercise.ExerciseDetails.Id,
                     Name = exercise.ExerciseDetails.Name,
                     UserId = exercise.ExerciseDetails.UserId,
-                    BodyPart = exercise.ExerciseDetails.BodyPart.ToLookup(),
+                    BodyPart = context!.Map<BodyParts, EnumLookupDto>(exercise.ExerciseDetails.BodyPart),
                     EloFormula = exercise.ExerciseDetails.EloFormula == null
                         ? null
-                        : context!.Map<EnumLookupDto, LgymApi.Api.Features.Common.Contracts.LookupItemVm>(exercise.ExerciseDetails.EloFormula.ToLookup()),
+                        : context.Map<EnumLookupDto, LgymApi.Api.Features.Common.Contracts.LookupItemVm>(context.Map<ExerciseEloFormula, EnumLookupDto>(exercise.ExerciseDetails.EloFormula.Value)),
                     Description = exercise.ExerciseDetails.Description,
                     Image = exercise.ExerciseDetails.Image
                 },
@@ -97,7 +97,7 @@ public sealed class TrainingProfile : IMappingProfile
                     Id = score.Id,
                     ExerciseId = score.ExerciseId,
                     Weight = score.Weight,
-                    Unit = score.Unit.ToLookup(),
+                    Unit = context.Map<WeightUnits, EnumLookupDto>(score.Unit),
                     Reps = score.Reps,
                     Series = score.Series
                 }).ToList()

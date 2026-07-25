@@ -1,6 +1,6 @@
 using LgymApi.Application.Coaching.Contracts.Access;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping.Core;
 using OwnerDeleteCommand = LgymApi.Application.TrainingPlanning.Contracts.ManagedPlans.DeleteManagedPlanCommand;
 using OwnerDeleteUseCase = LgymApi.Application.TrainingPlanning.Contracts.ManagedPlans.IDeleteManagedPlanUseCase;

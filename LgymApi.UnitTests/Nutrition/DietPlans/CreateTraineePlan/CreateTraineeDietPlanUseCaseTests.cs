@@ -1,7 +1,8 @@
 using System.Text.Json;
 using FluentAssertions;
 using LgymApi.Application.Coaching.Contracts.Access;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Coaching.Errors;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Nutrition.Contracts.BackgroundCommands;

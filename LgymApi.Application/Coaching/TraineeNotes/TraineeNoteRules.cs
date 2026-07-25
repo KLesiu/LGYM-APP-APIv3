@@ -1,7 +1,8 @@
 using LgymApi.Application.Coaching.Contracts.Access;
 using LgymApi.Application.Coaching.Persistence;
 using LgymApi.Application.Coaching.TraineeNotes.Models;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Coaching.Errors;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
 using UserEntity = LgymApi.Domain.Entities.User;

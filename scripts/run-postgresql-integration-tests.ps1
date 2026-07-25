@@ -144,6 +144,16 @@ function Assert-PassingTrx {
     if ($total -eq 0 -or $executed -ne $total -or $passed -ne $total -or $failed -ne 0 -or $notExecuted -ne 0) {
         throw "PostgreSQL TRX counters are not a non-empty passing result: total=$total, executed=$executed, passed=$passed, failed=$failed, notExecuted=$notExecuted."
     }
+
+    $notExecutedResults = @(
+        $trx.SelectNodes("/trx:TestRun/trx:Results/trx:UnitTestResult", $namespaceManager) |
+            Where-Object {
+                $_ -is [System.Xml.XmlElement] -and $_.GetAttribute("outcome") -eq "NotExecuted"
+            }
+    )
+    if ($notExecutedResults.Count -ne 0) {
+        throw "PostgreSQL TRX contains $($notExecutedResults.Count) NotExecuted test result(s) despite its summary counters."
+    }
 }
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
@@ -157,7 +167,7 @@ if (-not [System.IO.Path]::IsPathRooted($ResultsDirectory)) {
 }
 
 $resultsPath = (New-Item -ItemType Directory -Path $ResultsDirectory -Force).FullName
-$trxFileName = "postgresql-integration-tests-$([Guid]::NewGuid().ToString('N')).trx"
+$trxFileName = "integration-tests-with-postgresql-$([Guid]::NewGuid().ToString('N')).trx"
 $originalPostgreSqlEnvironment = [Environment]::GetEnvironmentVariable("LGYM_TEST_POSTGRES", "Process")
 $environmentWasSet = $false
 $containerName = $null
@@ -195,7 +205,6 @@ try {
         "test",
         $testProject,
         "--configuration", "Release",
-        "--filter", "TestCategory=PostgreSql",
         "--logger", "trx;LogFileName=$trxFileName",
         "--results-directory", $resultsPath,
         "--verbosity", "normal"
@@ -224,7 +233,7 @@ try {
         throw "The PostgreSQL integration test command exited with code $testExitCode despite a passing TRX result."
     }
 
-    Write-Host "PostgreSQL integration tests passed. TRX: $($trxFile.FullName)"
+    Write-Host "Integration tests with PostgreSQL passed. TRX: $($trxFile.FullName)"
 }
 catch {
     $failureMessage = $_.Exception.Message

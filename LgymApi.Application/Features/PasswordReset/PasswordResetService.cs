@@ -1,7 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Identity.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.PasswordReset.Contracts;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Services;
@@ -9,7 +10,7 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
 
-using Result = LgymApi.Application.Common.Results.Result<LgymApi.Application.Common.Results.Unit, LgymApi.Application.Common.Errors.AppError>;
+using Result = LgymApi.Application.BuildingBlocks.Results.Result<LgymApi.Application.BuildingBlocks.Results.Unit, LgymApi.Application.BuildingBlocks.Errors.AppError>;
 
 namespace LgymApi.Application.Features.PasswordReset;
 

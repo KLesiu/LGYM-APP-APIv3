@@ -34,9 +34,9 @@ public sealed class ExerciseRepositoryTests
         });
         await dbContext.SaveChangesAsync();
 
-         var repository = new ExerciseRepository(dbContext);
-         var result = await repository.GetTranslationsAsync([exerciseId], ["   ", ""], CancellationToken.None);
+        var repository = new ExerciseRepository(dbContext);
+        var result = await repository.GetTranslationsAsync([exerciseId], ["   ", ""], CancellationToken.None);
 
-         result.Should().BeEmpty();
-     }
+        result.Should().BeEmpty();
+    }
 }

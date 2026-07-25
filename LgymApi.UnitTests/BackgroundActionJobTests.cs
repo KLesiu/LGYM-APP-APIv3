@@ -122,7 +122,7 @@ public class BackgroundActionJobTests
 
         // Assert
         _testOrchestrator.OrchestrationCalls.Count.Should().Be(3, "Orchestrator should be called once per execution");
-        
+
         for (int i = 0; i < 3; i++)
         {
             _testOrchestrator.OrchestrationCalls[i].EnvelopeId.Should().Be(messageIds[i], $"Call {i + 1} should pass correct message id");
@@ -210,7 +210,7 @@ public class BackgroundActionJobTests
         delays[0].Should().Be(60, "First retry at 1 minute");
         delays[1].Should().Be(300, "Second retry at 5 minutes");
         delays[2].Should().Be(900, "Third retry at 15 minutes");
-        
+
         // Verify increasing sequence
         for (int i = 1; i < delays.Length; i++)
         {

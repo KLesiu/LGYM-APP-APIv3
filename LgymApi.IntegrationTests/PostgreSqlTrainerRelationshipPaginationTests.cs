@@ -279,15 +279,15 @@ internal sealed class PostgreSqlTrainerRelationshipPaginationTests : PostgreSqlI
         string code,
         DateTimeOffset createdAt,
         DateTimeOffset? expiresAt = null) => new()
-    {
-        Id = id,
-        TrainerId = trainerId,
-        TraineeId = traineeId,
-        InviteeEmail = inviteeEmail,
-        Code = code,
-        Status = TrainerInvitationStatus.Pending,
-        ExpiresAt = expiresAt ?? new DateTimeOffset(2030, 6, 6, 8, 0, 0, TimeSpan.Zero),
-        CreatedAt = createdAt,
-        UpdatedAt = createdAt
-    };
+        {
+            Id = id,
+            TrainerId = trainerId,
+            TraineeId = traineeId,
+            InviteeEmail = inviteeEmail,
+            Code = code,
+            Status = TrainerInvitationStatus.Pending,
+            ExpiresAt = expiresAt ?? new DateTimeOffset(2030, 6, 6, 8, 0, 0, TimeSpan.Zero),
+            CreatedAt = createdAt,
+            UpdatedAt = createdAt
+        };
 }

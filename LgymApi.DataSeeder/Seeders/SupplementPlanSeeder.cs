@@ -35,10 +35,10 @@ public sealed class SupplementPlanSeeder : IEntitySeeder
         var existingSet = new HashSet<(Id<User> TrainerId, Id<User> TraineeId, string Name)>(
             existing.Select(entry => (entry.TrainerId, entry.TraineeId, entry.Name)));
 
-         var plan = new SupplementPlan
-         {
-             Id = Id<SupplementPlan>.New(),
-             TrainerId = trainer.Id,
+        var plan = new SupplementPlan
+        {
+            Id = Id<SupplementPlan>.New(),
+            TrainerId = trainer.Id,
             TraineeId = trainee.Id,
             Name = "Starter stack",
             Notes = "Basic supplements for onboarding",

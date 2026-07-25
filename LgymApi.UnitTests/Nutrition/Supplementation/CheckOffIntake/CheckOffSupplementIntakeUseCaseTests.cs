@@ -1,5 +1,6 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Nutrition.Errors;
 using LgymApi.Application.Nutrition.Persistence;
 using LgymApi.Application.Nutrition.Supplementation.CheckOffIntake;
 using LgymApi.Application.Nutrition.Supplementation.CheckOffIntake.Contracts;

@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Reflection;
 using System.Resources;
 using System.Text;
 using System.Text.Json;
@@ -144,9 +143,7 @@ public sealed class TrainingCompletedEmailTemplateComposer : EmailTemplateCompos
     {
         var unitType = unit.GetType();
         var enumName = unit.ToString();
-        var field = unitType.GetField(enumName);
-        var translationAttribute = field?.GetCustomAttribute<EnumTranslationAttribute>();
-        var translationKey = translationAttribute?.ResourceKey ?? $"{unitType.Name}_{enumName}";
+        var translationKey = $"{unitType.Name}_{enumName}";
 
         var resourceManager = new ResourceManager("LgymApi.Resources.Resources.Enums", typeof(LgymApi.Resources.Enums).Assembly);
         var displayName = resourceManager.GetString(translationKey, culture) ?? enumName;

@@ -1,6 +1,7 @@
 using FluentAssertions;
 using LgymApi.Application.Coaching.Contracts.Access;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Nutrition.Errors;
 using LgymApi.Application.Nutrition.Persistence;
 using LgymApi.Application.Nutrition.Supplementation.UnassignTraineePlan;
 using LgymApi.Application.Nutrition.Supplementation.UnassignTraineePlan.Contracts;

@@ -49,10 +49,10 @@ public sealed class TrainingSeeder : IEntitySeeder
                     continue;
                 }
 
-                 var training = new Training
-                 {
-                     Id = Id<Training>.New(),
-                     UserId = user.Id,
+                var training = new Training
+                {
+                    Id = Id<Training>.New(),
+                    UserId = user.Id,
                     TypePlanDayId = day.Id,
                     GymId = gym.Id
                 };

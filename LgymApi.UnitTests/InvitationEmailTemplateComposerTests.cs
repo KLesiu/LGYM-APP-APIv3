@@ -36,100 +36,100 @@ public sealed class InvitationEmailTemplateComposerTests
         }
     }
 
-     [Test]
-     public void ComposeTrainerInvitation_ShouldUsePolishTemplate_WhenLanguageIsPl()
-     {
-         var composer = CreateComposer();
+    [Test]
+    public void ComposeTrainerInvitation_ShouldUsePolishTemplate_WhenLanguageIsPl()
+    {
+        var composer = CreateComposer();
 
-         var invitationId = Id<LgymApi.Domain.Entities.TrainerInvitation>.New();
-         var payload = new InvitationEmailPayload
-         {
-             InvitationId = invitationId,
-             InvitationCode = "ABC123XYZ789",
-             ExpiresAt = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
-             TrainerName = "Coach Mike",
-             RecipientEmail = "trainee@example.com",
-             CultureName = "pl-PL",
-             PreferredTimeZone = "Europe/Warsaw"
-         };
+        var invitationId = Id<LgymApi.Domain.Entities.TrainerInvitation>.New();
+        var payload = new InvitationEmailPayload
+        {
+            InvitationId = invitationId,
+            InvitationCode = "ABC123XYZ789",
+            ExpiresAt = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
+            TrainerName = "Coach Mike",
+            RecipientEmail = "trainee@example.com",
+            CultureName = "pl-PL",
+            PreferredTimeZone = "Europe/Warsaw"
+        };
 
-         var message = composer.ComposeTrainerInvitation(payload);
+        var message = composer.ComposeTrainerInvitation(payload);
 
-         message.To.Should().Be("trainee@example.com");
-         message.Subject.Should().Be("Zaproszenie od Coach Mike");
-         message.Body.Should().Contain("Kod: ABC123XYZ789");
-         message.Body.Should().Contain("Akceptuj:");
-         message.Body.Should().Contain("Wygasa:");
-         message.Body.Should().Contain("2026-03-01 11:00");
-         message.Body.Should().Contain($"/accept/{invitationId}");
-         message.Body.Should().Contain($"/reject/{invitationId}");
-     }
+        message.To.Should().Be("trainee@example.com");
+        message.Subject.Should().Be("Zaproszenie od Coach Mike");
+        message.Body.Should().Contain("Kod: ABC123XYZ789");
+        message.Body.Should().Contain("Akceptuj:");
+        message.Body.Should().Contain("Wygasa:");
+        message.Body.Should().Contain("2026-03-01 11:00");
+        message.Body.Should().Contain($"/accept/{invitationId}");
+        message.Body.Should().Contain($"/reject/{invitationId}");
+    }
 
-     [Test]
-     public void ComposeTrainerInvitation_ShouldFallbackToDefaultLanguage_WhenTemplateMissing()
-     {
-         var composer = CreateComposer();
+    [Test]
+    public void ComposeTrainerInvitation_ShouldFallbackToDefaultLanguage_WhenTemplateMissing()
+    {
+        var composer = CreateComposer();
 
-         var invitationId = Id<LgymApi.Domain.Entities.TrainerInvitation>.New();
-         var payload = new InvitationEmailPayload
-         {
-             InvitationId = invitationId,
-             InvitationCode = "ZZZ999YYY888",
-             ExpiresAt = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
-             TrainerName = "Coach Jane",
-             RecipientEmail = "trainee@example.com",
-             CultureName = "de-DE",
-             PreferredTimeZone = "Europe/Warsaw"
-         };
+        var invitationId = Id<LgymApi.Domain.Entities.TrainerInvitation>.New();
+        var payload = new InvitationEmailPayload
+        {
+            InvitationId = invitationId,
+            InvitationCode = "ZZZ999YYY888",
+            ExpiresAt = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
+            TrainerName = "Coach Jane",
+            RecipientEmail = "trainee@example.com",
+            CultureName = "de-DE",
+            PreferredTimeZone = "Europe/Warsaw"
+        };
 
-         var message = composer.ComposeTrainerInvitation(payload);
+        var message = composer.ComposeTrainerInvitation(payload);
 
-         message.Subject.Should().Be("Trainer invitation from Coach Jane");
-         message.Body.Should().Contain("Invitation ZZZ999YYY888");
-         message.Body.Should().Contain("Accept:");
-     }
+        message.Subject.Should().Be("Trainer invitation from Coach Jane");
+        message.Body.Should().Contain("Invitation ZZZ999YYY888");
+        message.Body.Should().Contain("Accept:");
+    }
 
-     [Test]
-     public void ComposeTrainerInvitation_ShouldUseConfiguredFallbackTimeZone_WhenPreferredTimeZoneInvalid()
-     {
-         var composer = CreateComposer(new AppDefaultsOptions { PreferredLanguage = "en-US", PreferredTimeZone = "UTC" });
+    [Test]
+    public void ComposeTrainerInvitation_ShouldUseConfiguredFallbackTimeZone_WhenPreferredTimeZoneInvalid()
+    {
+        var composer = CreateComposer(new AppDefaultsOptions { PreferredLanguage = "en-US", PreferredTimeZone = "UTC" });
 
-         var payload = new InvitationEmailPayload
-         {
-             InvitationId = Id<LgymApi.Domain.Entities.TrainerInvitation>.New(),
-             InvitationCode = "UTC123",
-             ExpiresAt = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
-             TrainerName = "Coach UTC",
-             RecipientEmail = "trainee@example.com",
-             CultureName = "en-US",
-             PreferredTimeZone = "Invalid/Zone"
-         };
+        var payload = new InvitationEmailPayload
+        {
+            InvitationId = Id<LgymApi.Domain.Entities.TrainerInvitation>.New(),
+            InvitationCode = "UTC123",
+            ExpiresAt = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
+            TrainerName = "Coach UTC",
+            RecipientEmail = "trainee@example.com",
+            CultureName = "en-US",
+            PreferredTimeZone = "Invalid/Zone"
+        };
 
-         var message = composer.ComposeTrainerInvitation(payload);
+        var message = composer.ComposeTrainerInvitation(payload);
 
-         message.Body.Should().Contain("Expires: 2026-03-01 10:00");
-     }
+        message.Body.Should().Contain("Expires: 2026-03-01 10:00");
+    }
 
-     [Test]
-     public void ComposeTrainerInvitation_ShouldUseConfiguredFallbackTimeZone_WhenPreferredTimeZoneEmpty()
-     {
-         var composer = CreateComposer(new AppDefaultsOptions { PreferredLanguage = "en-US", PreferredTimeZone = "UTC" });
+    [Test]
+    public void ComposeTrainerInvitation_ShouldUseConfiguredFallbackTimeZone_WhenPreferredTimeZoneEmpty()
+    {
+        var composer = CreateComposer(new AppDefaultsOptions { PreferredLanguage = "en-US", PreferredTimeZone = "UTC" });
 
-         var payload = new InvitationEmailPayload
-         {
-             InvitationId = Id<LgymApi.Domain.Entities.TrainerInvitation>.New(),
-             InvitationCode = "UTC456",
-             ExpiresAt = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
-             TrainerName = "Coach UTC",
-             RecipientEmail = "trainee@example.com",
-             CultureName = "en-US",
-             PreferredTimeZone = string.Empty
-         };
+        var payload = new InvitationEmailPayload
+        {
+            InvitationId = Id<LgymApi.Domain.Entities.TrainerInvitation>.New(),
+            InvitationCode = "UTC456",
+            ExpiresAt = DateTimeOffset.Parse("2026-03-01T10:00:00+00:00"),
+            TrainerName = "Coach UTC",
+            RecipientEmail = "trainee@example.com",
+            CultureName = "en-US",
+            PreferredTimeZone = string.Empty
+        };
 
-         var message = composer.ComposeTrainerInvitation(payload);
+        var message = composer.ComposeTrainerInvitation(payload);
 
-         message.Body.Should().Contain("Expires: 2026-03-01 10:00");
-     }
+        message.Body.Should().Contain("Expires: 2026-03-01 10:00");
+    }
 
     private TrainerInvitationEmailTemplateComposer CreateComposer(AppDefaultsOptions? appDefaultsOptions = null)
     {

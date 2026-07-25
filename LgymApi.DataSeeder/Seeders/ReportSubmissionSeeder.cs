@@ -41,10 +41,10 @@ public sealed class ReportSubmissionSeeder : IEntitySeeder
             }
 
             var request = seedContext.ReportRequests.First(entry => entry.Id == requestId);
-             var submission = new ReportSubmission
-             {
-                 Id = Id<ReportSubmission>.New(),
-                 ReportRequestId = request.Id,
+            var submission = new ReportSubmission
+            {
+                Id = Id<ReportSubmission>.New(),
+                ReportRequestId = request.Id,
                 TraineeId = request.TraineeId,
                 PayloadJson = "{\"weight\":80,\"sleep\":7,\"notes\":\"All good\"}"
             };

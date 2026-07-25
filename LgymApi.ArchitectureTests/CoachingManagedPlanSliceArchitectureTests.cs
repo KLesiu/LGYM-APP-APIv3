@@ -134,6 +134,19 @@ public sealed class CoachingManagedPlanSliceArchitectureTests
         source.Should().NotContain(text => text.Contains("LgymApi.Application.Coaching", StringComparison.Ordinal));
     }
 
+    [Test]
+    public void TrainingPlanningManagedPlanOwner_UsesTrainingPlanningPlanErrors()
+    {
+        var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var directory = Path.Combine(root, "LgymApi.Application", "TrainingPlanning", "ManagedPlans");
+        var useCaseSources = Directory.GetFiles(directory, "*UseCase.cs", SearchOption.AllDirectories)
+            .Where(path => !Path.GetFileName(path).StartsWith("I", StringComparison.Ordinal))
+            .Select(File.ReadAllText);
+
+        useCaseSources.Should().OnlyContain(source =>
+            source.Contains("LgymApi.Application.TrainingPlanning.Errors", StringComparison.Ordinal));
+    }
+
     private static bool IsAllowedInputType(Type type)
     {
         if (type == typeof(string))

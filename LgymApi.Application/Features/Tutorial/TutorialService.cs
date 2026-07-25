@@ -1,5 +1,6 @@
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Identity.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Tutorial.Models;
 using LgymApi.Application.Repositories;
 using LgymApi.Domain.Entities;
@@ -52,7 +53,7 @@ public sealed class TutorialService : ITutorialService
 
         await _tutorialProgressRepository.AddAsync(progress, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        
+
         return Result<Unit, AppError>.Success(Unit.Value);
     }
 
@@ -140,7 +141,7 @@ public sealed class TutorialService : ITutorialService
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        
+
         return Result<Unit, AppError>.Success(Unit.Value);
     }
 
@@ -172,7 +173,7 @@ public sealed class TutorialService : ITutorialService
         await _tutorialProgressRepository.UpdateAsync(progress, cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        
+
         return Result<Unit, AppError>.Success(Unit.Value);
     }
 

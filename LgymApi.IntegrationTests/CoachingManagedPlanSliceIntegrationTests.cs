@@ -1,7 +1,9 @@
 using FluentAssertions;
 using LgymApi.Application.Coaching.ManagedPlans.GetActive;
 using LgymApi.Application.Coaching.ManagedPlans.List;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Coaching.Errors;
+using LgymApi.Application.TrainingPlanning.Errors;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
@@ -78,7 +80,7 @@ public sealed class CoachingManagedPlanSliceIntegrationTests : IntegrationTestBa
             unassigned.IsSuccess.Should().BeTrue();
             var noActivePlan = await services.GetRequiredService<IGetActiveManagedPlanUseCase>()
                 .ExecuteAsync(new GetActiveManagedPlanQuery(trainee.Id));
-            noActivePlan.Error.Should().BeOfType<TrainerRelationshipNotFoundError>();
+            noActivePlan.Error.Should().BeOfType<PlanNotFoundError>();
 
             var assignedExisting = await services.GetRequiredService<CoachingAssign.IAssignTraineeManagedPlanUseCase>()
                 .ExecuteAsync(new CoachingAssign.AssignTraineeManagedPlanCommand(trainer.Id, trainee.Id, cloneId));
@@ -167,10 +169,10 @@ public sealed class CoachingManagedPlanSliceIntegrationTests : IntegrationTestBa
         var unavailableOwner = await services.GetRequiredService<CoachingAssign.IAssignTraineeManagedPlanUseCase>()
             .ExecuteAsync(new CoachingAssign.AssignTraineeManagedPlanCommand(trainer.Id, missingOwner.Id, templateId));
 
-        invalidName.Error.Should().BeOfType<InvalidTrainerRelationshipError>();
-        invalidPlanId.Error.Should().BeOfType<InvalidTrainerRelationshipError>();
-        foreignPlanResult.Error.Should().BeOfType<TrainerRelationshipNotFoundError>();
-        unavailableOwner.Error.Should().BeOfType<TrainerRelationshipNotFoundError>();
+        invalidName.Error.Should().BeOfType<InvalidPlanError>();
+        invalidPlanId.Error.Should().BeOfType<InvalidPlanError>();
+        foreignPlanResult.Error.Should().BeOfType<PlanNotFoundError>();
+        unavailableOwner.Error.Should().BeOfType<PlanNotFoundError>();
     }
 
     private async Task SeedRelationshipAsync(

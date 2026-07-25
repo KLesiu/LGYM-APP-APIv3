@@ -1,6 +1,7 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Identity.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Tutorial;
 using LgymApi.Application.Features.User.Models;
 using LgymApi.Application.Identity.Contracts.BackgroundCommands;

@@ -4,6 +4,7 @@
 - Contains: entities, enums, strongly typed IDs, domain helpers, and auth/security constants.
 - Rules: keep free of HTTP, EF, and API concerns.
 - Boundary: do not reorder or renumber existing enums.
+- Dependency boundary: Domain has no project references and stays localization-neutral. Application and Resources derive enum labels from the `EnumType_EnumMember` convention; Domain must not reference Resources or contain localized display text.
 - `Exercise` now carries `ExerciseEloFormula` with `Standard` as the default profile.
 - `ExerciseEloFormula.PullupWeighted` rewards lower weight for pull-up style exercises where added weight makes the score worse.
 - `PushInstallation` stores installation-scoped FCM registration state with optional user/session binding so logout and account-switch flows can disassociate a device without deleting its installation record.

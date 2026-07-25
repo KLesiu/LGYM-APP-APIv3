@@ -1,7 +1,8 @@
 using FluentAssertions;
 using LgymApi.Application.Coaching.Contracts.Access;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Nutrition.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Nutrition.Supplementation.DeleteTraineePlan;
 using LgymApi.Application.Nutrition.Supplementation.DeleteTraineePlan.Models;
 using LgymApi.Application.Nutrition.Persistence;

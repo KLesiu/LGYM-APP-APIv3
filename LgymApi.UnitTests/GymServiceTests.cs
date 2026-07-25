@@ -1,5 +1,6 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.WorkoutProgress.Errors;
 using LgymApi.Application.Features.Gym;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Services;
@@ -28,65 +29,65 @@ public sealed class GymServiceTests
         _service = new GymService(_gymRepository, _trainingRepository, _unitOfWork);
     }
 
-     [Test]
-     public async Task AddGymAsync_ReturnsInvalidGymError_WhenCurrentUserIsNull()
-     {
-         var routeUserId = Id<UserEntity>.New();
-         var result = await _service.AddGymAsync(null!, routeUserId, "Test Gym", null);
+    [Test]
+    public async Task AddGymAsync_ReturnsInvalidGymError_WhenCurrentUserIsNull()
+    {
+        var routeUserId = Id<UserEntity>.New();
+        var result = await _service.AddGymAsync(null!, routeUserId, "Test Gym", null);
 
-         result.IsFailure.Should().BeTrue();
-         result.Error.Should().BeOfType<InvalidGymError>();
-     }
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<InvalidGymError>();
+    }
 
-     [Test]
-     public async Task AddGymAsync_ReturnsInvalidGymError_WhenRouteUserIdIsEmpty()
-     {
-         var currentUser = new UserEntity { Id = Id<UserEntity>.New(), Name = "User", Email = new Email("test@test.com") };
-         var result = await _service.AddGymAsync(currentUser, Id<UserEntity>.Empty, "Test Gym", null);
+    [Test]
+    public async Task AddGymAsync_ReturnsInvalidGymError_WhenRouteUserIdIsEmpty()
+    {
+        var currentUser = new UserEntity { Id = Id<UserEntity>.New(), Name = "User", Email = new Email("test@test.com") };
+        var result = await _service.AddGymAsync(currentUser, Id<UserEntity>.Empty, "Test Gym", null);
 
-         result.IsFailure.Should().BeTrue();
-         result.Error.Should().BeOfType<InvalidGymError>();
-     }
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<InvalidGymError>();
+    }
 
-     [Test]
-     public async Task DeleteGymAsync_ReturnsInvalidGymError_WhenCurrentUserIsNull()
-     {
-         var gymId = Id<GymEntity>.New();
-         var result = await _service.DeleteGymAsync(null!, gymId);
+    [Test]
+    public async Task DeleteGymAsync_ReturnsInvalidGymError_WhenCurrentUserIsNull()
+    {
+        var gymId = Id<GymEntity>.New();
+        var result = await _service.DeleteGymAsync(null!, gymId);
 
-         result.IsFailure.Should().BeTrue();
-         result.Error.Should().BeOfType<InvalidGymError>();
-     }
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<InvalidGymError>();
+    }
 
-     [Test]
-     public async Task GetGymsAsync_ReturnsInvalidGymError_WhenRouteUserIdIsEmpty()
-     {
-         var currentUser = new UserEntity { Id = Id<UserEntity>.New(), Name = "User", Email = new Email("test@test.com") };
-         var result = await _service.GetGymsAsync(currentUser, Id<UserEntity>.Empty);
+    [Test]
+    public async Task GetGymsAsync_ReturnsInvalidGymError_WhenRouteUserIdIsEmpty()
+    {
+        var currentUser = new UserEntity { Id = Id<UserEntity>.New(), Name = "User", Email = new Email("test@test.com") };
+        var result = await _service.GetGymsAsync(currentUser, Id<UserEntity>.Empty);
 
-         result.IsFailure.Should().BeTrue();
-         result.Error.Should().BeOfType<InvalidGymError>();
-     }
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<InvalidGymError>();
+    }
 
-     [Test]
-     public async Task GetGymAsync_ReturnsInvalidGymError_WhenCurrentUserIsNull()
-     {
-         var gymId = Id<GymEntity>.New();
-         var result = await _service.GetGymAsync(null!, gymId);
+    [Test]
+    public async Task GetGymAsync_ReturnsInvalidGymError_WhenCurrentUserIsNull()
+    {
+        var gymId = Id<GymEntity>.New();
+        var result = await _service.GetGymAsync(null!, gymId);
 
-         result.IsFailure.Should().BeTrue();
-         result.Error.Should().BeOfType<InvalidGymError>();
-     }
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<InvalidGymError>();
+    }
 
-     [Test]
-     public async Task UpdateGymAsync_ReturnsInvalidGymError_WhenCurrentUserIsNull()
-     {
-         var gymId = Id<GymEntity>.New();
-         var result = await _service.UpdateGymAsync(null!, gymId, "Updated", null);
+    [Test]
+    public async Task UpdateGymAsync_ReturnsInvalidGymError_WhenCurrentUserIsNull()
+    {
+        var gymId = Id<GymEntity>.New();
+        var result = await _service.UpdateGymAsync(null!, gymId, "Updated", null);
 
-         result.IsFailure.Should().BeTrue();
-         result.Error.Should().BeOfType<InvalidGymError>();
-     }
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<InvalidGymError>();
+    }
 
     // Minimal stubs - validation-path tests only, no repository behavior needed
     private sealed class InMemoryGymRepository : IGymRepository

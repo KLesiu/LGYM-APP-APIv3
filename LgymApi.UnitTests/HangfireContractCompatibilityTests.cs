@@ -2,6 +2,7 @@ using System.Reflection;
 using FluentAssertions;
 using Hangfire;
 using Hangfire.Common;
+using Hangfire.Logging;
 using Hangfire.States;
 using Hangfire.Storage;
 using LgymApi.Api;
@@ -30,6 +31,10 @@ namespace LgymApi.UnitTests;
 [NonParallelizable]
 public sealed class HangfireContractCompatibilityTests
 {
+    private static readonly MethodInfo ResolveLogProvider = typeof(LogProvider).GetMethod(
+        "ResolveLogProvider",
+        BindingFlags.Static | BindingFlags.NonPublic)!;
+
     private static readonly PersistedJobContract[] PersistedJobs =
     [
         new("ActionMessage", typeof(IActionMessageJob), typeof(ActionMessageJob), "LgymApi.BackgroundWorker.Jobs", [typeof(Id<CommandEnvelope>)], []),
@@ -42,6 +47,20 @@ public sealed class HangfireContractCompatibilityTests
         new("RecurringReportAssignmentProcessing", typeof(IRecurringReportAssignmentProcessingJob), typeof(RecurringReportAssignmentProcessingJob), "LgymApi.BackgroundWorker.Jobs", [typeof(CancellationToken)], [0]),
         new("StalePushInstallationCleanup", typeof(IStalePushInstallationCleanupJob), typeof(StalePushInstallationCleanupJob), "LgymApi.BackgroundWorker.Jobs", [typeof(CancellationToken)], [0])
     ];
+
+    private ILogProvider _originalLogProvider = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _originalLogProvider = (ILogProvider)ResolveLogProvider.Invoke(null, null)!;
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        LogProvider.SetCurrentLogProvider(_originalLogProvider);
+    }
 
     [TestCaseSource(nameof(GetPersistedJobContracts))]
     public void PersistedJobContract_HasFrozenIdentityAndSignature(PersistedJobContract contract)

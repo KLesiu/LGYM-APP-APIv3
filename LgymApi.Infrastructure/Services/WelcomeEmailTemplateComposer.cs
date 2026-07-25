@@ -62,5 +62,5 @@ public sealed class WelcomeEmailTemplateComposer : EmailTemplateComposerBase, IE
         }
     }
 
-    
+
 }

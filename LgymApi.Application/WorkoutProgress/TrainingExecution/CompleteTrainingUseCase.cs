@@ -1,6 +1,7 @@
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
-using LgymApi.Application.Common.Training.Elo;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.WorkoutProgress.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
+using LgymApi.Application.WorkoutProgress.Scoring.Elo;
 using LgymApi.Application.Features.Training.Models;
 using LgymApi.Application.WorkoutProgress.Contracts.BackgroundCommands;
 using LgymApi.Domain.Entities;

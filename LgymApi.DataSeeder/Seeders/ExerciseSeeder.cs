@@ -58,12 +58,12 @@ public sealed class ExerciseSeeder : IEntitySeeder
         SeedOperationConsole.Done("exercises");
     }
 
-     private static Exercise CreateExercise(string name, BodyParts bodyPart)
-     {
-         return new Exercise
-         {
-             Id = Id<Exercise>.New(),
-             Name = name,
+    private static Exercise CreateExercise(string name, BodyParts bodyPart)
+    {
+        return new Exercise
+        {
+            Id = Id<Exercise>.New(),
+            Name = name,
             BodyPart = bodyPart
         };
     }

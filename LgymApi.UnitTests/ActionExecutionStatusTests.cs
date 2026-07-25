@@ -13,23 +13,23 @@ public sealed class ActionExecutionStatusTests
     [Test]
     public void Enum_HasExpectedValues()
     {
-         // Arrange & Act & Assert
-         ((int)ActionExecutionStatus.Pending).Should().Be(0);
-         ((int)ActionExecutionStatus.Processing).Should().Be(1);
-         ((int)ActionExecutionStatus.Completed).Should().Be(2);
-         ((int)ActionExecutionStatus.Failed).Should().Be(3);
-         ((int)ActionExecutionStatus.DeadLettered).Should().Be(4);
+        // Arrange & Act & Assert
+        ((int)ActionExecutionStatus.Pending).Should().Be(0);
+        ((int)ActionExecutionStatus.Processing).Should().Be(1);
+        ((int)ActionExecutionStatus.Completed).Should().Be(2);
+        ((int)ActionExecutionStatus.Failed).Should().Be(3);
+        ((int)ActionExecutionStatus.DeadLettered).Should().Be(4);
     }
 
     [Test]
     public void Enum_HasExpectedNames()
     {
-         // Arrange & Act & Assert
-         ActionExecutionStatus.Pending.ToString().Should().Be("Pending");
-         ActionExecutionStatus.Processing.ToString().Should().Be("Processing");
-         ActionExecutionStatus.Completed.ToString().Should().Be("Completed");
-         ActionExecutionStatus.Failed.ToString().Should().Be("Failed");
-         ActionExecutionStatus.DeadLettered.ToString().Should().Be("DeadLettered");
+        // Arrange & Act & Assert
+        ActionExecutionStatus.Pending.ToString().Should().Be("Pending");
+        ActionExecutionStatus.Processing.ToString().Should().Be("Processing");
+        ActionExecutionStatus.Completed.ToString().Should().Be("Completed");
+        ActionExecutionStatus.Failed.ToString().Should().Be("Failed");
+        ActionExecutionStatus.DeadLettered.ToString().Should().Be("DeadLettered");
     }
 
     [Test]
@@ -38,13 +38,13 @@ public sealed class ActionExecutionStatusTests
         // Arrange
         var status = ActionExecutionStatus.Pending;
 
-         // Act - Transition from Pending to Processing
-         status = ActionExecutionStatus.Processing;
-         status.Should().Be(ActionExecutionStatus.Processing);
+        // Act - Transition from Pending to Processing
+        status = ActionExecutionStatus.Processing;
+        status.Should().Be(ActionExecutionStatus.Processing);
 
-         // Act - Transition from Processing to Completed
-         status = ActionExecutionStatus.Completed;
-         status.Should().Be(ActionExecutionStatus.Completed);
+        // Act - Transition from Processing to Completed
+        status = ActionExecutionStatus.Completed;
+        status.Should().Be(ActionExecutionStatus.Completed);
     }
 
     [Test]
@@ -53,13 +53,13 @@ public sealed class ActionExecutionStatusTests
         // Arrange
         var status = ActionExecutionStatus.Pending;
 
-         // Act - Transition from Pending to Processing
-         status = ActionExecutionStatus.Processing;
-         status.Should().Be(ActionExecutionStatus.Processing);
+        // Act - Transition from Pending to Processing
+        status = ActionExecutionStatus.Processing;
+        status.Should().Be(ActionExecutionStatus.Processing);
 
-         // Act - Transition from Processing to Failed
-         status = ActionExecutionStatus.Failed;
-         status.Should().Be(ActionExecutionStatus.Failed);
+        // Act - Transition from Processing to Failed
+        status = ActionExecutionStatus.Failed;
+        status.Should().Be(ActionExecutionStatus.Failed);
     }
 
     [Test]
@@ -68,9 +68,9 @@ public sealed class ActionExecutionStatusTests
         // Arrange - Failed action will be retried
         var status = ActionExecutionStatus.Failed;
 
-         // Act - Retry transitions back to Processing
-         status = ActionExecutionStatus.Processing;
-         status.Should().Be(ActionExecutionStatus.Processing);
+        // Act - Retry transitions back to Processing
+        status = ActionExecutionStatus.Processing;
+        status.Should().Be(ActionExecutionStatus.Processing);
     }
 
     [Test]
@@ -79,9 +79,9 @@ public sealed class ActionExecutionStatusTests
         // Arrange - After max retry attempts, action is dead-lettered
         var status = ActionExecutionStatus.Failed;
 
-         // Act - Transition to DeadLettered terminal state
-         status = ActionExecutionStatus.DeadLettered;
-         status.Should().Be(ActionExecutionStatus.DeadLettered);
+        // Act - Transition to DeadLettered terminal state
+        status = ActionExecutionStatus.DeadLettered;
+        status.Should().Be(ActionExecutionStatus.DeadLettered);
     }
 
     [Test]
@@ -90,8 +90,8 @@ public sealed class ActionExecutionStatusTests
         // Arrange
         var status = ActionExecutionStatus.Completed;
 
-         // Act & Assert - Completed is final state, no further transitions
-         status.Should().Be(ActionExecutionStatus.Completed);
+        // Act & Assert - Completed is final state, no further transitions
+        status.Should().Be(ActionExecutionStatus.Completed);
     }
 
     [Test]
@@ -100,8 +100,8 @@ public sealed class ActionExecutionStatusTests
         // Arrange
         var status = ActionExecutionStatus.DeadLettered;
 
-         // Act & Assert - DeadLettered is final state, no further transitions
-         status.Should().Be(ActionExecutionStatus.DeadLettered);
+        // Act & Assert - DeadLettered is final state, no further transitions
+        status.Should().Be(ActionExecutionStatus.DeadLettered);
     }
 
     [Test]
@@ -118,19 +118,19 @@ public sealed class ActionExecutionStatusTests
         // Act
         var parsed = (ActionExecutionStatus)intValue;
 
-         // Assert
-         parsed.Should().Be(expected);
+        // Assert
+        parsed.Should().Be(expected);
     }
 
     [Test]
     public void Enum_Values_AreConsistentAcrossCalls()
     {
-         // Arrange & Act & Assert
-         var status1 = ActionExecutionStatus.Processing;
-         var status2 = ActionExecutionStatus.Processing;
+        // Arrange & Act & Assert
+        var status1 = ActionExecutionStatus.Processing;
+        var status2 = ActionExecutionStatus.Processing;
 
-         status1.Should().Be(status2);
-         status1.GetHashCode().Should().Be(status2.GetHashCode());
+        status1.Should().Be(status2);
+        status1.GetHashCode().Should().Be(status2.GetHashCode());
     }
 
     [Test]
@@ -146,10 +146,10 @@ public sealed class ActionExecutionStatusTests
         ActionExecutionStatus to,
         bool isValid)
     {
-         // Arrange & Act & Assert
-         // This test documents the valid transition semantics
-         // All transitions listed above should be valid for orchestrator policies
-         isValid.Should().BeTrue($"Transition from {from} to {to} should be valid");
+        // Arrange & Act & Assert
+        // This test documents the valid transition semantics
+        // All transitions listed above should be valid for orchestrator policies
+        isValid.Should().BeTrue($"Transition from {from} to {to} should be valid");
     }
 
     [Test]
@@ -160,39 +160,39 @@ public sealed class ActionExecutionStatusTests
         var maxAttempts = 3;
         var currentAttempt = 0;
 
-         // Act - Processing attempt 1
-         actionStatus = ActionExecutionStatus.Processing;
-         actionStatus.Should().Be(ActionExecutionStatus.Processing);
+        // Act - Processing attempt 1
+        actionStatus = ActionExecutionStatus.Processing;
+        actionStatus.Should().Be(ActionExecutionStatus.Processing);
 
-         // Act - First attempt fails
-         actionStatus = ActionExecutionStatus.Failed;
-         currentAttempt++;
-         actionStatus.Should().Be(ActionExecutionStatus.Failed);
-         currentAttempt.Should().BeLessThan(maxAttempts);
+        // Act - First attempt fails
+        actionStatus = ActionExecutionStatus.Failed;
+        currentAttempt++;
+        actionStatus.Should().Be(ActionExecutionStatus.Failed);
+        currentAttempt.Should().BeLessThan(maxAttempts);
 
-         // Act - Retry: back to Processing for attempt 2
-         actionStatus = ActionExecutionStatus.Processing;
-         actionStatus.Should().Be(ActionExecutionStatus.Processing);
+        // Act - Retry: back to Processing for attempt 2
+        actionStatus = ActionExecutionStatus.Processing;
+        actionStatus.Should().Be(ActionExecutionStatus.Processing);
 
-         // Act - Second attempt fails
-         actionStatus = ActionExecutionStatus.Failed;
-         currentAttempt++;
-         actionStatus.Should().Be(ActionExecutionStatus.Failed);
-         currentAttempt.Should().BeLessThan(maxAttempts);
+        // Act - Second attempt fails
+        actionStatus = ActionExecutionStatus.Failed;
+        currentAttempt++;
+        actionStatus.Should().Be(ActionExecutionStatus.Failed);
+        currentAttempt.Should().BeLessThan(maxAttempts);
 
-         // Act - Retry: back to Processing for attempt 3
-         actionStatus = ActionExecutionStatus.Processing;
-         actionStatus.Should().Be(ActionExecutionStatus.Processing);
+        // Act - Retry: back to Processing for attempt 3
+        actionStatus = ActionExecutionStatus.Processing;
+        actionStatus.Should().Be(ActionExecutionStatus.Processing);
 
-         // Act - Third attempt fails (max attempts reached)
-         actionStatus = ActionExecutionStatus.Failed;
-         currentAttempt++;
-         actionStatus.Should().Be(ActionExecutionStatus.Failed);
-         currentAttempt.Should().Be(maxAttempts);
+        // Act - Third attempt fails (max attempts reached)
+        actionStatus = ActionExecutionStatus.Failed;
+        currentAttempt++;
+        actionStatus.Should().Be(ActionExecutionStatus.Failed);
+        currentAttempt.Should().Be(maxAttempts);
 
-         // Act - Transition to DeadLettered after max attempts
-         actionStatus = ActionExecutionStatus.DeadLettered;
-         actionStatus.Should().Be(ActionExecutionStatus.DeadLettered);
+        // Act - Transition to DeadLettered after max attempts
+        actionStatus = ActionExecutionStatus.DeadLettered;
+        actionStatus.Should().Be(ActionExecutionStatus.DeadLettered);
     }
 
     [Test]
@@ -201,13 +201,13 @@ public sealed class ActionExecutionStatusTests
         // Arrange - Action failed once but succeeds on retry
         var actionStatus = ActionExecutionStatus.Failed;
 
-         // Act - Retry: back to Processing
-         actionStatus = ActionExecutionStatus.Processing;
-         actionStatus.Should().Be(ActionExecutionStatus.Processing);
+        // Act - Retry: back to Processing
+        actionStatus = ActionExecutionStatus.Processing;
+        actionStatus.Should().Be(ActionExecutionStatus.Processing);
 
-         // Act - Success on retry
-         actionStatus = ActionExecutionStatus.Completed;
-         actionStatus.Should().Be(ActionExecutionStatus.Completed);
+        // Act - Success on retry
+        actionStatus = ActionExecutionStatus.Completed;
+        actionStatus.Should().Be(ActionExecutionStatus.Completed);
     }
 
     [Test]
@@ -229,8 +229,8 @@ public sealed class ActionExecutionStatusTests
             _ => throw new ArgumentOutOfRangeException(nameof(status))
         };
 
-         // Act & Assert
-         result.Should().NotBeEmpty();
-         result.Should().NotContain(" ");
+        // Act & Assert
+        result.Should().NotBeEmpty();
+        result.Should().NotContain(" ");
     }
 }

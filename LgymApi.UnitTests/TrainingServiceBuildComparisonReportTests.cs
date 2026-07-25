@@ -1,5 +1,4 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Training.Elo;
 using LgymApi.Application.Features.Training;
 using LgymApi.Application.Features.Training.Models;
 using LgymApi.Application.WorkoutProgress.TrainingExecution;
@@ -42,10 +41,10 @@ public sealed class TrainingServiceBuildComparisonReportTests
         var result = TrainingComparisonReportBuilder.Build(currentExercises, previousScores, exerciseDetails);
 
         // Assert
-         result.Should().HaveCount(3);
-         result[0].ExerciseId.Should().Be(exerciseC);
-         result[1].ExerciseId.Should().Be(exerciseA);
-         result[2].ExerciseId.Should().Be(exerciseB);
+        result.Should().HaveCount(3);
+        result[0].ExerciseId.Should().Be(exerciseC);
+        result[1].ExerciseId.Should().Be(exerciseA);
+        result[2].ExerciseId.Should().Be(exerciseB);
     }
 
     [Test]
@@ -66,21 +65,21 @@ public sealed class TrainingServiceBuildComparisonReportTests
 
         var previousScores = new Dictionary<string, ExerciseScore>();
 
-          var exerciseDetails = new Dictionary<Id<Exercise>, string>
-          {
-              [exerciseA] = "Bench Press",
-              [exerciseB] = "Squat",
-          };
+        var exerciseDetails = new Dictionary<Id<Exercise>, string>
+        {
+            [exerciseA] = "Bench Press",
+            [exerciseB] = "Squat",
+        };
 
         // Act
         var result = TrainingComparisonReportBuilder.Build(currentExercises, previousScores, exerciseDetails);
 
-         // Assert
-         result.Should().HaveCount(2);
-         result[0].ExerciseId.Should().Be(exerciseB);
-         result[0].SeriesComparisons.Should().HaveCount(2);
-         result[1].ExerciseId.Should().Be(exerciseA);
-         result[1].SeriesComparisons.Should().HaveCount(2);
+        // Assert
+        result.Should().HaveCount(2);
+        result[0].ExerciseId.Should().Be(exerciseB);
+        result[0].SeriesComparisons.Should().HaveCount(2);
+        result[1].ExerciseId.Should().Be(exerciseA);
+        result[1].SeriesComparisons.Should().HaveCount(2);
     }
 
     [Test]
@@ -94,22 +93,22 @@ public sealed class TrainingServiceBuildComparisonReportTests
             new() { ExerciseId = exerciseId, Series = 1, Reps = 10, Weight = 80, Unit = WeightUnits.Kilograms },
         };
 
-         var previousScores = new Dictionary<string, ExerciseScore>
-         {
-             [$"{exerciseId}-1"] = new ExerciseScore
-             {
-                 Id = Id<ExerciseScore>.New(),
-                 ExerciseId = (Id<Exercise>)exerciseId,
-                 Reps = 8,
-                 Weight = new Weight(75, WeightUnits.Kilograms),
-                 Series = 1,
-             },
-         };
+        var previousScores = new Dictionary<string, ExerciseScore>
+        {
+            [$"{exerciseId}-1"] = new ExerciseScore
+            {
+                Id = Id<ExerciseScore>.New(),
+                ExerciseId = (Id<Exercise>)exerciseId,
+                Reps = 8,
+                Weight = new Weight(75, WeightUnits.Kilograms),
+                Series = 1,
+            },
+        };
 
-         var exerciseDetails = new Dictionary<Id<Exercise>, string>
-         {
-             [exerciseId] = "Bench Press",
-         };
+        var exerciseDetails = new Dictionary<Id<Exercise>, string>
+        {
+            [exerciseId] = "Bench Press",
+        };
 
         // Act
         var result = TrainingComparisonReportBuilder.Build(currentExercises, previousScores, exerciseDetails);

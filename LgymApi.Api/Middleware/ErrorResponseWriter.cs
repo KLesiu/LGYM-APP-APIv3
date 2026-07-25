@@ -23,7 +23,7 @@ public static class ErrorResponseWriter
         // Try to get configured JsonOptions from DI; fall back to default if not available (e.g., in unit tests)
         var jsonOptions = context.RequestServices
             ?.GetService<IOptions<JsonOptions>>()
-            ?.Value.SerializerOptions 
+            ?.Value.SerializerOptions
             ?? CreateDefaultOptions();
 
         await context.Response.WriteAsJsonAsync(

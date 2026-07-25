@@ -1,4 +1,4 @@
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
 
 namespace LgymApi.Application.Notifications.Errors;
 

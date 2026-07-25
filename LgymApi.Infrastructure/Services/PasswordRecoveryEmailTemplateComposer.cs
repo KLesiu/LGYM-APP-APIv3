@@ -31,10 +31,10 @@ public sealed class PasswordRecoveryEmailTemplateComposer : EmailTemplateCompose
     {
         var culture = payload.Culture;
         var template = LoadTemplate("PasswordRecovery", culture);
-        
+
         // Generate reset URL if base URL is configured
         var resetUrl = GenerateResetUrl(payload.ResetToken);
-        
+
         var replacements = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["{{UserName}}"] = SanitizeTemplateValue(payload.UserName),

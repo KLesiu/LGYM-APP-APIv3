@@ -1,6 +1,6 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.AdminManagement.Models;
 using LgymApi.Application.Models;
 using LgymApi.Application.Notifications;
@@ -31,32 +31,32 @@ public sealed class ReportFeedbackAddedInAppNotificationCommandHandlerTests
 
         try
         {
-        var service = new FakeNotificationService(Result<InAppNotificationResult, AppError>.Success(CreateResult()));
-        var traineeId = Id<User>.New();
-        var submissionId = Id<ReportSubmission>.New();
-        var trainee = new User { Id = traineeId, Name = "Trainee", Email = "trainee@example.com", PreferredLanguage = "pl-PL" };
-        var handler = new ReportFeedbackAddedInAppNotificationCommandHandler(
-            service,
-            new FakeUserRepository(trainee),
-            new AppDefaultsOptions { PreferredLanguage = "en" },
-            NullLogger<ReportFeedbackAddedInAppNotificationCommandHandler>.Instance);
+            var service = new FakeNotificationService(Result<InAppNotificationResult, AppError>.Success(CreateResult()));
+            var traineeId = Id<User>.New();
+            var submissionId = Id<ReportSubmission>.New();
+            var trainee = new User { Id = traineeId, Name = "Trainee", Email = "trainee@example.com", PreferredLanguage = "pl-PL" };
+            var handler = new ReportFeedbackAddedInAppNotificationCommandHandler(
+                service,
+                new FakeUserRepository(trainee),
+                new AppDefaultsOptions { PreferredLanguage = "en" },
+                NullLogger<ReportFeedbackAddedInAppNotificationCommandHandler>.Instance);
 
-        await handler.ExecuteAsync(new ReportFeedbackAddedInAppNotificationCommand
-        {
-            SubmissionId = submissionId,
-            TraineeId = traineeId,
-            TrainerId = Id<User>.New(),
-            TemplateName = "   ",
-            TriggeredAt = new DateTimeOffset(2026, 6, 21, 10, 30, 0, TimeSpan.Zero)
-        });
+            await handler.ExecuteAsync(new ReportFeedbackAddedInAppNotificationCommand
+            {
+                SubmissionId = submissionId,
+                TraineeId = traineeId,
+                TrainerId = Id<User>.New(),
+                TemplateName = "   ",
+                TriggeredAt = new DateTimeOffset(2026, 6, 21, 10, 30, 0, TimeSpan.Zero)
+            });
 
-        service.Calls.Should().Be(1);
-        service.LastInput.Should().NotBeNull();
-        service.LastInput!.DeliveryKey.Should().Be($"report-feedback:{submissionId}:2026-06-21T10:30:00.0000000+00:00");
-        service.LastInput.Type.Should().Be(InAppNotificationTypes.ReportFeedbackReceived);
-        service.LastInput.Message.Should().Contain(Messages.GenericTrainerDisplayName);
-        service.LastInput.Message.Should().Contain(Messages.GenericReportDisplayName);
-        service.LastInput.RedirectUrl.Should().Be($"/trainer/report-submissions/{submissionId}");
+            service.Calls.Should().Be(1);
+            service.LastInput.Should().NotBeNull();
+            service.LastInput!.DeliveryKey.Should().Be($"report-feedback:{submissionId}:2026-06-21T10:30:00.0000000+00:00");
+            service.LastInput.Type.Should().Be(InAppNotificationTypes.ReportFeedbackReceived);
+            service.LastInput.Message.Should().Contain(Messages.GenericTrainerDisplayName);
+            service.LastInput.Message.Should().Contain(Messages.GenericReportDisplayName);
+            service.LastInput.RedirectUrl.Should().Be($"/trainer/report-submissions/{submissionId}");
         }
         finally
         {

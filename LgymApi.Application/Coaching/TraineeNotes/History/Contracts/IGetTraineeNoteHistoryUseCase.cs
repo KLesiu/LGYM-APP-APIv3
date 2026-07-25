@@ -1,6 +1,6 @@
 using LgymApi.Application.Coaching.TraineeNotes.Models;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 
 namespace LgymApi.Application.Coaching.TraineeNotes.History;
 

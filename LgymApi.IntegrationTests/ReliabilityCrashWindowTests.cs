@@ -59,7 +59,7 @@ public sealed class ReliabilityCrashWindowTests : IntegrationTestBase
             recovered.Should().NotBeNull();
             recovered!.DispatchedAt.Should().NotBeNull("recovery job should set DispatchedAt");
             recovered.SchedulerJobId.Should().NotBeNullOrEmpty("recovery job should assign scheduler job ID");
-            recovered.Status.Should().Be(ActionExecutionStatus.Pending, 
+            recovered.Status.Should().Be(ActionExecutionStatus.Pending,
                 "envelope should remain Pending until background worker processes it");
         }
     }
@@ -253,7 +253,7 @@ public sealed class ReliabilityCrashWindowTests : IntegrationTestBase
             var unchanged = await db.CommandEnvelopes.FindAsync(envelope.Id);
 
             unchanged.Should().NotBeNull();
-            unchanged!.DispatchedAt.Should().Be(originalDispatchedAt, 
+            unchanged!.DispatchedAt.Should().Be(originalDispatchedAt,
                 "recovery should skip already-dispatched envelopes");
             unchanged.SchedulerJobId.Should().Be(originalJobId,
                 "recovery should not overwrite existing scheduler job ID");

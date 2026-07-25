@@ -30,6 +30,10 @@ public static partial class ServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        var appDefaultsOptions = AppDefaultsOptionsFactory.Resolve(configuration);
+
+        AddEmailInfrastructure(services, configuration, appDefaultsOptions);
+
         var pushNotificationOptions = PushNotificationOptionsFactory.Create(configuration);
 
         PushNotificationOptionsFactory.Validate(pushNotificationOptions);

@@ -26,6 +26,26 @@ public sealed class CompositionRootRegistrationGuardTests
         "AddApplicationMapping"
     };
 
+    private static readonly string[] RequiredHostRegistrationHelpers =
+    {
+        "AddStrictHttpJsonOptions",
+        "AddApiLocalization",
+        "AddApiAuthentication",
+        "AddApiAuthorizationPolicies"
+    };
+
+    private static readonly HashSet<string> InlineHostRegistrationMethods = new(StringComparer.Ordinal)
+    {
+        "AddControllers",
+        "AddJsonOptions",
+        "AddLocalization",
+        "AddAuthentication",
+        "AddJwtBearer",
+        "AddAuthorization",
+        "AddAuthorizationBuilder",
+        "AddPolicy"
+    };
+
     private static readonly string[] LegacyCompositionMethods =
     {
         "AddApplicationServices",
@@ -60,6 +80,7 @@ public sealed class CompositionRootRegistrationGuardTests
         var legacyCalls = LegacyCompositionMethods
             .Where(method => invocations.Contains(method))
             .ToList();
+        var hostRegistrationViolations = FindHostRegistrationViolations(root);
 
         Assert.Multiple(() =>
         {
@@ -74,7 +95,31 @@ public sealed class CompositionRootRegistrationGuardTests
                 Is.Empty,
                 $"Program.cs must not call the removed composition shims: {string.Join(", ", LegacyCompositionMethods)}. " +
                 $"Found: {string.Join(", ", legacyCalls)}");
+
+            Assert.That(hostRegistrationViolations, Is.Empty, string.Join(Environment.NewLine, hostRegistrationViolations));
         });
+    }
+
+    [Test]
+    public void DuplicateHostRegistrationHelperFixture_IsRejected()
+    {
+        var root = ParseHostRegistrationFixture("builder.Services.AddApiAuthentication(builder.Configuration);");
+
+        var violations = FindHostRegistrationViolations(root);
+
+        Assert.That(violations, Has.Count.EqualTo(1));
+        Assert.That(violations[0], Does.Contain("AddApiAuthentication").And.Contain("exactly once"));
+    }
+
+    [Test]
+    public void InlineHostRegistrationFixture_IsRejected()
+    {
+        var root = ParseHostRegistrationFixture("builder.Services.Configure<JsonOptions>(_ => { });");
+
+        var violations = FindHostRegistrationViolations(root);
+
+        Assert.That(violations, Has.Count.EqualTo(1));
+        Assert.That(violations[0], Does.Contain("Configure"));
     }
 
     [Test]
@@ -135,19 +180,119 @@ public sealed class CompositionRootRegistrationGuardTests
         });
     }
 
-    /// <summary>
-    /// Extracts the method name from an invocation expression.
-    /// Handles both direct method calls (e.g., AddApplication()) and chained calls (e.g., builder.Services.AddApplication()).
-    /// </summary>
+    [Test]
+    public void Application_Should_Not_RegisterFcmProvider()
+    {
+        var applicationFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Application");
+        var roots = applicationFiles
+            .Where(path => Path.GetFileName(path).EndsWith("ServiceCollectionExtensions.cs", StringComparison.Ordinal))
+            .Select(path => CSharpSyntaxTree.ParseText(File.ReadAllText(path)).GetCompilationUnitRoot())
+            .ToArray();
+
+        Assert.That(roots, Is.Not.Empty);
+        foreach (var root in roots)
+        {
+            AssertNoFcmProviderRegistrations(root);
+        }
+    }
+
+    [Test]
+    public void ApplicationFcmProviderRegistrationFixture_IsRejected()
+    {
+        var root = CSharpSyntaxTree.ParseText("services.AddScoped<IPushProviderSender, FcmPushSender>();")
+            .GetCompilationUnitRoot();
+
+        var action = () => AssertNoFcmProviderRegistrations(root);
+
+        var exception = Assert.Throws<AssertionException>(action);
+
+        Assert.That(exception!.Message, Does.Contain("Application registration helpers must not register FCM providers"));
+    }
+
+    private static IReadOnlyList<string> FindHostRegistrationViolations(CompilationUnitSyntax root)
+    {
+        var invocationExpressions = root.DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .ToList();
+        var invocations = invocationExpressions
+            .Select(ExtractMethodName)
+            .Where(name => name != null)
+            .Cast<string>()
+            .ToList();
+        var violations = new List<string>();
+
+        foreach (var helperName in RequiredHostRegistrationHelpers)
+        {
+            var callCount = invocations.Count(name => name == helperName);
+            if (callCount != 1)
+            {
+                violations.Add($"Program.cs must call {helperName} exactly once; found {callCount} calls.");
+            }
+        }
+
+        var inlineRegistrations = invocationExpressions
+            .Where(IsInlineHostRegistration)
+            .Select(ExtractMethodName)
+            .Where(name => name != null)
+            .Cast<string>()
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToList();
+        if (inlineRegistrations.Count > 0)
+        {
+            violations.Add(
+                "Program.cs must delegate JSON, localization, authentication, and authorization registration to host helpers. " +
+                $"Direct registrations found: {string.Join(", ", inlineRegistrations)}.");
+        }
+
+        return violations;
+    }
+
+    private static void AssertNoFcmProviderRegistrations(CompilationUnitSyntax root)
+    {
+        var registrations = root.DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Where(invocation => invocation.ToString().Contains("IPushProviderSender", StringComparison.Ordinal)
+                || invocation.ToString().Contains("FcmPushSender", StringComparison.Ordinal))
+            .Select(invocation => invocation.ToString())
+            .ToArray();
+
+        Assert.That(
+            registrations,
+            Is.Empty,
+            "Application registration helpers must not register FCM providers. " + string.Join(Environment.NewLine, registrations));
+    }
+
+    private static bool IsInlineHostRegistration(InvocationExpressionSyntax invocation)
+    {
+        return InlineHostRegistrationMethods.Contains(ExtractMethodName(invocation) ?? string.Empty)
+            || invocation.Expression is MemberAccessExpressionSyntax
+            {
+                Name: GenericNameSyntax
+                {
+                    Identifier.ValueText: "Configure",
+                    TypeArgumentList.Arguments: [IdentifierNameSyntax { Identifier.ValueText: "JsonOptions" }]
+                }
+            };
+    }
+
+    private static CompilationUnitSyntax ParseHostRegistrationFixture(string additionalRegistration)
+    {
+        return CSharpSyntaxTree.ParseText($$"""
+            builder.Services.AddStrictHttpJsonOptions();
+            builder.Services.AddApiLocalization();
+            builder.Services.AddApiAuthentication(builder.Configuration);
+            builder.Services.AddApiAuthorizationPolicies();
+            {{additionalRegistration}}
+            """).GetCompilationUnitRoot();
+    }
+
     private static string? ExtractMethodName(InvocationExpressionSyntax invocation)
     {
         return invocation.Expression switch
         {
-            // Direct method call: AddApplication()
             IdentifierNameSyntax identifier => identifier.Identifier.ValueText,
-            // Chained call: something.AddApplication()
             MemberAccessExpressionSyntax member => member.Name.Identifier.ValueText,
-            // Generic method call: AddApplication<T>()
             GenericNameSyntax generic => generic.Identifier.ValueText,
             _ => null
         };

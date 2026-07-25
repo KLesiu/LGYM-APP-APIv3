@@ -27,8 +27,8 @@ public static class ArchitectureTestHelpers
         "Validation"
     };
 
-    private static readonly string[] CanonicalModuleCatalog =
-    {
+    private static readonly IReadOnlyList<string> CanonicalModuleCatalog =
+    [
         PlatformModuleName,
         IdentityModuleName,
         NotificationsModuleName,
@@ -37,6 +37,44 @@ public static class ArchitectureTestHelpers
         WorkoutProgressModuleName,
         CoachingModuleName,
         NutritionModuleName
+    ];
+
+    private static readonly string[] BuildingBlocksPathMarkers =
+    {
+        "/LgymApi.Application/BuildingBlocks/",
+        "/LgymApi.Application/Common/Results/"
+    };
+
+    private static readonly string[] BuildingBlocksExactFiles =
+    {
+        "/LgymApi.Application/Common/Errors/AppError.cs"
+    };
+
+    private static readonly string[] TechnicalPlatformPathMarkers =
+    {
+        "/LgymApi.Application/Platform/Contracts/",
+        "/LgymApi.Application/Pagination/",
+        "/LgymApi.Application/Mapping/"
+    };
+
+    private static readonly string[] TechnicalPlatformExactFiles =
+    {
+        "/LgymApi.Application/Platform/ServiceCollectionExtensions.cs",
+        "/LgymApi.Application/Repositories/IUnitOfWork.cs",
+        "/LgymApi.Application/Repositories/ICommandEnvelopeRepository.cs",
+        "/LgymApi.Application/Repositories/IApiIdempotencyRecordRepository.cs"
+    };
+
+    private static readonly string[] ReferenceDataPathMarkers =
+    {
+        "/LgymApi.Application/Platform/ReferenceData/"
+    };
+
+    private static readonly string[] ReferenceDataExactFiles =
+    {
+        "/LgymApi.Application/Repositories/IAppConfigRepository.cs",
+        "/LgymApi.Application/Platform/ReferenceData/Errors/AppConfigErrors.cs",
+        "/LgymApi.Application/Platform/ReferenceData/Errors/EnumErrors.cs"
     };
 
     private static readonly string[] TestProjectPathMarkers =
@@ -109,8 +147,7 @@ public static class ArchitectureTestHelpers
         "/LgymApi.Application/Gym/",
         "/LgymApi.Application/Measurements/",
         "/LgymApi.Application/EloRegistry/",
-        "/LgymApi.Application/MainRecords/",
-        "/LgymApi.Application/Common/Training/Elo/"
+        "/LgymApi.Application/MainRecords/"
     };
 
     private static readonly string[] CoachingApplicationPathMarkers =
@@ -140,10 +177,8 @@ public static class ArchitectureTestHelpers
 
     private static readonly string[] PlatformApplicationPathMarkers =
     {
+        "/LgymApi.Application/BuildingBlocks/",
         "/LgymApi.Application/Platform/",
-        "/LgymApi.Application/AppConfig/",
-        "/LgymApi.Application/Enum/",
-        "/LgymApi.Application/Units/",
         "/LgymApi.Application/Common/",
         "/LgymApi.Application/Repositories/",
         "/LgymApi.Application/Services/",
@@ -232,7 +267,7 @@ public static class ArchitectureTestHelpers
         ["/LgymApi.Infrastructure/Repositories/InAppNotificationRepository.cs"] = NotificationsModuleName,
         ["/LgymApi.Infrastructure/Repositories/PushInstallationRepository.cs"] = NotificationsModuleName,
         ["/LgymApi.Infrastructure/Repositories/PushNotificationMessageRepository.cs"] = NotificationsModuleName,
-        ["/LgymApi.Infrastructure/Repositories/AppConfigRepository.cs"] = PlatformModuleName,
+        ["/LgymApi.Infrastructure/Repositories/ReferenceData/AppConfigRepository.cs"] = PlatformModuleName,
         ["/LgymApi.Infrastructure/Repositories/CommandEnvelopeRepository.cs"] = PlatformModuleName,
         ["/LgymApi.Infrastructure/Repositories/ApiIdempotencyRecordRepository.cs"] = PlatformModuleName,
         ["/LgymApi.Infrastructure/Repositories/EmailNotificationLogRepository.cs"] = NotificationsModuleName,
@@ -504,7 +539,13 @@ public static class ArchitectureTestHelpers
             exclusionKind = ModuleBoundaryExclusionKind.GeneratedCode;
         }
 
-        return new ModuleBoundaryFileClassification(path, relativePath, normalizedPath, moduleName, exclusionKind);
+        return new ModuleBoundaryFileClassification(
+            path,
+            relativePath,
+            normalizedPath,
+            moduleName,
+            GetPlatformSubBoundaryFromPath(path),
+            exclusionKind);
     }
 
     /// <summary>
@@ -639,6 +680,46 @@ public static class ArchitectureTestHelpers
         }
 
         return null;
+    }
+
+    public static PlatformSubBoundary? GetPlatformSubBoundaryFromPath(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        var normalizedPath = NormalizePath(path);
+        var applicationPath = GetApplicationExactFileKey(normalizedPath);
+
+        if (MatchesAny(normalizedPath, BuildingBlocksPathMarkers)
+            || BuildingBlocksExactFiles.Contains(applicationPath, StringComparer.OrdinalIgnoreCase))
+        {
+            return PlatformSubBoundary.BuildingBlocks;
+        }
+
+        if (MatchesAny(normalizedPath, ReferenceDataPathMarkers)
+            || ReferenceDataExactFiles.Contains(applicationPath, StringComparer.OrdinalIgnoreCase))
+        {
+            return PlatformSubBoundary.ReferenceData;
+        }
+
+        if (MatchesAny(normalizedPath, TechnicalPlatformPathMarkers)
+            || TechnicalPlatformExactFiles.Contains(applicationPath, StringComparer.OrdinalIgnoreCase))
+        {
+            return PlatformSubBoundary.TechnicalPlatform;
+        }
+
+        return null;
+    }
+
+    public static void ValidateCanonicalModuleCatalog(IEnumerable<string> moduleNames)
+    {
+        ArgumentNullException.ThrowIfNull(moduleNames);
+
+        var proposedCatalog = moduleNames.ToList();
+        if (!proposedCatalog.SequenceEqual(CanonicalModuleCatalog, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "The canonical module catalog must contain exactly the established eight modules in canonical order.");
+        }
     }
 
     public static string? GetCanonicalModuleNameForSymbol(ISymbol symbol)
@@ -873,11 +954,19 @@ public enum ModuleBoundaryExclusionKind
     GeneratedCode
 }
 
+public enum PlatformSubBoundary
+{
+    BuildingBlocks,
+    TechnicalPlatform,
+    ReferenceData
+}
+
 public sealed record ModuleBoundaryFileClassification(
     string FilePath,
     string RelativePath,
     string NormalizedPath,
     string? ModuleName,
+    PlatformSubBoundary? PlatformSubBoundary,
     ModuleBoundaryExclusionKind? ExclusionKind)
 {
     public bool IsExcluded => ExclusionKind.HasValue;

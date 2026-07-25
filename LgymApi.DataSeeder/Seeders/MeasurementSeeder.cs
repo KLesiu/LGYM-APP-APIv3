@@ -31,25 +31,25 @@ public sealed class MeasurementSeeder : IEntitySeeder
             .Select(entry => new { entry.UserId, entry.BodyPart })
             .ToListAsync(cancellationToken);
 
-         var existingSet = new HashSet<(Id<User> UserId, BodyParts BodyPart)>(
-             existing.Select(entry => (entry.UserId, entry.BodyPart)));
+        var existingSet = new HashSet<(Id<User> UserId, BodyParts BodyPart)>(
+            existing.Select(entry => (entry.UserId, entry.BodyPart)));
 
         var bodyParts = new[] { BodyParts.Chest, BodyParts.Biceps, BodyParts.Abs };
         var measurementIndex = 0;
         var addedAny = false;
         foreach (var user in users)
         {
-             foreach (var part in bodyParts)
-             {
-                 if (!existingSet.Add((user.Id, part)))
+            foreach (var part in bodyParts)
+            {
+                if (!existingSet.Add((user.Id, part)))
                 {
                     measurementIndex++;
                     continue;
                 }
-                 var measurement = new Measurement
-                 {
-                     Id = Id<Measurement>.New(),
-                     UserId = user.Id,
+                var measurement = new Measurement
+                {
+                    Id = Id<Measurement>.New(),
+                    UserId = user.Id,
                     BodyPart = part,
                     Unit = "cm",
                     Value = 80 + measurementIndex * 2

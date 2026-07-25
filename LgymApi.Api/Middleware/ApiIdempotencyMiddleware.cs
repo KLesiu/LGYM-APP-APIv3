@@ -161,7 +161,7 @@ public sealed class ApiIdempotencyMiddleware
     {
         var method = context.Request.Method;
         var routeTemplate = metadata.RouteTemplate;
-        
+
         string callerScope;
         if (metadata.ScopeSource == ApiIdempotencyScopeSource.AuthenticatedUser)
         {
@@ -188,7 +188,7 @@ public sealed class ApiIdempotencyMiddleware
     {
         context.Request.EnableBuffering();
         context.Request.Body.Position = 0;
-        
+
         using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
         var bodyText = await reader.ReadToEndAsync();
         context.Request.Body.Position = 0;
@@ -200,9 +200,9 @@ public sealed class ApiIdempotencyMiddleware
             try
             {
                 var jsonDoc = JsonDocument.Parse(bodyText);
-                canonicalBody = JsonSerializer.Serialize(jsonDoc, new JsonSerializerOptions 
-                { 
-                    WriteIndented = false 
+                canonicalBody = JsonSerializer.Serialize(jsonDoc, new JsonSerializerOptions
+                {
+                    WriteIndented = false
                 });
             }
             catch
@@ -212,7 +212,7 @@ public sealed class ApiIdempotencyMiddleware
         }
 
         // Route params
-        var routeParams = string.Join("&", 
+        var routeParams = string.Join("&",
             context.Request.RouteValues
                 .OrderBy(kv => kv.Key)
                 .Select(kv => $"{kv.Key}={kv.Value}"));

@@ -1,4 +1,5 @@
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Nutrition.Errors;
 using LgymApi.Application.Nutrition.Supplementation.Models;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;

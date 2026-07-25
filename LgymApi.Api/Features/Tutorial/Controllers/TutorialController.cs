@@ -29,12 +29,12 @@ public sealed class TutorialController : ControllerBase
     {
         var user = HttpContext.GetCurrentUser();
         var result = await _tutorialService.GetActiveTutorialsAsync(user!.Id, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         var mapped = _mapper.MapList<Application.Features.Tutorial.Models.TutorialProgressResult, TutorialProgressDto>(result.Value);
         return Ok(mapped);
     }
@@ -46,12 +46,12 @@ public sealed class TutorialController : ControllerBase
     {
         var user = HttpContext.GetCurrentUser();
         var result = await _tutorialService.GetTutorialProgressAsync(user!.Id, tutorialType, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         if (result.Value == null)
         {
             return NotFound();
@@ -67,12 +67,12 @@ public sealed class TutorialController : ControllerBase
     {
         var user = HttpContext.GetCurrentUser();
         var result = await _tutorialService.CompleteStepAsync(user!.Id, request.TutorialType, request.Step, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Updated));
     }
 
@@ -82,12 +82,12 @@ public sealed class TutorialController : ControllerBase
     {
         var user = HttpContext.GetCurrentUser();
         var result = await _tutorialService.CompleteTutorialAsync(user!.Id, request.TutorialType, cancellationToken);
-        
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Updated));
     }
 }

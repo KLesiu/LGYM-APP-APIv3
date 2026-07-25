@@ -1,5 +1,7 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Coaching.Errors;
+using LgymApi.Application.Nutrition.Errors;
 using LgymApi.Application.Nutrition.DietPlans;
 using LgymApi.Application.Nutrition.DietPlans.Models;
 using LgymApi.Application.Nutrition.Supplementation;

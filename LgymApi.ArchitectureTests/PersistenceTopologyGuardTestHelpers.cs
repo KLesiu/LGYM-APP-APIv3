@@ -31,12 +31,18 @@ internal static class PersistenceTopologyGuardTestHelpers
 
     public static PersistenceTopologyAnalysis Analyze(IEnumerable<TopologySource> sourceFiles)
     {
-        _ = typeof(DbContext);
+        var semanticReferenceAssemblies = new[]
+        {
+            typeof(DbContext).Assembly,
+            typeof(DbSet<>).Assembly,
+            typeof(LgymApi.Domain.Entities.User).Assembly
+        };
         var sources = sourceFiles.ToList();
         var trees = sources
             .Select(source => CSharpSyntaxTree.ParseText(source.Content, CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest), source.Path))
             .ToList();
         var compilation = ArchitectureTestHelpers.CreateCompilation(trees);
+        GC.KeepAlive(semanticReferenceAssemblies);
         var dbContexts = new List<DbContextTopologyDeclaration>();
         var dbSets = new List<DbSetTopologyDeclaration>();
         var configurations = new List<EntityTypeConfigurationTopologyDeclaration>();
@@ -79,6 +85,7 @@ internal static class PersistenceTopologyGuardTestHelpers
                     migrationTypes.Add(new MigrationTypeTopologyDeclaration(
                         GetMigrationRoot(sourcePath),
                         symbol.Name,
+                        sourcePath,
                         isSnapshot));
                 }
             }
@@ -95,7 +102,9 @@ internal static class PersistenceTopologyGuardTestHelpers
 
                 dbSets.Add(new DbSetTopologyDeclaration(
                     containingType.Name,
+                    property.Identifier.ValueText,
                     entityType,
+                    model.GetDeclaredSymbol(property)?.DeclaredAccessibility == Accessibility.Public,
                     sourcePath));
             }
 
@@ -109,7 +118,10 @@ internal static class PersistenceTopologyGuardTestHelpers
                         continue;
                     }
 
-                    migrationContexts.Add(new MigrationContextTopologyDeclaration(GetMigrationRoot(sourcePath), GetSimpleName(typeOf.Type)));
+                    migrationContexts.Add(new MigrationContextTopologyDeclaration(
+                        GetMigrationRoot(sourcePath),
+                        GetSimpleName(typeOf.Type),
+                        sourcePath));
                 }
             }
 
@@ -153,11 +165,22 @@ internal static class PersistenceTopologyGuardTestHelpers
 
         var migrationStreams = migrationTypes
             .GroupBy(type => type.Root, StringComparer.Ordinal)
-            .Select(group => new MigrationStreamTopologyDeclaration(
-                group.Key,
-                group.Select(type => type.TypeName).OrderBy(name => name, StringComparer.Ordinal).ToList(),
-                group.Where(type => type.IsSnapshot).Select(type => type.TypeName).OrderBy(name => name, StringComparer.Ordinal).ToList(),
-                migrationContexts.Where(context => context.Root == group.Key).Select(context => context.ContextType).Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.Ordinal).ToList()))
+            .Select(group =>
+            {
+                var snapshotSourcePaths = group
+                    .Where(type => type.IsSnapshot)
+                    .Select(type => type.SourcePath)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(path => path, StringComparer.Ordinal)
+                    .ToList();
+                return new MigrationStreamTopologyDeclaration(
+                    group.Key,
+                    group.Select(type => type.TypeName).OrderBy(name => name, StringComparer.Ordinal).ToList(),
+                    group.Where(type => type.IsSnapshot).Select(type => type.TypeName).OrderBy(name => name, StringComparer.Ordinal).ToList(),
+                    snapshotSourcePaths,
+                    migrationContexts.Where(context => context.Root == group.Key).Select(context => context.ContextType).Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.Ordinal).ToList(),
+                    migrationContexts.Where(context => snapshotSourcePaths.Contains(context.SourcePath, StringComparer.Ordinal)).Select(context => context.ContextType).Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.Ordinal).ToList());
+            })
             .OrderBy(stream => stream.Root, StringComparer.Ordinal)
             .ToList();
 
@@ -169,6 +192,99 @@ internal static class PersistenceTopologyGuardTestHelpers
         if (hasPendingModelChanges)
         {
             throw new InvalidOperationException("Npgsql runtime model differs from AppDbContextModelSnapshot.");
+        }
+    }
+
+    public static void EnsureExactDbSetIdentities(
+        PersistenceTopologyAnalysis topology,
+        IReadOnlyList<PersistedDbSetIdentity> expectedDbSets)
+    {
+        var expectedIdentities = expectedDbSets
+            .OrderBy(dbSet => dbSet.PropertyName, StringComparer.Ordinal)
+            .ToList();
+        var actualIdentities = topology.DbSets
+            .Select(dbSet => new PersistedDbSetIdentity(dbSet.PropertyName, dbSet.EntityType))
+            .OrderBy(dbSet => dbSet.PropertyName, StringComparer.Ordinal)
+            .ToList();
+        var nonPublicDbSets = topology.DbSets
+            .Where(dbSet => !dbSet.IsPublic)
+            .Select(dbSet => dbSet.PropertyName)
+            .OrderBy(propertyName => propertyName, StringComparer.Ordinal)
+            .ToList();
+
+        if (!actualIdentities.SequenceEqual(expectedIdentities) || nonPublicDbSets.Count != 0)
+        {
+            throw new InvalidOperationException(
+                $"Public DbSet identities do not match the persistence contract.{Environment.NewLine}" +
+                $"Expected: {string.Join(", ", expectedIdentities)}{Environment.NewLine}" +
+                $"Actual: {string.Join(", ", actualIdentities)}{Environment.NewLine}" +
+                $"Non-public: {string.Join(", ", nonPublicDbSets)}");
+        }
+    }
+
+    public static void EnsureSingleDbContext(
+        PersistenceTopologyAnalysis topology,
+        string expectedTypeName,
+        string expectedSourcePath)
+    {
+        if (topology.DbContexts.Count != 1 ||
+            topology.DbContexts[0].TypeName != expectedTypeName ||
+            topology.DbContexts[0].SourcePath != expectedSourcePath)
+        {
+            throw new InvalidOperationException(
+                $"Expected one production DbContext '{expectedTypeName}' at '{expectedSourcePath}'. Actual: " +
+                string.Join(", ", topology.DbContexts));
+        }
+    }
+
+    public static void EnsureSingleMigrationRoot(PersistenceTopologyAnalysis topology, string expectedRoot)
+    {
+        if (topology.MigrationStreams.Count != 1 || topology.MigrationStreams[0].Root != expectedRoot)
+        {
+            throw new InvalidOperationException(
+                $"Expected one migration root '{expectedRoot}'. Actual: " +
+                string.Join(", ", topology.MigrationStreams.Select(stream => stream.Root)));
+        }
+    }
+
+    public static void EnsureSingleSnapshot(
+        PersistenceTopologyAnalysis topology,
+        string expectedTypeName,
+        string expectedSourcePath,
+        string expectedContextTypeName)
+    {
+        var stream = topology.MigrationStreams.SingleOrDefault();
+        if (stream == null ||
+            !stream.SnapshotTypeNames.SequenceEqual([expectedTypeName], StringComparer.Ordinal) ||
+            !stream.SnapshotSourcePaths.SequenceEqual([expectedSourcePath], StringComparer.Ordinal) ||
+            !stream.SnapshotContextTypeNames.SequenceEqual([expectedContextTypeName], StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Expected one snapshot '{expectedTypeName}' at '{expectedSourcePath}' with DbContext metadata '{expectedContextTypeName}'. Actual: {stream}");
+        }
+    }
+
+    public static void EnsureRegistrarOrder(
+        PersistenceTopologyAnalysis topology,
+        IReadOnlyList<string> expectedConfigurationTypes,
+        string expectedSourcePath)
+    {
+        var actualConfigurationTypes = topology.RegistrarEntries
+            .Select(entry => entry.ConfigurationType)
+            .ToList();
+        var sourcePaths = topology.RegistrarEntries
+            .Select(entry => entry.SourcePath)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (!actualConfigurationTypes.SequenceEqual(expectedConfigurationTypes, StringComparer.Ordinal) ||
+            !sourcePaths.SequenceEqual([expectedSourcePath], StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Registrar order does not match '{expectedSourcePath}'.{Environment.NewLine}" +
+                $"Expected: {string.Join(", ", expectedConfigurationTypes)}{Environment.NewLine}" +
+                $"Actual: {string.Join(", ", actualConfigurationTypes)}{Environment.NewLine}" +
+                $"Sources: {string.Join(", ", sourcePaths)}");
         }
     }
 
@@ -208,7 +324,7 @@ internal static class PersistenceTopologyGuardTestHelpers
     private static string? GetConfiguredEntity(INamedTypeSymbol type)
     {
         var configuration = type.AllInterfaces.SingleOrDefault(@interface => IsNamed(@interface, ConfigurationMetadataName));
-        return configuration?.TypeArguments[0].Name;
+        return configuration == null ? null : GetTypeName(configuration.TypeArguments[0]);
     }
 
     private static string? GetConfiguredEntity(ClassDeclarationSyntax declaration)
@@ -223,7 +339,7 @@ internal static class PersistenceTopologyGuardTestHelpers
     {
         if (model.GetDeclaredSymbol(property) is IPropertySymbol { Type: INamedTypeSymbol propertyType } && IsNamed(propertyType, DbSetMetadataName))
         {
-            return propertyType.TypeArguments[0].Name;
+            return GetTypeName(propertyType.TypeArguments[0]);
         }
 
         return property.Type is GenericNameSyntax { Identifier.ValueText: "DbSet" } dbSet
@@ -253,6 +369,11 @@ internal static class PersistenceTopologyGuardTestHelpers
             GenericNameSyntax generic => generic.Identifier.ValueText,
             _ => type.ToString()
         };
+    }
+
+    private static string GetTypeName(ITypeSymbol type)
+    {
+        return type.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
     }
 
     private static bool IsNamed(INamedTypeSymbol type, string metadataName)
@@ -316,6 +437,7 @@ internal static class PersistenceTopologyGuardTestHelpers
 }
 
 internal sealed record TopologySource(string Path, string Content);
+internal sealed record PersistedDbSetIdentity(string PropertyName, string EntityType);
 
 internal sealed record PersistenceTopologyAnalysis(
     IReadOnlyList<DbContextTopologyDeclaration> DbContexts,
@@ -327,11 +449,17 @@ internal sealed record PersistenceTopologyAnalysis(
     IReadOnlyList<SchemaSplitTopologyViolation> SchemaSplitViolations);
 
 internal sealed record DbContextTopologyDeclaration(string TypeName, string SourcePath);
-internal sealed record DbSetTopologyDeclaration(string ContextType, string EntityType, string SourcePath);
+internal sealed record DbSetTopologyDeclaration(string ContextType, string PropertyName, string EntityType, bool IsPublic, string SourcePath);
 internal sealed record EntityTypeConfigurationTopologyDeclaration(string EntityType, string ConfigurationType, string SourcePath);
 internal sealed record RegistrarTopologyDeclaration(string EntityType, string ConfigurationType, string SourcePath);
-internal sealed record MigrationStreamTopologyDeclaration(string Root, IReadOnlyList<string> TypeNames, IReadOnlyList<string> SnapshotTypeNames, IReadOnlyList<string> ContextTypeNames);
+internal sealed record MigrationStreamTopologyDeclaration(
+    string Root,
+    IReadOnlyList<string> TypeNames,
+    IReadOnlyList<string> SnapshotTypeNames,
+    IReadOnlyList<string> SnapshotSourcePaths,
+    IReadOnlyList<string> ContextTypeNames,
+    IReadOnlyList<string> SnapshotContextTypeNames);
 internal sealed record EnsureCreatedTopologyViolation(string SourcePath, int Line, string Invocation);
-internal sealed record MigrationTypeTopologyDeclaration(string Root, string TypeName, bool IsSnapshot);
-internal sealed record MigrationContextTopologyDeclaration(string Root, string ContextType);
+internal sealed record MigrationTypeTopologyDeclaration(string Root, string TypeName, string SourcePath, bool IsSnapshot);
+internal sealed record MigrationContextTopologyDeclaration(string Root, string ContextType, string SourcePath);
 internal sealed record SchemaSplitTopologyViolation(string SourcePath, int Line, string Invocation);

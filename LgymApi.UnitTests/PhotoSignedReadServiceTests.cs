@@ -1,7 +1,8 @@
 using FluentAssertions;
 using LgymApi.Application.Abstractions.Storage;
 using LgymApi.Application.Coaching.Contracts.Access;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Reporting.Errors;
 using LgymApi.Application.Repositories;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
@@ -23,8 +24,15 @@ public sealed class PhotoSignedReadServiceTests
         var photoId = Id<Photo>.New();
         var photo = new Photo
         {
-            Id = photoId, OwnerUserId = ownerId, UploaderUserId = ownerId, ReportRequestId = Id<ReportRequest>.New(),
-            ViewType = PhotoViewType.Front.ToString(), StorageKey = "photos/front.jpg", MimeType = "image/jpeg", SizeBytes = 1024, Checksum = "etag"
+            Id = photoId,
+            OwnerUserId = ownerId,
+            UploaderUserId = ownerId,
+            ReportRequestId = Id<ReportRequest>.New(),
+            ViewType = PhotoViewType.Front.ToString(),
+            StorageKey = "photos/front.jpg",
+            MimeType = "image/jpeg",
+            SizeBytes = 1024,
+            Checksum = "etag"
         };
 
         var repo = Substitute.For<IReportingRepository>();
@@ -63,8 +71,15 @@ public sealed class PhotoSignedReadServiceTests
         var photoId = Id<Photo>.New();
         var photo = new Photo
         {
-            Id = photoId, OwnerUserId = ownerId, UploaderUserId = ownerId, ReportRequestId = Id<ReportRequest>.New(),
-            ViewType = PhotoViewType.Front.ToString(), StorageKey = "photos/private-front.jpg", MimeType = "image/jpeg", SizeBytes = 1024, Checksum = "etag"
+            Id = photoId,
+            OwnerUserId = ownerId,
+            UploaderUserId = ownerId,
+            ReportRequestId = Id<ReportRequest>.New(),
+            ViewType = PhotoViewType.Front.ToString(),
+            StorageKey = "photos/private-front.jpg",
+            MimeType = "image/jpeg",
+            SizeBytes = 1024,
+            Checksum = "etag"
         };
         var repo = Substitute.For<IReportingRepository>();
         repo.FindPhotoByIdAsync(photoId, Arg.Any<CancellationToken>()).Returns(photo);
@@ -87,8 +102,15 @@ public sealed class PhotoSignedReadServiceTests
         var photoId = Id<Photo>.New();
         var photo = new Photo
         {
-            Id = photoId, OwnerUserId = traineeId, UploaderUserId = traineeId, ReportRequestId = Id<ReportRequest>.New(),
-            ViewType = PhotoViewType.Front.ToString(), StorageKey = "photos/trainee/front.jpg", MimeType = "image/jpeg", SizeBytes = 1024, Checksum = "etag"
+            Id = photoId,
+            OwnerUserId = traineeId,
+            UploaderUserId = traineeId,
+            ReportRequestId = Id<ReportRequest>.New(),
+            ViewType = PhotoViewType.Front.ToString(),
+            StorageKey = "photos/trainee/front.jpg",
+            MimeType = "image/jpeg",
+            SizeBytes = 1024,
+            Checksum = "etag"
         };
         var repository = Substitute.For<IReportingRepository>();
         repository.FindPhotoByIdAsync(photoId, Arg.Any<CancellationToken>()).Returns(photo);
@@ -116,8 +138,15 @@ public sealed class PhotoSignedReadServiceTests
         var photoId = Id<Photo>.New();
         var photo = new Photo
         {
-            Id = photoId, OwnerUserId = traineeId, UploaderUserId = traineeId, ReportRequestId = Id<ReportRequest>.New(),
-            ViewType = PhotoViewType.Front.ToString(), StorageKey = "photos/trainee/private-front.jpg", MimeType = "image/jpeg", SizeBytes = 1024, Checksum = "etag"
+            Id = photoId,
+            OwnerUserId = traineeId,
+            UploaderUserId = traineeId,
+            ReportRequestId = Id<ReportRequest>.New(),
+            ViewType = PhotoViewType.Front.ToString(),
+            StorageKey = "photos/trainee/private-front.jpg",
+            MimeType = "image/jpeg",
+            SizeBytes = 1024,
+            Checksum = "etag"
         };
         var repository = Substitute.For<IReportingRepository>();
         repository.FindPhotoByIdAsync(photoId, Arg.Any<CancellationToken>()).Returns(photo);

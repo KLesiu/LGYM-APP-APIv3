@@ -1,4 +1,4 @@
-using LgymApi.Application.Common.Training.Elo;
+using LgymApi.Application.WorkoutProgress.Scoring.Elo;
 using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Services;

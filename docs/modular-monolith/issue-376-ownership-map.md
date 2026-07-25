@@ -104,6 +104,13 @@ This file contains the fixed one-owner matrix for the #375 hotspot and cross-fea
 | Table | `SupplementIntakeLogs` | `Nutrition` | Supplement intake log rows are owned by nutrition. | Non-owners do not write supplement intake logs directly. |
 | Focused capability family | Diet D1-D9 and Supplementation S1-S9 | `Nutrition` | The 18 focused Nutrition actions own Diet and Supplementation lifecycle rules through module-local contracts and persistence ports. | The four existing API controllers adapt HTTP requests; non-owners use published contracts and do not write Nutrition entities directly. |
 | Persistence adapters | `IDietPlanPersistence` / `DietPlanPersistenceRepository` and `ISupplementationPersistence` / `SupplementationPersistenceRepository` | `Nutrition` | Nutrition owns stage-only persistence seams for its six entities. | Application use cases own authorization and UoW commits; reads remain no-tracking and repositories do not save or start transactions. |
+| BuildingBlocks public surface | `LgymApi.Application/BuildingBlocks/` | `Platform / Reference Data` | The closed neutral manifest contains only results, `Unit`, and the eight base application errors. | Modules consume these primitives only; feature services, repositories, DTOs, errors, and providers are forbidden here. |
+| Technical Platform root | `LgymApi.Application/Platform/Contracts/` | `Platform / Reference Data` | Technical Platform owns the established background-command, serialization, pagination, reliability, and Unit of Work contract surface. | Feature modules consume approved public contracts only. |
+| Reference Data root | `LgymApi.Application/Platform/ReferenceData/` | `Platform / Reference Data` | Reference Data owns AppConfig, enum lookup, unit conversion, and its internal registration helper. | Only `AddPlatformModule` composes `AddReferenceDataServices`; Reference Data is not a canonical module. |
+| Authorization port | `IAppConfigAuthorizationPort` | `Platform / Reference Data` | AppConfig owns an ID-only authorization contract for protected operations. | Identity implements the scoped adapter with Identity-owned repositories; AppConfig never accesses those repositories directly. |
+| Enum lookup | `IEnumService`, `EnumLookupMappingProfile`, and lookup models | `Platform / Reference Data` | Reference Data owns the six concrete enum mappings and localized lookup behavior. | API maps Application lookup models; raw `id`, translated `name` and `displayName`, hidden filtering, and case-insensitive type lookup remain stable. |
+| Email registration | `AddNotificationsInfrastructure` and its private email helper | `Notifications` | Notifications owns email option validation, composer registrations, and Dummy or SMTP sender selection. | Platform does not register email descriptors; Worker and Common keep runtime and wire responsibilities. |
+| Provider registration | FCM, photo storage, Google validation, and optional Elasticsearch sink | Respective Notifications, Reporting, Identity, and API owners | Each provider remains registered by its owning module or host boundary. | SDKs, credentials, and raw provider responses remain outside Application and BuildingBlocks. |
 
 ## Notes
 
@@ -116,6 +123,10 @@ This file contains the fixed one-owner matrix for the #375 hotspot and cross-fea
 - Completed `Training` rows remain `Workout & Progress`-owned. `Training.TypePlanDayId` references the `Training Planning` definition used for a performed workout; it does not grant Training Planning write ownership over completed training.
 - Workout & Progress publishes `ProgressData`, dashboard, ranking, training execution/history, and the production `#386` accepted-progress consumer surface as explicit contracts/read models. Foreign modules do not reference its entities, repositories, or implementation classes. Reporting stages the accepted-progress command in the shared `CommandEnvelope` outbox, and Workout & Progress owns measurement persistence. Legacy API routes remain unchanged.
 - Nutrition ownership remains six of the 48 persisted entities. Its D1-D9 and S1-S9 actions are logical capability ownership only, with four existing controller adapters and no physical database, `DbContext`, schema, or migration-stream split.
+- The exact BuildingBlocks manifest is `Result<T, TError>`, `Result`, `Unit`, `AppError`, `NotFoundError`, `BadRequestError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `UnprocessableEntityError`, and `InternalServerError`.
+- AppConfig protected operations cross the Identity boundary only through its ID-only authorization port. The Identity adapter owns active-user and `ManageAppConfig` permission checks, while latest-by-platform remains unauthenticated.
+- Reference Data owns the enum lookup service and concrete mappings. API consumers do not duplicate enum formatting.
+- The current project-reference manifest is 14 projects and 32 edges. The sole approved delta is removal of `LgymApi.Domain -> LgymApi.Resources`.
 
 ## Persisted Entity Ownership Catalog
 
@@ -188,3 +199,4 @@ If an artifact appears to touch more than one module, the owner is the module th
 - `docs/modular-monolith/issue-380-project-reference-graph.md`
 - `docs/modular-monolith/issue-381-notifications-boundary.md`
 - `docs/modular-monolith/issue-390-nutrition-boundary.md`
+- `docs/modular-monolith/issue-393-platform-reference-data-boundary.md`

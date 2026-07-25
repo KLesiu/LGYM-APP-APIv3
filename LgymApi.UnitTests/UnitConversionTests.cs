@@ -1,5 +1,5 @@
 using FluentAssertions;
-using LgymApi.Application.Units;
+using LgymApi.Application.Platform.ReferenceData.Units;
 using LgymApi.Domain.Enums;
 
 namespace LgymApi.UnitTests;

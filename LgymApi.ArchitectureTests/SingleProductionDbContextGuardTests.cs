@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Reflection;
 using LgymApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,7 +8,7 @@ namespace LgymApi.ArchitectureTests;
 public sealed class SingleProductionDbContextGuardTests
 {
     private const int PersistedEntityCount = 48;
-    private const string MigrationRoot = "LgymApi.Infrastructure/Migrations";
+    private const string MigrationRoot = PersistenceIdentityContract.MigrationRoot;
 
     [Test]
     public void Current_Production_Topology_Should_Have_One_Context_Model_And_Migration_Stream()
@@ -17,40 +16,86 @@ public sealed class SingleProductionDbContextGuardTests
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var sources = PersistenceTopologyGuardTestHelpers.LoadProductionSources(repoRoot);
         var topology = PersistenceTopologyGuardTestHelpers.Analyze(sources);
-        var dbSetEntities = GetPublicDbSetEntityTypes();
-        var expectedEntities = dbSetEntities.Select(type => type.Name).OrderBy(name => name, StringComparer.Ordinal).ToList();
+        var expectedEntities = PersistenceIdentityContract.DbSets
+            .Select(dbSet => dbSet.EntityType)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToList();
         var configurationViolations = FindMultiplicityViolations(topology.Configurations.Select(item => item.EntityType), expectedEntities);
         var registrarViolations = FindMultiplicityViolations(topology.RegistrarEntries.Select(item => item.EntityType), expectedEntities);
 
         Assert.Multiple(() =>
         {
-            Assert.That(sources.Select(source => source.Path), Does.Contain("LgymApi.Infrastructure/Data/AppDbContext.cs"));
-            Assert.That(topology.DbContexts, Has.Count.EqualTo(1), Describe(topology.DbContexts));
-            Assert.That(topology.DbContexts.Single().TypeName, Is.EqualTo(nameof(AppDbContext)), Describe(topology.DbContexts));
-            Assert.That(topology.DbContexts.Single().SourcePath, Is.EqualTo("LgymApi.Infrastructure/Data/AppDbContext.cs"));
-            Assert.That(dbSetEntities, Has.Count.EqualTo(PersistedEntityCount));
+            Assert.That(sources.Select(source => source.Path), Does.Contain(PersistenceIdentityContract.DbContextSourcePath));
+            Assert.That(sources.Select(source => source.Path), Does.Contain(PersistenceIdentityContract.SnapshotSourcePath));
+            Assert.That(sources.Select(source => source.Path), Does.Contain(PersistenceIdentityContract.RegistrarSourcePath));
+            Assert.That(PersistenceIdentityContract.DbSets, Has.Count.EqualTo(PersistedEntityCount));
+            Assert.That(
+                () => PersistenceTopologyGuardTestHelpers.EnsureSingleDbContext(
+                    topology,
+                    PersistenceIdentityContract.DbContextTypeName,
+                    PersistenceIdentityContract.DbContextSourcePath),
+                Throws.Nothing);
+            Assert.That(
+                () => PersistenceTopologyGuardTestHelpers.EnsureExactDbSetIdentities(topology, PersistenceIdentityContract.DbSets),
+                Throws.Nothing);
+            Assert.That(
+                topology.DbSets.Select(item => item.SourcePath).Distinct(StringComparer.Ordinal),
+                Is.EqualTo(new[] { PersistenceIdentityContract.DbContextSourcePath }));
             Assert.That(topology.DbSets.Select(item => item.EntityType).Distinct(), Is.EquivalentTo(expectedEntities));
             Assert.That(configurationViolations, Is.Empty, string.Join(Environment.NewLine, configurationViolations));
             Assert.That(registrarViolations, Is.Empty, string.Join(Environment.NewLine, registrarViolations));
-            Assert.That(topology.MigrationStreams, Has.Count.EqualTo(1), Describe(topology.MigrationStreams));
-            Assert.That(topology.MigrationStreams.Single().Root, Is.EqualTo(MigrationRoot));
-            Assert.That(topology.MigrationStreams.Single().SnapshotTypeNames, Is.EqualTo(new[] { "AppDbContextModelSnapshot" }));
-            Assert.That(topology.MigrationStreams.Single().ContextTypeNames, Is.EqualTo(new[] { nameof(AppDbContext) }));
+            Assert.That(
+                () => PersistenceTopologyGuardTestHelpers.EnsureRegistrarOrder(
+                    topology,
+                    PersistenceIdentityContract.RegistrarConfigurationTypes,
+                    PersistenceIdentityContract.RegistrarSourcePath),
+                Throws.Nothing);
+            Assert.That(
+                () => PersistenceTopologyGuardTestHelpers.EnsureSingleMigrationRoot(
+                    topology,
+                    PersistenceIdentityContract.MigrationRoot),
+                Throws.Nothing);
+            Assert.That(
+                () => PersistenceTopologyGuardTestHelpers.EnsureSingleSnapshot(
+                    topology,
+                    PersistenceIdentityContract.SnapshotTypeName,
+                    PersistenceIdentityContract.SnapshotSourcePath,
+                    PersistenceIdentityContract.DbContextTypeName),
+                Throws.Nothing);
+            Assert.That(topology.MigrationStreams.Single().ContextTypeNames, Is.EqualTo(new[] { PersistenceIdentityContract.DbContextTypeName }));
             Assert.That(topology.EnsureCreatedViolations, Is.Empty, Describe(topology.EnsureCreatedViolations));
             Assert.That(topology.SchemaSplitViolations, Is.Empty, Describe(topology.SchemaSplitViolations));
         });
     }
 
     [Test]
-    public void Issue391_Worktree_Should_Not_Change_Production_Migrations()
+    public void Production_Migration_Worktree_Should_Remain_Unchanged()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var changedFiles = RunGit(repoRoot, ["diff", "--name-only", "HEAD", "--", MigrationRoot])
-            .Concat(RunGit(repoRoot, ["ls-files", "--others", "--exclude-standard", "--", MigrationRoot]))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var headChanges = RunGit(repoRoot, ["diff", "--name-only", "HEAD", "--", MigrationRoot]);
+        var untrackedFiles = RunGit(repoRoot, ["ls-files", "--others", "--exclude-standard", "--", MigrationRoot]);
 
-        Assert.That(changedFiles, Is.Empty, string.Join(Environment.NewLine, changedFiles));
+        AssertProductionMigrationWorktreeIsClean(headChanges, untrackedFiles);
+    }
+
+    [Test]
+    public void Production_Migration_Worktree_Fixture_Should_Reject_A_Staged_Migration_Source()
+    {
+        const string migrationPath = MigrationRoot + "/20990101000000_SyntheticMigration.cs";
+
+        Assert.That(
+            () => AssertProductionMigrationWorktreeIsClean([migrationPath], []),
+            Throws.InstanceOf<AssertionException>().With.Message.Contains(migrationPath));
+    }
+
+    [Test]
+    public void Production_Migration_Worktree_Fixture_Should_Reject_An_Untracked_Model_Snapshot()
+    {
+        const string snapshotPath = MigrationRoot + "/AppDbContextModelSnapshot.cs";
+
+        Assert.That(
+            () => AssertProductionMigrationWorktreeIsClean([], [snapshotPath]),
+            Throws.InstanceOf<AssertionException>().With.Message.Contains(snapshotPath));
     }
 
     [Test]
@@ -67,17 +112,48 @@ public sealed class SingleProductionDbContextGuardTests
     }
 
     [Test]
-    public void Semantic_Fixture_Should_Detect_A_Second_Production_DbContext()
+    public void Semantic_Fixture_Should_Reject_A_Renamed_Persisted_Entity()
     {
         var topology = AnalyzeFixture(
-            "LgymApi.Reporting/Data/ReportingDbContext.cs",
+            "LgymApi.Infrastructure/Data/AppDbContext.cs",
+            "using Microsoft.EntityFrameworkCore; sealed class RenamedUser { } sealed class AppDbContext : DbContext { public DbSet<RenamedUser> Users => Set<RenamedUser>(); }");
+
+        Assert.That(
+            () => PersistenceTopologyGuardTestHelpers.EnsureExactDbSetIdentities(
+                topology,
+                [new PersistedDbSetIdentity("Users", "User")]),
+            Throws.InvalidOperationException);
+    }
+
+    [Test]
+    public void Semantic_Fixture_Should_Reject_A_Renamed_DbSet()
+    {
+        var topology = AnalyzeFixture(
+            "LgymApi.Infrastructure/Data/AppDbContext.cs",
+            "using Microsoft.EntityFrameworkCore; sealed class User { } sealed class AppDbContext : DbContext { public DbSet<User> Accounts => Set<User>(); }");
+
+        Assert.That(
+            () => PersistenceTopologyGuardTestHelpers.EnsureExactDbSetIdentities(
+                topology,
+                [new PersistedDbSetIdentity("Users", "User")]),
+            Throws.InvalidOperationException);
+    }
+
+    [Test]
+    public void Semantic_Fixture_Should_Reject_A_Second_Production_DbContext()
+    {
+        const string sourcePath = "LgymApi.Reporting/Data/ReportingDbContext.cs";
+        var topology = AnalyzeFixture(
+            sourcePath,
             """
             using Microsoft.EntityFrameworkCore;
             sealed class AppDbContext : DbContext { }
             sealed class ReportingDbContext : DbContext { }
             """);
 
-        Assert.That(topology.DbContexts.Select(item => item.TypeName), Is.EquivalentTo(new[] { "AppDbContext", "ReportingDbContext" }));
+        Assert.That(
+            () => PersistenceTopologyGuardTestHelpers.EnsureSingleDbContext(topology, "AppDbContext", sourcePath),
+            Throws.InvalidOperationException.With.Message.Contains("Expected one production DbContext"));
     }
 
     [Test]
@@ -107,7 +183,7 @@ public sealed class SingleProductionDbContextGuardTests
     }
 
     [Test]
-    public void Project_Path_Fixture_Should_Detect_A_Second_Migration_Stream()
+    public void Project_Path_Fixture_Should_Reject_A_Second_Migration_Root()
     {
         var topology = PersistenceTopologyGuardTestHelpers.Analyze(
         [
@@ -115,7 +191,9 @@ public sealed class SingleProductionDbContextGuardTests
             new TopologySource("LgymApi.Reporting/Migrations/Initial.cs", MigrationFixture("ReportingInitial"))
         ]);
 
-        Assert.That(topology.MigrationStreams.Select(item => item.Root), Is.EquivalentTo(new[] { MigrationRoot, "LgymApi.Reporting/Migrations" }));
+        Assert.That(
+            () => PersistenceTopologyGuardTestHelpers.EnsureSingleMigrationRoot(topology, PersistenceIdentityContract.MigrationRoot),
+            Throws.InvalidOperationException.With.Message.Contains("Expected one migration root"));
     }
 
     [Test]
@@ -158,15 +236,6 @@ public sealed class SingleProductionDbContextGuardTests
         return PersistenceTopologyGuardTestHelpers.Analyze([new TopologySource(path, source)]);
     }
 
-    private static IReadOnlyList<Type> GetPublicDbSetEntityTypes()
-    {
-        return typeof(AppDbContext).GetProperties(BindingFlags.Instance | BindingFlags.Public)
-            .Where(property => property.PropertyType.IsGenericType && property.PropertyType.GetGenericTypeDefinition() == typeof(DbSet<>))
-            .Select(property => property.PropertyType.GenericTypeArguments[0])
-            .OrderBy(type => type.FullName, StringComparer.Ordinal)
-            .ToList();
-    }
-
     private static List<string> FindMultiplicityViolations(IEnumerable<string> actualEntities, IReadOnlyCollection<string> expectedEntities)
     {
         var counts = actualEntities.GroupBy(entity => entity, StringComparer.Ordinal).ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
@@ -178,6 +247,18 @@ public sealed class SingleProductionDbContextGuardTests
     }
 
     private static string Describe<T>(IEnumerable<T> values) => string.Join(Environment.NewLine, values);
+
+    private static void AssertProductionMigrationWorktreeIsClean(
+        IEnumerable<string> headChanges,
+        IEnumerable<string> untrackedFiles)
+    {
+        var touchedFiles = headChanges
+            .Concat(untrackedFiles)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        Assert.That(touchedFiles, Is.Empty, string.Join(Environment.NewLine, touchedFiles));
+    }
 
     private static IReadOnlyList<string> RunGit(string repoRoot, IReadOnlyList<string> arguments)
     {

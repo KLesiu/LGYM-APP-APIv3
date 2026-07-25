@@ -4,6 +4,7 @@ using LgymApi.Infrastructure.Data.Configurations.Identity;
 using LgymApi.Infrastructure.Data.Configurations.Nutrition;
 using LgymApi.Infrastructure.Data.Configurations.Notifications;
 using LgymApi.Infrastructure.Data.Configurations.Platform;
+using LgymApi.Infrastructure.Data.Configurations.ReferenceData;
 using LgymApi.Infrastructure.Data.Configurations.Reporting;
 using LgymApi.Infrastructure.Data.Configurations.TrainingPlanning;
 using LgymApi.Infrastructure.Data.Configurations.WorkoutProgress;

@@ -39,6 +39,15 @@ public sealed class ModuleDependencyGuardTests
     }
 
     [Test]
+    public void Platform_Module_Should_Not_Allow_Canonical_Module_Dependencies()
+    {
+        Assert.That(
+            AllowedDependencies[ArchitectureTestHelpers.PlatformModuleName],
+            Is.Empty,
+            "Platform is a canonical module with no allowed canonical-module targets.");
+    }
+
+    [Test]
     public void Main_Record_Repository_Should_Belong_To_Workout_And_Progress()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();

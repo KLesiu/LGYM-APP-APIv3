@@ -10,7 +10,7 @@ public sealed partial class BackgroundActionOrchestratorService
 {
     // Delegate type for cached handler invocation
     private delegate Task HandlerInvoker(object handler, object command, CancellationToken cancellationToken);
-    
+
     // Cache compiled invokers per command type (setup-time reflection, execution-time cached delegates)
     private static readonly ConcurrentDictionary<Type, HandlerInvoker> _invokerCache = new();
 

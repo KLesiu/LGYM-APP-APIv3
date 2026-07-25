@@ -59,9 +59,9 @@ public sealed class ErrorContractConsistencyTests : IntegrationTestBase
             email: "invalid_token@example.com");
 
         // Act: Set malformed Bearer token
-        Client.DefaultRequestHeaders.Authorization = 
+        Client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "this-is-not-a-valid-jwt-token");
-        
+
         var response = await Client.GetAsync($"/api/gym/{user.Id}/getGyms");
 
         // Assert: 401 + "msg" field present
@@ -113,7 +113,7 @@ public sealed class ErrorContractConsistencyTests : IntegrationTestBase
             signingCredentials: credentials);
 
         var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
-        Client.DefaultRequestHeaders.Authorization = 
+        Client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", tokenString);
 
         // Act: Hit protected endpoint with expired token
@@ -152,7 +152,7 @@ public sealed class ErrorContractConsistencyTests : IntegrationTestBase
 
         // Generate valid token
         var token = GenerateJwt(user.Id, session.Id, session.Jti);
-        Client.DefaultRequestHeaders.Authorization = 
+        Client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
         // Revoke the session

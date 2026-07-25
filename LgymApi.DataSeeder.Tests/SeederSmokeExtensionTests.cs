@@ -52,36 +52,36 @@ public sealed class SeederSmokeExtensionTests
         adminClaims.Should().Contain(AuthConstants.Permissions.ManageUserRoles);
     }
 
-     [Test]
-     public async Task TrainerTraineeLinkSeeder_Should_Add_Link_For_Demo_Users()
-     {
-         var context = await CreateContextAsync();
-         var seedContext = new SeedContext();
+    [Test]
+    public async Task TrainerTraineeLinkSeeder_Should_Add_Link_For_Demo_Users()
+    {
+        var context = await CreateContextAsync();
+        var seedContext = new SeedContext();
 
-         seedContext.DemoUsers.Add(new User { Id = Id<User>.New(), Name = "Trainer" });
-         seedContext.DemoUsers.Add(new User { Id = Id<User>.New(), Name = "Trainee" });
+        seedContext.DemoUsers.Add(new User { Id = Id<User>.New(), Name = "Trainer" });
+        seedContext.DemoUsers.Add(new User { Id = Id<User>.New(), Name = "Trainee" });
 
-         var seeder = new TrainerTraineeLinkSeeder();
+        var seeder = new TrainerTraineeLinkSeeder();
         await seeder.SeedAsync(context, seedContext, CancellationToken.None);
         await context.SaveChangesAsync();
 
-         (await context.TrainerTraineeLinks.CountAsync()).Should().Be(1);
+        (await context.TrainerTraineeLinks.CountAsync()).Should().Be(1);
     }
 
-     [Test]
-     public async Task ReportTemplateSeeder_Should_Add_Template_With_Fields()
-     {
-         var context = await CreateContextAsync();
-         var seedContext = new SeedContext();
+    [Test]
+    public async Task ReportTemplateSeeder_Should_Add_Template_With_Fields()
+    {
+        var context = await CreateContextAsync();
+        var seedContext = new SeedContext();
 
-         seedContext.DemoUsers.Add(new User { Id = Id<User>.New(), Name = "Trainer" });
+        seedContext.DemoUsers.Add(new User { Id = Id<User>.New(), Name = "Trainer" });
 
         var seeder = new ReportTemplateSeeder();
         await seeder.SeedAsync(context, seedContext, CancellationToken.None);
         await context.SaveChangesAsync();
 
-         (await context.ReportTemplates.CountAsync()).Should().Be(1);
-         (await context.ReportTemplateFields.CountAsync()).Should().BeGreaterThan(0);
+        (await context.ReportTemplates.CountAsync()).Should().Be(1);
+        (await context.ReportTemplateFields.CountAsync()).Should().BeGreaterThan(0);
     }
 
     [Test]
@@ -90,8 +90,8 @@ public sealed class SeederSmokeExtensionTests
         var context = await CreateContextAsync();
         var seedContext = new SeedContext();
 
-         var trainer = new User { Id = Id<User>.New(), Name = "Trainer" };
-         var trainee = new User { Id = Id<User>.New(), Name = "Trainee" };
+        var trainer = new User { Id = Id<User>.New(), Name = "Trainer" };
+        var trainee = new User { Id = Id<User>.New(), Name = "Trainee" };
         seedContext.DemoUsers.Add(trainer);
         seedContext.DemoUsers.Add(trainee);
 
@@ -103,8 +103,8 @@ public sealed class SeederSmokeExtensionTests
         await seeder.SeedAsync(context, seedContext, CancellationToken.None);
         await context.SaveChangesAsync();
 
-         (await context.ReportRequests.CountAsync()).Should().Be(1);
-         (await context.ReportSubmissions.CountAsync()).Should().Be(1);
+        (await context.ReportRequests.CountAsync()).Should().Be(1);
+        (await context.ReportSubmissions.CountAsync()).Should().Be(1);
     }
 
     [Test]
@@ -113,8 +113,8 @@ public sealed class SeederSmokeExtensionTests
         var context = await CreateContextAsync();
         var seedContext = new SeedContext();
 
-         seedContext.DemoUsers.Add(new User { Id = Id<User>.New(), Name = "Trainer" });
-         seedContext.DemoUsers.Add(new User { Id = Id<User>.New(), Name = "Trainee" });
+        seedContext.DemoUsers.Add(new User { Id = Id<User>.New(), Name = "Trainer" });
+        seedContext.DemoUsers.Add(new User { Id = Id<User>.New(), Name = "Trainee" });
 
         var planSeeder = new SupplementPlanSeeder();
         await planSeeder.SeedAsync(context, seedContext, CancellationToken.None);
@@ -128,9 +128,9 @@ public sealed class SeederSmokeExtensionTests
         await logSeeder.SeedAsync(context, seedContext, CancellationToken.None);
         await context.SaveChangesAsync();
 
-         (await context.SupplementPlans.CountAsync()).Should().Be(1);
-         (await context.SupplementPlanItems.CountAsync()).Should().BeGreaterThan(0);
-         (await context.SupplementIntakeLogs.CountAsync()).Should().BeGreaterThan(0);
+        (await context.SupplementPlans.CountAsync()).Should().Be(1);
+        (await context.SupplementPlanItems.CountAsync()).Should().BeGreaterThan(0);
+        (await context.SupplementIntakeLogs.CountAsync()).Should().BeGreaterThan(0);
     }
 
     [Test]
@@ -143,7 +143,7 @@ public sealed class SeederSmokeExtensionTests
         await seeder.SeedAsync(context, seedContext, CancellationToken.None);
         await context.SaveChangesAsync();
 
-         (await context.NotificationMessages.CountAsync()).Should().Be(2);
+        (await context.NotificationMessages.CountAsync()).Should().Be(2);
     }
 
     [Test]
@@ -156,7 +156,7 @@ public sealed class SeederSmokeExtensionTests
         await seeder.SeedAsync(context, seedContext, CancellationToken.None);
         await context.SaveChangesAsync();
 
-         (await context.ReportSubmissions.CountAsync()).Should().Be(0);
+        (await context.ReportSubmissions.CountAsync()).Should().Be(0);
     }
 
     [Test]
@@ -165,8 +165,8 @@ public sealed class SeederSmokeExtensionTests
         var context = await CreateContextAsync();
         var seedContext = new SeedContext();
 
-         var trainer = new User { Id = Id<User>.New(), Name = "Trainer" };
-         seedContext.DemoUsers.Add(trainer);
+        var trainer = new User { Id = Id<User>.New(), Name = "Trainer" };
+        seedContext.DemoUsers.Add(trainer);
 
         var templateSeeder = new ReportTemplateSeeder();
         await templateSeeder.SeedAsync(context, seedContext, CancellationToken.None);
@@ -176,17 +176,17 @@ public sealed class SeederSmokeExtensionTests
         await fieldSeeder.SeedAsync(context, seedContext, CancellationToken.None);
         await context.SaveChangesAsync();
 
-         (await context.ReportTemplateFields.CountAsync()).Should().BeGreaterThan(0);
+        (await context.ReportTemplateFields.CountAsync()).Should().BeGreaterThan(0);
     }
 
-     private static async Task<AppDbContext> CreateContextAsync()
-     {
-         var options = new DbContextOptionsBuilder<AppDbContext>()
-             .UseInMemoryDatabase(Id<Exercise>.New().ToString())
-             .Options;
+    private static async Task<AppDbContext> CreateContextAsync()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Id<Exercise>.New().ToString())
+            .Options;
 
-         var context = new AppDbContext(options);
-         await context.Database.EnsureCreatedAsync();
-         return context;
-     }
+        var context = new AppDbContext(options);
+        await context.Database.EnsureCreatedAsync();
+        return context;
+    }
 }

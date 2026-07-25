@@ -1,7 +1,8 @@
 using LgymApi.Application.Coaching.Invitations.Models;
 using LgymApi.Application.Coaching.Persistence;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Coaching.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Identity.Contracts.Access;
 using LgymApi.Application.Identity.Contracts.Accounts;
 using LgymApi.Application.Mapping.Core;

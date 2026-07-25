@@ -2,7 +2,7 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.User.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Notifications;
 using LgymApi.Application.Notifications.Models;

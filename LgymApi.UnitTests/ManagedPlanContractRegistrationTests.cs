@@ -1,14 +1,16 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Identity.Contracts.Accounts;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.TrainingPlanning.Contracts.ManagedPlans;
+using LgymApi.Application.TrainingPlanning.Errors;
 using LgymApi.Application.TrainingPlanning;
 using LgymApi.Application.TrainingPlanning.Plan.ActivePlanPointer;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Resources;
 using LgymApi.TestUtils.Fakes;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
@@ -119,6 +121,16 @@ public sealed class ManagedPlanContractRegistrationTests
     }
 
     [Test]
+    public async Task GetManagedPlansAsync_WhenTraineeIdIsEmpty_ReturnsOwnerValidationError()
+    {
+        var result = await Resolve<IGetManagedPlansUseCase>().ExecuteAsync(new GetManagedPlansQuery(Id<User>.Empty));
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<InvalidPlanError>().Which.Message.Should().Be(Messages.UserIdRequired);
+        result.Error.HttpStatusCode.Should().Be(400);
+    }
+
+    [Test]
     public async Task CreateManagedPlanAsync_CreatesInactiveTrainerOwnedTrimmedPlan()
     {
         var trainerId = Id<User>.New();
@@ -152,7 +164,7 @@ public sealed class ManagedPlanContractRegistrationTests
         var result = await useCase.ExecuteAsync(new CreateManagedPlanCommand(Id<User>.New(), Id<User>.New(), name));
 
         result.IsFailure.Should().BeTrue();
-        result.Error.Should().BeOfType<InvalidTrainerRelationshipError>();
+        result.Error.Should().BeOfType<InvalidPlanError>();
     }
 
     [Test]
@@ -186,7 +198,7 @@ public sealed class ManagedPlanContractRegistrationTests
         var foreignResult = await useCase.ExecuteAsync(new UpdateManagedPlanCommand(trainerId, traineeId, foreignPlan.Id, "Nope"));
 
         foreignResult.IsFailure.Should().BeTrue();
-        foreignResult.Error.Should().BeOfType<TrainerRelationshipNotFoundError>();
+        foreignResult.Error.Should().BeOfType<PlanNotFoundError>();
         await planRepository.DidNotReceive().UpdateAsync(foreignPlan, Arg.Any<CancellationToken>());
     }
 
@@ -200,7 +212,7 @@ public sealed class ManagedPlanContractRegistrationTests
             new UpdateManagedPlanCommand(Id<User>.New(), Id<User>.New(), Id<Plan>.New(), "Updated"));
 
         result.IsFailure.Should().BeTrue();
-        result.Error.Should().BeOfType<TrainerRelationshipNotFoundError>();
+        result.Error.Should().BeOfType<PlanNotFoundError>();
     }
 
     [Test]
@@ -212,7 +224,7 @@ public sealed class ManagedPlanContractRegistrationTests
             new UpdateManagedPlanCommand(Id<User>.New(), Id<User>.New(), Id<Plan>.Empty, " "));
 
         result.IsFailure.Should().BeTrue();
-        result.Error.Should().BeOfType<InvalidTrainerRelationshipError>();
+        result.Error.Should().BeOfType<InvalidPlanError>();
     }
 
     [Test]
@@ -255,7 +267,7 @@ public sealed class ManagedPlanContractRegistrationTests
         var result = await useCase.ExecuteAsync(new DeleteManagedPlanCommand(trainerId, traineeId, plan.Id));
 
         result.IsFailure.Should().BeTrue();
-        result.Error.Should().BeOfType<TrainerRelationshipNotFoundError>();
+        result.Error.Should().BeOfType<PlanNotFoundError>();
         plan.IsDeleted.Should().BeFalse();
     }
 
@@ -347,7 +359,7 @@ public sealed class ManagedPlanContractRegistrationTests
         var foreignResult = await useCase.ExecuteAsync(new AssignManagedPlanCommand(trainerId, traineeId, foreignPlan.Id));
 
         foreignResult.IsFailure.Should().BeTrue();
-        foreignResult.Error.Should().BeOfType<TrainerRelationshipNotFoundError>();
+        foreignResult.Error.Should().BeOfType<PlanNotFoundError>();
 
         var traineePlan = CreatePlan(traineeId, "Trainee");
         planRepository.FindByIdAsync(traineePlan.Id, Arg.Any<CancellationToken>()).Returns(traineePlan);
@@ -355,7 +367,7 @@ public sealed class ManagedPlanContractRegistrationTests
         var missingTraineeResult = await useCase.ExecuteAsync(new AssignManagedPlanCommand(trainerId, traineeId, traineePlan.Id));
 
         missingTraineeResult.IsFailure.Should().BeTrue();
-        missingTraineeResult.Error.Should().BeOfType<TrainerRelationshipNotFoundError>();
+        missingTraineeResult.Error.Should().BeOfType<PlanNotFoundError>();
     }
 
     [Test]
@@ -398,7 +410,7 @@ public sealed class ManagedPlanContractRegistrationTests
         var missing = await useCase.ExecuteAsync(new GetActiveAssignedPlanQuery(traineeId));
 
         missing.IsFailure.Should().BeTrue();
-        missing.Error.Should().BeOfType<TrainerRelationshipNotFoundError>();
+        missing.Error.Should().BeOfType<PlanNotFoundError>();
     }
 
     [Test]

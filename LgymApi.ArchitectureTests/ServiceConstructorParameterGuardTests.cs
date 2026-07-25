@@ -67,7 +67,7 @@ public sealed class ServiceConstructorParameterGuardTests
             return false;
         }
 
-        return !typeDeclaration.Modifiers.Any(modifier => modifier.Kind() == SyntaxKind.AbstractKeyword);
+        return !typeDeclaration.Modifiers.Any(modifier => Microsoft.CodeAnalysis.CSharpExtensions.IsKind(modifier, SyntaxKind.AbstractKeyword));
     }
 
     private static bool IsInBuildArtifacts(string path)

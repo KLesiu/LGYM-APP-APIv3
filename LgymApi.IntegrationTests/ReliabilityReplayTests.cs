@@ -47,7 +47,7 @@ public sealed class ReliabilityReplayTests : IntegrationTestBase
         // Assert - Only one user created
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         var user = await db.Users.SingleOrDefaultAsync(u => u.Email == "replay@example.com");
         user.Should().NotBeNull("replay should not duplicate user creation");
 
@@ -92,7 +92,7 @@ public sealed class ReliabilityReplayTests : IntegrationTestBase
         // Act - First request with key
         SetIdempotencyKey(idempotencyKey);
         var firstResponse = await PostAsJsonWithApiOptionsAsync("/api/register", firstRequest);
-        
+
         // Act - Second request with SAME key and SAME scope but DIFFERENT payload
         var secondResponse = await PostAsJsonWithApiOptionsAsync("/api/register", secondRequest);
         ClearIdempotencyKey();
@@ -110,7 +110,7 @@ public sealed class ReliabilityReplayTests : IntegrationTestBase
         // Assert - Only first user created (conflict prevented duplicate)
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         var user = await db.Users.SingleOrDefaultAsync(u => u.Email == "conflict@example.com");
         user.Should().NotBeNull("first request should create user");
         user!.Name.Should().Be("conflict-test-1", "only first request should persist");
@@ -169,7 +169,7 @@ public sealed class ReliabilityReplayTests : IntegrationTestBase
         // Assert - Only one training created
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         var trainings = await db.Trainings.Where(t => t.UserId == userId).ToListAsync();
         trainings.Should().HaveCount(1, "replay should not duplicate training");
 
@@ -177,7 +177,7 @@ public sealed class ReliabilityReplayTests : IntegrationTestBase
         var trainingCompletedEnvelopes = await db.CommandEnvelopes
             .Where(ce => ce.PayloadJson.Contains("TrainingCompleted"))
             .ToListAsync();
-        trainingCompletedEnvelopes.Should().HaveCountLessThanOrEqualTo(1, 
+        trainingCompletedEnvelopes.Should().HaveCountLessThanOrEqualTo(1,
             "replay should not create duplicate TrainingCompleted command");
     }
 
@@ -209,7 +209,7 @@ public sealed class ReliabilityReplayTests : IntegrationTestBase
         // Assert - No user created (middleware blocked before handler)
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         var user = await db.Users.FirstOrDefaultAsync(u => u.Email == "nokey@example.com");
         user.Should().BeNull("request should be rejected before handler execution");
     }
@@ -251,7 +251,7 @@ public sealed class ReliabilityReplayTests : IntegrationTestBase
         // Assert - Only one user created
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         var user = await db.Users.SingleOrDefaultAsync(u => u.Email == "serial@example.com");
         user.Should().NotBeNull("serial replay should not duplicate user");
 

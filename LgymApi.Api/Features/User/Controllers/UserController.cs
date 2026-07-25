@@ -3,8 +3,8 @@ using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.User.Contracts;
 using LgymApi.Api.Idempotency;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.PasswordReset;
 using LgymApi.Application.Features.EloRegistry;
 using LgymApi.Application.Features.User.Models;
@@ -226,15 +226,15 @@ public sealed class UserController : ControllerBase
         return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Updated));
     }
 
-     [HttpPost("forgot-password")]
-     [AllowAnonymous]
-     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status200OK)]
-     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken cancellationToken = default)
-     {
-         var preferences = HttpContext.GetCulturePreferences();
-         await _passwordResetService.RequestPasswordResetAsync(request.Email, preferences.First(), cancellationToken);
-         return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.ForgotPasswordRequested));
-     }
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken cancellationToken = default)
+    {
+        var preferences = HttpContext.GetCulturePreferences();
+        await _passwordResetService.RequestPasswordResetAsync(request.Email, preferences.First(), cancellationToken);
+        return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.ForgotPasswordRequested));
+    }
 
     [HttpPost("reset-password")]
     [AllowAnonymous]

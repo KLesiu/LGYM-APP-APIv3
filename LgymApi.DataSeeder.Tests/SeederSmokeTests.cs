@@ -93,14 +93,14 @@ public sealed class SeederSmokeTests
         names.Should().Contain("Legs");
     }
 
-     [Test]
-     public async Task PlanDayExerciseSeeder_Should_Add_Exercises_To_Days()
-     {
-         var context = await CreateContextAsync();
-         var seedContext = new SeedContext();
+    [Test]
+    public async Task PlanDayExerciseSeeder_Should_Add_Exercises_To_Days()
+    {
+        var context = await CreateContextAsync();
+        var seedContext = new SeedContext();
 
-         var planDay = new PlanDay { Id = Id<PlanDay>.New(), Name = "Push", PlanId = Id<Plan>.New() };
-         seedContext.PlanDays.Add(planDay);
+        var planDay = new PlanDay { Id = Id<PlanDay>.New(), Name = "Push", PlanId = Id<Plan>.New() };
+        seedContext.PlanDays.Add(planDay);
 
         var exerciseSeeder = new ExerciseSeeder();
         await exerciseSeeder.SeedAsync(context, seedContext, CancellationToken.None);
@@ -188,50 +188,50 @@ public sealed class SeederSmokeTests
         (await context.TrainingExerciseScores.CountAsync()).Should().BeGreaterThan(0);
     }
 
-     [Test]
-      public async Task MeasurementSeeder_Should_Add_Measurements_For_Demo_Users()
-      {
-          var context = await CreateContextAsync();
-          var seedContext = new SeedContext();
+    [Test]
+    public async Task MeasurementSeeder_Should_Add_Measurements_For_Demo_Users()
+    {
+        var context = await CreateContextAsync();
+        var seedContext = new SeedContext();
 
-          var user = new User { Id = Id<User>.New(), Name = "Demo" };
-          seedContext.DemoUsers.Add(user);
+        var user = new User { Id = Id<User>.New(), Name = "Demo" };
+        seedContext.DemoUsers.Add(user);
 
-          var seeder = new MeasurementSeeder();
-         await seeder.SeedAsync(context, seedContext, CancellationToken.None);
-         await context.SaveChangesAsync();
+        var seeder = new MeasurementSeeder();
+        await seeder.SeedAsync(context, seedContext, CancellationToken.None);
+        await context.SaveChangesAsync();
 
-         (await context.Measurements.CountAsync()).Should().BeGreaterThan(0);
-     }
+        (await context.Measurements.CountAsync()).Should().BeGreaterThan(0);
+    }
 
-      [Test]
-      public async Task MainRecordSeeder_Should_Add_Records_For_Demo_Users()
-      {
-          var context = await CreateContextAsync();
-          var seedContext = new SeedContext();
+    [Test]
+    public async Task MainRecordSeeder_Should_Add_Records_For_Demo_Users()
+    {
+        var context = await CreateContextAsync();
+        var seedContext = new SeedContext();
 
-          var user = new User { Id = Id<User>.New(), Name = "Demo" };
-          seedContext.DemoUsers.Add(user);
+        var user = new User { Id = Id<User>.New(), Name = "Demo" };
+        seedContext.DemoUsers.Add(user);
 
-          var exerciseSeeder = new ExerciseSeeder();
-         await exerciseSeeder.SeedAsync(context, seedContext, CancellationToken.None);
-         await context.SaveChangesAsync();
+        var exerciseSeeder = new ExerciseSeeder();
+        await exerciseSeeder.SeedAsync(context, seedContext, CancellationToken.None);
+        await context.SaveChangesAsync();
 
-         var seeder = new MainRecordSeeder();
-         await seeder.SeedAsync(context, seedContext, CancellationToken.None);
-         await context.SaveChangesAsync();
+        var seeder = new MainRecordSeeder();
+        await seeder.SeedAsync(context, seedContext, CancellationToken.None);
+        await context.SaveChangesAsync();
 
-         (await context.MainRecords.CountAsync()).Should().BeGreaterThan(0);
-     }
+        (await context.MainRecords.CountAsync()).Should().BeGreaterThan(0);
+    }
 
     [Test]
     public async Task EloRegistrySeeder_Should_Add_Initial_Entries()
     {
         var context = await CreateContextAsync();
-         var seedContext = new SeedContext
-         {
-             AdminUser = new User { Id = Id<User>.New(), Name = "Admin" }
-         };
+        var seedContext = new SeedContext
+        {
+            AdminUser = new User { Id = Id<User>.New(), Name = "Admin" }
+        };
 
         var seeder = new EloRegistrySeeder();
         await seeder.SeedAsync(context, seedContext, CancellationToken.None);
@@ -253,14 +253,14 @@ public sealed class SeederSmokeTests
         (await context.AppConfigs.CountAsync()).Should().Be(2);
     }
 
-     private static async Task<AppDbContext> CreateContextAsync()
-     {
-         var options = new DbContextOptionsBuilder<AppDbContext>()
-             .UseInMemoryDatabase(Id<Exercise>.New().ToString())
-             .Options;
+    private static async Task<AppDbContext> CreateContextAsync()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Id<Exercise>.New().ToString())
+            .Options;
 
-         var context = new AppDbContext(options);
-         await context.Database.EnsureCreatedAsync();
-         return context;
-     }
+        var context = new AppDbContext(options);
+        await context.Database.EnsureCreatedAsync();
+        return context;
+    }
 }

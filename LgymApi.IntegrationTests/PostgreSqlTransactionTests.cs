@@ -1,5 +1,6 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.TrainingPlanning.Errors;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.TrainingPlanning;
 using LgymApi.Application.TrainingPlanning.Plan.ActivePlanPointer;

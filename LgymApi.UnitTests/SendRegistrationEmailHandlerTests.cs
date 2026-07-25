@@ -32,169 +32,169 @@ public sealed class SendRegistrationEmailHandlerTests
         _handler = new SendRegistrationEmailHandler(_testUserRepository, _testScheduler, _testLogger, new AppDefaultsOptions());
     }
 
-     [Test]
-     public async Task ExecuteAsync_WithValidCommand_SchedulesWelcomeEmail()
-     {
-         // Arrange
-         var userId = Id<User>.New();
-         _testUserRepository.UserToReturn = new User
-         {
-             Id = userId,
-             Name = "JohnDoe",
-             Email = "john.doe@example.com",
-             PreferredLanguage = "en-US"
-         };
+    [Test]
+    public async Task ExecuteAsync_WithValidCommand_SchedulesWelcomeEmail()
+    {
+        // Arrange
+        var userId = Id<User>.New();
+        _testUserRepository.UserToReturn = new User
+        {
+            Id = userId,
+            Name = "JohnDoe",
+            Email = "john.doe@example.com",
+            PreferredLanguage = "en-US"
+        };
 
-         var command = new UserRegisteredCommand
-         {
-             UserId = userId
-         };
-
-         // Act
-         await _handler.ExecuteAsync(command);
-
-          // Assert
-          _testScheduler.ScheduledPayloads.Should().HaveCount(1);
-          var payload = _testScheduler.ScheduledPayloads[0];
-          payload.UserId.Should().Be(userId);
-         payload.UserName.Should().Be("JohnDoe");
-         payload.RecipientEmail.Should().Be("john.doe@example.com");
-         payload.CultureName.Should().Be("en-US");
-    }
-
-     [Test]
-     public async Task ExecuteAsync_WithEmptyEmail_SkipsSchedulingGracefully()
-     {
-         // Arrange
-         var userId = Id<User>.New();
-         _testUserRepository.UserToReturn = new User
-         {
-             Id = userId,
-             Name = "TestUser",
-             Email = string.Empty,
-             PreferredLanguage = "en-US"
-         };
-
-         var command = new UserRegisteredCommand
-         {
-             UserId = userId
-         };
+        var command = new UserRegisteredCommand
+        {
+            UserId = userId
+        };
 
         // Act
         await _handler.ExecuteAsync(command);
 
-         // Assert
-         _testScheduler.ScheduledPayloads.Should().BeEmpty();
-         _testLogger.WarningMessages.Should().HaveCount(1);
-         _testLogger.WarningMessages[0].Should().Contain("no recipient email");
+        // Assert
+        _testScheduler.ScheduledPayloads.Should().HaveCount(1);
+        var payload = _testScheduler.ScheduledPayloads[0];
+        payload.UserId.Should().Be(userId);
+        payload.UserName.Should().Be("JohnDoe");
+        payload.RecipientEmail.Should().Be("john.doe@example.com");
+        payload.CultureName.Should().Be("en-US");
     }
 
-     [Test]
-     public async Task ExecuteAsync_WithWhitespaceEmail_SkipsSchedulingGracefully()
-     {
-         // Arrange
-         var userId = Id<User>.New();
-         _testUserRepository.UserToReturn = new User
-         {
-             Id = userId,
-             Name = "TestUser",
-             Email = "   ",
-             PreferredLanguage = "en-US"
-         };
+    [Test]
+    public async Task ExecuteAsync_WithEmptyEmail_SkipsSchedulingGracefully()
+    {
+        // Arrange
+        var userId = Id<User>.New();
+        _testUserRepository.UserToReturn = new User
+        {
+            Id = userId,
+            Name = "TestUser",
+            Email = string.Empty,
+            PreferredLanguage = "en-US"
+        };
 
-         var command = new UserRegisteredCommand
-         {
-             UserId = userId
-         };
+        var command = new UserRegisteredCommand
+        {
+            UserId = userId
+        };
 
-         // Act
-         await _handler.ExecuteAsync(command);
+        // Act
+        await _handler.ExecuteAsync(command);
 
-         // Assert
-         _testScheduler.ScheduledPayloads.Should().BeEmpty();
-         _testLogger.WarningMessages.Should().HaveCount(1);
-     }
-
-     [Test]
-     public async Task ExecuteAsync_MapsAllUserFieldsToPayload()
-     {
-         // Arrange
-         var userId = Id<User>.New();
-         _testUserRepository.UserToReturn = new User
-         {
-             Id = userId,
-             Name = "MariaGarcia",
-             Email = "maria.garcia@example.com",
-             PreferredLanguage = "es-ES"
-         };
-
-         var command = new UserRegisteredCommand
-         {
-             UserId = userId
-         };
-
-         // Act
-         await _handler.ExecuteAsync(command);
-
-          // Assert
-          var payload = _testScheduler.ScheduledPayloads[0];
-          payload.UserId.Should().Be(userId);
-         payload.UserName.Should().Be("MariaGarcia");
-         payload.RecipientEmail.Should().Be("maria.garcia@example.com");
-         payload.CultureName.Should().Be("es-ES");
+        // Assert
+        _testScheduler.ScheduledPayloads.Should().BeEmpty();
+        _testLogger.WarningMessages.Should().HaveCount(1);
+        _testLogger.WarningMessages[0].Should().Contain("no recipient email");
     }
 
-     [Test]
-     public async Task ExecuteAsync_WithCancellationToken_PassesTokenToScheduler()
-     {
-         // Arrange
-         var userId = Id<User>.New();
-         _testUserRepository.UserToReturn = new User
-         {
-             Id = userId,
-             Name = "TestUser",
-             Email = "test@example.com",
-             PreferredLanguage = "en-US"
-         };
+    [Test]
+    public async Task ExecuteAsync_WithWhitespaceEmail_SkipsSchedulingGracefully()
+    {
+        // Arrange
+        var userId = Id<User>.New();
+        _testUserRepository.UserToReturn = new User
+        {
+            Id = userId,
+            Name = "TestUser",
+            Email = "   ",
+            PreferredLanguage = "en-US"
+        };
 
-         var command = new UserRegisteredCommand
-         {
-             UserId = userId
-         };
+        var command = new UserRegisteredCommand
+        {
+            UserId = userId
+        };
+
+        // Act
+        await _handler.ExecuteAsync(command);
+
+        // Assert
+        _testScheduler.ScheduledPayloads.Should().BeEmpty();
+        _testLogger.WarningMessages.Should().HaveCount(1);
+    }
+
+    [Test]
+    public async Task ExecuteAsync_MapsAllUserFieldsToPayload()
+    {
+        // Arrange
+        var userId = Id<User>.New();
+        _testUserRepository.UserToReturn = new User
+        {
+            Id = userId,
+            Name = "MariaGarcia",
+            Email = "maria.garcia@example.com",
+            PreferredLanguage = "es-ES"
+        };
+
+        var command = new UserRegisteredCommand
+        {
+            UserId = userId
+        };
+
+        // Act
+        await _handler.ExecuteAsync(command);
+
+        // Assert
+        var payload = _testScheduler.ScheduledPayloads[0];
+        payload.UserId.Should().Be(userId);
+        payload.UserName.Should().Be("MariaGarcia");
+        payload.RecipientEmail.Should().Be("maria.garcia@example.com");
+        payload.CultureName.Should().Be("es-ES");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_WithCancellationToken_PassesTokenToScheduler()
+    {
+        // Arrange
+        var userId = Id<User>.New();
+        _testUserRepository.UserToReturn = new User
+        {
+            Id = userId,
+            Name = "TestUser",
+            Email = "test@example.com",
+            PreferredLanguage = "en-US"
+        };
+
+        var command = new UserRegisteredCommand
+        {
+            UserId = userId
+        };
 
         using var cts = new CancellationTokenSource();
 
         // Act
         await _handler.ExecuteAsync(command, cts.Token);
 
-         // Assert
-         _testScheduler.ReceivedToken.Should().Be(cts.Token);
+        // Assert
+        _testScheduler.ReceivedToken.Should().Be(cts.Token);
     }
 
-     [Test]
-     public async Task ExecuteAsync_LogsInformationOnSuccess()
-     {
-         // Arrange
-         var userId = Id<User>.New();
-         _testUserRepository.UserToReturn = new User
-         {
-             Id = userId,
-             Name = "TestUser",
-             Email = "test@example.com",
-             PreferredLanguage = "en-US"
-         };
+    [Test]
+    public async Task ExecuteAsync_LogsInformationOnSuccess()
+    {
+        // Arrange
+        var userId = Id<User>.New();
+        _testUserRepository.UserToReturn = new User
+        {
+            Id = userId,
+            Name = "TestUser",
+            Email = "test@example.com",
+            PreferredLanguage = "en-US"
+        };
 
-         var command = new UserRegisteredCommand
-         {
-             UserId = userId
-         };
+        var command = new UserRegisteredCommand
+        {
+            UserId = userId
+        };
 
         // Act
         await _handler.ExecuteAsync(command);
 
-         // Assert
-         _testLogger.InformationMessages.Should().HaveCount(1);
-         _testLogger.InformationMessages[0].Should().Contain("Welcome email scheduled");
+        // Assert
+        _testLogger.InformationMessages.Should().HaveCount(1);
+        _testLogger.InformationMessages[0].Should().Contain("Welcome email scheduled");
     }
 
     [Test]
@@ -224,30 +224,30 @@ public sealed class SendRegistrationEmailHandlerTests
         ex.ParamName.Should().Be("logger");
     }
 
-     [Test]
-     public async Task ExecuteAsync_WithDifferentCulture_PreservesCultureName()
-     {
-         // Arrange
-         var userId = Id<User>.New();
-         _testUserRepository.UserToReturn = new User
-         {
-             Id = userId,
-             Name = "PierreDupont",
-             Email = "pierre@example.fr",
-             PreferredLanguage = "fr-FR"
-         };
+    [Test]
+    public async Task ExecuteAsync_WithDifferentCulture_PreservesCultureName()
+    {
+        // Arrange
+        var userId = Id<User>.New();
+        _testUserRepository.UserToReturn = new User
+        {
+            Id = userId,
+            Name = "PierreDupont",
+            Email = "pierre@example.fr",
+            PreferredLanguage = "fr-FR"
+        };
 
-         var command = new UserRegisteredCommand
-         {
-             UserId = userId
-         };
+        var command = new UserRegisteredCommand
+        {
+            UserId = userId
+        };
 
         // Act
         await _handler.ExecuteAsync(command);
 
-         // Assert
-         var payload = _testScheduler.ScheduledPayloads[0];
-         payload.CultureName.Should().Be("fr-FR");
+        // Assert
+        var payload = _testScheduler.ScheduledPayloads[0];
+        payload.CultureName.Should().Be("fr-FR");
     }
 
     [Test]
@@ -264,62 +264,62 @@ public sealed class SendRegistrationEmailHandlerTests
         // Act
         await _handler.ExecuteAsync(command);
 
-         // Assert
-         _testScheduler.ScheduledPayloads.Should().BeEmpty();
-         _testLogger.WarningMessages.Should().HaveCount(1);
-         _testLogger.WarningMessages[0].Should().Contain("user not found");
+        // Assert
+        _testScheduler.ScheduledPayloads.Should().BeEmpty();
+        _testLogger.WarningMessages.Should().HaveCount(1);
+        _testLogger.WarningMessages[0].Should().Contain("user not found");
     }
 
-     [Test]
-     public async Task ExecuteAsync_WithNoPreferredLanguage_DefaultsToEnUs()
-     {
-         // Arrange
-         var userId = Id<User>.New();
-         _testUserRepository.UserToReturn = new User
-         {
-             Id = userId,
-             Name = "TestUser",
-             Email = "test@example.com",
-             PreferredLanguage = null
-         };
+    [Test]
+    public async Task ExecuteAsync_WithNoPreferredLanguage_DefaultsToEnUs()
+    {
+        // Arrange
+        var userId = Id<User>.New();
+        _testUserRepository.UserToReturn = new User
+        {
+            Id = userId,
+            Name = "TestUser",
+            Email = "test@example.com",
+            PreferredLanguage = null
+        };
 
-         var command = new UserRegisteredCommand
-         {
-             UserId = userId
-         };
+        var command = new UserRegisteredCommand
+        {
+            UserId = userId
+        };
 
         // Act
         await _handler.ExecuteAsync(command);
 
-         // Assert
-         var payload = _testScheduler.ScheduledPayloads[0];
-         payload.CultureName.Should().Be("en-US");
+        // Assert
+        var payload = _testScheduler.ScheduledPayloads[0];
+        payload.CultureName.Should().Be("en-US");
     }
 
-     [Test]
-     public async Task ExecuteAsync_WithWhitespacePreferredLanguage_UsesConfiguredDefault()
-     {
-         var userId = Id<User>.New();
-         _testUserRepository.UserToReturn = new User
-         {
-             Id = userId,
-             Name = "TestUser",
-             Email = "test@example.com",
-             PreferredLanguage = "   "
-         };
+    [Test]
+    public async Task ExecuteAsync_WithWhitespacePreferredLanguage_UsesConfiguredDefault()
+    {
+        var userId = Id<User>.New();
+        _testUserRepository.UserToReturn = new User
+        {
+            Id = userId,
+            Name = "TestUser",
+            Email = "test@example.com",
+            PreferredLanguage = "   "
+        };
 
-         var handler = new SendRegistrationEmailHandler(
-             _testUserRepository,
-             _testScheduler,
-             _testLogger,
-             new AppDefaultsOptions { PreferredLanguage = "pl-PL", PreferredTimeZone = "Europe/Warsaw" });
+        var handler = new SendRegistrationEmailHandler(
+            _testUserRepository,
+            _testScheduler,
+            _testLogger,
+            new AppDefaultsOptions { PreferredLanguage = "pl-PL", PreferredTimeZone = "Europe/Warsaw" });
 
-         var command = new UserRegisteredCommand { UserId = userId };
+        var command = new UserRegisteredCommand { UserId = userId };
 
         await handler.ExecuteAsync(command);
 
-         var payload = _testScheduler.ScheduledPayloads[0];
-         payload.CultureName.Should().Be("pl-PL");
+        var payload = _testScheduler.ScheduledPayloads[0];
+        payload.CultureName.Should().Be("pl-PL");
     }
 
     // Test doubles

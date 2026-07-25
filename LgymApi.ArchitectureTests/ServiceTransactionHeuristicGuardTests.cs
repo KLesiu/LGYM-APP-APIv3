@@ -164,13 +164,13 @@ public sealed class ServiceTransactionHeuristicGuardTests
 
     private static bool IsPublicMethod(MethodDeclarationSyntax method)
     {
-        return method.Modifiers.Any(modifier => modifier.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.PublicKeyword);
+        return method.Modifiers.Any(modifier => Microsoft.CodeAnalysis.CSharpExtensions.IsKind(modifier, Microsoft.CodeAnalysis.CSharp.SyntaxKind.PublicKeyword));
     }
 
     private static bool IsConcreteService(ClassDeclarationSyntax typeDeclaration)
     {
         return typeDeclaration.Identifier.ValueText.EndsWith("Service", StringComparison.Ordinal)
-            && !typeDeclaration.Modifiers.Any(modifier => modifier.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.AbstractKeyword);
+            && !typeDeclaration.Modifiers.Any(modifier => Microsoft.CodeAnalysis.CSharpExtensions.IsKind(modifier, Microsoft.CodeAnalysis.CSharp.SyntaxKind.AbstractKeyword));
     }
 
     private static string GetAllowlistKey(string serviceName, string methodName)

@@ -97,45 +97,45 @@ public sealed class IdempotencyKeyPolicyTests
     public async Task Persistence_FirstEnqueueCreatesOneRecord()
     {
         var cid = Id<CorrelationScope>.New();
-         var opts = new DbContextOptionsBuilder<AppDbContext>()
-             .UseInMemoryDatabase(databaseName: $"T1_{Id<IdempotencyKeyPolicyTests>.New().GetValue().ToString("N")}")
-             .Options;
+        var opts = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(databaseName: $"T1_{Id<IdempotencyKeyPolicyTests>.New().GetValue().ToString("N")}")
+            .Options;
 
-         using var ctx = new AppDbContext(opts);
-         await ctx.Database.EnsureCreatedAsync();
-         var r = new CommandEnvelopeRepository(ctx);
-         var e = new CommandEnvelope { CorrelationId = cid, PayloadJson = "{}", CommandTypeFullName = "T", Status = ActionExecutionStatus.Pending };
-         await r.AddAsync(e);
-         await ctx.SaveChangesAsync();
-         var f = await r.FindByCorrelationIdAsync(cid);
-         f.Should().NotBeNull();
-     }
+        using var ctx = new AppDbContext(opts);
+        await ctx.Database.EnsureCreatedAsync();
+        var r = new CommandEnvelopeRepository(ctx);
+        var e = new CommandEnvelope { CorrelationId = cid, PayloadJson = "{}", CommandTypeFullName = "T", Status = ActionExecutionStatus.Pending };
+        await r.AddAsync(e);
+        await ctx.SaveChangesAsync();
+        var f = await r.FindByCorrelationIdAsync(cid);
+        f.Should().NotBeNull();
+    }
 
     [Test]
     public async Task Persistence_DuplicateEnqueueDetectedByRepository()
     {
         var cid = Id<CorrelationScope>.New();
-         var opts = new DbContextOptionsBuilder<AppDbContext>()
-              .UseInMemoryDatabase(databaseName: $"T2_{Id<IdempotencyKeyPolicyTests>.New().GetValue().ToString("N")}")
-              .Options;
+        var opts = new DbContextOptionsBuilder<AppDbContext>()
+             .UseInMemoryDatabase(databaseName: $"T2_{Id<IdempotencyKeyPolicyTests>.New().GetValue().ToString("N")}")
+             .Options;
 
-         using var ctx = new AppDbContext(opts);
-         await ctx.Database.EnsureCreatedAsync();
-         var r = new CommandEnvelopeRepository(ctx);
-         var e = new CommandEnvelope { CorrelationId = cid, PayloadJson = "{}", CommandTypeFullName = "T", Status = ActionExecutionStatus.Pending };
-         await r.AddAsync(e);
-         await ctx.SaveChangesAsync();
-         var f = await r.FindByCorrelationIdAsync(cid);
-         f.Should().NotBeNull();
-     }
+        using var ctx = new AppDbContext(opts);
+        await ctx.Database.EnsureCreatedAsync();
+        var r = new CommandEnvelopeRepository(ctx);
+        var e = new CommandEnvelope { CorrelationId = cid, PayloadJson = "{}", CommandTypeFullName = "T", Status = ActionExecutionStatus.Pending };
+        await r.AddAsync(e);
+        await ctx.SaveChangesAsync();
+        var f = await r.FindByCorrelationIdAsync(cid);
+        f.Should().NotBeNull();
+    }
 
     [Test]
     public async Task Persistence_AddOrGetExistingAsync_ReturnsDuplicateNotNewRecord()
     {
         var cid = Id<CorrelationScope>.New();
-         var opts = new DbContextOptionsBuilder<AppDbContext>()
-             .UseInMemoryDatabase(databaseName: $"T3_{Id<IdempotencyKeyPolicyTests>.New().GetValue().ToString("N")}")
-             .Options;
+        var opts = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(databaseName: $"T3_{Id<IdempotencyKeyPolicyTests>.New().GetValue().ToString("N")}")
+            .Options;
 
         using var ctx = new AppDbContext(opts);
         await ctx.Database.EnsureCreatedAsync();
@@ -153,8 +153,8 @@ public sealed class IdempotencyKeyPolicyTests
     [Test]
     public async Task Persistence_ConcurrentDuplicateEnqueueResultsInSingleRecord()
     {
-         var cid = Id<CorrelationScope>.New();
-         var dbName = $"T4_{Id<IdempotencyKeyPolicyTests>.New().GetValue().ToString("N")}";
+        var cid = Id<CorrelationScope>.New();
+        var dbName = $"T4_{Id<IdempotencyKeyPolicyTests>.New().GetValue().ToString("N")}";
 
         var t1 = Task.Run(async () =>
         {
@@ -192,24 +192,24 @@ public sealed class IdempotencyKeyPolicyTests
         all.Count.Should().Be(1);
     }
 
-     [Test]
-     public async Task Persistence_MultipleEnvelopesWithDifferentCorrelationIds()
-     {
-         var cid1 = Id<CorrelationScope>.New();
-         var cid2 = Id<CorrelationScope>.New();
-          var opts = new DbContextOptionsBuilder<AppDbContext>()
-              .UseInMemoryDatabase(databaseName: $"T5_{Id<IdempotencyKeyPolicyTests>.New().GetValue().ToString("N")}")
-              .Options;
+    [Test]
+    public async Task Persistence_MultipleEnvelopesWithDifferentCorrelationIds()
+    {
+        var cid1 = Id<CorrelationScope>.New();
+        var cid2 = Id<CorrelationScope>.New();
+        var opts = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(databaseName: $"T5_{Id<IdempotencyKeyPolicyTests>.New().GetValue().ToString("N")}")
+            .Options;
 
-          using var ctx = new AppDbContext(opts);
-          await ctx.Database.EnsureCreatedAsync();
-          var r = new CommandEnvelopeRepository(ctx);
-          var e1 = new CommandEnvelope { Id = Id<CommandEnvelope>.New(), CorrelationId = cid1, PayloadJson = "{}", CommandTypeFullName = "T", Status = ActionExecutionStatus.Pending };
-          var e2 = new CommandEnvelope { Id = Id<CommandEnvelope>.New(), CorrelationId = cid2, PayloadJson = "{}", CommandTypeFullName = "T", Status = ActionExecutionStatus.Pending };
-          await r.AddAsync(e1);
-          await r.AddAsync(e2);
-          await ctx.SaveChangesAsync();
-          var all = await ctx.CommandEnvelopes.ToListAsync();
-          all.Count.Should().Be(2);
-     }
+        using var ctx = new AppDbContext(opts);
+        await ctx.Database.EnsureCreatedAsync();
+        var r = new CommandEnvelopeRepository(ctx);
+        var e1 = new CommandEnvelope { Id = Id<CommandEnvelope>.New(), CorrelationId = cid1, PayloadJson = "{}", CommandTypeFullName = "T", Status = ActionExecutionStatus.Pending };
+        var e2 = new CommandEnvelope { Id = Id<CommandEnvelope>.New(), CorrelationId = cid2, PayloadJson = "{}", CommandTypeFullName = "T", Status = ActionExecutionStatus.Pending };
+        await r.AddAsync(e1);
+        await r.AddAsync(e2);
+        await ctx.SaveChangesAsync();
+        var all = await ctx.CommandEnvelopes.ToListAsync();
+        all.Count.Should().Be(2);
+    }
 }

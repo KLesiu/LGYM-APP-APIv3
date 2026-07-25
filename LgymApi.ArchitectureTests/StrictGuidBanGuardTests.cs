@@ -318,7 +318,7 @@ public sealed class StrictGuidBanGuardTests
 
             var fileContent = File.ReadAllText(tree.FilePath);
             var lines = fileContent.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-            
+
             // Check first 5 lines for auto-generated marker
             for (int i = 0; i < Math.Min(5, lines.Length); i++)
             {

@@ -27,53 +27,53 @@ public sealed class DummyEmailSenderTests
         }
     }
 
-     [Test]
-     public async Task SendAsync_WritesEmailToConfiguredDirectory()
-     {
-         var sender = new DummyEmailSender(new EmailOptions
-         {
-             Enabled = true,
-             DeliveryMode = EmailDeliveryMode.Dummy,
-             DummyOutputDirectory = _tempDirectory,
-             FromAddress = "coach@example.com",
-             FromName = "Coach"
-         });
+    [Test]
+    public async Task SendAsync_WritesEmailToConfiguredDirectory()
+    {
+        var sender = new DummyEmailSender(new EmailOptions
+        {
+            Enabled = true,
+            DeliveryMode = EmailDeliveryMode.Dummy,
+            DummyOutputDirectory = _tempDirectory,
+            FromAddress = "coach@example.com",
+            FromName = "Coach"
+        });
 
-         var result = await sender.SendAsync(new EmailMessage
-         {
-             To = "trainee@example.com",
-             Subject = "Invitation",
-             Body = "Body content"
-         });
+        var result = await sender.SendAsync(new EmailMessage
+        {
+            To = "trainee@example.com",
+            Subject = "Invitation",
+            Body = "Body content"
+        });
 
-         result.Should().BeTrue();
-         var files = Directory.GetFiles(_tempDirectory, "*.email.txt");
-         files.Length.Should().Be(1);
+        result.Should().BeTrue();
+        var files = Directory.GetFiles(_tempDirectory, "*.email.txt");
+        files.Length.Should().Be(1);
 
-         var content = await File.ReadAllTextAsync(files[0]);
-         content.Should().Contain("To: trainee@example.com");
-         content.Should().Contain("Subject: Invitation");
-         content.Should().Contain("Body content");
-     }
+        var content = await File.ReadAllTextAsync(files[0]);
+        content.Should().Contain("To: trainee@example.com");
+        content.Should().Contain("Subject: Invitation");
+        content.Should().Contain("Body content");
+    }
 
-     [Test]
-     public async Task SendAsync_ReturnsFalse_WhenEmailFeatureDisabled()
-     {
-         var sender = new DummyEmailSender(new EmailOptions
-         {
-             Enabled = false,
-             DeliveryMode = EmailDeliveryMode.Dummy,
-             DummyOutputDirectory = _tempDirectory
-         });
+    [Test]
+    public async Task SendAsync_ReturnsFalse_WhenEmailFeatureDisabled()
+    {
+        var sender = new DummyEmailSender(new EmailOptions
+        {
+            Enabled = false,
+            DeliveryMode = EmailDeliveryMode.Dummy,
+            DummyOutputDirectory = _tempDirectory
+        });
 
-         var result = await sender.SendAsync(new EmailMessage
-         {
-             To = "trainee@example.com",
-             Subject = "x",
-             Body = "y"
-         });
+        var result = await sender.SendAsync(new EmailMessage
+        {
+            To = "trainee@example.com",
+            Subject = "x",
+            Body = "y"
+        });
 
-         result.Should().BeFalse();
-         Directory.Exists(_tempDirectory).Should().BeFalse();
-     }
+        result.Should().BeFalse();
+        Directory.Exists(_tempDirectory).Should().BeFalse();
+    }
 }

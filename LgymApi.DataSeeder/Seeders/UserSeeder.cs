@@ -69,11 +69,11 @@ public sealed class UserSeeder : IEntitySeeder
             return existing;
         }
 
-         var passwordData = _legacyPasswordService.Create(name);
-         var user = new User
-         {
-             Id = Id<User>.New(),
-             Name = name,
+        var passwordData = _legacyPasswordService.Create(name);
+        var user = new User
+        {
+            Id = Id<User>.New(),
+            Name = name,
             Email = email,
             IsVisibleInRanking = true,
             ProfileRank = "Junior 1",

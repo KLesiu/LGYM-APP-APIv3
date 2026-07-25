@@ -36,19 +36,19 @@ public sealed class InvitationEmailServicesTests
 
         await service.ScheduleAsync(new InvitationEmailPayload
         {
-             InvitationId = Id<TrainerInvitation>.New(),
+            InvitationId = Id<TrainerInvitation>.New(),
             InvitationCode = "ABC123",
             ExpiresAt = DateTimeOffset.UtcNow.AddDays(1),
             TrainerName = "Coach",
             RecipientEmail = "trainee@example.com",
             CultureName = "en-US"
-         });
+        });
 
-         repository.Added.Should().HaveCount(1);
-         unitOfWork.SaveChangesCalls.Should().Be(1);
-         scheduler.EnqueuedNotificationIds.Should().BeEmpty();
-         metrics.Enqueued.Should().Be(1);
-         metrics.Retried.Should().Be(0);
+        repository.Added.Should().HaveCount(1);
+        unitOfWork.SaveChangesCalls.Should().Be(1);
+        scheduler.EnqueuedNotificationIds.Should().BeEmpty();
+        metrics.Enqueued.Should().Be(1);
+        metrics.Retried.Should().Be(0);
     }
 
     [Test]
@@ -56,7 +56,7 @@ public sealed class InvitationEmailServicesTests
     {
         var existing = new NotificationMessage
         {
-             Id = Id<NotificationMessage>.New(),
+            Id = Id<NotificationMessage>.New(),
             Status = EmailNotificationStatus.Failed,
             Attempts = 5,
             Type = EmailNotificationTypes.TrainerInvitation,
@@ -85,12 +85,12 @@ public sealed class InvitationEmailServicesTests
             TrainerName = "Coach",
             RecipientEmail = existing.Recipient,
             CultureName = "en-US"
-         });
+        });
 
-         scheduler.EnqueuedNotificationIds.Should().BeEmpty();
-         repository.Added.Should().BeEmpty();
-         metrics.Enqueued.Should().Be(0);
-         metrics.Retried.Should().Be(0);
+        scheduler.EnqueuedNotificationIds.Should().BeEmpty();
+        repository.Added.Should().BeEmpty();
+        metrics.Enqueued.Should().Be(0);
+        metrics.Retried.Should().Be(0);
     }
 
     [Test]
@@ -110,19 +110,19 @@ public sealed class InvitationEmailServicesTests
 
         await service.ScheduleAsync(new InvitationEmailPayload
         {
-             InvitationId = Id<TrainerInvitation>.New(),
+            InvitationId = Id<TrainerInvitation>.New(),
             InvitationCode = "ABC123",
             ExpiresAt = DateTimeOffset.UtcNow.AddDays(1),
             TrainerName = "Coach",
             RecipientEmail = "trainee@example.com",
             CultureName = "en-US"
-         });
+        });
 
-         repository.Added.Should().BeEmpty();
-         unitOfWork.SaveChangesCalls.Should().Be(0);
-         scheduler.EnqueuedNotificationIds.Should().BeEmpty();
-         metrics.Enqueued.Should().Be(0);
-         metrics.Retried.Should().Be(0);
+        repository.Added.Should().BeEmpty();
+        unitOfWork.SaveChangesCalls.Should().Be(0);
+        scheduler.EnqueuedNotificationIds.Should().BeEmpty();
+        metrics.Enqueued.Should().Be(0);
+        metrics.Retried.Should().Be(0);
     }
 
     [Test]
@@ -130,7 +130,7 @@ public sealed class InvitationEmailServicesTests
     {
         var existing = new NotificationMessage
         {
-             Id = Id<NotificationMessage>.New(),
+            Id = Id<NotificationMessage>.New(),
             Status = EmailNotificationStatus.Pending,
             Type = EmailNotificationTypes.TrainerInvitation,
             CorrelationId = Id<CorrelationScope>.New(),
@@ -161,11 +161,11 @@ public sealed class InvitationEmailServicesTests
             TrainerName = "Coach",
             RecipientEmail = existing.Recipient,
             CultureName = "en-US"
-         });
+        });
 
-         scheduler.EnqueuedNotificationIds.Should().BeEmpty();
-         metrics.Enqueued.Should().Be(1);
-         metrics.Retried.Should().Be(0);
+        scheduler.EnqueuedNotificationIds.Should().BeEmpty();
+        metrics.Enqueued.Should().Be(1);
+        metrics.Retried.Should().Be(0);
     }
 
     [Test]
@@ -173,7 +173,7 @@ public sealed class InvitationEmailServicesTests
     {
         var notification = new NotificationMessage
         {
-             Id = Id<NotificationMessage>.New(),
+            Id = Id<NotificationMessage>.New(),
             Status = EmailNotificationStatus.Pending,
             Attempts = 0,
             Type = EmailNotificationTypes.TrainerInvitation,
@@ -193,11 +193,11 @@ public sealed class InvitationEmailServicesTests
             metrics,
             NullLogger<EmailJobHandlerService>.Instance);
 
-         await FluentActions.Invoking(() => handler.ProcessAsync(notification.Id)).Should().ThrowAsync<InvalidOperationException>();
-         notification.Status.Should().Be(EmailNotificationStatus.Failed);
-         notification.LastError.Should().StartWith("InvalidOperationException");
-         unitOfWork.SaveChangesCalls.Should().Be(1);
-         metrics.Failed.Should().Be(1);
+        await FluentActions.Invoking(() => handler.ProcessAsync(notification.Id)).Should().ThrowAsync<InvalidOperationException>();
+        notification.Status.Should().Be(EmailNotificationStatus.Failed);
+        notification.LastError.Should().StartWith("InvalidOperationException");
+        unitOfWork.SaveChangesCalls.Should().Be(1);
+        metrics.Failed.Should().Be(1);
     }
 
     [Test]
@@ -205,7 +205,7 @@ public sealed class InvitationEmailServicesTests
     {
         var notification = new NotificationMessage
         {
-             Id = Id<NotificationMessage>.New(),
+            Id = Id<NotificationMessage>.New(),
             Status = EmailNotificationStatus.Sent,
             Attempts = 2,
             Type = EmailNotificationTypes.TrainerInvitation,
@@ -226,22 +226,22 @@ public sealed class InvitationEmailServicesTests
             metrics,
             NullLogger<EmailJobHandlerService>.Instance);
 
-         await handler.ProcessAsync(notification.Id);
+        await handler.ProcessAsync(notification.Id);
 
-         unitOfWork.SaveChangesCalls.Should().Be(0);
-         sender.SendCalls.Should().Be(0);
-         notification.Attempts.Should().Be(2);
-         metrics.Sent.Should().Be(0);
-         metrics.Failed.Should().Be(0);
-         metrics.Retried.Should().Be(0);
-     }
+        unitOfWork.SaveChangesCalls.Should().Be(0);
+        sender.SendCalls.Should().Be(0);
+        notification.Attempts.Should().Be(2);
+        metrics.Sent.Should().Be(0);
+        metrics.Failed.Should().Be(0);
+        metrics.Retried.Should().Be(0);
+    }
 
     [Test]
     public async Task JobHandler_WhenSaveFailsAfterSuccessfulSend_DoesNotThrowOrRetry()
     {
         var notification = new NotificationMessage
         {
-             Id = Id<NotificationMessage>.New(),
+            Id = Id<NotificationMessage>.New(),
             Status = EmailNotificationStatus.Pending,
             Attempts = 0,
             Type = EmailNotificationTypes.TrainerInvitation,
@@ -262,23 +262,23 @@ public sealed class InvitationEmailServicesTests
             metrics,
             NullLogger<EmailJobHandlerService>.Instance);
 
-         await handler.ProcessAsync(notification.Id);
+        await handler.ProcessAsync(notification.Id);
 
-         sender.SendCalls.Should().Be(1);
-         unitOfWork.SaveChangesCalls.Should().Be(1);
-         notification.Status.Should().Be(EmailNotificationStatus.Sent);
-         notification.SentAt.Should().NotBeNull();
-         metrics.Sent.Should().Be(0);
-          metrics.Failed.Should().Be(0);
-          metrics.Retried.Should().Be(0);
-     }
+        sender.SendCalls.Should().Be(1);
+        unitOfWork.SaveChangesCalls.Should().Be(1);
+        notification.Status.Should().Be(EmailNotificationStatus.Sent);
+        notification.SentAt.Should().NotBeNull();
+        metrics.Sent.Should().Be(0);
+        metrics.Failed.Should().Be(0);
+        metrics.Retried.Should().Be(0);
+    }
 
     [Test]
     public async Task JobHandler_WhenSaveFailsAfterSuccessfulSend_LogsCriticalWhenEnabled()
     {
         var notification = new NotificationMessage
         {
-             Id = Id<NotificationMessage>.New(),
+            Id = Id<NotificationMessage>.New(),
             Status = EmailNotificationStatus.Pending,
             Attempts = 0,
             Type = EmailNotificationTypes.TrainerInvitation,
@@ -300,13 +300,13 @@ public sealed class InvitationEmailServicesTests
             metrics,
             logger);
 
-         await handler.ProcessAsync(notification.Id);
+        await handler.ProcessAsync(notification.Id);
 
-         logger.CriticalMessages.Should().ContainSingle();
-         logger.CriticalMessages[0].Should().Contain("delivered successfully but persisting Sent status failed");
-         sender.SendCalls.Should().Be(1);
-         metrics.Sent.Should().Be(0);
-         metrics.Failed.Should().Be(0);
+        logger.CriticalMessages.Should().ContainSingle();
+        logger.CriticalMessages[0].Should().Contain("delivered successfully but persisting Sent status failed");
+        sender.SendCalls.Should().Be(1);
+        metrics.Sent.Should().Be(0);
+        metrics.Failed.Should().Be(0);
     }
 
     private sealed class FakeNotificationRepository : IEmailNotificationLogRepository

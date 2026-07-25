@@ -1,6 +1,6 @@
 using FluentAssertions;
 using LgymApi.Application.Repositories;
-using LgymApi.Application.Units;
+using LgymApi.Application.Platform.ReferenceData.Units;
 using LgymApi.Application.Models;
 using LgymApi.BackgroundWorker.Actions;
 using LgymApi.Application.WorkoutProgress.Contracts.BackgroundCommands;
@@ -173,9 +173,9 @@ public sealed class UpdateTrainingMainRecordsHandlerTests
         // Act
         await _handler.ExecuteAsync(command);
 
-         // Assert
-         _testMainRecordRepository.AddedRecords.Should().BeEmpty();
-         _testUnitOfWork.SaveChangesCalled.Should().BeFalse();
+        // Assert
+        _testMainRecordRepository.AddedRecords.Should().BeEmpty();
+        _testUnitOfWork.SaveChangesCalled.Should().BeFalse();
     }
 
     [Test]
@@ -222,9 +222,9 @@ public sealed class UpdateTrainingMainRecordsHandlerTests
         // Act
         await _handler.ExecuteAsync(command);
 
-         // Assert
-         _testMainRecordRepository.AddedRecords.Should().BeEmpty();
-         _testUnitOfWork.SaveChangesCalled.Should().BeFalse();
+        // Assert
+        _testMainRecordRepository.AddedRecords.Should().BeEmpty();
+        _testUnitOfWork.SaveChangesCalled.Should().BeFalse();
     }
 
     [Test]
@@ -283,11 +283,11 @@ public sealed class UpdateTrainingMainRecordsHandlerTests
         // Act
         await _handler.ExecuteAsync(command);
 
-          // Assert
-          _testMainRecordRepository.AddedRecords.Should().HaveCount(1);
-          _testMainRecordRepository.AddedRecords[0].ExerciseId.Should().Be(exerciseId2);
-          _testMainRecordRepository.AddedRecords[0].Weight.Value.Should().Be(80);
-          _testUnitOfWork.SaveChangesCalled.Should().BeTrue();
+        // Assert
+        _testMainRecordRepository.AddedRecords.Should().HaveCount(1);
+        _testMainRecordRepository.AddedRecords[0].ExerciseId.Should().Be(exerciseId2);
+        _testMainRecordRepository.AddedRecords[0].Weight.Value.Should().Be(80);
+        _testUnitOfWork.SaveChangesCalled.Should().BeTrue();
     }
 
     // Test doubles
@@ -430,13 +430,13 @@ public sealed class UpdateTrainingMainRecordsHandlerTests
         public double Convert(double value, WeightUnits from, WeightUnits to)
         {
             if (from == to) return value;
-            
+
             // Simple conversion: 1 kg = 2.20462 lbs
             if (from == WeightUnits.Kilograms && to == WeightUnits.Pounds)
                 return value * 2.20462;
             if (from == WeightUnits.Pounds && to == WeightUnits.Kilograms)
                 return value / 2.20462;
-            
+
             return value;
         }
     }

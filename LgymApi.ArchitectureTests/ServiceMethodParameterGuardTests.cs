@@ -40,7 +40,7 @@ public sealed class ServiceMethodParameterGuardTests
             {
                 foreach (var method in serviceClass.Members.OfType<MethodDeclarationSyntax>())
                 {
-                    if (!method.Modifiers.Any(modifier => modifier.Kind() == SyntaxKind.PublicKeyword))
+                    if (!method.Modifiers.Any(modifier => Microsoft.CodeAnalysis.CSharpExtensions.IsKind(modifier, SyntaxKind.PublicKeyword)))
                     {
                         continue;
                     }
@@ -98,7 +98,7 @@ public sealed class ServiceMethodParameterGuardTests
             {
                 foreach (var method in serviceClass.Members.OfType<MethodDeclarationSyntax>())
                 {
-                    if (method.Modifiers.Any(modifier => modifier.Kind() == SyntaxKind.PublicKeyword))
+                    if (method.Modifiers.Any(modifier => Microsoft.CodeAnalysis.CSharpExtensions.IsKind(modifier, SyntaxKind.PublicKeyword)))
                     {
                         continue;
                     }
@@ -144,7 +144,7 @@ public sealed class ServiceMethodParameterGuardTests
             return false;
         }
 
-        return !typeDeclaration.Modifiers.Any(modifier => modifier.Kind() == SyntaxKind.AbstractKeyword);
+        return !typeDeclaration.Modifiers.Any(modifier => Microsoft.CodeAnalysis.CSharpExtensions.IsKind(modifier, SyntaxKind.AbstractKeyword));
     }
 
     private static bool IsInBuildArtifacts(string path)
