@@ -7,6 +7,7 @@ using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Data.SeedData;
+using LgymApi.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -125,6 +126,24 @@ public sealed class PlanDayTests : IntegrationTestBase
         var response = await PostAsJsonWithApiOptionsAsync($"/api/planDay/{nonExistentPlanId}/createPlanDay", request);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Test]
+    public async Task GetPlanDay_WithMalformedId_ReturnsLegacyNotFoundPayload()
+    {
+        var (_, token) = await RegisterUserViaEndpointAsync(
+            name: "plandaymalformedid",
+            email: "plandaymalformedid@example.com",
+            password: "password123");
+        Client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+        var response = await Client.GetAsync("/api/planDay/not-a-guid/getPlanDay");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        body.Should().NotBeNull();
+        body!.Message.Should().NotBeNullOrWhiteSpace();
     }
 
     [Test]
@@ -556,6 +575,9 @@ public sealed class PlanDayTests : IntegrationTestBase
         var response = await Client.GetAsync($"/api/planDay/{planDayId}/deletePlanDay");
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        body.Should().NotBeNull();
+        body!.Message.Should().Be(CompatibilityResourceMessage.InCulture("en", () => Messages.Forbidden));
     }
 
     [Test]

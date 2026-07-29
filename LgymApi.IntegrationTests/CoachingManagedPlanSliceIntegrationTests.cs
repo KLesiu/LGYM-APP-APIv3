@@ -8,6 +8,8 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Data.SeedData;
+using LgymApi.Identity.Contracts;
+using LgymApi.TrainingPlanning.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using CoachingAssign = LgymApi.Application.Coaching.ManagedPlans.Assign;
@@ -34,60 +36,74 @@ public sealed class CoachingManagedPlanSliceIntegrationTests : IntegrationTestBa
         {
             var services = actionScope.ServiceProvider;
             var created = await services.GetRequiredService<CoachingCreate.ICreateTraineeManagedPlanUseCase>()
-                .ExecuteAsync(new CoachingCreate.CreateTraineeManagedPlanCommand(trainer.Id, trainee.Id, "  Template  "));
+                .ExecuteAsync(new CoachingCreate.CreateTraineeManagedPlanCommand(
+                    trainer.Id.Rebind<AccountReference>(),
+                    trainee.Id.Rebind<AccountReference>(),
+                    "  Template  "));
             created.IsSuccess.Should().BeTrue();
             created.Value.Name.Should().Be("Template");
             created.Value.IsActive.Should().BeFalse();
-            templateId = created.Value.Id;
+            templateId = created.Value.Id.Rebind<Plan>();
 
             var updatedTemplate = await services.GetRequiredService<CoachingUpdate.IUpdateTraineeManagedPlanUseCase>()
                 .ExecuteAsync(new CoachingUpdate.UpdateTraineeManagedPlanCommand(
-                    trainer.Id,
-                    trainee.Id,
-                    templateId,
+                    trainer.Id.Rebind<AccountReference>(),
+                    trainee.Id.Rebind<AccountReference>(),
+                    templateId.Rebind<PlanReference>(),
                     "  Updated template  "));
             updatedTemplate.Value.Name.Should().Be("Updated template");
 
             var beforeAssignment = await services.GetRequiredService<IListManagedPlansUseCase>()
-                .ExecuteAsync(new ListManagedPlansQuery(trainer.Id, trainee.Id));
+                .ExecuteAsync(new ListManagedPlansQuery(trainer.Id.Rebind<AccountReference>(), trainee.Id.Rebind<AccountReference>()));
             beforeAssignment.Value.Should().BeEmpty();
 
             var assignedTemplate = await services.GetRequiredService<CoachingAssign.IAssignTraineeManagedPlanUseCase>()
-                .ExecuteAsync(new CoachingAssign.AssignTraineeManagedPlanCommand(trainer.Id, trainee.Id, templateId));
+                .ExecuteAsync(new CoachingAssign.AssignTraineeManagedPlanCommand(
+                    trainer.Id.Rebind<AccountReference>(),
+                    trainee.Id.Rebind<AccountReference>(),
+                    templateId.Rebind<PlanReference>()));
             assignedTemplate.IsSuccess.Should().BeTrue();
 
             var afterClone = await services.GetRequiredService<IListManagedPlansUseCase>()
-                .ExecuteAsync(new ListManagedPlansQuery(trainer.Id, trainee.Id));
+                .ExecuteAsync(new ListManagedPlansQuery(trainer.Id.Rebind<AccountReference>(), trainee.Id.Rebind<AccountReference>()));
             afterClone.Value.Should().ContainSingle();
-            cloneId = afterClone.Value.Single().Id;
+            cloneId = afterClone.Value.Single().Id.Rebind<Plan>();
             cloneId.Should().NotBe(templateId);
             afterClone.Value.Single().IsActive.Should().BeTrue();
 
             var activeClone = await services.GetRequiredService<IGetActiveManagedPlanUseCase>()
-                .ExecuteAsync(new GetActiveManagedPlanQuery(trainee.Id));
-            activeClone.Value.Id.Should().Be(cloneId);
+                .ExecuteAsync(new GetActiveManagedPlanQuery(trainee.Id.Rebind<AccountReference>()));
+            activeClone.Value.Id.Should().Be(cloneId.Rebind<PlanReference>());
 
             var updatedClone = await services.GetRequiredService<CoachingUpdate.IUpdateTraineeManagedPlanUseCase>()
                 .ExecuteAsync(new CoachingUpdate.UpdateTraineeManagedPlanCommand(
-                    trainer.Id,
-                    trainee.Id,
-                    cloneId,
+                    trainer.Id.Rebind<AccountReference>(),
+                    trainee.Id.Rebind<AccountReference>(),
+                    cloneId.Rebind<PlanReference>(),
                     "Updated clone"));
             updatedClone.Value.Name.Should().Be("Updated clone");
 
             var unassigned = await services.GetRequiredService<CoachingUnassign.IUnassignTraineeManagedPlanUseCase>()
-                .ExecuteAsync(new CoachingUnassign.UnassignTraineeManagedPlanCommand(trainer.Id, trainee.Id));
+                .ExecuteAsync(new CoachingUnassign.UnassignTraineeManagedPlanCommand(
+                    trainer.Id.Rebind<AccountReference>(),
+                    trainee.Id.Rebind<AccountReference>()));
             unassigned.IsSuccess.Should().BeTrue();
             var noActivePlan = await services.GetRequiredService<IGetActiveManagedPlanUseCase>()
-                .ExecuteAsync(new GetActiveManagedPlanQuery(trainee.Id));
+                .ExecuteAsync(new GetActiveManagedPlanQuery(trainee.Id.Rebind<AccountReference>()));
             noActivePlan.Error.Should().BeOfType<PlanNotFoundError>();
 
             var assignedExisting = await services.GetRequiredService<CoachingAssign.IAssignTraineeManagedPlanUseCase>()
-                .ExecuteAsync(new CoachingAssign.AssignTraineeManagedPlanCommand(trainer.Id, trainee.Id, cloneId));
+                .ExecuteAsync(new CoachingAssign.AssignTraineeManagedPlanCommand(
+                    trainer.Id.Rebind<AccountReference>(),
+                    trainee.Id.Rebind<AccountReference>(),
+                    cloneId.Rebind<PlanReference>()));
             assignedExisting.IsSuccess.Should().BeTrue();
 
             var deletedTemplate = await services.GetRequiredService<CoachingDelete.IDeleteTraineeManagedPlanUseCase>()
-                .ExecuteAsync(new CoachingDelete.DeleteTraineeManagedPlanCommand(trainer.Id, trainee.Id, templateId));
+                .ExecuteAsync(new CoachingDelete.DeleteTraineeManagedPlanCommand(
+                    trainer.Id.Rebind<AccountReference>(),
+                    trainee.Id.Rebind<AccountReference>(),
+                    templateId.Rebind<PlanReference>()));
             deletedTemplate.IsSuccess.Should().BeTrue();
         }
 
@@ -98,7 +114,6 @@ public sealed class CoachingManagedPlanSliceIntegrationTests : IntegrationTestBa
             .ToListAsync();
         var persistedTemplate = plans.Single(plan => plan.Id == templateId);
         var persistedClone = plans.Single(plan => plan.Id == cloneId);
-        var persistedTrainee = await database.Users.SingleAsync(user => user.Id == trainee.Id);
 
         persistedTemplate.UserId.Should().Be(trainer.Id);
         persistedTemplate.IsDeleted.Should().BeTrue();
@@ -106,7 +121,13 @@ public sealed class CoachingManagedPlanSliceIntegrationTests : IntegrationTestBa
         persistedClone.UserId.Should().Be(trainee.Id);
         persistedClone.Name.Should().Be("Updated clone");
         persistedClone.IsActive.Should().BeTrue();
-        persistedTrainee.PlanId.Should().Be(cloneId);
+        plans.Where(plan => plan.UserId == trainee.Id && plan.IsActive && !plan.IsDeleted)
+            .Select(plan => plan.Id)
+            .Should()
+            .ContainSingle()
+            .Which
+            .Should()
+            .Be(cloneId);
     }
 
     [Test]
@@ -120,16 +141,64 @@ public sealed class CoachingManagedPlanSliceIntegrationTests : IntegrationTestBa
         using var actionScope = Factory.Services.CreateScope();
         var services = actionScope.ServiceProvider;
         var forbidden = await services.GetRequiredService<CoachingCreate.ICreateTraineeManagedPlanUseCase>()
-            .ExecuteAsync(new CoachingCreate.CreateTraineeManagedPlanCommand(nonTrainer.Id, trainee.Id, "Nope"));
+            .ExecuteAsync(new CoachingCreate.CreateTraineeManagedPlanCommand(
+                nonTrainer.Id.Rebind<AccountReference>(),
+                trainee.Id.Rebind<AccountReference>(),
+                "Nope"));
         var foreign = await services.GetRequiredService<IListManagedPlansUseCase>()
-            .ExecuteAsync(new ListManagedPlansQuery(trainer.Id, trainee.Id));
+            .ExecuteAsync(new ListManagedPlansQuery(trainer.Id.Rebind<AccountReference>(), trainee.Id.Rebind<AccountReference>()));
         var invalid = await services.GetRequiredService<CoachingCreate.ICreateTraineeManagedPlanUseCase>()
-            .ExecuteAsync(new CoachingCreate.CreateTraineeManagedPlanCommand(trainer.Id, Id<User>.Empty, "Nope"));
+            .ExecuteAsync(new CoachingCreate.CreateTraineeManagedPlanCommand(
+                trainer.Id.Rebind<AccountReference>(),
+                Id<AccountReference>.Empty,
+                "Nope"));
 
         forbidden.Error.Should().BeOfType<TrainerRelationshipForbiddenError>();
         foreign.Error.Should().BeOfType<TrainerRelationshipNotFoundError>();
         invalid.Error.Should().BeOfType<InvalidTrainerRelationshipError>();
         (await services.GetRequiredService<AppDbContext>().Plans.CountAsync()).Should().Be(0);
+    }
+
+    [Test]
+    public async Task TrainerManagedPlanSlices_RejectForeignRelationshipForEveryMutationWithoutWrites()
+    {
+        var trainer = await SeedUserAsync("slice-plan-unlinked-trainer", "slice-plan-unlinked-trainer@example.test");
+        var trainee = await SeedUserAsync("slice-plan-unlinked-trainee", "slice-plan-unlinked-trainee@example.test");
+        await SeedTrainerRoleAsync(trainer.Id);
+        var planId = Id<Plan>.New();
+
+        using (var seedScope = Factory.Services.CreateScope())
+        {
+            var database = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            database.Plans.Add(new Plan { Id = planId, UserId = trainer.Id, Name = "Template" });
+            await database.SaveChangesAsync();
+        }
+
+        using var actionScope = Factory.Services.CreateScope();
+        var services = actionScope.ServiceProvider;
+        var trainerId = trainer.Id.Rebind<AccountReference>();
+        var traineeId = trainee.Id.Rebind<AccountReference>();
+        var planReference = planId.Rebind<PlanReference>();
+
+        var results = new AppError[]
+        {
+            (await services.GetRequiredService<CoachingCreate.ICreateTraineeManagedPlanUseCase>()
+                .ExecuteAsync(new CoachingCreate.CreateTraineeManagedPlanCommand(trainerId, traineeId, "Blocked"))).Error,
+            (await services.GetRequiredService<CoachingUpdate.IUpdateTraineeManagedPlanUseCase>()
+                .ExecuteAsync(new CoachingUpdate.UpdateTraineeManagedPlanCommand(trainerId, traineeId, planReference, "Blocked"))).Error,
+            (await services.GetRequiredService<CoachingDelete.IDeleteTraineeManagedPlanUseCase>()
+                .ExecuteAsync(new CoachingDelete.DeleteTraineeManagedPlanCommand(trainerId, traineeId, planReference))).Error,
+            (await services.GetRequiredService<CoachingAssign.IAssignTraineeManagedPlanUseCase>()
+                .ExecuteAsync(new CoachingAssign.AssignTraineeManagedPlanCommand(trainerId, traineeId, planReference))).Error,
+            (await services.GetRequiredService<CoachingUnassign.IUnassignTraineeManagedPlanUseCase>()
+                .ExecuteAsync(new CoachingUnassign.UnassignTraineeManagedPlanCommand(trainerId, traineeId))).Error
+        };
+
+        results.Should().OnlyContain(error => error is TrainerRelationshipNotFoundError);
+        var persistedPlan = await services.GetRequiredService<AppDbContext>().Plans.SingleAsync(plan => plan.Id == planId);
+        persistedPlan.Name.Should().Be("Template");
+        persistedPlan.IsDeleted.Should().BeFalse();
+        persistedPlan.IsActive.Should().BeTrue();
     }
 
     [Test]
@@ -161,13 +230,26 @@ public sealed class CoachingManagedPlanSliceIntegrationTests : IntegrationTestBa
         using var actionScope = Factory.Services.CreateScope();
         var services = actionScope.ServiceProvider;
         var invalidName = await services.GetRequiredService<CoachingCreate.ICreateTraineeManagedPlanUseCase>()
-            .ExecuteAsync(new CoachingCreate.CreateTraineeManagedPlanCommand(trainer.Id, trainee.Id, " "));
+            .ExecuteAsync(new CoachingCreate.CreateTraineeManagedPlanCommand(
+                trainer.Id.Rebind<AccountReference>(),
+                trainee.Id.Rebind<AccountReference>(),
+                " "));
         var invalidPlanId = await services.GetRequiredService<CoachingUpdate.IUpdateTraineeManagedPlanUseCase>()
-            .ExecuteAsync(new CoachingUpdate.UpdateTraineeManagedPlanCommand(trainer.Id, trainee.Id, Id<Plan>.Empty, "Name"));
+            .ExecuteAsync(new CoachingUpdate.UpdateTraineeManagedPlanCommand(
+                trainer.Id.Rebind<AccountReference>(),
+                trainee.Id.Rebind<AccountReference>(),
+                Id<PlanReference>.Empty,
+                "Name"));
         var foreignPlanResult = await services.GetRequiredService<CoachingAssign.IAssignTraineeManagedPlanUseCase>()
-            .ExecuteAsync(new CoachingAssign.AssignTraineeManagedPlanCommand(trainer.Id, trainee.Id, foreignPlanId));
+            .ExecuteAsync(new CoachingAssign.AssignTraineeManagedPlanCommand(
+                trainer.Id.Rebind<AccountReference>(),
+                trainee.Id.Rebind<AccountReference>(),
+                foreignPlanId.Rebind<PlanReference>()));
         var unavailableOwner = await services.GetRequiredService<CoachingAssign.IAssignTraineeManagedPlanUseCase>()
-            .ExecuteAsync(new CoachingAssign.AssignTraineeManagedPlanCommand(trainer.Id, missingOwner.Id, templateId));
+            .ExecuteAsync(new CoachingAssign.AssignTraineeManagedPlanCommand(
+                trainer.Id.Rebind<AccountReference>(),
+                missingOwner.Id.Rebind<AccountReference>(),
+                templateId.Rebind<PlanReference>()));
 
         invalidName.Error.Should().BeOfType<InvalidPlanError>();
         invalidPlanId.Error.Should().BeOfType<InvalidPlanError>();

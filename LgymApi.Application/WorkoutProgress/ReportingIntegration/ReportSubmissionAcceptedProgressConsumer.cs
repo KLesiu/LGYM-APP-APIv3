@@ -1,20 +1,18 @@
 using LgymApi.Application.Repositories;
-using LgymApi.Domain.Entities;
-using LgymApi.Domain.Enums;
-using LgymApi.Domain.ValueObjects;
+using LgymApi.Application.WorkoutProgress.ReportingIntegration;
 
 namespace LgymApi.Application.WorkoutProgress.Contracts.ReportingIntegration;
 
 public sealed class ReportSubmissionAcceptedProgressConsumer : IReportSubmissionAcceptedProgressConsumer
 {
-    private readonly IMeasurementRepository _measurementRepository;
+    private readonly IReportSubmissionAcceptedProgressPersistence _persistence;
     private readonly IUnitOfWork _unitOfWork;
 
     public ReportSubmissionAcceptedProgressConsumer(
-        IMeasurementRepository measurementRepository,
+        IReportSubmissionAcceptedProgressPersistence persistence,
         IUnitOfWork unitOfWork)
     {
-        _measurementRepository = measurementRepository;
+        _persistence = persistence;
         _unitOfWork = unitOfWork;
     }
 
@@ -47,7 +45,7 @@ public sealed class ReportSubmissionAcceptedProgressConsumer : IReportSubmission
             .Select(group => group.First())
             .ToArray();
         var dayStartUtc = new DateTimeOffset(@event.ObservedAt.UtcDateTime.Date, TimeSpan.Zero);
-        var existingBodyParts = await _measurementRepository.GetExistingBodyPartsByUserAndCreatedAtRangeAsync(
+        var existingBodyParts = await _persistence.GetExistingBodyPartsAsync(
             @event.TraineeId,
             measurements.Select(measurement => measurement.BodyPart).ToArray(),
             dayStartUtc,
@@ -64,15 +62,12 @@ public sealed class ReportSubmissionAcceptedProgressConsumer : IReportSubmission
 
         foreach (var measurement in missingMeasurements)
         {
-            await _measurementRepository.AddAsync(new Measurement
-            {
-                Id = Id<Measurement>.New(),
-                UserId = @event.TraineeId,
-                BodyPart = measurement.BodyPart,
-                Unit = measurement.Unit.ToString(),
-                Value = measurement.Value,
-                CreatedAt = @event.ObservedAt
-            }, cancellationToken);
+            await _persistence.AddAsync(new AcceptedReportMeasurementPersistenceModel(
+                @event.TraineeId,
+                measurement.BodyPart,
+                measurement.Unit,
+                measurement.Value,
+                @event.ObservedAt), cancellationToken);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);

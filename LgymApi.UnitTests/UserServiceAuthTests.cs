@@ -22,6 +22,8 @@ using LgymApi.Domain.Services;
 using LgymApi.Domain.ValueObjects;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using LgymApi.UnitTests.Fakes;
+using LgymApi.TestUtils.Fakes;
 using NSubstitute;
 
 namespace LgymApi.UnitTests;
@@ -31,12 +33,12 @@ public sealed class UserServiceAuthTests
 {
     private ICommandDispatcher _commandDispatcher = null!;
     private ILegacyPasswordService _passwordService = null!;
-    private IRoleRepository _roleRepository = null!;
-    private ITokenService _tokenService = null!;
+    private ConfigurableRoleRepository _roleRepository = null!;
+    private ConfigurableTokenService _tokenService = null!;
     private ITutorialService _tutorialService = null!;
     private IUnitOfWork _unitOfWork = null!;
-    private IUserRepository _userRepository = null!;
-    private IUserSessionStore _userSessionStore = null!;
+    private ConfigurableUserRepository _userRepository = null!;
+    private FakeUserSessionStore _userSessionStore = null!;
     private IRankService _rankService = null!;
     private IUserCredentialLoginService _credentialLoginService = null!;
     private IUserRegistrationService _registrationService = null!;
@@ -46,12 +48,12 @@ public sealed class UserServiceAuthTests
     {
         _commandDispatcher = Substitute.For<ICommandDispatcher>();
         _passwordService = Substitute.For<ILegacyPasswordService>();
-        _roleRepository = Substitute.For<IRoleRepository>();
-        _tokenService = Substitute.For<ITokenService>();
+        _roleRepository = new ConfigurableRoleRepository();
+        _tokenService = new ConfigurableTokenService();
         _tutorialService = Substitute.For<ITutorialService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _userRepository = Substitute.For<IUserRepository>();
-        _userSessionStore = Substitute.For<IUserSessionStore>();
+        _userRepository = new ConfigurableUserRepository();
+        _userSessionStore = new FakeUserSessionStore();
         _rankService = Substitute.For<IRankService>();
         _passwordService.Create(Arg.Any<string>()).Returns(("hash", "salt", 25000, 512, "sha256"));
         _registrationService = new UserRegistrationService(new UserRegistrationServiceDependencies(
@@ -83,10 +85,14 @@ public sealed class UserServiceAuthTests
         var cancellationToken = cancellationSource.Token;
         var defaultRole = new Role { Id = Id<Role>.New(), Name = AuthConstants.Roles.User };
         User? addedUser = null;
-        _userRepository.FindByNameOrEmailAsync("new-user", "new@example.com", cancellationToken).Returns((User?)null);
-        _userRepository.AddAsync(Arg.Do<User>(user => addedUser = user), cancellationToken).Returns(Task.CompletedTask);
-        _roleRepository.GetByNamesAsync(Arg.Any<IReadOnlyCollection<string>>(), cancellationToken).Returns([defaultRole]);
-        _roleRepository.AddUserRolesAsync(Arg.Any<Id<User>>(), Arg.Any<IReadOnlyCollection<Id<Role>>>(), cancellationToken).Returns(Task.CompletedTask);
+        _userRepository.FindByNameOrEmail = (_, _, _) => Task.FromResult<User?>(null);
+        _userRepository.Add = (user, _) =>
+        {
+            addedUser = user;
+            return Task.CompletedTask;
+        };
+        _roleRepository.GetByNames = (_, _) => Task.FromResult<List<Role>>([defaultRole]);
+        _roleRepository.AddUserRoles = (_, _, _) => Task.CompletedTask;
         _commandDispatcher.EnqueueAsync(Arg.Any<UserRegisteredCommand>()).Returns(Task.CompletedTask);
         _tutorialService.InitializeOnboardingTutorialAsync(Arg.Any<Id<User>>(), cancellationToken).Returns(Result<Unit, AppError>.Success(Unit.Value));
         _unitOfWork.SaveChangesAsync(cancellationToken).Returns(Task.FromResult(1));
@@ -99,7 +105,15 @@ public sealed class UserServiceAuthTests
         addedUser.PreferredLanguage.Should().Be("en-US");
         addedUser.PreferredTimeZone.Should().Be("UTC");
         addedUser.IsVisibleInRanking.Should().BeTrue();
-        await _roleRepository.Received(1).AddUserRolesAsync(addedUser.Id, Arg.Is<IReadOnlyCollection<Id<Role>>>(roleIds => roleIds.Single() == defaultRole.Id), cancellationToken);
+        _roleRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IRoleRepository.AddUserRolesAsync)
+                && call.Argument is ValueTuple<Id<User>, IReadOnlyCollection<Id<Role>>> arguments
+                && arguments.Item1 == addedUser.Id
+                && arguments.Item2.Single() == defaultRole.Id
+                && call.CancellationToken == cancellationToken)
+            .Should()
+            .ContainSingle();
         await _commandDispatcher.Received(1).EnqueueAsync(Arg.Is<UserRegisteredCommand>(command => command.UserId == addedUser.Id));
         await _tutorialService.Received(1).InitializeOnboardingTutorialAsync(addedUser.Id, cancellationToken);
         await _unitOfWork.Received(1).SaveChangesAsync(cancellationToken);
@@ -114,10 +128,14 @@ public sealed class UserServiceAuthTests
             new() { Id = Id<Role>.New(), Name = AuthConstants.Roles.Trainer }
         };
         User? addedUser = null;
-        _userRepository.FindByNameOrEmailAsync("trainer", "trainer@example.com", Arg.Any<CancellationToken>()).Returns((User?)null);
-        _userRepository.AddAsync(Arg.Do<User>(user => addedUser = user), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        _roleRepository.GetByNamesAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>()).Returns(roles);
-        _roleRepository.AddUserRolesAsync(Arg.Any<Id<User>>(), Arg.Any<IReadOnlyCollection<Id<Role>>>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        _userRepository.FindByNameOrEmail = (_, _, _) => Task.FromResult<User?>(null);
+        _userRepository.Add = (user, _) =>
+        {
+            addedUser = user;
+            return Task.CompletedTask;
+        };
+        _roleRepository.GetByNames = (_, _) => Task.FromResult(roles);
+        _roleRepository.AddUserRoles = (_, _, _) => Task.CompletedTask;
         _commandDispatcher.EnqueueAsync(Arg.Any<UserRegisteredCommand>()).Returns(Task.CompletedTask);
         _tutorialService.InitializeOnboardingTutorialAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>()).Returns(Result<Unit, AppError>.Success(Unit.Value));
 
@@ -127,15 +145,22 @@ public sealed class UserServiceAuthTests
         addedUser.Should().NotBeNull();
         addedUser!.IsVisibleInRanking.Should().BeFalse();
         addedUser.PreferredLanguage.Should().Be("en-US");
-        await _roleRepository.Received(1).AddUserRolesAsync(addedUser.Id, Arg.Is<IReadOnlyCollection<Id<Role>>>(roleIds => roleIds.SequenceEqual(roles.Select(role => role.Id))), Arg.Any<CancellationToken>());
+        _roleRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IRoleRepository.AddUserRolesAsync)
+                && call.Argument is ValueTuple<Id<User>, IReadOnlyCollection<Id<Role>>> arguments
+                && arguments.Item1 == addedUser.Id
+                && arguments.Item2.SequenceEqual(roles.Select(role => role.Id)))
+            .Should()
+            .ContainSingle();
     }
 
     [Test]
     public async Task RegisterAsync_ReturnsInternalServerErrorWithoutCommit_WhenDefaultRoleIsMissing()
     {
-        _userRepository.FindByNameOrEmailAsync("new-user", "new@example.com", Arg.Any<CancellationToken>()).Returns((User?)null);
-        _userRepository.AddAsync(Arg.Any<User>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        _roleRepository.GetByNamesAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>()).Returns(new List<Role>());
+        _userRepository.FindByNameOrEmail = (_, _, _) => Task.FromResult<User?>(null);
+        _userRepository.Add = (_, _) => Task.CompletedTask;
+        _roleRepository.GetByNames = (_, _) => Task.FromResult(new List<Role>());
 
         var result = await _registrationService.RegisterAsync(new RegisterUserInput("new-user", "new@example.com", "password123", "password123", true, null));
 
@@ -155,12 +180,12 @@ public sealed class UserServiceAuthTests
         var session = new UserSession { Id = Id<UserSession>.New(), UserId = user.Id, Jti = "session-jti" };
         var roles = new List<string> { AuthConstants.Roles.User };
         var permissionClaims = new List<string> { AuthConstants.Permissions.AdminAccess };
-        _userRepository.FindByNameAsync(user.Name, cancellationToken).Returns(user);
+        _userRepository.FindByName = (_, _) => Task.FromResult<User?>(user);
         _passwordService.Verify("password123", user.LegacyHash!, user.LegacySalt!, user.LegacyIterations, user.LegacyKeyLength, user.LegacyDigest).Returns(true);
-        _roleRepository.GetRoleNamesByUserIdAsync(user.Id, cancellationToken).Returns(roles);
-        _roleRepository.GetPermissionClaimsByUserIdAsync(user.Id, cancellationToken).Returns(permissionClaims);
-        _userSessionStore.CreateSessionAsync(user.Id, Arg.Any<DateTimeOffset>(), cancellationToken).Returns(session);
-        _tokenService.CreateToken(user.Id, session.Id, session.Jti, roles, permissionClaims).Returns("issued-token");
+        _roleRepository.GetRoleNamesByUserId = (_, _) => Task.FromResult(roles);
+        _roleRepository.GetPermissionClaimsByUserId = (_, _) => Task.FromResult(permissionClaims);
+        _userSessionStore.CreateSessionHandler = (_, _, _) => Task.FromResult(session);
+        _tokenService.Create = (_, _, _, _, _) => "issued-token";
         _tutorialService.HasActiveTutorialsAsync(user.Id, cancellationToken).Returns(true);
         _unitOfWork.SaveChangesAsync(cancellationToken).Returns(Task.FromResult(1));
         _rankService.GetNextRank(user.ProfileRank).Returns(new RankDefinition { Name = "Senior 1", NeedElo = 1500 });
@@ -180,7 +205,14 @@ public sealed class UserServiceAuthTests
         result.Value.User.IsDeleted.Should().Be(user.IsDeleted);
         result.Value.User.IsVisibleInRanking.Should().Be(user.IsVisibleInRanking);
         result.Value.User.HasActiveTutorials.Should().BeTrue();
-        await _userSessionStore.Received(1).CreateSessionAsync(user.Id, Arg.Any<DateTimeOffset>(), cancellationToken);
+        _userSessionStore.Calls
+            .Where(call =>
+                call.Method == nameof(IUserSessionStore.CreateSessionAsync)
+                && call.Argument is ValueTuple<Id<User>, DateTimeOffset> arguments
+                && arguments.Item1 == user.Id
+                && call.CancellationToken == cancellationToken)
+            .Should()
+            .ContainSingle();
         await _unitOfWork.Received(1).SaveChangesAsync(cancellationToken);
     }
 
@@ -188,15 +220,15 @@ public sealed class UserServiceAuthTests
     public async Task LoginTrainerAsync_ReturnsUnauthorizedWithoutSessionOrCommit_WhenTrainerRoleIsMissing()
     {
         var user = CreateUser("user", "user@example.com");
-        _userRepository.FindByNameAsync(user.Name, Arg.Any<CancellationToken>()).Returns(user);
+        _userRepository.FindByName = (_, _) => Task.FromResult<User?>(user);
         _passwordService.Verify(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<string?>()).Returns(true);
-        _roleRepository.GetRoleNamesByUserIdAsync(user.Id, Arg.Any<CancellationToken>()).Returns([AuthConstants.Roles.User]);
+        _roleRepository.GetRoleNamesByUserId = (_, _) => Task.FromResult<List<string>>([AuthConstants.Roles.User]);
 
         var result = await _credentialLoginService.LoginTrainerAsync(user.Name, "password123");
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<UserUnauthorizedError>();
-        await _userSessionStore.DidNotReceive().CreateSessionAsync(Arg.Any<Id<User>>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        _userSessionStore.Calls.Should().NotContain(call => call.Method == nameof(IUserSessionStore.CreateSessionAsync));
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -216,7 +248,7 @@ public sealed class UserServiceAuthTests
     private static IMapper BuildMapper()
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
         using var provider = services.BuildServiceProvider();
         return provider.GetRequiredService<IMapper>();

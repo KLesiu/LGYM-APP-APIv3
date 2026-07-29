@@ -6,6 +6,7 @@ using Google.Apis.Auth;
 using LgymApi.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -138,7 +139,7 @@ public sealed class GoogleTokenValidatorTests
     {
         var clientFactory = Substitute.For<IHttpClientFactory>();
         clientFactory.CreateClient().Returns(new HttpClient(handler));
-        return new GoogleTokenValidator(configuration, clientFactory, Substitute.For<ILogger<GoogleTokenValidator>>());
+        return new GoogleTokenValidator(configuration, clientFactory, NullLogger<GoogleTokenValidator>.Instance);
     }
 
     private static async Task<object> InvokeResolveUserInfoAsync(GoogleTokenValidator validator, GoogleJsonWebSignature.Payload payload, string? accessToken)

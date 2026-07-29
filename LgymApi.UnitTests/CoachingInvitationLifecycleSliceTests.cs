@@ -189,7 +189,7 @@ public sealed class CoachingInvitationLifecycleSliceTests
         var commandDispatcher = commands;
         var workUnit = unitOfWork;
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         services.AddScoped(_ => userAccessService);
         services.AddScoped(_ => accountReadService);
         services.AddScoped(_ => invitationPersistence);

@@ -4,6 +4,8 @@ using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.AdminManagement.Models;
 using LgymApi.Application.Models;
 using LgymApi.Application.Notifications;
+using LgymApi.Application.Notifications.Contracts.InApp;
+using LgymApi.Application.Notifications.InApp;
 using LgymApi.Application.Notifications.Models;
 using LgymApi.Application.Options;
 using LgymApi.Application.Pagination;
@@ -13,9 +15,12 @@ using LgymApi.Application.Reporting.Contracts.BackgroundCommands;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Notifications;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using System.Globalization;
+using System.Text.Json;
+using LgymApi.Application.Platform.Contracts.Serialization;
 
 namespace LgymApi.UnitTests.InAppNotifications;
 
@@ -26,27 +31,26 @@ public sealed class ReportSubmissionCreatedInAppNotificationCommandHandlerTests
     public async Task ExecuteAsync_Success_CreatesExpectedNotification()
     {
         var service = new FakeNotificationService(Result<InAppNotificationResult, AppError>.Success(CreateResult()));
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
+        var trainerId = Id<AccountReference>.New();
+        var traineeId = Id<AccountReference>.New();
         var submissionId = Id<ReportSubmission>.New();
         var previousUiCulture = CultureInfo.CurrentUICulture;
-        var handler = new ReportSubmissionCreatedInAppNotificationCommandHandler(
+        var owner = new ReportSubmissionCreatedActionExecutionPort(
             service,
-            new FakeUserRepository(
-                new User { Id = trainerId, Name = "Coach", PreferredLanguage = "en-US" },
-                new User { Id = traineeId, Name = "Adam" }),
-            new AppDefaultsOptions { PreferredLanguage = "pl-PL" },
-            NullLogger<ReportSubmissionCreatedInAppNotificationCommandHandler>.Instance);
+            new FakeAccountLookupService(
+                ReportingTestData.Lookup(trainerId, "Coach", "en-US"),
+                ReportingTestData.Lookup(traineeId, "Adam")),
+            new AppDefaultsOptions { PreferredLanguage = "pl-PL" });
 
         try
         {
-            await handler.ExecuteAsync(new ReportSubmissionCreatedInAppNotificationCommand
+            await owner.ExecuteAsync(JsonSerializer.Serialize(new ReportSubmissionCreatedInAppNotificationCommand
             {
                 SubmissionId = submissionId,
                 TrainerId = trainerId,
                 TraineeId = traineeId,
                 TemplateName = "Weekly check-in"
-            });
+            }, SharedSerializationOptions.Current));
         }
         finally
         {
@@ -55,8 +59,8 @@ public sealed class ReportSubmissionCreatedInAppNotificationCommandHandlerTests
 
         service.Calls.Should().Be(1);
         service.LastInput.Should().NotBeNull();
-        service.LastInput!.RecipientId.Should().Be(trainerId);
-        service.LastInput.SenderUserId.Should().Be(traineeId);
+        service.LastInput!.RecipientId.Should().Be(trainerId.Rebind<User>());
+        service.LastInput.SenderUserId.Should().Be(traineeId.Rebind<User>());
         service.LastInput.DeliveryKey.Should().Be($"report-submission:{submissionId}");
         service.LastInput.Message.Should().Be("Adam submitted a report: Weekly check-in.");
         service.LastInput.RedirectUrl.Should().Be($"/trainer/members/{traineeId}?tab=reports&submissionId={submissionId}");
@@ -67,26 +71,25 @@ public sealed class ReportSubmissionCreatedInAppNotificationCommandHandlerTests
     public async Task ExecuteAsync_WhenNamesMissing_UsesLocalizedFallbacks()
     {
         var service = new FakeNotificationService(Result<InAppNotificationResult, AppError>.Success(CreateResult()));
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
+        var trainerId = Id<AccountReference>.New();
+        var traineeId = Id<AccountReference>.New();
         var previousUiCulture = CultureInfo.CurrentUICulture;
-        var handler = new ReportSubmissionCreatedInAppNotificationCommandHandler(
+        var owner = new ReportSubmissionCreatedActionExecutionPort(
             service,
-            new FakeUserRepository(
-                new User { Id = trainerId, Name = string.Empty, PreferredLanguage = "pl-PL" },
-                new User { Id = traineeId, Name = string.Empty }),
-            new AppDefaultsOptions { PreferredLanguage = "en-US" },
-            NullLogger<ReportSubmissionCreatedInAppNotificationCommandHandler>.Instance);
+            new FakeAccountLookupService(
+                ReportingTestData.Lookup(trainerId, string.Empty, "pl-PL"),
+                ReportingTestData.Lookup(traineeId, string.Empty)),
+            new AppDefaultsOptions { PreferredLanguage = "en-US" });
 
         try
         {
-            await handler.ExecuteAsync(new ReportSubmissionCreatedInAppNotificationCommand
+            await owner.ExecuteAsync(JsonSerializer.Serialize(new ReportSubmissionCreatedInAppNotificationCommand
             {
                 SubmissionId = Id<ReportSubmission>.New(),
                 TrainerId = trainerId,
                 TraineeId = traineeId,
                 TemplateName = string.Empty
-            });
+            }, SharedSerializationOptions.Current));
         }
         finally
         {
@@ -96,10 +99,28 @@ public sealed class ReportSubmissionCreatedInAppNotificationCommandHandlerTests
         service.LastInput!.Message.Should().Be("Podopieczny wysłał raport: raport.");
     }
 
+    [Test]
+    public async Task ExecuteAsync_ForwardsCanonicalJsonToOwnerPort()
+    {
+        var port = new RecordingExecutionPort();
+        var handler = new ReportSubmissionCreatedInAppNotificationCommandHandler(port);
+        var command = new ReportSubmissionCreatedInAppNotificationCommand
+        {
+            SubmissionId = Id<ReportSubmission>.New(),
+            TrainerId = Id<AccountReference>.New(),
+            TraineeId = Id<AccountReference>.New(),
+            TemplateName = "Weekly check-in"
+        };
+
+        await handler.ExecuteAsync(command);
+
+        port.PayloadJson.Should().Be(JsonSerializer.Serialize(command, SharedSerializationOptions.Current));
+    }
+
     private static InAppNotificationResult CreateResult()
         => new(Id<InAppNotification>.New(), Id<User>.New(), "message", null, false, InAppNotificationTypes.ReportSubmissionReceived, false, null, DateTimeOffset.UtcNow);
 
-    private sealed class FakeNotificationService : IInAppNotificationService
+    private sealed class FakeNotificationService : IInAppNotificationWireWriter
     {
         private readonly Result<InAppNotificationResult, AppError> _result;
 
@@ -108,11 +129,14 @@ public sealed class ReportSubmissionCreatedInAppNotificationCommandHandlerTests
         public int Calls { get; private set; }
         public CreateInAppNotificationInput? LastInput { get; private set; }
 
-        public Task<Result<InAppNotificationResult, AppError>> CreateAsync(CreateInAppNotificationInput input, CancellationToken cancellationToken = default)
+        public Task CreateAsync(string recipientId, string actorId, string deliveryKey, string message, string redirectUrl, string notificationType, CancellationToken cancellationToken = default)
         {
+            Id<User>.TryParse(recipientId, out var recipient).Should().BeTrue();
+            Id<User>.TryParse(actorId, out var actor).Should().BeTrue();
+            InAppNotificationTypes.TryFromValue(notificationType, out var type).Should().BeTrue();
             Calls++;
-            LastInput = input;
-            return Task.FromResult(_result);
+            LastInput = new CreateInAppNotificationInput(recipient, actor, deliveryKey, false, message, redirectUrl, type);
+            return Task.CompletedTask;
         }
 
         public Task<Result<PagedResult<InAppNotificationResult>, AppError>> GetForUserAsync(Id<User> userId, CursorPaginationQuery query, CancellationToken cancellationToken = default) => throw new NotImplementedException();
@@ -121,24 +145,15 @@ public sealed class ReportSubmissionCreatedInAppNotificationCommandHandlerTests
         public Task<Result<int, AppError>> GetUnreadCountAsync(Id<User> userId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
     }
 
-    private sealed class FakeUserRepository : IUserRepository
+    private sealed class RecordingExecutionPort : IReportSubmissionCreatedActionExecutionPort
     {
-        private readonly Dictionary<string, User> _users;
+        public string? PayloadJson { get; private set; }
 
-        public FakeUserRepository(params User[] users)
-            => _users = users.ToDictionary(user => user.Id.ToString(), user => user);
-
-        public Task<User?> FindByIdAsync(Id<User> id, CancellationToken cancellationToken = default)
-            => Task.FromResult(_users.TryGetValue(id.ToString(), out var user) ? user : null);
-
-        public Task<User?> FindByIdIncludingDeletedAsync(Id<User> id, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<User?> FindByIdWithRolesAsync(Id<User> id, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<User?> FindByNameAsync(string name, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<User?> FindByEmailAsync(Email email, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<User?> FindByNameOrEmailAsync(string name, string email, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<List<UserRankingEntry>> GetRankingAsync(CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task AddAsync(User user, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task UpdateAsync(User user, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<Pagination<UserResult>> GetUsersPaginatedAsync(FilterInput filterInput, bool includeDeleted, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task ExecuteAsync(string payloadJson, CancellationToken cancellationToken = default)
+        {
+            PayloadJson = payloadJson;
+            return Task.CompletedTask;
+        }
     }
+
 }

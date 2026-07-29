@@ -3,7 +3,7 @@ using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Coaching.Errors;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
-using UserEntity = LgymApi.Domain.Entities.User;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.Application.Coaching.Progress;
 
@@ -11,7 +11,7 @@ internal static class ProgressReadAccess
 {
     public static AppError? GetError(
         CoachingRelationshipAccessDecision access,
-        Id<UserEntity> traineeId)
+        Id<AccountReference> traineeId)
     {
         if (!access.IsTrainer)
         {

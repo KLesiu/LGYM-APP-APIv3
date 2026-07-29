@@ -30,8 +30,7 @@ internal sealed class GetActiveManagedPlanUseCase : IGetActiveManagedPlanUseCase
         GetActiveManagedPlanQuery query,
         CancellationToken cancellationToken = default)
     {
-        var activeLink = await _activeLinks.FindByTraineeAsync(query.TraineeId, cancellationToken);
-        if (activeLink is null)
+        if (!await _activeLinks.HasForTraineeAsync(query.TraineeId, cancellationToken))
         {
             return Result<ManagedPlanReadModel, AppError>.Failure(
                 new TrainerRelationshipNotFoundError(Messages.DidntFind));

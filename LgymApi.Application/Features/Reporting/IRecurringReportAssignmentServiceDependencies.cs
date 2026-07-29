@@ -1,14 +1,17 @@
-using LgymApi.Application.Coaching.Contracts.Access;
+using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Platform.Contracts.BackgroundCommands;
+using LgymApi.Application.Reporting.Persistence;
 
 namespace LgymApi.Application.Features.Reporting;
 
 public interface IRecurringReportAssignmentServiceDependencies
 {
-    ICoachingRelationshipAccessService CoachingRelationshipAccessService { get; }
-    IReportingRepository ReportingRepository { get; }
-    IRecurringReportAssignmentRepository RecurringReportAssignmentRepository { get; }
+    IReportTemplatePersistence TemplatePersistence { get; }
+    IReportRequestSubmissionPersistence RequestSubmissionPersistence { get; }
+    IRecurringReportAssignmentPersistence RecurringAssignmentPersistence { get; }
+    IReportingRelationshipAccessPersistence RelationshipAccessPersistence { get; }
+    IMapper Mapper { get; }
     ICommandDispatcher CommandDispatcher { get; }
     IUnitOfWork UnitOfWork { get; }
 }
@@ -16,22 +19,28 @@ public interface IRecurringReportAssignmentServiceDependencies
 internal sealed class RecurringReportAssignmentServiceDependencies : IRecurringReportAssignmentServiceDependencies
 {
     public RecurringReportAssignmentServiceDependencies(
-        ICoachingRelationshipAccessService coachingRelationshipAccessService,
-        IReportingRepository reportingRepository,
-        IRecurringReportAssignmentRepository recurringReportAssignmentRepository,
+        IReportTemplatePersistence templatePersistence,
+        IReportRequestSubmissionPersistence requestSubmissionPersistence,
+        IRecurringReportAssignmentPersistence recurringAssignmentPersistence,
+        IReportingRelationshipAccessPersistence relationshipAccessPersistence,
+        IMapper mapper,
         ICommandDispatcher commandDispatcher,
         IUnitOfWork unitOfWork)
     {
-        CoachingRelationshipAccessService = coachingRelationshipAccessService;
-        ReportingRepository = reportingRepository;
-        RecurringReportAssignmentRepository = recurringReportAssignmentRepository;
+        TemplatePersistence = templatePersistence;
+        RequestSubmissionPersistence = requestSubmissionPersistence;
+        RecurringAssignmentPersistence = recurringAssignmentPersistence;
+        RelationshipAccessPersistence = relationshipAccessPersistence;
+        Mapper = mapper;
         CommandDispatcher = commandDispatcher;
         UnitOfWork = unitOfWork;
     }
 
-    public ICoachingRelationshipAccessService CoachingRelationshipAccessService { get; }
-    public IReportingRepository ReportingRepository { get; }
-    public IRecurringReportAssignmentRepository RecurringReportAssignmentRepository { get; }
+    public IReportTemplatePersistence TemplatePersistence { get; }
+    public IReportRequestSubmissionPersistence RequestSubmissionPersistence { get; }
+    public IRecurringReportAssignmentPersistence RecurringAssignmentPersistence { get; }
+    public IReportingRelationshipAccessPersistence RelationshipAccessPersistence { get; }
+    public IMapper Mapper { get; }
     public ICommandDispatcher CommandDispatcher { get; }
     public IUnitOfWork UnitOfWork { get; }
 }

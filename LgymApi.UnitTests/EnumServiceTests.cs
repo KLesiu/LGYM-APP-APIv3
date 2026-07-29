@@ -53,7 +53,7 @@ public sealed class EnumServiceTests
     private static EnumService CreateService()
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(EnumService).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
         using var provider = services.BuildServiceProvider();
         return new EnumService(provider.GetRequiredService<IMapper>());

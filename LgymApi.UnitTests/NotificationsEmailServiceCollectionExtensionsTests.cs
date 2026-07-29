@@ -1,8 +1,10 @@
 using FluentAssertions;
 using LgymApi.BackgroundWorker.Common.Notifications;
+using LgymApi.Application.Notifications;
 using LgymApi.Infrastructure;
 using LgymApi.Infrastructure.Options;
 using LgymApi.Infrastructure.Services;
+using LgymApi.Notifications;
 using LgymApi.TestUtils;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,7 +26,7 @@ public sealed class NotificationsEmailServiceCollectionExtensionsTests
     ];
 
     [Test]
-    public void AddNotificationsInfrastructure_OwnsEveryEmailDescriptorExactlyOnce()
+    public void AddNotificationsModule_OwnsEveryEmailDescriptorExactlyOnce()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -34,15 +36,12 @@ public sealed class NotificationsEmailServiceCollectionExtensionsTests
 
         AssertEmailDescriptorsAreAbsent(services);
 
-        services.AddNotificationsInfrastructure(configuration);
+        services.AddNotificationsModule(configuration);
 
         AssertEmailDescriptors(services);
+        Assert.That(typeof(EmailOptions).Assembly, Is.EqualTo(typeof(EmailServiceCollectionExtensions).Assembly));
 
-        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
-        {
-            ValidateOnBuild = true,
-            ValidateScopes = true
-        });
+        using var provider = services.BuildServiceProvider(validateScopes: true);
         using var scope = provider.CreateScope();
 
         scope.ServiceProvider.GetRequiredService<IEmailSender>().Should().BeOfType<SmtpEmailSender>();
@@ -80,7 +79,7 @@ public sealed class NotificationsEmailServiceCollectionExtensionsTests
         services.AddLogging();
         var configuration = CreateConfiguration();
         services.AddPlatformServices(configuration, enableSensitiveLogging: false, isTesting: true);
-        services.AddNotificationsInfrastructure(configuration);
+        services.AddNotificationsModule(configuration);
         return services;
     }
 

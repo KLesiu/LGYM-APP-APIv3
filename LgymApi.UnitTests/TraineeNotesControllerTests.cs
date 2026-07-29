@@ -2,15 +2,19 @@ using FluentAssertions;
 using LgymApi.Api;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Features.Trainer.Controllers;
+using LgymApi.Api.Middleware;
 using LgymApi.Application.Coaching.TraineeNotes.Models;
 using LgymApi.Application.Coaching.TraineeNotes.VisibleList;
 using LgymApi.Application.Coaching.TraineeNotes.VisibleSingle;
+using LgymApi.Application.Coaching.Compatibility;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -65,17 +69,17 @@ public sealed class TraineeNotesControllerTests
         IGetVisibleTraineeNoteUseCase? getNote = null)
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
         var controller = new TraineeNotesController(
-            listNotes ?? Substitute.For<IListVisibleTraineeNotesUseCase>(),
-            getNote ?? Substitute.For<IGetVisibleTraineeNoteUseCase>(),
+            new TraineeNotesApiAdapter(listNotes ?? Substitute.For<IListVisibleTraineeNotesUseCase>(), getNote ?? Substitute.For<IGetVisibleTraineeNoteUseCase>(), mapper),
             mapper)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
-        controller.HttpContext.Items["User"] = new User { Id = Id<User>.New(), Name = "Trainee", Email = "trainee@notes.test", ProfileRank = "Rookie" };
+        controller.HttpContext.Features.Set<IAuthenticatedAccountContextFeature>(new AuthenticatedAccountContextFeature(
+            new AuthenticatedAccountContext(Id<AccountReference>.New(), null, [], [], false, false)));
         return controller;
     }
 

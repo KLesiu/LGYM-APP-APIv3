@@ -15,6 +15,7 @@ using LgymApi.Application.TrainingPlanning.Contracts.ManagedPlans;
 using LgymApi.Domain.ValueObjects;
 using ExerciseEntity = LgymApi.Domain.Entities.Exercise;
 using UserEntity = LgymApi.Domain.Entities.User;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.Api.Mapping.Profiles;
 
@@ -40,16 +41,16 @@ public sealed class TrainerProfile : IMappingProfile
             new GetTrainerDashboardQuery(Id<UserEntity>.Empty, source.Search, source.Status, source.SortBy, source.SortDirection, source.Page, source.PageSize));
 
         configuration.CreateMap<TrainingByDateRequestDto, GetTrainingByDateQuery>((source, _) =>
-            new GetTrainingByDateQuery(Id<UserEntity>.Empty, Id<UserEntity>.Empty, source.CreatedAt));
+            new GetTrainingByDateQuery(Id<AccountReference>.Empty, Id<AccountReference>.Empty, source.CreatedAt));
 
         configuration.CreateMap<ExerciseScoresChartRequestDto, GetExerciseScoresChartQuery>((_, _) =>
-            new GetExerciseScoresChartQuery(Id<UserEntity>.Empty, Id<UserEntity>.Empty, Id<ExerciseEntity>.Empty));
+            new GetExerciseScoresChartQuery(Id<AccountReference>.Empty, Id<AccountReference>.Empty, Id<ExerciseEntity>.Empty));
 
         configuration.CreateMap<TrainerPlanFormRequest, CreateTraineeManagedPlanCommand>((source, _) =>
-            new CreateTraineeManagedPlanCommand(Id<UserEntity>.Empty, Id<UserEntity>.Empty, source.Name));
+            new CreateTraineeManagedPlanCommand(Id<AccountReference>.Empty, Id<AccountReference>.Empty, source.Name));
 
         configuration.CreateMap<TrainerPlanFormRequest, UpdateTraineeManagedPlanCommand>((source, _) =>
-            new UpdateTraineeManagedPlanCommand(Id<UserEntity>.Empty, Id<UserEntity>.Empty, Id<LgymApi.Domain.Entities.Plan>.Empty, source.Name));
+            new UpdateTraineeManagedPlanCommand(Id<AccountReference>.Empty, Id<AccountReference>.Empty, Id<LgymApi.TrainingPlanning.Contracts.PlanReference>.Empty, source.Name));
 
         configuration.CreateMap<InvitationReadModel, TrainerInvitationDto>((source, _) => new TrainerInvitationDto
         {

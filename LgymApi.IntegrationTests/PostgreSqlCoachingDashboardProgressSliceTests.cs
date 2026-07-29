@@ -8,6 +8,7 @@ using LgymApi.Application.Coaching.Relationships.TrainerDashboard;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Data.SeedData;
 using Microsoft.EntityFrameworkCore;
@@ -129,15 +130,15 @@ internal sealed class PostgreSqlCoachingDashboardProgressSliceTests : PostgreSql
 
         using var actionScope = Factory.Services.CreateScope();
         var dates = await actionScope.ServiceProvider.GetRequiredService<IGetTrainingDatesUseCase>()
-            .ExecuteAsync(new GetTrainingDatesQuery(trainer.Id, trainee.Id));
+            .ExecuteAsync(new GetTrainingDatesQuery(trainer.Id.Rebind<AccountReference>(), trainee.Id.Rebind<AccountReference>()));
         var byDate = await actionScope.ServiceProvider.GetRequiredService<IGetTrainingByDateUseCase>()
-            .ExecuteAsync(new GetTrainingByDateQuery(trainer.Id, trainee.Id, createdAt));
+            .ExecuteAsync(new GetTrainingByDateQuery(trainer.Id.Rebind<AccountReference>(), trainee.Id.Rebind<AccountReference>(), createdAt));
         var scores = await actionScope.ServiceProvider.GetRequiredService<IGetExerciseScoresChartUseCase>()
-            .ExecuteAsync(new GetExerciseScoresChartQuery(trainer.Id, trainee.Id, exerciseId));
+            .ExecuteAsync(new GetExerciseScoresChartQuery(trainer.Id.Rebind<AccountReference>(), trainee.Id.Rebind<AccountReference>(), exerciseId));
         var elo = await actionScope.ServiceProvider.GetRequiredService<IGetEloChartUseCase>()
-            .ExecuteAsync(new GetEloChartQuery(trainer.Id, trainee.Id));
+            .ExecuteAsync(new GetEloChartQuery(trainer.Id.Rebind<AccountReference>(), trainee.Id.Rebind<AccountReference>()));
         var records = await actionScope.ServiceProvider.GetRequiredService<IGetMainRecordsHistoryUseCase>()
-            .ExecuteAsync(new GetMainRecordsHistoryQuery(trainer.Id, trainee.Id));
+            .ExecuteAsync(new GetMainRecordsHistoryQuery(trainer.Id.Rebind<AccountReference>(), trainee.Id.Rebind<AccountReference>()));
 
         dates.IsSuccess.Should().BeTrue();
         dates.Value.Should().ContainSingle();

@@ -3,6 +3,7 @@ using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
+using LgymApi.Identity.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace LgymApi.Infrastructure.Repositories.Coaching;
@@ -45,6 +46,15 @@ public sealed class CoachingActiveLinkPersistenceRepository : ICoachingActiveLin
 
     public Task<CoachingActiveLinkFact?> FindByTraineeAsync(Id<User> traineeId, CancellationToken cancellationToken = default)
         => FindAsync(_dbContext.TrainerTraineeLinks.AsNoTracking().Where(link => link.TraineeId == traineeId), cancellationToken);
+
+    public Task<bool> HasActiveRelationshipAsync(Id<AccountReference> trainerId, Id<AccountReference> traineeId, CancellationToken cancellationToken = default)
+    {
+        var persistedTrainerId = trainerId.Rebind<User>();
+        var persistedTraineeId = traineeId.Rebind<User>();
+        return _dbContext.TrainerTraineeLinks.AsNoTracking().AnyAsync(
+            link => link.TrainerId == persistedTrainerId && link.TraineeId == persistedTraineeId,
+            cancellationToken);
+    }
 
     private async Task<CoachingActiveLinkFact?> FindAsync(IQueryable<TrainerTraineeLink> query, CancellationToken cancellationToken)
     {

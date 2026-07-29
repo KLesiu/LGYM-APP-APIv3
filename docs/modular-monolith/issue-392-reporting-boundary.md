@@ -24,17 +24,17 @@ Reporting application ownership includes:
 
 - `IReportingService` and the `ReportingService*` implementation family for templates, requests, submissions, feedback, and evidence workflows.
 - `IRecurringReportAssignmentService` and the `RecurringReportAssignmentService*` implementation family for recurring assignment lifecycle and due assignment processing.
-- `IReportingRepository` and `IRecurringReportAssignmentRepository` as the application persistence ports.
-- `IPhotoStorageProvider` and `IPhotoUploadInitTracker` as the application abstractions for provider access and pending upload tracking.
+- Five focused persistence ports: `IReportTemplatePersistence`, `IReportRequestSubmissionPersistence`, `IRecurringReportAssignmentPersistence`, `IReportPhotoPersistence`, and `IReportingRelationshipAccessPersistence`.
+- `IPhotoStorageProvider` as the application abstraction for provider access. Pending upload-session tracking is part of `IReportPhotoPersistence`.
 - `ReportSubmissionAcceptedProgressCommand` as the Reporting-owned accepted-progress command staged through the shared platform outbox port.
 
-Infrastructure implements the Reporting repository ports in `LgymApi.Infrastructure/Repositories/ReportingRepository.cs` and `LgymApi.Infrastructure/Repositories/RecurringReportAssignmentRepository.cs`. Reporting entity mappings remain under `LgymApi.Infrastructure/Data/Configurations/Reporting/`. Repositories stage changes only. Application services own authorization, transaction boundaries, and `IUnitOfWork.SaveChangesAsync()`.
+Infrastructure implements the five ports under `LgymApi.Infrastructure/Repositories/Reporting/` through `ReportTemplatePersistenceRepository`, `ReportRequestSubmissionPersistenceRepository`, `RecurringReportAssignmentPersistenceRepository`, `ReportPhotoPersistenceRepository`, and `ReportingRelationshipAccessPersistenceRepository`. Reporting entity mappings remain under `LgymApi.Infrastructure/Data/Configurations/Reporting/`. The adapters stage changes only; Application services own authorization, transaction boundaries, and `IUnitOfWork.SaveChangesAsync()`.
 
 ## Coaching Authorization Boundary
 
-Reporting and Recurring Reporting consume trainer status and active trainer-trainee relationship facts only through the published `ICoachingRelationshipAccessService`. Reporting owns the interpretation of those facts: a non-trainer retains the existing resource-backed Reporting forbidden error, while a trainer without the active relationship retains the existing Reporting not-found error. Trainee self-access for report photos remains a Reporting rule and bypasses the trainer relationship check.
+Reporting and Recurring Reporting consume active trainer-trainee relationship facts only through their consumer-owned `IReportingRelationshipAccessPersistence` port. Trainer status comes from the immutable `AuthenticatedAccountContext`. Reporting owns the interpretation of those facts: a non-trainer retains the existing resource-backed Reporting forbidden error, while a trainer without the active relationship retains the existing Reporting not-found error. Trainee self-access for report photos remains a Reporting rule and bypasses the trainer relationship check.
 
-The access decision carries typed user IDs and booleans only. It exposes no Coaching entity, repository, persistence port, or private implementation. Reporting continues to own report and photo authorization, repository writes, unit-of-work commits, transactions, notification dispatch timing, and accepted-progress outbox staging.
+The access decision carries `Id<AccountReference>` values and a boolean only. Infrastructure translates those marker IDs to persisted `Id<User>` values only inside the Reporting adapters through `ReportingPersistenceAccountIds`. The Application boundary exposes no Identity or Coaching entity, repository, or private implementation. Reporting continues to own report and photo authorization, staged writes, unit-of-work commits, transactions, notification dispatch timing, and accepted-progress outbox staging.
 
 ## Evidence and Photo Lifecycle
 
@@ -48,13 +48,13 @@ Reporting owns the business lifecycle for evidence attached to report requests a
 
 Reporting owns recurring assignment business rules through `IRecurringReportAssignmentService`. The Worker owns execution of the persisted `RecurringReportAssignmentProcessingJob`, which invokes `ProcessDueAssignmentsAsync`. The job retains its existing Hangfire concurrency protection and persisted identity. Processing remains idempotent, respects feedback-read gating, and deactivates assignments whose templates are deleted instead of creating a new request.
 
-`ExpiredPhotoUploadCleanupService` is the Reporting application service for expired evidence upload cleanup. Its Worker job and scheduler wiring, where present, are runtime adapters. The Worker executes the job, while Reporting remains responsible for the lifecycle policy and state transitions. No repository owns a commit or transaction.
+`ExpiredPhotoUploadCleanupService` is the Reporting application service for expired evidence upload cleanup and uses `IReportPhotoPersistence` for upload-session state. Its Worker job and scheduler wiring, where present, are runtime adapters. The Worker executes the job, while Reporting remains responsible for the lifecycle policy and state transitions. No persistence adapter owns a commit or transaction.
 
 ## Accepted progress outbox flow
 
 Issue #386 is production wiring. Reporting accepts the submission, derives valid measurement triples through its persistence-neutral factory, and stages a Reporting-owned `ReportSubmissionAcceptedProgressCommand` in the existing `CommandEnvelope` outbox before `IUnitOfWork.SaveChangesAsync()`. Reporting does not write Workout & Progress measurement rows, call its repositories, or call its consumer directly. The temporary measurement adapter was removed.
 
-The committed envelope is delivered through the existing committed-intent and `ActionMessage` infrastructure. The Worker handler invokes the Workout & Progress `ReportSubmissionAcceptedProgressConsumer`, which validates before persistence, deduplicates by body part over the `ObservedAt` UTC day, stages only missing measurements, and commits once when rows are staged. `Applied` and `Duplicate` are successful outcomes. Invalid, unsupported-schema, and poison outcomes become sanitized, bounded failures for the existing retry/dead-letter path. Unexpected persistence exceptions propagate and remain retryable.
+The committed envelope is delivered through the existing committed-intent and `ActionMessage` infrastructure. The Worker handler forwards shared JSON to the Workout & Progress owner, whose raw wire parser validates and maps it to the `ReportSubmissionAcceptedProgressConsumer` event. The consumer deduplicates by body part over the `ObservedAt` UTC day, stages only missing measurements, and commits once when rows are staged. `Applied` and `Duplicate` are successful outcomes. Invalid, unsupported-schema, and poison outcomes become sanitized, bounded failures for the existing retry/dead-letter path. Unexpected persistence exceptions propagate and remain retryable.
 
 Operational records and logs expose event ID, report submission ID, correlation ID, causation ID, schema version, outcome, retry or dead-letter state, and counts. They must not expose raw answer JSON, photos, device tokens, or payload dumps.
 

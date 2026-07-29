@@ -1,7 +1,6 @@
-using LgymApi.Application.Features.PlanDay;
 using LgymApi.Application.TrainingPlanning.Contracts.PlanDay;
-using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -14,23 +13,16 @@ public sealed class PlanDayCoachingAuthorizationBoundaryGuardTests
     [Test]
     public void ProductionPlanDayDependencies_ShouldUseOnlyConsumerOwnedRelationshipPort()
     {
-        var relationshipProperty = typeof(IPlanDayServiceDependencies)
-            .GetProperties()
-            .Single(property => property.Name == "RelationshipAccess");
-        var relationshipField = typeof(PlanDayService)
-            .GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
-            .Single(field => field.FieldType == typeof(IPlanDayRelationshipAccessPort));
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var planDaySources = new[]
         {
-            Path.Combine(repositoryRoot, "LgymApi.Application", "PlanDay", "IPlanDayServiceDependencies.cs"),
-            Path.Combine(repositoryRoot, "LgymApi.Application", "PlanDay", "PlanDayService.cs")
+            Path.Combine(repositoryRoot, "LgymApi.TrainingPlanning", "Contracts", "PlanDay", "IPlanDayRelationshipAccessPort.cs"),
+            Path.Combine(repositoryRoot, "LgymApi.TrainingPlanning", "PlanDay", "PlanDayService.cs")
         }.Select(File.ReadAllText).ToArray();
 
         Assert.Multiple(() =>
         {
-            Assert.That(relationshipProperty.PropertyType, Is.EqualTo(typeof(IPlanDayRelationshipAccessPort)));
-            Assert.That(relationshipField.Name, Is.EqualTo("_relationshipAccess"));
+            Assert.That(planDaySources, Has.Some.Contains("private readonly IPlanDayRelationshipAccessPort _relationshipAccess"));
             Assert.That(planDaySources, Has.All.Not.Contains("ITrainerRelationshipRepository"));
             Assert.That(planDaySources, Has.All.Not.Contains("LgymApi.Application.Coaching"));
         });
@@ -49,8 +41,8 @@ public sealed class PlanDayCoachingAuthorizationBoundaryGuardTests
             Assert.That(method.ReturnType, Is.EqualTo(typeof(Task<bool>)));
             Assert.That(parameters.Select(parameter => parameter.ParameterType), Is.EqualTo(new[]
             {
-                typeof(Id<User>),
-                typeof(Id<User>),
+                typeof(Id<AccountReference>),
+                typeof(Id<AccountReference>),
                 typeof(CancellationToken)
             }));
         });
@@ -104,7 +96,7 @@ public sealed class PlanDayCoachingAuthorizationBoundaryGuardTests
                     public {{dependencyType}} Dependency { get; init; } = default!;
                 }
             }
-            """, path: "LgymApi.Application/PlanDay/PlanDayDependencyFixture.cs");
+            """, path: "LgymApi.TrainingPlanning/PlanDay/PlanDayDependencyFixture.cs");
         var compilation = ArchitectureTestHelpers.CreateCompilation([tree]);
         Assert.That(
             compilation.GetDiagnostics().Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error),

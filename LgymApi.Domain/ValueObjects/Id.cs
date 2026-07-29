@@ -50,7 +50,7 @@ public readonly record struct Id<TEntity> : IComparable<Id<TEntity>>, IComparabl
         throw new ArgumentException($"Object must be of type {typeof(Id<TEntity>)}.", nameof(obj));
     }
 
-    public Id<TScope> Rebind<TScope>() => new(Value);
+    public Id<TTarget> Rebind<TTarget>() => new(Value);
 
     public static bool TryParse(string id, out Id<TEntity> parsedId)
     {

@@ -36,6 +36,13 @@ public sealed class SingleProductionDbContextGuardTests
                     PersistenceIdentityContract.DbContextSourcePath),
                 Throws.Nothing);
             Assert.That(
+                () => PersistenceTopologyGuardTestHelpers.EnsureSingleDesignTimeFactory(
+                    topology,
+                    PersistenceIdentityContract.DesignTimeFactoryTypeName,
+                    PersistenceIdentityContract.DesignTimeFactorySourcePath,
+                    PersistenceIdentityContract.DbContextTypeName),
+                Throws.Nothing);
+            Assert.That(
                 () => PersistenceTopologyGuardTestHelpers.EnsureExactDbSetIdentities(topology, PersistenceIdentityContract.DbSets),
                 Throws.Nothing);
             Assert.That(
@@ -157,6 +164,29 @@ public sealed class SingleProductionDbContextGuardTests
     }
 
     [Test]
+    public void Semantic_Fixture_Should_Reject_A_Second_Production_DesignTimeFactory()
+    {
+        const string sourcePath = "LgymApi.Infrastructure/Data/AppDbContextFactory.cs";
+        var topology = AnalyzeFixture(
+            sourcePath,
+            """
+            using Microsoft.EntityFrameworkCore;
+            using Microsoft.EntityFrameworkCore.Design;
+            sealed class AppDbContext : DbContext { }
+            sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext> { public AppDbContext CreateDbContext(string[] args) => null!; }
+            sealed class ReportingDbContextFactory : IDesignTimeDbContextFactory<AppDbContext> { public AppDbContext CreateDbContext(string[] args) => null!; }
+            """);
+
+        Assert.That(
+            () => PersistenceTopologyGuardTestHelpers.EnsureSingleDesignTimeFactory(
+                topology,
+                "AppDbContextFactory",
+                sourcePath,
+                "AppDbContext"),
+            Throws.InvalidOperationException.With.Message.Contains("Expected one production design-time DbContext factory"));
+    }
+
+    [Test]
     public void Semantic_Fixtures_Should_Detect_Duplicate_And_Missing_Configurations()
     {
         var duplicate = AnalyzeFixture("LgymApi.Infrastructure/Data/Configurations/Duplicate.cs", ConfigurationFixture("UserConfiguration", "SecondUserConfiguration"));
@@ -194,6 +224,28 @@ public sealed class SingleProductionDbContextGuardTests
         Assert.That(
             () => PersistenceTopologyGuardTestHelpers.EnsureSingleMigrationRoot(topology, PersistenceIdentityContract.MigrationRoot),
             Throws.InvalidOperationException.With.Message.Contains("Expected one migration root"));
+    }
+
+    [Test]
+    public void Semantic_Fixture_Should_Reject_A_Second_Model_Snapshot()
+    {
+        var topology = PersistenceTopologyGuardTestHelpers.Analyze(
+        [
+            new TopologySource(
+                "LgymApi.Infrastructure/Migrations/AppDbContextModelSnapshot.cs",
+                SnapshotFixture("AppDbContextModelSnapshot")),
+            new TopologySource(
+                "LgymApi.Infrastructure/Migrations/ReportingDbContextModelSnapshot.cs",
+                SnapshotFixture("ReportingDbContextModelSnapshot"))
+        ]);
+
+        Assert.That(
+            () => PersistenceTopologyGuardTestHelpers.EnsureSingleSnapshot(
+                topology,
+                "AppDbContextModelSnapshot",
+                "LgymApi.Infrastructure/Migrations/AppDbContextModelSnapshot.cs",
+                "AppDbContext"),
+            Throws.InvalidOperationException.With.Message.Contains("Expected one snapshot"));
     }
 
     [Test]
@@ -305,5 +357,10 @@ public sealed class SingleProductionDbContextGuardTests
     private static string MigrationFixture(string typeName)
     {
         return $"using Microsoft.EntityFrameworkCore; using Microsoft.EntityFrameworkCore.Infrastructure; using Microsoft.EntityFrameworkCore.Migrations; sealed class AppDbContext : DbContext {{ }} [DbContext(typeof(AppDbContext))] sealed class {typeName} : Migration {{ protected override void Up(MigrationBuilder builder) {{ }} protected override void Down(MigrationBuilder builder) {{ }} }}";
+    }
+
+    private static string SnapshotFixture(string typeName)
+    {
+        return $"using Microsoft.EntityFrameworkCore; using Microsoft.EntityFrameworkCore.Infrastructure; sealed class AppDbContext : DbContext {{ }} [DbContext(typeof(AppDbContext))] sealed class {typeName} : ModelSnapshot {{ protected override void BuildModel(ModelBuilder modelBuilder) {{ }} }}";
     }
 }

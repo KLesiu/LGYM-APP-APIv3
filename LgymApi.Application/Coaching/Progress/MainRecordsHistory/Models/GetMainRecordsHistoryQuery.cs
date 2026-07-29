@@ -1,6 +1,6 @@
 using LgymApi.Domain.ValueObjects;
-using UserEntity = LgymApi.Domain.Entities.User;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.Application.Coaching.Progress.MainRecordsHistory;
 
-public sealed record GetMainRecordsHistoryQuery(Id<UserEntity> TrainerId, Id<UserEntity> TraineeId);
+public sealed record GetMainRecordsHistoryQuery(Id<AccountReference> TrainerId, Id<AccountReference> TraineeId);

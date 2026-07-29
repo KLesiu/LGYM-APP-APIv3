@@ -9,6 +9,7 @@ using LgymApi.Application.Services;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.UnitTests.Fakes;
 using NSubstitute;
 
 namespace LgymApi.UnitTests;
@@ -16,18 +17,18 @@ namespace LgymApi.UnitTests;
 [TestFixture]
 public sealed class UserServiceAdminTests
 {
-    private IRoleRepository _roleRepository = null!;
+    private ConfigurableRoleRepository _roleRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
-    private IUserRepository _userRepository = null!;
+    private ConfigurableUserRepository _userRepository = null!;
     private UserAdminAccessService _adminAccessService = null!;
     private UserRoleAdministrationService _roleAdministrationService = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _roleRepository = Substitute.For<IRoleRepository>();
+        _roleRepository = new ConfigurableRoleRepository();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _userRepository = Substitute.For<IUserRepository>();
+        _userRepository = new ConfigurableUserRepository();
         _adminAccessService = new UserAdminAccessService(_roleRepository);
         _roleAdministrationService = new UserRoleAdministrationService(_userRepository, _roleRepository, _unitOfWork);
     }
@@ -38,7 +39,7 @@ public sealed class UserServiceAdminTests
         var result = await _adminAccessService.IsAdminAsync(Id<User>.Empty);
 
         result.Should().BeFalse();
-        await _roleRepository.DidNotReceive().UserHasPermissionAsync(Arg.Any<Id<User>>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        _roleRepository.Calls.Should().NotContain(call => call.Method == nameof(IRoleRepository.UserHasPermissionAsync));
     }
 
     [Test]
@@ -47,12 +48,20 @@ public sealed class UserServiceAdminTests
         using var cancellationSource = new CancellationTokenSource();
         var cancellationToken = cancellationSource.Token;
         var userId = Id<User>.New();
-        _roleRepository.UserHasPermissionAsync(userId, AuthConstants.Permissions.AdminAccess, cancellationToken).Returns(true);
+        _roleRepository.UserHasPermission = (_, _, _) => Task.FromResult(true);
 
         var result = await _adminAccessService.IsAdminAsync(userId, cancellationToken);
 
         result.Should().BeTrue();
-        await _roleRepository.Received(1).UserHasPermissionAsync(userId, AuthConstants.Permissions.AdminAccess, cancellationToken);
+        _roleRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IRoleRepository.UserHasPermissionAsync)
+                && call.Argument is ValueTuple<Id<User>, string> arguments
+                && arguments.Item1 == userId
+                && arguments.Item2 == AuthConstants.Permissions.AdminAccess
+                && call.CancellationToken == cancellationToken)
+            .Should()
+            .ContainSingle();
     }
 
     [Test]
@@ -62,17 +71,31 @@ public sealed class UserServiceAdminTests
         var cancellationToken = cancellationSource.Token;
         var user = new User { Id = Id<User>.New(), Name = "user", Email = "user@example.com" };
         var trainerRole = new Role { Id = Id<Role>.New(), Name = AuthConstants.Roles.Trainer };
-        _userRepository.FindByIdAsync(user.Id, cancellationToken).Returns(user);
-        _roleRepository.GetByNamesAsync(Arg.Is<IReadOnlyCollection<string>>(roles => roles.Single() == AuthConstants.Roles.Trainer), cancellationToken).Returns([trainerRole]);
-        _roleRepository.ReplaceUserRolesAsync(user.Id, Arg.Any<IReadOnlyCollection<Id<Role>>>(), cancellationToken).Returns(Task.CompletedTask);
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(user);
+        _roleRepository.GetByNames = (_, _) => Task.FromResult<List<Role>>([trainerRole]);
+        _roleRepository.ReplaceUserRoles = (_, _, _) => Task.CompletedTask;
 
         var result = await _roleAdministrationService.UpdateUserRolesAsync(user.Id, [" Trainer ", "trainer", ""], cancellationToken);
 
         result.IsSuccess.Should().BeTrue();
-        await _roleRepository.Received(1).GetByNamesAsync(
-            Arg.Is<IReadOnlyCollection<string>>(roles => roles.Count == 1 && roles.Single() == AuthConstants.Roles.Trainer),
-            cancellationToken);
-        await _roleRepository.Received(1).ReplaceUserRolesAsync(user.Id, Arg.Is<IReadOnlyCollection<Id<Role>>>(roleIds => roleIds.Single() == trainerRole.Id), cancellationToken);
+        _roleRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IRoleRepository.GetByNamesAsync)
+                && call.Argument is IReadOnlyCollection<string> roles
+                && roles.Count == 1
+                && roles.Single() == AuthConstants.Roles.Trainer
+                && call.CancellationToken == cancellationToken)
+            .Should()
+            .ContainSingle();
+        _roleRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IRoleRepository.ReplaceUserRolesAsync)
+                && call.Argument is ValueTuple<Id<User>, IReadOnlyCollection<Id<Role>>> arguments
+                && arguments.Item1 == user.Id
+                && arguments.Item2.Single() == trainerRole.Id
+                && call.CancellationToken == cancellationToken)
+            .Should()
+            .ContainSingle();
         await _unitOfWork.Received(1).SaveChangesAsync(cancellationToken);
     }
 
@@ -80,7 +103,7 @@ public sealed class UserServiceAdminTests
     public async Task UpdateUserRolesAsync_ReturnsUserNotFoundWithoutCommit_WhenTargetUserIsMissing()
     {
         var userId = Id<User>.New();
-        _userRepository.FindByIdAsync(userId, Arg.Any<CancellationToken>()).Returns((User?)null);
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(null);
 
         var result = await _roleAdministrationService.UpdateUserRolesAsync(userId, [AuthConstants.Roles.User]);
 
@@ -93,14 +116,14 @@ public sealed class UserServiceAdminTests
     public async Task UpdateUserRolesAsync_ReturnsInvalidUserErrorWithoutCommit_WhenRoleIsMissing()
     {
         var user = new User { Id = Id<User>.New(), Name = "user", Email = "user@example.com" };
-        _userRepository.FindByIdAsync(user.Id, Arg.Any<CancellationToken>()).Returns(user);
-        _roleRepository.GetByNamesAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>()).Returns([]);
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(user);
+        _roleRepository.GetByNames = (_, _) => Task.FromResult<List<Role>>([]);
 
         var result = await _roleAdministrationService.UpdateUserRolesAsync(user.Id, ["missing"]);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<InvalidUserError>();
-        await _roleRepository.DidNotReceive().ReplaceUserRolesAsync(Arg.Any<Id<User>>(), Arg.Any<IReadOnlyCollection<Id<Role>>>(), Arg.Any<CancellationToken>());
+        _roleRepository.Calls.Should().NotContain(call => call.Method == nameof(IRoleRepository.ReplaceUserRolesAsync));
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -111,8 +134,8 @@ public sealed class UserServiceAdminTests
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<InvalidUserError>();
-        await _userRepository.DidNotReceive().FindByIdAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>());
-        await _roleRepository.DidNotReceive().GetByNamesAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>());
+        _userRepository.Calls.Should().NotContain(call => call.Method == nameof(IUserRepository.FindByIdAsync));
+        _roleRepository.Calls.Should().NotContain(call => call.Method == nameof(IRoleRepository.GetByNamesAsync));
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 

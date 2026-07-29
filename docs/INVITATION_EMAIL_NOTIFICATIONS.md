@@ -49,6 +49,7 @@ Indexes:
 ## Runtime Topology
 
 - Notifications owns email intent policy and `NotificationMessages` write responsibility.
+- Notifications compiles the Dummy/SMTP senders, email options, metrics, six composers, and templates; Common retains the scheduled email payload and provider interfaces.
 - `LgymApi.BackgroundWorker` owns `EmailJob`, generic email scheduling, and the `CoachingEmailNotificationSchedulerAdapter` that maps the provider-neutral Coaching request to the retained Common payload.
 - The host composes module-owned registrations before Worker registration. The Worker project supplies runtime implementations and is not a separate host process.
 - The application remains one deployable with one `AppDbContext`, PostgreSQL database, and migration stream.
@@ -76,6 +77,7 @@ Notes:
 - If `Enabled=false`, scheduler short-circuits (no enqueue).
 - If `Enabled=true`, startup validation enforces required values and valid URL/email formats.
 - In `Dummy` mode, no SMTP connection is used and each outgoing email is saved as a text file in `DummyOutputDirectory`.
+- The twelve templates are sourced from `LgymApi.Notifications/EmailTemplates` and copied to `AppContext.BaseDirectory/EmailTemplates/<Template>/<en|pl>.email` for API and Integration runtime lookup.
 
 ## Verification Checklist
 

@@ -2,12 +2,13 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Features.Reporting;
+using LgymApi.Application.Reporting.Compatibility;
 using LgymApi.Application.Features.Reporting.Models;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using LgymApi.Resources;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -19,14 +20,18 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 [Authorize(Policy = AuthConstants.Policies.TrainerAccess)]
 public sealed partial class TrainerReportingController : ControllerBase
 {
-    private readonly IReportingService _reportingService;
-    private readonly IRecurringReportAssignmentService _recurringReportAssignmentService;
+    private readonly ITrainerReportTemplateApiPort _templates;
+    private readonly ITrainerReportRequestApiPort _requests;
+    private readonly ITrainerReportPhotoApiPort _photos;
+    private readonly IRecurringReportAssignmentApiPort _recurringAssignments;
     private readonly IMapper _mapper;
 
-    public TrainerReportingController(IReportingService reportingService, IRecurringReportAssignmentService recurringReportAssignmentService, IMapper mapper)
+    public TrainerReportingController(ITrainerReportTemplateApiPort templates, ITrainerReportRequestApiPort requests, ITrainerReportPhotoApiPort photos, IRecurringReportAssignmentApiPort recurringAssignments, IMapper mapper)
     {
-        _reportingService = reportingService;
-        _recurringReportAssignmentService = recurringReportAssignmentService;
+        _templates = templates;
+        _requests = requests;
+        _photos = photos;
+        _recurringAssignments = recurringAssignments;
         _mapper = mapper;
     }
 
@@ -34,8 +39,7 @@ public sealed partial class TrainerReportingController : ControllerBase
     [ProducesResponseType(typeof(ReportTemplateDto), StatusCodes.Status201Created)]
     public async Task<IActionResult> CreateTemplate([FromBody] UpsertReportTemplateRequest request, CancellationToken cancellationToken = default)
     {
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _reportingService.CreateTemplateAsync(trainer!, new CreateReportTemplateCommand
+        var result = await _templates.CreateAsync(HttpContext.GetAuthenticatedAccountContext()!, new CreateReportTemplateCommand
         {
             Name = request.Name,
             Description = request.Description,
@@ -54,8 +58,7 @@ public sealed partial class TrainerReportingController : ControllerBase
     [ProducesResponseType(typeof(List<ReportTemplateDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetTemplates(CancellationToken cancellationToken = default)
     {
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _reportingService.GetTrainerTemplatesAsync(trainer!, cancellationToken);
+        var result = await _templates.GetAllAsync(HttpContext.GetAuthenticatedAccountContext()!, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -75,8 +78,7 @@ public sealed partial class TrainerReportingController : ControllerBase
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _reportingService.GetTrainerTemplateAsync(trainer!, parsedTemplateId, cancellationToken);
+        var result = await _templates.GetAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTemplateId, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -96,8 +98,7 @@ public sealed partial class TrainerReportingController : ControllerBase
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _reportingService.UpdateTemplateAsync(trainer!, parsedTemplateId, new CreateReportTemplateCommand
+        var result = await _templates.UpdateAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTemplateId, new CreateReportTemplateCommand
         {
             Name = request.Name,
             Description = request.Description,
@@ -122,8 +123,7 @@ public sealed partial class TrainerReportingController : ControllerBase
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _reportingService.DeleteTemplateAsync(trainer!, parsedTemplateId, cancellationToken);
+        var result = await _templates.DeleteAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTemplateId, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -138,7 +138,7 @@ public sealed partial class TrainerReportingController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateReportRequest([FromRoute] string traineeId, [FromBody] CreateReportRequestRequest request, CancellationToken cancellationToken = default)
     {
-        if (!Id<LgymApi.Domain.Entities.User>.TryParse(traineeId, out var parsedTraineeId))
+        if (!Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId))
         {
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.UserIdRequired));
         }
@@ -148,8 +148,7 @@ public sealed partial class TrainerReportingController : ControllerBase
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _reportingService.CreateReportRequestAsync(trainer!, parsedTraineeId, new CreateReportRequestCommand
+        var result = await _requests.CreateAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTraineeId, new CreateReportRequestCommand
         {
             TemplateId = parsedTemplateId,
             DueAt = request.DueAt,
@@ -169,13 +168,12 @@ public sealed partial class TrainerReportingController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetTraineeSubmissions([FromRoute] string traineeId, CancellationToken cancellationToken = default)
     {
-        if (!Id<LgymApi.Domain.Entities.User>.TryParse(traineeId, out var parsedTraineeId))
+        if (!Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId))
         {
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.UserIdRequired));
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _reportingService.GetTraineeSubmissionsAsync(trainer!, parsedTraineeId, cancellationToken);
+        var result = await _requests.GetSubmissionsAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTraineeId, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -190,7 +188,7 @@ public sealed partial class TrainerReportingController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> UpdateSubmissionFeedback([FromRoute] string traineeId, [FromRoute] string submissionId, [FromBody] UpdateReportSubmissionFeedbackRequest request, CancellationToken cancellationToken = default)
     {
-        if (!Id<LgymApi.Domain.Entities.User>.TryParse(traineeId, out var parsedTraineeId))
+        if (!Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId))
         {
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.UserIdRequired));
         }
@@ -200,9 +198,8 @@ public sealed partial class TrainerReportingController : ControllerBase
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _reportingService.UpdateTrainerFeedbackAsync(
-            trainer!,
+        var result = await _requests.UpdateFeedbackAsync(
+            HttpContext.GetAuthenticatedAccountContext()!,
             parsedTraineeId,
             parsedSubmissionId,
             new UpdateReportSubmissionFeedbackCommand

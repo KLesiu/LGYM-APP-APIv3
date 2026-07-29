@@ -9,11 +9,8 @@ namespace LgymApi.Infrastructure;
 
 public static partial class ServiceCollectionExtensions
 {
-    private static void AddPlatformPagination(IServiceCollection services)
+    private static void AddPlatformMapperRegistry(IServiceCollection services)
     {
-        services.AddScoped<GridifyExecutionService>();
-        services.AddScoped<GridifyExecutionServiceContract>(sp => sp.GetRequiredService<GridifyExecutionService>());
-        services.AddScoped<IQueryPaginationService, QueryPaginationFacade>();
         services.AddSingleton<IMapperRegistry>(sp =>
         {
             var registry = new MapperRegistry();

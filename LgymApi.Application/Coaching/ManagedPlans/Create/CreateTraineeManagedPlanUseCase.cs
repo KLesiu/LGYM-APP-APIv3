@@ -10,12 +10,12 @@ namespace LgymApi.Application.Coaching.ManagedPlans.Create;
 
 internal sealed class CreateTraineeManagedPlanUseCase : ICreateTraineeManagedPlanUseCase
 {
-    private readonly ICoachingRelationshipAccessService _relationshipAccess;
+    private readonly IMarkerCoachingRelationshipAccessService _relationshipAccess;
     private readonly OwnerCreateUseCase _owner;
     private readonly IMapper _mapper;
 
     public CreateTraineeManagedPlanUseCase(
-        ICoachingRelationshipAccessService relationshipAccess,
+        IMarkerCoachingRelationshipAccessService relationshipAccess,
         OwnerCreateUseCase owner,
         IMapper mapper)
     {

@@ -26,6 +26,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LgymApi.DataSeeder\LgymApi.DataSeeder.csproj" />
+    <ProjectReference Include="..\LgymApi.Domain\LgymApi.Domain.csproj" />
+    <ProjectReference Include="..\LgymApi.Identity\LgymApi.Identity.csproj" />
     <ProjectReference Include="..\LgymApi.Infrastructure\LgymApi.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

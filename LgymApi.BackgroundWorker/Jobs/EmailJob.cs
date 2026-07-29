@@ -1,8 +1,6 @@
 using Hangfire;
 using LgymApi.BackgroundWorker.Common.Notifications;
 using LgymApi.BackgroundWorker.Common.Jobs;
-using LgymApi.Domain.Entities;
-using LgymApi.Domain.ValueObjects;
 
 namespace LgymApi.Infrastructure.Jobs;
 
@@ -17,7 +15,7 @@ public sealed class EmailJob : IEmailJob
 
     [AutomaticRetry(Attempts = 3, DelaysInSeconds = new[] { 60, 300, 900 })]
     [DisableConcurrentExecution(60)]
-    public Task ExecuteAsync(Id<NotificationMessage> notificationId)
+    public Task ExecuteAsync(string notificationId)
     {
         return _handler.ProcessAsync(notificationId);
     }

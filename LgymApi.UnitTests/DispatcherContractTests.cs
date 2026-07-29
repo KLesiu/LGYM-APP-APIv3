@@ -20,7 +20,7 @@ public sealed class DispatcherContractTests
         $"{PlatformBackgroundCommandsNamespace}.CommandEnvelopeStageResult";
 
     [Test]
-    public void ApplicationICommandDispatcher_HasExactLegacyPublicShape()
+    public void PlatformICommandDispatcher_HasExactLegacyPublicShape()
     {
         var actionCommandType = GetApplicationType(ApplicationActionCommandTypeName);
         var dispatcherType = GetApplicationType(ApplicationCommandDispatcherTypeName);
@@ -55,16 +55,22 @@ public sealed class DispatcherContractTests
     [Test]
     public void ApplicationPlatformCommandPorts_DoNotExposeWorkerOrHangfireTypes()
     {
-        var applicationAssembly = typeof(LgymApi.Application.ServiceCollectionExtensions).Assembly;
-        var portTypes = applicationAssembly.GetExportedTypes()
+        var platformAssembly = typeof(ICommandDispatcher).Assembly;
+        var portTypes = platformAssembly.GetExportedTypes()
             .Where(type => type.Namespace == PlatformBackgroundCommandsNamespace)
             .OrderBy(type => type.Name)
             .ToArray();
 
         portTypes.Select(type => type.FullName).Should().Equal(
+            "LgymApi.Application.Platform.Contracts.BackgroundCommands.CommandEnvelopeFinalization",
+            "LgymApi.Application.Platform.Contracts.BackgroundCommands.CommandEnvelopeReceipt",
+            "LgymApi.Application.Platform.Contracts.BackgroundCommands.CommandEnvelopeRequest",
             CommandEnvelopeStageResultTypeName,
+            "LgymApi.Application.Platform.Contracts.BackgroundCommands.CommandEnvelopeStart",
+            "LgymApi.Application.Platform.Contracts.BackgroundCommands.CommandHandlerResult",
             ApplicationActionCommandTypeName,
             ApplicationCommandDispatcherTypeName,
+            "LgymApi.Application.Platform.Contracts.BackgroundCommands.ICommandEnvelopeRuntime",
             ApplicationCommandOutboxWriterTypeName);
 
         var exposedSignatureTypes = portTypes
@@ -140,8 +146,8 @@ public sealed class DispatcherContractTests
 
     private static Type GetApplicationType(string metadataName)
     {
-        var type = typeof(LgymApi.Application.ServiceCollectionExtensions).Assembly.GetType(metadataName);
-        type.Should().NotBeNull($"{metadataName} must be defined by the Application assembly");
+        var type = typeof(ICommandDispatcher).Assembly.GetType(metadataName);
+        type.Should().NotBeNull($"{metadataName} must be defined by the Platform assembly");
         return type!;
     }
 

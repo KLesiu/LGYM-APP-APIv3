@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LgymApi.BackgroundWorker.Common\LgymApi.BackgroundWorker.Common.csproj" />
+    <ProjectReference Include="..\LgymApi.Domain\LgymApi.Domain.csproj" />
+    <ProjectReference Include="..\LgymApi.Identity\LgymApi.Identity.csproj" />
+    <ProjectReference Include="..\LgymApi.Platform\LgymApi.Platform.csproj" />
+    <ProjectReference Include="..\LgymApi.Resources\LgymApi.Resources.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Apis.Auth" />
+    <PackageReference Include="MailKit" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="EmailTemplates\**\*.email">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

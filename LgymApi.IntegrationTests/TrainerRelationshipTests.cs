@@ -125,7 +125,7 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
         using (var scope = Factory.Services.CreateScope())
         {
             var handler = scope.ServiceProvider.GetRequiredService<IEmailJobHandler>();
-            await handler.ProcessAsync(notificationId);
+            await handler.ProcessAsync(notificationId.ToString());
         }
 
         using (var verifyScope = Factory.Services.CreateScope())
@@ -176,7 +176,7 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
         using (var scope = Factory.Services.CreateScope())
         {
             var handler = scope.ServiceProvider.GetRequiredService<IEmailJobHandler>();
-            await handler.ProcessAsync(notificationId);
+            await handler.ProcessAsync(notificationId.ToString());
         }
 
         Factory.EmailSender.SentMessages.Should().ContainSingle();
@@ -219,7 +219,7 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
         using (var scope = Factory.Services.CreateScope())
         {
             var handler = scope.ServiceProvider.GetRequiredService<IEmailJobHandler>();
-            var act = async () => await handler.ProcessAsync(notificationId);
+            var act = async () => await handler.ProcessAsync(notificationId.ToString());
             await act.Should().ThrowAsync<InvalidOperationException>();
         }
 
@@ -271,9 +271,9 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
         using (var scope = Factory.Services.CreateScope())
         {
             var handler = scope.ServiceProvider.GetRequiredService<IEmailJobHandler>();
-            var act = async () => await handler.ProcessAsync(notificationId);
+            var act = async () => await handler.ProcessAsync(notificationId.ToString());
             await act.Should().ThrowAsync<InvalidOperationException>();
-            await handler.ProcessAsync(notificationId);
+            await handler.ProcessAsync(notificationId.ToString());
         }
 
         using (var verifyScope = Factory.Services.CreateScope())
@@ -1362,6 +1362,24 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
         SetAuthorizationHeader(trainerA.Id);
         var assignResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/plans/{planId}/assign", null);
         assignResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Test]
+    public async Task TrainerPlanManagement_AsNonTrainer_ReturnsForbiddenWithLegacyMessage()
+    {
+        var user = await SeedUserAsync("managed-plan-non-trainer", "managed-plan-non-trainer@example.com");
+        var trainee = await SeedUserAsync("managed-plan-target", "managed-plan-target@example.com");
+        SetAuthorizationHeader(user.Id);
+
+        var response = await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/plans", new
+        {
+            name = "Forbidden plan"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        body.Should().NotBeNull();
+        body!.Message.Should().Be(CompatibilityResourceMessage.InCulture("en", () => Messages.Unauthorized));
     }
 
     private static async Task LinkTrainerAndTraineeAsync(AppDbContext db, Id<User> trainerId, Id<User> traineeId)

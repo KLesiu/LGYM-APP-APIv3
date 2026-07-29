@@ -6,7 +6,7 @@ using FluentAssertions;
 using LgymApi.Application.Repositories;
 using LgymApi.BackgroundWorker.Common.Notifications;
 using LgymApi.BackgroundWorker.Common.Notifications.Models;
-using LgymApi.BackgroundWorker.Notifications;
+using LgymApi.Application.Notifications.Email;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.Notifications;
@@ -27,7 +27,7 @@ public sealed class WelcomeEmailJobTests
         var handler = new FakeEmailJobHandler();
         var job = new WelcomeEmailJob(handler);
 
-        await job.ExecuteAsync(notificationId);
+        await job.ExecuteAsync(notificationId.ToString());
 
         handler.Calls.Should().Be(1);
         handler.LastNotificationId.Should().Be(notificationId);
@@ -56,7 +56,7 @@ public sealed class WelcomeEmailJobTests
             new NoopEmailMetrics(),
             NullLogger<EmailJobHandlerService>.Instance);
 
-        await handler.ProcessAsync(notification.Id);
+        await handler.ProcessAsync(notification.Id.ToString());
 
         sender.SendCalls.Should().Be(0);
         repository.TransitionCalls.Should().Be(1);
@@ -67,10 +67,15 @@ public sealed class WelcomeEmailJobTests
         public int Calls { get; private set; }
         public Id<NotificationMessage> LastNotificationId { get; private set; }
 
-        public Task ProcessAsync(Id<NotificationMessage> notificationId, CancellationToken cancellationToken = default)
+        public Task ProcessAsync(string notificationId, CancellationToken cancellationToken = default)
         {
             Calls += 1;
-            LastNotificationId = notificationId;
+            if (!Id<NotificationMessage>.TryParse(notificationId, out var parsedNotificationId))
+            {
+                throw new FormatException("Notification ID must be a valid ID.");
+            }
+
+            LastNotificationId = parsedNotificationId;
             return Task.CompletedTask;
         }
     }

@@ -1,35 +1,38 @@
 using LgymApi.Application.Repositories;
-using LgymApi.Domain.Entities;
+using LgymApi.Application.WorkoutProgress.Persistence;
+using LgymApi.Application.WorkoutProgress.ProgressData.Models;
+using LgymApi.Application.TrainingPlanning.Contracts.PlanDay;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts.Accounts;
 
 namespace LgymApi.Application.Features.Exercise;
 
 public sealed partial class ExerciseService : IExerciseService
 {
-    private readonly IUserRepository _userRepository;
-    private readonly IRoleRepository _roleRepository;
-    private readonly IExerciseRepository _exerciseRepository;
-    private readonly IExerciseScoreRepository _exerciseScoreRepository;
+    private readonly IAccountAccessReader _accountAccess;
+    private readonly IWorkoutExercisePersistence _exerciseRepository;
+    private readonly IWorkoutExerciseScorePersistence _exerciseScoreRepository;
+    private readonly IPlanDayReferenceReadService _planDayReferences;
     private readonly IUnitOfWork _unitOfWork;
 
     public ExerciseService(
-        IUserRepository userRepository,
-        IRoleRepository roleRepository,
-        IExerciseRepository exerciseRepository,
-        IExerciseScoreRepository exerciseScoreRepository,
+        IAccountAccessReader accountAccess,
+        IWorkoutExercisePersistence exerciseRepository,
+        IWorkoutExerciseScorePersistence exerciseScoreRepository,
+        IPlanDayReferenceReadService planDayReferences,
         IUnitOfWork unitOfWork)
     {
-        _userRepository = userRepository;
-        _roleRepository = roleRepository;
+        _accountAccess = accountAccess;
         _exerciseRepository = exerciseRepository;
         _exerciseScoreRepository = exerciseScoreRepository;
+        _planDayReferences = planDayReferences;
         _unitOfWork = unitOfWork;
     }
 
-    private async Task<Dictionary<Id<Domain.Entities.Exercise>, string>> GetTranslationsForExercisesAsync(IEnumerable<Domain.Entities.Exercise> exercises, IReadOnlyList<string> cultures, CancellationToken cancellationToken)
+    private async Task<Dictionary<Id<Domain.Entities.Exercise>, string>> GetTranslationsForExercisesAsync(IEnumerable<WorkoutExercisePersistenceModel> exercises, IReadOnlyList<string> cultures, CancellationToken cancellationToken)
     {
         var globalIds = exercises
-            .Where(e => e.UserId == null)
+            .Where(e => e.OwnerId == null)
             .Select(e => e.Id)
             .ToList();
 
@@ -39,6 +42,13 @@ public sealed partial class ExerciseService : IExerciseService
         }
 
         var translations = await _exerciseRepository.GetTranslationsAsync(globalIds, cultures, cancellationToken);
-        return translations;
+        return translations.ToDictionary(pair => pair.Key, pair => pair.Value);
     }
+
+    private static ProgressExerciseReadModel MapExercise(WorkoutExercisePersistenceModel exercise)
+        => new(exercise.Id, exercise.Name, exercise.OwnerId, exercise.BodyPart, exercise.EloFormula, exercise.Description, exercise.Image);
+
+    private static WorkoutExerciseScoreReadModel MapScore(WorkoutExerciseScorePersistenceModel score)
+        => new(score.Id, score.ExerciseId, score.Weight, score.Unit, score.Reps, score.Series,
+            score.Training is null ? null : new WorkoutScoreTrainingReadModel(score.Training.Id, score.Training.GymId, score.Training.Gym?.Name, score.Training.CreatedAt));
 }

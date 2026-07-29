@@ -3,19 +3,22 @@ using FluentAssertions;
 using LgymApi.Api.Features.Trainer.Controllers;
 using LgymApi.Api.Features.User.Contracts;
 using LgymApi.Api.Features.User.Controllers;
+using LgymApi.Api.Middleware;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.EloRegistry;
 using LgymApi.Application.Features.PasswordReset;
 using LgymApi.Application.Features.User.Models;
+using LgymApi.Application.Identity.ApiCompatibility;
 using LgymApi.Application.Identity.Contracts.Administration;
 using LgymApi.Application.Identity.Contracts.Authentication;
-using LgymApi.Application.Identity.Contracts.Profile;
 using LgymApi.Application.Identity.Contracts.Ranking;
 using LgymApi.Application.Identity.Contracts.Sessions;
 using LgymApi.Application.WorkoutProgress.Ranking;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Domain.Entities;
+using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
@@ -135,33 +138,65 @@ public sealed class AuthenticationControllerContractTests
     [Test]
     public async Task UserController_CheckToken_PopulatesLatestEloBeforeMapping()
     {
-        var currentUser = new User();
-        var userInfo = new UserInfoResult { Elo = 1000 };
-        var userProfileService = Substitute.For<IUserProfileService>();
+        var accountId = Id<AccountReference>.New();
+        var account = new AccountProfileProjection(accountId, "user", "user@example.com", null, "rank", "UTC", DateTime.UtcNow, DateTime.UtcNow, 1000, null, false, true, [], [], false);
+        var authenticatedAccountApiAdapter = Substitute.For<IAuthenticatedAccountApiAdapter>();
+        var accountEloApiAdapter = Substitute.For<IAccountEloApiAdapter>();
         var eloRegistryService = Substitute.For<IEloRegistryService>();
         var mapper = Substitute.For<IMapper>();
-        userProfileService.CheckTokenAsync(currentUser, Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(Result<UserInfoResult, AppError>.Success(userInfo)));
-        eloRegistryService.PopulateLatestEloAsync(userInfo, Arg.Any<CancellationToken>())
+        authenticatedAccountApiAdapter.CheckTokenAsync(accountId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(Result<AccountProfileProjection, AppError>.Success(account)));
+        accountEloApiAdapter.PopulateLatestEloAsync(account, Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                userInfo.Elo = 1200;
-                return Task.CompletedTask;
+                return Task.FromResult(account with { Elo = 1200 });
             });
-        mapper.Map<UserInfoResult, UserInfoDto>(userInfo).Returns(_ =>
-        {
-            userInfo.Elo.Should().Be(1200);
-            return new UserInfoDto();
-        });
+        mapper.Map<AccountProfileProjection, UserInfoDto>(Arg.Is<AccountProfileProjection>(value => value.Elo == 1200)).Returns(new UserInfoDto());
         var context = new DefaultHttpContext();
-        context.Items["User"] = currentUser;
-        var controller = CreateUserController(eloRegistryService, mapper, userProfileService: userProfileService);
+        context.Features.Set<IAuthenticatedAccountContextFeature>(new AuthenticatedAccountContextFeature(
+            new AuthenticatedAccountContext(accountId, null, [], [], false, false)));
+        var controller = CreateUserController(
+            eloRegistryService,
+            mapper,
+            authenticatedAccountApiAdapter: authenticatedAccountApiAdapter,
+            accountEloApiAdapter: accountEloApiAdapter);
         controller.ControllerContext = new ControllerContext { HttpContext = context };
 
         var action = await controller.CheckToken();
 
         action.Should().BeOfType<OkObjectResult>();
-        await eloRegistryService.Received(1).PopulateLatestEloAsync(userInfo, Arg.Any<CancellationToken>());
+        await authenticatedAccountApiAdapter.Received(1).CheckTokenAsync(accountId, Arg.Any<CancellationToken>());
+        await accountEloApiAdapter.Received(1).PopulateLatestEloAsync(account, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UserController_CheckToken_MapsEloEnrichedMarkerProjection()
+    {
+        var accountId = Id<AccountReference>.New();
+        var account = new AccountProfileProjection(accountId, "user", "user@example.com", null, "rank", "UTC", DateTime.UtcNow, DateTime.UtcNow, 1000, null, false, true, [], [], false);
+        var authenticatedAccountApiAdapter = Substitute.For<IAuthenticatedAccountApiAdapter>();
+        var accountEloApiAdapter = Substitute.For<IAccountEloApiAdapter>();
+        var mapper = Substitute.For<IMapper>();
+        authenticatedAccountApiAdapter.CheckTokenAsync(accountId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(Result<AccountProfileProjection, AppError>.Success(account)));
+        accountEloApiAdapter.PopulateLatestEloAsync(account, Arg.Any<CancellationToken>()).Returns(Task.FromResult(account));
+        mapper.Map<AccountProfileProjection, UserInfoDto>(account).Returns(_ =>
+        {
+            return new UserInfoDto();
+        });
+        var context = new DefaultHttpContext();
+        context.Features.Set<IAuthenticatedAccountContextFeature>(new AuthenticatedAccountContextFeature(
+            new AuthenticatedAccountContext(accountId, null, [], [], false, false)));
+        var controller = CreateUserController(
+            Substitute.For<IEloRegistryService>(),
+            mapper,
+            authenticatedAccountApiAdapter: authenticatedAccountApiAdapter,
+            accountEloApiAdapter: accountEloApiAdapter);
+        controller.ControllerContext = new ControllerContext { HttpContext = context };
+
+        var action = await controller.CheckToken();
+
+        action.Should().BeOfType<OkObjectResult>();
     }
 
     [Test]
@@ -196,48 +231,50 @@ public sealed class AuthenticationControllerContractTests
     [Test]
     public async Task TrainerAuthController_CheckToken_PopulatesLatestEloBeforeMapping()
     {
-        var currentUser = new User();
-        var userInfo = new UserInfoResult { Elo = 1000 };
-        var userProfileService = Substitute.For<IUserProfileService>();
+        var accountId = Id<AccountReference>.New();
+        var account = new AccountProfileProjection(accountId, "trainer", "trainer@example.com", null, "rank", "UTC", DateTime.UtcNow, DateTime.UtcNow, 1000, null, false, true, [], [], false);
+        var authenticatedAccountApiAdapter = Substitute.For<IAuthenticatedAccountApiAdapter>();
+        var accountEloApiAdapter = Substitute.For<IAccountEloApiAdapter>();
         var eloRegistryService = Substitute.For<IEloRegistryService>();
         var mapper = Substitute.For<IMapper>();
-        userProfileService.CheckTokenAsync(currentUser, Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(Result<UserInfoResult, AppError>.Success(userInfo)));
-        eloRegistryService.PopulateLatestEloAsync(userInfo, Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                userInfo.Elo = 1200;
-                return Task.CompletedTask;
-            });
-        mapper.Map<UserInfoResult, UserInfoDto>(userInfo).Returns(_ =>
+        authenticatedAccountApiAdapter.CheckTokenAsync(accountId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(Result<AccountProfileProjection, AppError>.Success(account)));
+        accountEloApiAdapter.PopulateLatestEloAsync(account, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(account with { Elo = 1200 }));
+        mapper.Map<AccountProfileProjection, UserInfoDto>(Arg.Is<AccountProfileProjection>(value => value.Elo == 1200)).Returns(_ =>
         {
-            userInfo.Elo.Should().Be(1200);
             return new UserInfoDto();
         });
         var context = new DefaultHttpContext();
-        context.Items["User"] = currentUser;
-        var controller = CreateTrainerAuthController(eloRegistryService, mapper, userProfileService: userProfileService);
+        context.Features.Set<IAuthenticatedAccountContextFeature>(new AuthenticatedAccountContextFeature(
+            new AuthenticatedAccountContext(accountId, null, [], [], false, false)));
+        var controller = CreateTrainerAuthController(
+            eloRegistryService,
+            mapper,
+            authenticatedAccountApiAdapter: authenticatedAccountApiAdapter,
+            accountEloApiAdapter: accountEloApiAdapter);
         controller.ControllerContext = new ControllerContext { HttpContext = context };
 
         var action = await controller.CheckToken();
 
         action.Should().BeOfType<OkObjectResult>();
-        await eloRegistryService.Received(1).PopulateLatestEloAsync(userInfo, Arg.Any<CancellationToken>());
+        await authenticatedAccountApiAdapter.Received(1).CheckTokenAsync(accountId, Arg.Any<CancellationToken>());
+        await accountEloApiAdapter.Received(1).PopulateLatestEloAsync(account, Arg.Any<CancellationToken>());
     }
 
     private static UserController CreateUserController(
         IEloRegistryService eloRegistryService,
         IMapper mapper,
         IUserCredentialLoginService? userCredentialLoginService = null,
-        IUserProfileService? userProfileService = null)
+        IAuthenticatedAccountApiAdapter? authenticatedAccountApiAdapter = null,
+        IAccountEloApiAdapter? accountEloApiAdapter = null)
     {
         return new UserController(
             userCredentialLoginService ?? Substitute.For<IUserCredentialLoginService>(),
-            Substitute.For<IUserSessionTerminationService>(),
-            userProfileService ?? Substitute.For<IUserProfileService>(),
-            Substitute.For<IUserRankingService>(),
+            authenticatedAccountApiAdapter ?? Substitute.For<IAuthenticatedAccountApiAdapter>(),
             Substitute.For<IWorkoutProgressRankingReadService>(),
-            Substitute.For<IUserAdminAccessService>(),
+            Substitute.For<IAccountAccessApiAdapter>(),
+            accountEloApiAdapter ?? Substitute.For<IAccountEloApiAdapter>(),
             eloRegistryService,
             Substitute.For<IPasswordResetService>(),
             mapper);
@@ -247,11 +284,13 @@ public sealed class AuthenticationControllerContractTests
         IEloRegistryService eloRegistryService,
         IMapper mapper,
         IUserCredentialLoginService? userCredentialLoginService = null,
-        IUserProfileService? userProfileService = null)
+        IAuthenticatedAccountApiAdapter? authenticatedAccountApiAdapter = null,
+        IAccountEloApiAdapter? accountEloApiAdapter = null)
     {
         return new TrainerAuthController(
             userCredentialLoginService ?? Substitute.For<IUserCredentialLoginService>(),
-            userProfileService ?? Substitute.For<IUserProfileService>(),
+            authenticatedAccountApiAdapter ?? Substitute.For<IAuthenticatedAccountApiAdapter>(),
+            accountEloApiAdapter ?? Substitute.For<IAccountEloApiAdapter>(),
             eloRegistryService,
             mapper);
     }

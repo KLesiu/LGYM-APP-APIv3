@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Hangfire;
 using LgymApi.Application.Abstractions.Storage;
+using LgymApi.Application.Coaching.ManagedPlans;
 using LgymApi.Application.Platform.ReferenceData.AppConfig;
 using LgymApi.Application.Platform.ReferenceData.AppConfig.Contracts;
 using LgymApi.Application.Platform.ReferenceData.Enums;
@@ -13,15 +14,19 @@ using LgymApi.Application.Notifications.Contracts.Push;
 using LgymApi.Application.Pagination;
 using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using LgymApi.Application.Repositories;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Application.Services;
+using LgymApi.Application.WorkoutProgress.Adapters;
 using LgymApi.BackgroundWorker;
 using LgymApi.BackgroundWorker.Common.Notifications;
 using LgymApi.BackgroundWorker.Notifications;
 using LgymApi.BackgroundWorker.Runtime;
 using LgymApi.BackgroundWorker.Services;
+using LgymApi.Notifications;
 using LgymApi.Domain.Enums;
 using LgymApi.Infrastructure.Pagination;
 using LgymApi.Infrastructure.Repositories;
+using LgymApi.Infrastructure.Repositories.Reporting;
 using LgymApi.Infrastructure.Repositories.ReferenceData;
 using LgymApi.Infrastructure.Services;
 using LgymApi.Infrastructure.UnitOfWork;
@@ -35,6 +40,12 @@ namespace LgymApi.IntegrationTests;
 [TestFixture]
 public sealed class CompositionRootStartupTests : IntegrationTestBase
 {
+    [Test]
+    public void Worker_Facade_Should_Remain_The_Composition_Entry_Point()
+    {
+        typeof(BackgroundWorkerRecurringJobs).Assembly.GetName().Name.Should().Be("LgymApi.BackgroundWorker");
+    }
+
     [Test]
     public void TestingApiHost_ResolvesCanonicalPlatformAndProviderServices()
     {
@@ -93,11 +104,11 @@ public sealed class CompositionRootStartupTests : IntegrationTestBase
         services.GetServices<IPushBackgroundScheduler>().Should().ContainSingle()
             .Which.Should().BeOfType<NoOpPushBackgroundScheduler>();
         services.GetServices<IPushProviderSender>().Should().ContainSingle()
-            .Which.Should().BeOfType<FcmPushSender>();
+            .Which.Should().BeSameAs(Factory.PushSender);
         services.GetServices<IPhotoStorageProvider>().Should().ContainSingle()
             .Which.Should().BeOfType<LocalPhotoStorageProvider>();
-        services.GetServices<IPhotoUploadInitTracker>().Should().ContainSingle()
-            .Which.Should().BeOfType<DbPhotoUploadInitTracker>();
+        services.GetServices<IReportPhotoPersistence>().Should().ContainSingle()
+            .Which.Should().BeOfType<ReportPhotoPersistenceRepository>();
         services.GetServices<ITokenService>().Should().ContainSingle()
             .Which.Should().BeOfType<TokenService>();
         services.GetServices<IGoogleTokenValidator>().Should().ContainSingle()
@@ -106,15 +117,25 @@ public sealed class CompositionRootStartupTests : IntegrationTestBase
             .Which.Should().BeOfType<LegacyPasswordService>();
         services.GetServices<IUserSessionStore>().Should().ContainSingle()
             .Which.Should().BeOfType<UserSessionStore>();
+        services.GetServices<LgymApi.Application.Identity.Contracts.Sessions.IAccountSessionDisassociationPort>()
+            .Should()
+            .ContainSingle()
+            .Which
+            .GetType()
+            .FullName
+            .Should()
+            .Be("LgymApi.Application.Notifications.Adapters.PushInstallationSessionDisassociationAdapter");
         services.GetServices<IEmailSender>().Should().ContainSingle()
             .Which.Should().BeSameAs(Factory.EmailSender);
         var emailTemplateComposers = services.GetServices<IEmailTemplateComposer>().ToArray();
         emailTemplateComposers.Should().HaveCount(6);
         emailTemplateComposers.Select(composer => composer.GetType()).Should().OnlyHaveUniqueItems();
         var mappingProfiles = services.GetServices<IMappingProfile>().ToArray();
-        mappingProfiles.Should().HaveCount(36);
+        mappingProfiles.Should().HaveCount(44);
         mappingProfiles.Select(profile => profile.GetType()).Should().OnlyHaveUniqueItems();
         mappingProfiles.OfType<EnumLookupMappingProfile>().Should().ContainSingle();
+        mappingProfiles.OfType<PlanExerciseWorkoutAdapterMappingProfile>().Should().ContainSingle();
+        mappingProfiles.OfType<ManagedPlanCollaborationMappingProfile>().Should().ContainSingle();
         services.GetService<JobStorage>().Should().BeNull();
     }
 
@@ -143,6 +164,8 @@ public sealed class CompositionRootStartupTests : IntegrationTestBase
             .Which.Should().BeOfType<CloudflareR2PhotoStorageProvider>();
         scope.ServiceProvider.GetServices<IPushBackgroundScheduler>().Should().ContainSingle()
             .Which.Should().BeOfType<NoOpPushBackgroundScheduler>();
+        scope.ServiceProvider.GetServices<IPushProviderSender>().Should().ContainSingle()
+            .Which.Should().BeSameAs(baseFactory.PushSender);
         scope.ServiceProvider.GetService<JobStorage>().Should().BeNull();
     }
 

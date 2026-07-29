@@ -7,15 +7,15 @@ namespace LgymApi.ArchitectureTests;
 [TestFixture]
 public sealed class IdentityAccountContractBoundaryGuardTests
 {
-    private const string ContractsPath = "LgymApi.Application/Identity/Contracts/Accounts/";
+    private const string ContractsPath = "LgymApi.Identity/Contracts/Accounts/";
     private const string UserMetadataName = "LgymApi.Domain.Entities.User";
-    private const string UserRepositoryMetadataName = "LgymApi.Application.Repositories.IUserRepository";
+    private const string RoleMetadataName = "LgymApi.Domain.Entities.Role";
     private const string TypedIdMetadataName = "LgymApi.Domain.ValueObjects.Id`1";
 
     [Test]
     public void IdentityAccountContracts_Should_NotExposeUserEntitiesOrRepositories()
     {
-        var (_, compilation, syntaxTrees) = ArchitectureTestHelpers.PrepareCompilation("LgymApi.Application");
+        var (_, compilation, syntaxTrees) = ArchitectureTestHelpers.PrepareCompilation("LgymApi.Identity");
 
         Assert.That(
             CollectViolations(compilation, syntaxTrees.Where(tree => IsContractPath(tree.FilePath))),
@@ -34,24 +34,22 @@ public sealed class IdentityAccountContractBoundaryGuardTests
         """,
         UserMetadataName)]
     [TestCase(
-        "UserRepositoryLeak.cs",
+        "NestedEntityLeak.cs",
         """
-        using LgymApi.Application.Repositories;
+        using LgymApi.Application.BuildingBlocks.Results;
+        using LgymApi.Domain.Entities;
 
-        namespace LgymApi.Application.Identity.Contracts.Accounts;
+        namespace LgymApi.Identity.Contracts.Accounts;
 
-        public interface IUserRepositoryLeak
-        {
-            IUserRepository Repository { get; }
-        }
+        public sealed record NestedEntityLeak(Result<IReadOnlyList<Role>, string> Roles);
         """,
-        UserRepositoryMetadataName)]
+        RoleMetadataName)]
     public void IdentityAccountContractFixture_WithImplementationLeak_IsRejected(
         string fileName,
         string source,
         string expectedLeak)
     {
-        var (repositoryRoot, compilation, _) = ArchitectureTestHelpers.PrepareCompilation("LgymApi.Application");
+        var (repositoryRoot, compilation, _) = ArchitectureTestHelpers.PrepareCompilation("LgymApi.Identity");
         var fixture = CSharpSyntaxTree.ParseText(
             source,
             path: Path.Combine(repositoryRoot, ContractsPath, fileName));
@@ -84,7 +82,7 @@ public sealed class IdentityAccountContractBoundaryGuardTests
                     foreach (var exposedType in EnumerateNamedTypes(semanticModel.GetTypeInfo(typeSyntax).Type))
                     {
                         var metadataName = GetMetadataName(exposedType.OriginalDefinition);
-                        if (metadataName is not (UserMetadataName or UserRepositoryMetadataName))
+                        if (metadataName is not (UserMetadataName or RoleMetadataName))
                         {
                             continue;
                         }

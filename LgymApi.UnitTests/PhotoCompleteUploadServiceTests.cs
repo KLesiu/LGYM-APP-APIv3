@@ -5,6 +5,7 @@ using LgymApi.Application.Reporting.Errors;
 using LgymApi.Application.Features.Reporting;
 using LgymApi.Application.Features.Reporting.Models;
 using LgymApi.Application.Repositories;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
@@ -28,17 +29,28 @@ public sealed class PhotoCompleteUploadServiceTests
         var existingPhotos = new List<Photo> { oldPhoto };
         Photo? savedPhoto = null;
 
-        var repo = Substitute.For<IReportingRepository>();
-        repo.FindRequestByIdAsync(requestId, Arg.Any<CancellationToken>()).Returns(request);
-        repo.GetPhotosByRequestIdAsync(requestId, Arg.Any<CancellationToken>()).Returns(existingPhotos);
-        repo.FindActivePhotoByRequestAndViewAsync(requestId, PhotoViewType.Front.ToString(), Arg.Any<CancellationToken>()).Returns(oldPhoto);
-        repo.SavePhotoAsync(Arg.Do<Photo>(p => savedPhoto = p), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        var repo = Substitute.For<IReportPhotoPersistence>();
+        repo.ListByRequestAsync(requestId, Arg.Any<CancellationToken>()).Returns(existingPhotos.Select(ReportingTestData.Photo).ToList());
+        repo.FindActiveByRequestAndViewAsync(requestId, PhotoViewType.Front.ToString(), Arg.Any<CancellationToken>()).Returns(ReportingTestData.Photo(oldPhoto));
+        repo.SaveAsync(Arg.Do<NewReportPhotoPersistenceModel>(photo => savedPhoto = new Photo
+        {
+            Id = photo.Id,
+            StorageKey = photo.StorageKey,
+            MimeType = photo.MimeType,
+            SizeBytes = photo.SizeBytes,
+            Checksum = photo.Checksum,
+            ViewType = photo.ViewType,
+            ReportRequestId = photo.ReportRequestId,
+            UploaderUserId = photo.UploaderAccountId.Rebind<User>(),
+            OwnerUserId = photo.OwnerAccountId.Rebind<User>(),
+            CreatedAt = photo.CreatedAt
+        }), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
 
         var storageProvider = Substitute.For<IPhotoStorageProvider>();
         storageProvider.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new PhotoMetadata { ContentType = "image/jpeg", SizeBytes = 2048, ETag = "newchecksum", UploadedAt = DateTimeOffset.UtcNow });
-        var pendingUpload = new PendingPhotoUpload { StorageKey = $"photos/{traineeId}/{requestId}/Front/new-photo.jpg", InitiatedByUserId = traineeId, OwnerUserId = traineeId, ReportRequestId = requestId, ViewType = PhotoViewType.Front.ToString(), DeclaredContentType = "image/jpeg", DeclaredSizeBytes = 2048, CreatedAtUtc = DateTimeOffset.UtcNow, ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(10) };
+        var pendingUpload = PhotoServiceTestFactory.CreatePendingUpload($"photos/{traineeId}/{requestId}/Front/new-photo.jpg", traineeId, traineeId, requestId, PhotoViewType.Front.ToString(), "image/jpeg", 2048);
 
-        var service = PhotoServiceTestFactory.CreateService(reportingRepository: repo, photoStorageProvider: storageProvider, pendingUpload: pendingUpload);
+        var service = PhotoServiceTestFactory.CreateService(findRequestById: (_, _) => Task.FromResult<ReportRequest?>(request), reportingRepository: repo, photoStorageProvider: storageProvider, pendingUpload: pendingUpload);
         var result = await service.CompletePhotoUploadAsync(currentUser, new CompletePhotoUploadCommand { ReportRequestId = requestId, ViewType = "Front", StorageKey = $"photos/{traineeId}/{requestId}/Front/new-photo.jpg", MimeType = "image/jpeg", SizeBytes = 2048, Checksum = "newchecksum" });
 
         result.IsSuccess.Should().BeTrue();
@@ -56,17 +68,15 @@ public sealed class PhotoCompleteUploadServiceTests
         var request = PhotoServiceTestFactory.CreateReportRequest(requestId, traineeId);
         var storageProvider = Substitute.For<IPhotoStorageProvider>();
         storageProvider.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new PhotoMetadata { ContentType = "image/jpeg", SizeBytes = 4096, ETag = "etag", UploadedAt = DateTimeOffset.UtcNow });
-        var pendingUpload = new PendingPhotoUpload { StorageKey = $"photos/{traineeId}/{requestId}/Front/test.jpg", InitiatedByUserId = traineeId, OwnerUserId = traineeId, ReportRequestId = requestId, ViewType = PhotoViewType.Front.ToString(), DeclaredContentType = "image/jpeg", DeclaredSizeBytes = 2048, CreatedAtUtc = DateTimeOffset.UtcNow, ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(10) };
-        var tracker = Substitute.For<IPhotoUploadInitTracker>();
+        var pendingUpload = PhotoServiceTestFactory.CreatePendingUpload($"photos/{traineeId}/{requestId}/Front/test.jpg", traineeId, traineeId, requestId, PhotoViewType.Front.ToString(), "image/jpeg", 2048);
         var unitOfWork = Substitute.For<IUnitOfWork>();
-        var repo = Substitute.For<IReportingRepository>();
-        repo.FindRequestByIdAsync(requestId, Arg.Any<CancellationToken>()).Returns(request);
+        var repo = Substitute.For<IReportPhotoPersistence>();
 
         var service = PhotoServiceTestFactory.CreateService(
             reportingRepository: repo,
+            findRequestById: (_, _) => Task.FromResult<ReportRequest?>(request),
             photoStorageProvider: storageProvider,
             pendingUpload: pendingUpload,
-            photoUploadInitTracker: tracker,
             unitOfWork: unitOfWork);
         var result = await service.CompletePhotoUploadAsync(currentUser, new CompletePhotoUploadCommand { ReportRequestId = requestId, ViewType = "Front", StorageKey = $"photos/{traineeId}/{requestId}/Front/test.jpg", MimeType = "image/jpeg", SizeBytes = 2048, Checksum = "etag" });
 
@@ -75,8 +85,8 @@ public sealed class PhotoCompleteUploadServiceTests
         result.Error.Message.Should().Contain("size");
         await storageProvider.Received(1).GetMetadataAsync(pendingUpload.StorageKey, Arg.Any<CancellationToken>());
         await storageProvider.Received(1).DeleteAsync(pendingUpload.StorageKey, Arg.Any<CancellationToken>());
-        await tracker.Received(1).MarkFailedAsync(pendingUpload.StorageKey, Arg.Any<string>(), Arg.Any<CancellationToken>());
-        await repo.DidNotReceive().SavePhotoAsync(Arg.Any<Photo>(), Arg.Any<CancellationToken>());
+        await repo.Received(1).MarkUploadFailedAsync(pendingUpload.StorageKey, Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await repo.DidNotReceive().SaveAsync(Arg.Any<NewReportPhotoPersistenceModel>(), Arg.Any<CancellationToken>());
         await unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -121,7 +131,7 @@ public sealed class PhotoCompleteUploadServiceTests
         var request = PhotoServiceTestFactory.CreateReportRequest(requestId, traineeId);
         var storageProvider = Substitute.For<IPhotoStorageProvider>();
         storageProvider.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new PhotoMetadata { ContentType = "image/jpeg", SizeBytes = 1024, ETag = "etag", UploadedAt = DateTimeOffset.UtcNow });
-        var pendingUpload = new PendingPhotoUpload { StorageKey = $"photos/{traineeId}/{requestId}/Front/test.jpg", InitiatedByUserId = traineeId, OwnerUserId = traineeId, ReportRequestId = requestId, ViewType = PhotoViewType.Front.ToString(), DeclaredContentType = "image/jpeg", DeclaredSizeBytes = 2048, CreatedAtUtc = DateTimeOffset.UtcNow, ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(10) };
+        var pendingUpload = PhotoServiceTestFactory.CreatePendingUpload($"photos/{traineeId}/{requestId}/Front/test.jpg", traineeId, traineeId, requestId, PhotoViewType.Front.ToString(), "image/jpeg", 2048);
 
         var service = PhotoServiceTestFactory.CreateService(findRequestById: (_, _) => Task.FromResult<ReportRequest?>(request), photoStorageProvider: storageProvider, pendingUpload: pendingUpload);
         var result = await service.CompletePhotoUploadAsync(currentUser, new CompletePhotoUploadCommand { ReportRequestId = requestId, ViewType = "Front", StorageKey = $"photos/{traineeId}/{requestId}/Front/test.jpg", MimeType = "image/jpeg", SizeBytes = 2048, Checksum = "etag" });

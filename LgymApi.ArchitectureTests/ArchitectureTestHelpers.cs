@@ -41,6 +41,7 @@ public static class ArchitectureTestHelpers
 
     private static readonly string[] BuildingBlocksPathMarkers =
     {
+        "/LgymApi.Platform/BuildingBlocks/",
         "/LgymApi.Application/BuildingBlocks/",
         "/LgymApi.Application/Common/Results/"
     };
@@ -52,6 +53,11 @@ public static class ArchitectureTestHelpers
 
     private static readonly string[] TechnicalPlatformPathMarkers =
     {
+        "/LgymApi.Platform/Contracts/",
+        "/LgymApi.Platform/Pagination/",
+        "/LgymApi.Platform/Mapping/",
+        "/LgymApi.Platform/Repositories/",
+        "/LgymApi.Platform/PlatformModule.cs",
         "/LgymApi.Application/Platform/Contracts/",
         "/LgymApi.Application/Pagination/",
         "/LgymApi.Application/Mapping/"
@@ -59,7 +65,6 @@ public static class ArchitectureTestHelpers
 
     private static readonly string[] TechnicalPlatformExactFiles =
     {
-        "/LgymApi.Application/Platform/ServiceCollectionExtensions.cs",
         "/LgymApi.Application/Repositories/IUnitOfWork.cs",
         "/LgymApi.Application/Repositories/ICommandEnvelopeRepository.cs",
         "/LgymApi.Application/Repositories/IApiIdempotencyRecordRepository.cs"
@@ -67,14 +72,16 @@ public static class ArchitectureTestHelpers
 
     private static readonly string[] ReferenceDataPathMarkers =
     {
-        "/LgymApi.Application/Platform/ReferenceData/"
+        "/LgymApi.Application/Platform/ReferenceData/",
+        "/LgymApi.Platform/ReferenceData/",
+        "/LgymApi.Platform/Repositories/IAppConfigRepository.cs"
     };
 
     private static readonly string[] ReferenceDataExactFiles =
     {
-        "/LgymApi.Application/Repositories/IAppConfigRepository.cs",
-        "/LgymApi.Application/Platform/ReferenceData/Errors/AppConfigErrors.cs",
-        "/LgymApi.Application/Platform/ReferenceData/Errors/EnumErrors.cs"
+        "/LgymApi.Platform/Repositories/IAppConfigRepository.cs",
+        "/LgymApi.Platform/ReferenceData/Errors/AppConfigErrors.cs",
+        "/LgymApi.Platform/ReferenceData/Errors/EnumErrors.cs"
     };
 
     private static readonly string[] TestProjectPathMarkers =
@@ -84,16 +91,6 @@ public static class ArchitectureTestHelpers
         "/LgymApi.ArchitectureTests/",
         "/LgymApi.DataSeeder.Tests/",
         "/LgymApi.TestUtils/"
-    };
-
-    private static readonly string[] HelperPathMarkers =
-    {
-        "/Helpers/",
-        "/Fakes/",
-        "/Fixtures/",
-        "/Builders/",
-        "/Mocks/",
-        "/Stubs/"
     };
 
     private static readonly string[] SharedProjectSegments =
@@ -172,7 +169,7 @@ public static class ArchitectureTestHelpers
 
     private static readonly string[] NotificationsApplicationPathMarkers =
     {
-        "/LgymApi.Application/Notifications/"
+        "/LgymApi.Notifications/"
     };
 
     private static readonly string[] PlatformApplicationPathMarkers =
@@ -206,11 +203,14 @@ public static class ArchitectureTestHelpers
         ["/LgymApi.Application/Repositories/IRoleRepository.cs"] = IdentityModuleName,
         ["/LgymApi.Application/Repositories/IEloRegistryRepository.cs"] = WorkoutProgressModuleName,
         ["/LgymApi.Application/Repositories/ITutorialProgressRepository.cs"] = IdentityModuleName,
-        ["/LgymApi.Application/Repositories/IInAppNotificationRepository.cs"] = NotificationsModuleName,
-        ["/LgymApi.Application/Notifications/Repositories/IPushInstallationRepository.cs"] = NotificationsModuleName,
-        ["/LgymApi.Application/Repositories/IPushNotificationMessageRepository.cs"] = NotificationsModuleName,
-        ["/LgymApi.Application/Repositories/IReportingRepository.cs"] = ReportingModuleName,
-        ["/LgymApi.Application/Repositories/IRecurringReportAssignmentRepository.cs"] = ReportingModuleName,
+        ["/LgymApi.Notifications/IInAppNotificationRepository.cs"] = NotificationsModuleName,
+        ["/LgymApi.Notifications/Repositories/IPushInstallationRepository.cs"] = NotificationsModuleName,
+        ["/LgymApi.Notifications/Repositories/IPushNotificationMessageRepository.cs"] = NotificationsModuleName,
+        ["/LgymApi.Application/Reporting/Persistence/IReportTemplatePersistence.cs"] = ReportingModuleName,
+        ["/LgymApi.Application/Reporting/Persistence/IReportRequestSubmissionPersistence.cs"] = ReportingModuleName,
+        ["/LgymApi.Application/Reporting/Persistence/IRecurringReportAssignmentPersistence.cs"] = ReportingModuleName,
+        ["/LgymApi.Application/Reporting/Persistence/IReportPhotoPersistence.cs"] = ReportingModuleName,
+        ["/LgymApi.Application/Reporting/Persistence/IReportingRelationshipAccessPersistence.cs"] = ReportingModuleName,
         ["/LgymApi.Application/Repositories/IPlanRepository.cs"] = TrainingPlanningModuleName,
         ["/LgymApi.Application/Repositories/IPlanDayRepository.cs"] = TrainingPlanningModuleName,
         ["/LgymApi.Application/Repositories/IPlanDayExerciseRepository.cs"] = TrainingPlanningModuleName,
@@ -226,8 +226,8 @@ public static class ArchitectureTestHelpers
         ["/LgymApi.Application/Repositories/IAppConfigRepository.cs"] = PlatformModuleName,
         ["/LgymApi.Application/Repositories/ICommandEnvelopeRepository.cs"] = PlatformModuleName,
         ["/LgymApi.Application/Repositories/IApiIdempotencyRecordRepository.cs"] = PlatformModuleName,
-        ["/LgymApi.Application/Repositories/IEmailNotificationLogRepository.cs"] = NotificationsModuleName,
-        ["/LgymApi.Application/Repositories/IEmailNotificationSubscriptionRepository.cs"] = NotificationsModuleName,
+        ["/LgymApi.Notifications/Repositories/IEmailNotificationLogRepository.cs"] = NotificationsModuleName,
+        ["/LgymApi.Notifications/Repositories/IEmailNotificationSubscriptionRepository.cs"] = NotificationsModuleName,
         ["/LgymApi.Application/Repositories/IUnitOfWork.cs"] = PlatformModuleName,
         ["/LgymApi.Application/Abstractions/Storage/IPhotoStorageProvider.cs"] = ReportingModuleName
     };
@@ -236,19 +236,13 @@ public static class ArchitectureTestHelpers
     {
         ["/LgymApi.Infrastructure/ServiceCollectionExtensions.cs"] = PlatformModuleName,
         ["/LgymApi.Infrastructure/PlatformServiceCollectionExtensions.cs"] = PlatformModuleName,
-        ["/LgymApi.Infrastructure/IdentityServiceCollectionExtensions.cs"] = IdentityModuleName,
         ["/LgymApi.Infrastructure/TrainingPlanningServiceCollectionExtensions.cs"] = TrainingPlanningModuleName,
         ["/LgymApi.Infrastructure/WorkoutProgressServiceCollectionExtensions.cs"] = WorkoutProgressModuleName,
         ["/LgymApi.Infrastructure/CoachingServiceCollectionExtensions.cs"] = CoachingModuleName,
         ["/LgymApi.Infrastructure/NutritionServiceCollectionExtensions.cs"] = NutritionModuleName,
         ["/LgymApi.Infrastructure/ReportingServiceCollectionExtensions.cs"] = ReportingModuleName,
         ["/LgymApi.Infrastructure/NotificationsServiceCollectionExtensions.cs"] = NotificationsModuleName,
-        ["/LgymApi.Infrastructure/Repositories/UserRepository.cs"] = IdentityModuleName,
-        ["/LgymApi.Infrastructure/Repositories/UserExternalLoginRepository.cs"] = IdentityModuleName,
-        ["/LgymApi.Infrastructure/Repositories/PasswordResetTokenRepository.cs"] = IdentityModuleName,
-        ["/LgymApi.Infrastructure/Repositories/RoleRepository.cs"] = IdentityModuleName,
         ["/LgymApi.Infrastructure/Repositories/EloRegistryRepository.cs"] = WorkoutProgressModuleName,
-        ["/LgymApi.Infrastructure/Repositories/TutorialProgressRepository.cs"] = IdentityModuleName,
         ["/LgymApi.Infrastructure/Repositories/PlanRepository.cs"] = TrainingPlanningModuleName,
         ["/LgymApi.Infrastructure/Repositories/PlanRepository.Clone.cs"] = TrainingPlanningModuleName,
         ["/LgymApi.Infrastructure/Repositories/PlanDayRepository.cs"] = TrainingPlanningModuleName,
@@ -262,8 +256,13 @@ public static class ArchitectureTestHelpers
         ["/LgymApi.Infrastructure/Repositories/MainRecordRepository.cs"] = WorkoutProgressModuleName,
         ["/LgymApi.Infrastructure/Repositories/Nutrition/DietPlanPersistenceRepository.cs"] = NutritionModuleName,
         ["/LgymApi.Infrastructure/Repositories/Nutrition/SupplementationPersistenceRepository.cs"] = NutritionModuleName,
-        ["/LgymApi.Infrastructure/Repositories/ReportingRepository.cs"] = ReportingModuleName,
-        ["/LgymApi.Infrastructure/Repositories/RecurringReportAssignmentRepository.cs"] = ReportingModuleName,
+        ["/LgymApi.Infrastructure/Repositories/Reporting/ReportTemplatePersistenceRepository.cs"] = ReportingModuleName,
+        ["/LgymApi.Infrastructure/Repositories/Reporting/ReportRequestSubmissionPersistenceRepository.cs"] = ReportingModuleName,
+        ["/LgymApi.Infrastructure/Repositories/Reporting/RecurringReportAssignmentPersistenceRepository.cs"] = ReportingModuleName,
+        ["/LgymApi.Infrastructure/Repositories/Reporting/ReportPhotoPersistenceRepository.cs"] = ReportingModuleName,
+        ["/LgymApi.Infrastructure/Repositories/Reporting/ReportingRelationshipAccessPersistenceRepository.cs"] = ReportingModuleName,
+        ["/LgymApi.Infrastructure/Repositories/Reporting/ReportingPersistenceProjection.cs"] = ReportingModuleName,
+        ["/LgymApi.Infrastructure/Repositories/Reporting/ReportingPersistenceAccountIds.cs"] = ReportingModuleName,
         ["/LgymApi.Infrastructure/Repositories/InAppNotificationRepository.cs"] = NotificationsModuleName,
         ["/LgymApi.Infrastructure/Repositories/PushInstallationRepository.cs"] = NotificationsModuleName,
         ["/LgymApi.Infrastructure/Repositories/PushNotificationMessageRepository.cs"] = NotificationsModuleName,
@@ -272,33 +271,26 @@ public static class ArchitectureTestHelpers
         ["/LgymApi.Infrastructure/Repositories/ApiIdempotencyRecordRepository.cs"] = PlatformModuleName,
         ["/LgymApi.Infrastructure/Repositories/EmailNotificationLogRepository.cs"] = NotificationsModuleName,
         ["/LgymApi.Infrastructure/Repositories/EmailNotificationSubscriptionRepository.cs"] = NotificationsModuleName,
-        ["/LgymApi.Infrastructure/Services/TokenService.cs"] = IdentityModuleName,
-        ["/LgymApi.Infrastructure/Services/GoogleTokenValidator.cs"] = IdentityModuleName,
-        ["/LgymApi.Infrastructure/Services/LegacyPasswordService.cs"] = IdentityModuleName,
-        ["/LgymApi.Infrastructure/Services/UserSessionStore.cs"] = IdentityModuleName,
         ["/LgymApi.Infrastructure/Services/LocalPhotoStorageProvider.cs"] = ReportingModuleName,
         ["/LgymApi.Infrastructure/Services/CloudflareR2PhotoStorageProvider.cs"] = ReportingModuleName,
-        ["/LgymApi.Infrastructure/Services/DbPhotoUploadInitTracker.cs"] = ReportingModuleName,
-        ["/LgymApi.Infrastructure/Services/InMemoryPhotoUploadInitTracker.cs"] = ReportingModuleName,
         ["/LgymApi.Infrastructure/Services/LocalPhotoDevelopmentStore.cs"] = ReportingModuleName,
-        ["/LgymApi.Infrastructure/Services/FcmPushSender.cs"] = NotificationsModuleName,
         ["/LgymApi.Infrastructure/Services/HangfirePushBackgroundScheduler.cs"] = NotificationsModuleName,
         ["/LgymApi.Infrastructure/Services/NoOpPushBackgroundScheduler.cs"] = NotificationsModuleName,
-        ["/LgymApi.Infrastructure/Services/PushInstallationCleanupSettings.cs"] = NotificationsModuleName,
         ["/LgymApi.Infrastructure/Services/CommittedIntentDispatcher.cs"] = PlatformModuleName,
-        ["/LgymApi.Infrastructure/Services/TrainerInvitationEmailTemplateComposer.cs"] = PlatformModuleName,
-        ["/LgymApi.Infrastructure/Services/TrainerInvitationAcceptedEmailTemplateComposer.cs"] = PlatformModuleName,
-        ["/LgymApi.Infrastructure/Services/TrainerInvitationRevokedEmailTemplateComposer.cs"] = PlatformModuleName,
-        ["/LgymApi.Infrastructure/Services/TrainingCompletedEmailTemplateComposer.cs"] = PlatformModuleName,
-        ["/LgymApi.Infrastructure/Services/WelcomeEmailTemplateComposer.cs"] = PlatformModuleName,
-        ["/LgymApi.Infrastructure/Services/PasswordRecoveryEmailTemplateComposer.cs"] = PlatformModuleName,
-        ["/LgymApi.Infrastructure/Services/EmailTemplateComposerFactory.cs"] = PlatformModuleName,
-        ["/LgymApi.Infrastructure/Services/EmailTemplateComposerBase.cs"] = PlatformModuleName,
-        ["/LgymApi.Infrastructure/Services/EmailNotificationsFeature.cs"] = PlatformModuleName,
-        ["/LgymApi.Infrastructure/Services/EmailMetrics.cs"] = PlatformModuleName,
-        ["/LgymApi.Infrastructure/Services/SmtpEmailSender.cs"] = PlatformModuleName,
-        ["/LgymApi.Infrastructure/Services/DummyEmailSender.cs"] = PlatformModuleName,
-        ["/LgymApi.Infrastructure/Services/LegacyPasswordConstants.cs"] = PlatformModuleName
+    };
+
+    private static readonly Dictionary<string, string> IdentityExactFileModuleMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["/LgymApi.Identity/Persistence/Repositories/UserRepository.cs"] = IdentityModuleName,
+        ["/LgymApi.Identity/Persistence/Repositories/UserExternalLoginRepository.cs"] = IdentityModuleName,
+        ["/LgymApi.Identity/Persistence/Repositories/PasswordResetTokenRepository.cs"] = IdentityModuleName,
+        ["/LgymApi.Identity/Persistence/Repositories/RoleRepository.cs"] = IdentityModuleName,
+        ["/LgymApi.Identity/Persistence/Repositories/TutorialProgressRepository.cs"] = IdentityModuleName,
+        ["/LgymApi.Identity/Services/TokenService.cs"] = IdentityModuleName,
+        ["/LgymApi.Identity/Services/GoogleTokenValidator.cs"] = IdentityModuleName,
+        ["/LgymApi.Identity/Services/LegacyPasswordService.cs"] = IdentityModuleName,
+        ["/LgymApi.Identity/Services/UserSessionStore.cs"] = IdentityModuleName,
+        ["/LgymApi.Identity/Services/LegacyPasswordConstants.cs"] = IdentityModuleName
     };
 
     /// <summary>
@@ -485,12 +477,6 @@ public static class ArchitectureTestHelpers
             || normalized.Contains("/tests/", StringComparison.OrdinalIgnoreCase);
     }
 
-    public static bool IsHelperPath(string path)
-    {
-        var normalized = NormalizePath(path);
-        return HelperPathMarkers.Any(marker => normalized.Contains(marker, StringComparison.OrdinalIgnoreCase));
-    }
-
     public static bool IsGeneratedCodePath(string path)
     {
         var normalized = NormalizePath(path);
@@ -529,10 +515,6 @@ public static class ArchitectureTestHelpers
         else if (IsTestProjectPath(path))
         {
             exclusionKind = ModuleBoundaryExclusionKind.TestProject;
-        }
-        else if (IsHelperPath(path))
-        {
-            exclusionKind = ModuleBoundaryExclusionKind.Helper;
         }
         else if (IsGeneratedCodePath(path))
         {
@@ -580,6 +562,16 @@ public static class ArchitectureTestHelpers
     public static string? GetServiceCollectionModuleName(string serviceCollectionExtensionsPath)
     {
         var fileName = Path.GetFileName(serviceCollectionExtensionsPath);
+        if (fileName.Equals("IdentityModule.cs", StringComparison.Ordinal))
+        {
+            return "Identity";
+        }
+
+        if (fileName.Equals("TrainingPlanningModule.cs", StringComparison.Ordinal))
+        {
+            return "TrainingPlanning";
+        }
+
         const string suffix = "ServiceCollectionExtensions.cs";
 
         if (!fileName.EndsWith(suffix, StringComparison.Ordinal))
@@ -598,7 +590,15 @@ public static class ArchitectureTestHelpers
             return null;
         }
 
-        return parentDirectory is "LgymApi.Application" or "LgymApi.Infrastructure" ? null : NormalizeModuleName(parentDirectory);
+        if (parentDirectory is "LgymApi.Application" or "LgymApi.Infrastructure")
+        {
+            return null;
+        }
+
+        const string projectPrefix = "LgymApi.";
+        return parentDirectory.StartsWith(projectPrefix, StringComparison.Ordinal)
+            ? NormalizeModuleName(parentDirectory[projectPrefix.Length..])
+            : NormalizeModuleName(parentDirectory);
     }
 
     /// <summary>
@@ -609,9 +609,31 @@ public static class ArchitectureTestHelpers
     public static string? GetInfrastructureConfigurationModuleName(string configurationPath)
     {
         var normalized = NormalizePath(configurationPath);
+        if (normalized.Contains("/LgymApi.Identity/Persistence/Configurations/", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Identity";
+        }
+        if (normalized.Contains("/LgymApi.TrainingPlanning/Persistence/Configurations/", StringComparison.OrdinalIgnoreCase))
+        {
+            return "TrainingPlanning";
+        }
+        if (normalized.Contains("/LgymApi.Notifications/Persistence/Configurations/", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Notifications";
+        }
         const string marker = "/Data/Configurations/";
 
         var markerIndex = normalized.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (markerIndex < 0 && normalized.Contains("/LgymApi.Platform/Persistence/Configurations/", StringComparison.OrdinalIgnoreCase))
+        {
+            var platformMarker = "/Persistence/Configurations/";
+            markerIndex = normalized.IndexOf(platformMarker, StringComparison.OrdinalIgnoreCase);
+            if (markerIndex >= 0)
+            {
+                var platformRemainder = normalized[(markerIndex + platformMarker.Length)..];
+                return NormalizeModuleName(platformRemainder.Split('/', StringSplitOptions.RemoveEmptyEntries)[0]);
+            }
+        }
         if (markerIndex < 0)
         {
             return null;
@@ -664,6 +686,11 @@ public static class ArchitectureTestHelpers
     {
         var normalized = NormalizePath(path);
 
+        if (normalized.Contains("/LgymApi.Platform/", StringComparison.OrdinalIgnoreCase))
+        {
+            return PlatformModuleName;
+        }
+
         if (ApplicationExactFileModuleMap.TryGetValue(GetApplicationExactFileKey(normalized), out var applicationExactFileModule))
         {
             return applicationExactFileModule;
@@ -672,6 +699,11 @@ public static class ArchitectureTestHelpers
         if (TryGetApplicationCanonicalModuleName(normalized, out var applicationModuleName))
         {
             return applicationModuleName;
+        }
+
+        if (TryGetIdentityCanonicalModuleName(normalized, out var identityModuleName))
+        {
+            return identityModuleName;
         }
 
         if (TryGetInfrastructureCanonicalModuleName(normalized, out var infrastructureModuleName))
@@ -928,6 +960,24 @@ public static class ArchitectureTestHelpers
         return false;
     }
 
+    private static bool TryGetIdentityCanonicalModuleName(string normalizedPath, out string? moduleName)
+    {
+        moduleName = null;
+        if (IdentityExactFileModuleMap.TryGetValue(GetIdentityExactFileKey(normalizedPath), out var exactFileModule))
+        {
+            moduleName = exactFileModule;
+            return true;
+        }
+
+        if (normalizedPath.Contains("/LgymApi.Identity/Persistence/Configurations/", StringComparison.OrdinalIgnoreCase))
+        {
+            moduleName = IdentityModuleName;
+            return true;
+        }
+
+        return false;
+    }
+
     private static bool MatchesAny(string normalizedPath, IEnumerable<string> markers)
     {
         return markers.Any(marker => normalizedPath.Contains(marker, StringComparison.OrdinalIgnoreCase));
@@ -944,13 +994,18 @@ public static class ArchitectureTestHelpers
         var startIndex = normalizedPath.IndexOf("/LgymApi.Application/", StringComparison.OrdinalIgnoreCase);
         return startIndex >= 0 ? normalizedPath[startIndex..] : normalizedPath;
     }
+
+    private static string GetIdentityExactFileKey(string normalizedPath)
+    {
+        var startIndex = normalizedPath.IndexOf("/LgymApi.Identity/", StringComparison.OrdinalIgnoreCase);
+        return startIndex >= 0 ? normalizedPath[startIndex..] : normalizedPath;
+    }
 }
 
 public enum ModuleBoundaryExclusionKind
 {
     BuildArtifact,
     TestProject,
-    Helper,
     GeneratedCode
 }
 

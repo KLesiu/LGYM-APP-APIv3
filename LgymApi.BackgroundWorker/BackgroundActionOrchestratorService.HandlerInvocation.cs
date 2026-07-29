@@ -19,7 +19,7 @@ public sealed partial class BackgroundActionOrchestratorService
     /// Resolves handler instance from scope to ensure isolated scoped dependencies.
     /// Returns execution result with success flag and error details.
     /// </summary>
-    private async Task<HandlerExecutionResult> ExecuteHandlerInIsolatedScopeAsync(
+    private async Task<CommandHandlerResult> ExecuteHandlerInIsolatedScopeAsync(
         object command,
         Type commandType,
         string canonicalCommandId,
@@ -60,11 +60,7 @@ public sealed partial class BackgroundActionOrchestratorService
                 resolvedHandlerTypeName,
                 canonicalCommandId);
 
-            return new HandlerExecutionResult
-            {
-                Success = true,
-                HandlerTypeName = resolvedHandlerTypeName
-            };
+            return new CommandHandlerResult(true, resolvedHandlerTypeName, null, null);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -80,13 +76,30 @@ public sealed partial class BackgroundActionOrchestratorService
                 resolvedHandlerTypeName,
                 canonicalCommandId);
 
-            return new HandlerExecutionResult
-            {
-                Success = false,
-                ErrorMessage = $"{resolvedHandlerTypeName}: {inner.Message}",
-                HandlerTypeName = resolvedHandlerTypeName,
-                ErrorDetails = inner.ToString() // Full exception with stack trace
-            };
+            return new CommandHandlerResult(false, resolvedHandlerTypeName, $"{resolvedHandlerTypeName}: {inner.Message}", inner.ToString());
         }
+    }
+
+    private async Task<CommandHandlerResult[]> ExecuteHandlersAsync(
+        object command,
+        Type commandType,
+        string canonicalCommandId,
+        IReadOnlyList<string> handlerTypeNames,
+        CancellationToken cancellationToken)
+    {
+        using var semaphore = new SemaphoreSlim(MaxDegreeOfParallelism);
+        var executions = handlerTypeNames.Select(async handlerTypeName =>
+        {
+            await semaphore.WaitAsync(cancellationToken);
+            try
+            {
+                return await ExecuteHandlerInIsolatedScopeAsync(command, commandType, canonicalCommandId, handlerTypeName, cancellationToken);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+        return await Task.WhenAll(executions);
     }
 }

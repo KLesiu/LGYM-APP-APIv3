@@ -1,4 +1,7 @@
 using LgymApi.Domain.Security;
+using LgymApi.Application.Notifications.Contracts.Push;
+using LgymApi.Application.Repositories;
+using LgymApi.BackgroundWorker.Common.Notifications;
 using LgymApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -50,6 +53,16 @@ public sealed class PostgreSqlDatabaseLeaseTests
 
         database.Database.ProviderName.Should().Be("Npgsql.EntityFrameworkCore.PostgreSQL");
         (await database.Database.GetPendingMigrationsAsync()).Should().BeEmpty();
+        scope.ServiceProvider.GetServices<IEmailSender>().Should().ContainSingle()
+            .Which.Should().BeSameAs(factory.EmailSender);
+        scope.ServiceProvider.GetServices<IPushProviderSender>().Should().ContainSingle()
+            .Which.Should().BeSameAs(factory.PushSender);
+
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        await using (var transaction = await unitOfWork.BeginTransactionAsync())
+        {
+            await transaction.RollbackAsync();
+        }
 
         var roleNames = await database.Roles.Select(role => role.Name).ToListAsync();
         roleNames.Should().Contain(

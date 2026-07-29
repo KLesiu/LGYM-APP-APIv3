@@ -8,6 +8,7 @@ using LgymApi.Api.Mapping.Profiles;
 using LgymApi.Application.Features.Reporting.Models;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Enums;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.UnitTests;
 
@@ -22,7 +23,7 @@ public sealed class ReportingProfileTests
         var templateResult = new ReportTemplateResult
         {
             Id = Id<LgymApi.Domain.Entities.ReportTemplate>.New(),
-            TrainerId = Id<LgymApi.Domain.Entities.User>.New(),
+            TrainerId = Id<AccountReference>.New(),
             Name = "Weekly",
             Fields =
             [
@@ -36,8 +37,8 @@ public sealed class ReportingProfileTests
         var requestResult = new ReportRequestResult
         {
             Id = Id<LgymApi.Domain.Entities.ReportRequest>.New(),
-            TrainerId = Id<LgymApi.Domain.Entities.User>.New(),
-            TraineeId = Id<LgymApi.Domain.Entities.User>.New(),
+            TrainerId = Id<AccountReference>.New(),
+            TraineeId = Id<AccountReference>.New(),
             TemplateId = Id<LgymApi.Domain.Entities.ReportTemplate>.New(),
             Status = ReportRequestStatus.Pending,
             Template = templateResult
@@ -50,7 +51,7 @@ public sealed class ReportingProfileTests
         {
             Id = Id<LgymApi.Domain.Entities.ReportSubmission>.New(),
             ReportRequestId = Id<LgymApi.Domain.Entities.ReportRequest>.New(),
-            TraineeId = Id<LgymApi.Domain.Entities.User>.New(),
+            TraineeId = Id<AccountReference>.New(),
             Answers = new Dictionary<string, JsonElement>(),
             TrainerOverallComment = "Overall coach feedback",
             TrainerFieldComments = new Dictionary<string, string> { ["weight"] = "Add more context" },
@@ -73,7 +74,7 @@ public sealed class ReportingProfileTests
         {
             Id = Id<LgymApi.Domain.Entities.ReportSubmission>.New(),
             ReportRequestId = Id<LgymApi.Domain.Entities.ReportRequest>.New(),
-            TraineeId = Id<LgymApi.Domain.Entities.User>.New(),
+            TraineeId = Id<AccountReference>.New(),
             Answers = new Dictionary<string, JsonElement>
             {
                 ["Weight"] = JsonSerializer.SerializeToElement(82)
@@ -81,8 +82,8 @@ public sealed class ReportingProfileTests
             Request = new ReportRequestResult
             {
                 Id = Id<LgymApi.Domain.Entities.ReportRequest>.New(),
-                TrainerId = Id<LgymApi.Domain.Entities.User>.New(),
-                TraineeId = Id<LgymApi.Domain.Entities.User>.New(),
+                TrainerId = Id<AccountReference>.New(),
+                TraineeId = Id<AccountReference>.New(),
                 TemplateId = Id<LgymApi.Domain.Entities.ReportTemplate>.New(),
                 Status = ReportRequestStatus.Submitted,
                 Template = new ReportTemplateResult()

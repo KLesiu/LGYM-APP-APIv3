@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using LgymApi.Resources;
@@ -47,6 +48,45 @@ public sealed class RequestLocalizationIntegrationTests : IntegrationTestBase
         message.Should().Be(englishMessage);
     }
 
+    [Test]
+    public async Task AppConfigUnknownEnum_UsesPolishValidatorResourceInCompatibilityBody()
+    {
+        var polishMessage = GetMessageForCulture("pl", () => Messages.FieldRequired);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/appConfig/getAppVersion")
+        {
+            Content = JsonContent.Create(new { platform = "Unknown" })
+        };
+        request.Headers.AcceptLanguage.ParseAdd("pl");
+
+        using var response = await Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        body.RootElement.GetProperty("errors").GetProperty("platform")[0].GetString().Should().Be(polishMessage);
+        body.RootElement.TryGetProperty("msg", out _).Should().BeFalse();
+        body.RootElement.TryGetProperty("message", out _).Should().BeFalse();
+    }
+
+    [Test]
+    public async Task AppConfigMalformedEnum_PreservesStrictBadRequestCompatibilityBody()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/appConfig/getAppVersion")
+        {
+            Content = JsonContent.Create(new { platform = "InvalidPlatform" })
+        };
+
+        using var response = await Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        body.RootElement.GetProperty("status").GetInt32().Should().Be(400);
+        var platformErrors = body.RootElement.GetProperty("errors").GetProperty("$.platform");
+        platformErrors.GetArrayLength().Should().Be(1);
+        platformErrors[0].GetString().Should().Contain("could not be converted to LgymApi.Domain.Enums.Platforms");
+        body.RootElement.TryGetProperty("msg", out _).Should().BeFalse();
+        body.RootElement.TryGetProperty("message", out _).Should().BeFalse();
+    }
+
     private async Task<string> GetChallengeMessageAsync(Action<HttpRequestMessage>? configure = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/admin/users/not-a-guid");
@@ -60,6 +100,11 @@ public sealed class RequestLocalizationIntegrationTests : IntegrationTestBase
 
     private static string GetMessageForCulture(string cultureName)
     {
+        return GetMessageForCulture(cultureName, () => Messages.InvalidToken);
+    }
+
+    private static string GetMessageForCulture(string cultureName, Func<string> getMessage)
+    {
         var originalCulture = CultureInfo.CurrentCulture;
         var originalUiCulture = CultureInfo.CurrentUICulture;
         try
@@ -67,7 +112,7 @@ public sealed class RequestLocalizationIntegrationTests : IntegrationTestBase
             var culture = CultureInfo.GetCultureInfo(cultureName);
             CultureInfo.CurrentCulture = culture;
             CultureInfo.CurrentUICulture = culture;
-            return Messages.InvalidToken;
+            return getMessage();
         }
         finally
         {

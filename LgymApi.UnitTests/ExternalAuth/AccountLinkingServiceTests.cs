@@ -10,6 +10,7 @@ using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
 using LgymApi.TestUtils;
 using LgymApi.TestUtils.Fakes;
+using LgymApi.UnitTests.Fakes;
 using NSubstitute;
 
 namespace LgymApi.UnitTests;
@@ -17,18 +18,18 @@ namespace LgymApi.UnitTests;
 [TestFixture]
 public sealed class AccountLinkingServiceTests
 {
-    private IGoogleTokenValidator _googleTokenValidator = null!;
-    private IUserRepository _userRepository = null!;
-    private IUserExternalLoginRepository _userExternalLoginRepository = null!;
+    private ConfigurableGoogleTokenValidator _googleTokenValidator = null!;
+    private ConfigurableUserRepository _userRepository = null!;
+    private ConfigurableUserExternalLoginRepository _userExternalLoginRepository = null!;
     private FakeUnitOfWork _unitOfWork = null!;
     private AccountLinkingService _service = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _googleTokenValidator = Substitute.For<IGoogleTokenValidator>();
-        _userRepository = Substitute.For<IUserRepository>();
-        _userExternalLoginRepository = Substitute.For<IUserExternalLoginRepository>();
+        _googleTokenValidator = new ConfigurableGoogleTokenValidator();
+        _userRepository = new ConfigurableUserRepository();
+        _userExternalLoginRepository = new ConfigurableUserExternalLoginRepository();
         _unitOfWork = new FakeUnitOfWork();
 
         _service = new AccountLinkingService(
@@ -41,8 +42,7 @@ public sealed class AccountLinkingServiceTests
     [Test]
     public async Task LinkGoogle_InvalidToken_ReturnsInvalidUserError()
     {
-        _googleTokenValidator.ValidateAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<GoogleTokenPayload?>(null));
+        _googleTokenValidator.Validate = (_, _, _) => Task.FromResult<GoogleTokenPayload?>(null);
 
         var result = await _service.LinkGoogleAsync(Id<User>.New(), "token", null, CancellationToken.None);
 
@@ -55,8 +55,7 @@ public sealed class AccountLinkingServiceTests
     [Test]
     public async Task LinkGoogle_UnverifiedEmail_ReturnsInvalidUserError()
     {
-        _googleTokenValidator.ValidateAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GoogleTokenPayload("sub123", "test@example.com", false, "Test User", null));
+        _googleTokenValidator.Validate = (_, _, _) => Task.FromResult<GoogleTokenPayload?>(new GoogleTokenPayload("sub123", "test@example.com", false, "Test User", null));
 
         var result = await _service.LinkGoogleAsync(Id<User>.New(), "token", null, CancellationToken.None);
 
@@ -79,20 +78,17 @@ public sealed class AccountLinkingServiceTests
             ProviderEmail = "test@example.com"
         };
 
-        _googleTokenValidator.ValidateAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GoogleTokenPayload("sub123", "test@example.com", true, "Test User", null));
-        _userRepository.FindByIdAsync(user.Id, Arg.Any<CancellationToken>())
-            .Returns(user);
-        _userExternalLoginRepository.FindByUserAndProviderAsync(user.Id, AuthConstants.ExternalProviders.Google, Arg.Any<CancellationToken>())
-            .Returns(existingLogin);
+        _googleTokenValidator.Validate = (_, _, _) => Task.FromResult<GoogleTokenPayload?>(new GoogleTokenPayload("sub123", "test@example.com", true, "Test User", null));
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(user);
+        _userExternalLoginRepository.FindByUserAndProvider = (_, _, _) => Task.FromResult<UserExternalLogin?>(existingLogin);
 
         var result = await _service.LinkGoogleAsync(user.Id, "token", null, CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<ConflictError>();
         result.Error!.Message.Should().Be(Messages.GoogleAccountAlreadyLinked);
-        await _userExternalLoginRepository.DidNotReceiveWithAnyArgs().FindByProviderAsync(default!, default!, default);
-        await _userExternalLoginRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        _userExternalLoginRepository.Calls.Should().NotContain(call => call.Method == nameof(IUserExternalLoginRepository.FindByProviderAsync));
+        _userExternalLoginRepository.Calls.Should().NotContain(call => call.Method == nameof(IUserExternalLoginRepository.AddAsync));
         _unitOfWork.SaveChangesCalls.Should().Be(0);
     }
 
@@ -111,20 +107,16 @@ public sealed class AccountLinkingServiceTests
             User = anotherUser
         };
 
-        _googleTokenValidator.ValidateAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GoogleTokenPayload("sub123", "test@example.com", true, "Test User", null));
-        _userRepository.FindByIdAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
-            .Returns(user);
-        _userExternalLoginRepository.FindByUserAndProviderAsync(user.Id, AuthConstants.ExternalProviders.Google, Arg.Any<CancellationToken>())
-            .Returns((UserExternalLogin?)null);
-        _userExternalLoginRepository.FindByProviderAsync(AuthConstants.ExternalProviders.Google, "sub123", Arg.Any<CancellationToken>())
-            .Returns(existingLogin);
+        _googleTokenValidator.Validate = (_, _, _) => Task.FromResult<GoogleTokenPayload?>(new GoogleTokenPayload("sub123", "test@example.com", true, "Test User", null));
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(user);
+        _userExternalLoginRepository.FindByUserAndProvider = (_, _, _) => Task.FromResult<UserExternalLogin?>(null);
+        _userExternalLoginRepository.FindByProvider = (_, _, _) => Task.FromResult<UserExternalLogin?>(existingLogin);
 
         var result = await _service.LinkGoogleAsync(user.Id, "token", null, CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<ConflictError>();
-        await _userExternalLoginRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        _userExternalLoginRepository.Calls.Should().NotContain(call => call.Method == nameof(IUserExternalLoginRepository.AddAsync));
         _unitOfWork.SaveChangesCalls.Should().Be(0);
     }
 
@@ -134,42 +126,40 @@ public sealed class AccountLinkingServiceTests
         var user = CreateUser();
         GoogleTokenPayload? payload = new GoogleTokenPayload("sub123", "test@example.com", true, "Test User", null);
 
-        _googleTokenValidator.ValidateAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(payload);
-        _userRepository.FindByIdAsync(user.Id, Arg.Any<CancellationToken>())
-            .Returns(user);
-        _userExternalLoginRepository.FindByUserAndProviderAsync(user.Id, AuthConstants.ExternalProviders.Google, Arg.Any<CancellationToken>())
-            .Returns((UserExternalLogin?)null);
-        _userExternalLoginRepository.FindByProviderAsync(AuthConstants.ExternalProviders.Google, payload.Subject, Arg.Any<CancellationToken>())
-            .Returns((UserExternalLogin?)null);
+        _googleTokenValidator.Validate = (_, _, _) => Task.FromResult<GoogleTokenPayload?>(payload);
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(user);
+        _userExternalLoginRepository.FindByUserAndProvider = (_, _, _) => Task.FromResult<UserExternalLogin?>(null);
+        _userExternalLoginRepository.FindByProvider = (_, _, _) => Task.FromResult<UserExternalLogin?>(null);
 
         var result = await _service.LinkGoogleAsync(user.Id, "token", null, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        await _userExternalLoginRepository.Received(1).AddAsync(
-            Arg.Is<UserExternalLogin>(x =>
-                x.UserId == user.Id &&
-                x.Provider == AuthConstants.ExternalProviders.Google &&
-                x.ProviderKey == payload.Subject &&
-                x.ProviderEmail == payload.Email),
-            Arg.Any<CancellationToken>());
+        _userExternalLoginRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IUserExternalLoginRepository.AddAsync)
+                && call.Argument is UserExternalLogin externalLogin
+                && externalLogin.UserId == user.Id
+                && externalLogin.Provider == AuthConstants.ExternalProviders.Google
+                && externalLogin.ProviderKey == payload.Subject
+                && externalLogin.ProviderEmail == payload.Email)
+            .Should()
+            .ContainSingle();
         _unitOfWork.SaveChangesCalls.Should().Be(1);
     }
 
     [Test]
     public async Task UnlinkGoogle_UserMissing_ReturnsUserNotFoundAndDoesNotQueryGoogleLogin()
     {
-        _userRepository.FindByIdAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
-            .Returns((User?)null);
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(null);
 
         var result = await _service.UnlinkGoogleAsync(Id<User>.New(), CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<UserNotFoundError>();
         result.Error!.Message.Should().Be(Messages.DidntFind);
-        await _userExternalLoginRepository.DidNotReceiveWithAnyArgs().FindActiveGoogleByUserIdAsync(default!, default);
-        await _userExternalLoginRepository.DidNotReceiveWithAnyArgs().MarkGoogleDeletedAsync(default!, default);
-        await _googleTokenValidator.DidNotReceiveWithAnyArgs().ValidateAsync(default!, default, default);
+        _userExternalLoginRepository.Calls.Should().NotContain(call => call.Method == nameof(IUserExternalLoginRepository.FindActiveGoogleByUserIdAsync));
+        _userExternalLoginRepository.Calls.Should().NotContain(call => call.Method == nameof(IUserExternalLoginRepository.MarkGoogleDeletedAsync));
+        _googleTokenValidator.Calls.Should().BeEmpty();
         _unitOfWork.SaveChangesCalls.Should().Be(0);
     }
 
@@ -178,20 +168,30 @@ public sealed class AccountLinkingServiceTests
     {
         var user = CreateUser();
 
-        _userRepository.FindByIdAsync(user.Id, Arg.Any<CancellationToken>())
-            .Returns(user);
-        _userExternalLoginRepository.FindActiveGoogleByUserIdAsync(user.Id, Arg.Any<CancellationToken>())
-            .Returns((UserExternalLogin?)null);
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(user);
+        _userExternalLoginRepository.FindActiveGoogleByUserId = (_, _) => Task.FromResult<UserExternalLogin?>(null);
 
         var result = await _service.UnlinkGoogleAsync(user.Id, CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<NotFoundError>();
         result.Error!.Message.Should().Be(Messages.DidntFind);
-        await _userRepository.Received(1).FindByIdAsync(user.Id, Arg.Any<CancellationToken>());
-        await _userExternalLoginRepository.Received(1).FindActiveGoogleByUserIdAsync(user.Id, Arg.Any<CancellationToken>());
-        await _userExternalLoginRepository.DidNotReceiveWithAnyArgs().MarkGoogleDeletedAsync(default!, default);
-        await _googleTokenValidator.DidNotReceiveWithAnyArgs().ValidateAsync(default!, default, default);
+        _userRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IUserRepository.FindByIdAsync)
+                && call.Argument is Id<User> id
+                && id == user.Id)
+            .Should()
+            .ContainSingle();
+        _userExternalLoginRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IUserExternalLoginRepository.FindActiveGoogleByUserIdAsync)
+                && call.Argument is Id<User> id
+                && id == user.Id)
+            .Should()
+            .ContainSingle();
+        _userExternalLoginRepository.Calls.Should().NotContain(call => call.Method == nameof(IUserExternalLoginRepository.MarkGoogleDeletedAsync));
+        _googleTokenValidator.Calls.Should().BeEmpty();
         _unitOfWork.SaveChangesCalls.Should().Be(0);
     }
 
@@ -208,18 +208,34 @@ public sealed class AccountLinkingServiceTests
             ProviderEmail = "google@example.com"
         };
 
-        _userRepository.FindByIdAsync(user.Id, Arg.Any<CancellationToken>())
-            .Returns(user);
-        _userExternalLoginRepository.FindActiveGoogleByUserIdAsync(user.Id, Arg.Any<CancellationToken>())
-            .Returns(googleLogin);
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(user);
+        _userExternalLoginRepository.FindActiveGoogleByUserId = (_, _) => Task.FromResult<UserExternalLogin?>(googleLogin);
 
         var result = await _service.UnlinkGoogleAsync(user.Id, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        await _userRepository.Received(1).FindByIdAsync(user.Id, Arg.Any<CancellationToken>());
-        await _userExternalLoginRepository.Received(1).FindActiveGoogleByUserIdAsync(user.Id, Arg.Any<CancellationToken>());
-        await _userExternalLoginRepository.Received(1).MarkGoogleDeletedAsync(user.Id, Arg.Any<CancellationToken>());
-        await _googleTokenValidator.DidNotReceiveWithAnyArgs().ValidateAsync(default!, default, default);
+        _userRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IUserRepository.FindByIdAsync)
+                && call.Argument is Id<User> id
+                && id == user.Id)
+            .Should()
+            .ContainSingle();
+        _userExternalLoginRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IUserExternalLoginRepository.FindActiveGoogleByUserIdAsync)
+                && call.Argument is Id<User> id
+                && id == user.Id)
+            .Should()
+            .ContainSingle();
+        _userExternalLoginRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IUserExternalLoginRepository.MarkGoogleDeletedAsync)
+                && call.Argument is Id<User> id
+                && id == user.Id)
+            .Should()
+            .ContainSingle();
+        _googleTokenValidator.Calls.Should().BeEmpty();
         _unitOfWork.SaveChangesCalls.Should().Be(1);
     }
 
@@ -247,10 +263,8 @@ public sealed class AccountLinkingServiceTests
             }
         };
 
-        _userRepository.FindByIdAsync(user.Id, Arg.Any<CancellationToken>())
-            .Returns(user);
-        _userExternalLoginRepository.GetByUserIdAsync(user.Id, Arg.Any<CancellationToken>())
-            .Returns(logins);
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(user);
+        _userExternalLoginRepository.GetByUserId = (_, _) => Task.FromResult(logins);
 
         var result = await _service.GetExternalLoginsAsync(user.Id, CancellationToken.None);
 

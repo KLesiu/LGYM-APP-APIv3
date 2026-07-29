@@ -12,16 +12,16 @@ public sealed class UnitConverterRegistrationGuardTests
     {
         var parseOptions = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
         var unitFiles = ArchitectureTestHelpers
-            .EnumerateProjectSourceFiles("LgymApi.Application", "*.cs")
+            .EnumerateProjectSourceFiles("LgymApi.Platform", "*.cs")
             .Where(path => path.Contains($"{Path.DirectorySeparatorChar}Units{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        var serviceExtensionFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Application")
+        var serviceExtensionFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Platform")
             .Where(path => Path.GetFileName(path).EndsWith("ServiceCollectionExtensions.cs", StringComparison.Ordinal))
             .ToList();
 
         Assert.That(unitFiles, Is.Not.Empty, "No unit strategy/converter files found for the DI guard test.");
-        Assert.That(serviceExtensionFiles, Is.Not.Empty, "No Application ServiceCollectionExtensions files found for the DI guard test.");
+        Assert.That(serviceExtensionFiles, Is.Not.Empty, "No Platform ServiceCollectionExtensions files found for the DI guard test.");
 
         var requiredRegistrations = new List<UnitRegistration>();
         foreach (var file in unitFiles)

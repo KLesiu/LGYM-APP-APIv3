@@ -1,8 +1,8 @@
 using FluentAssertions;
 using LgymApi.Application.Features.PasswordReset.Contracts;
-using LgymApi.BackgroundWorker.Common.Notifications;
 using LgymApi.BackgroundWorker.Common.Notifications.Models;
-using LgymApi.BackgroundWorker.Notifications;
+using LgymApi.Application.Notifications.Contracts.Email;
+using LgymApi.Notifications;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using NUnit.Framework;
@@ -30,13 +30,13 @@ public sealed class PasswordRecoveryEmailSchedulerAdapterTests
         await adapter.ScheduleAsync(request, cancellationToken);
 
         typeof(PasswordRecoveryEmailRequest).IsPublic.Should().BeTrue();
-        typeof(PasswordRecoveryEmailSchedulerAdapter).IsPublic.Should().BeTrue();
+        typeof(PasswordRecoveryEmailSchedulerAdapter).IsNotPublic.Should().BeTrue();
         typeof(PasswordRecoveryEmailRequest).GetProperties()
             .Select(property => property.Name)
             .Should().Equal("UserId", "TokenId", "UserName", "RecipientEmail", "ResetToken", "ResetUrl", "CultureName");
         var adapterConstructor = typeof(PasswordRecoveryEmailSchedulerAdapter).GetConstructors().Should().ContainSingle().Which;
         adapterConstructor.GetParameters().Select(parameter => parameter.ParameterType)
-            .Should().Equal(typeof(IEmailScheduler<PasswordRecoveryEmailPayload>));
+            .Should().Equal(typeof(IEmailSchedulingPort<PasswordRecoveryEmailPayload>));
         var scheduleMethod = typeof(PasswordRecoveryEmailSchedulerAdapter)
             .GetMethod(nameof(PasswordRecoveryEmailSchedulerAdapter.ScheduleAsync));
         scheduleMethod.Should().NotBeNull();
@@ -85,7 +85,7 @@ public sealed class PasswordRecoveryEmailSchedulerAdapterTests
         return id;
     }
 
-    private sealed class CapturingEmailScheduler : IEmailScheduler<PasswordRecoveryEmailPayload>
+    private sealed class CapturingEmailScheduler : IEmailSchedulingPort<PasswordRecoveryEmailPayload>
     {
         public PasswordRecoveryEmailPayload? Payload { get; private set; }
         public CancellationToken CancellationToken { get; private set; }

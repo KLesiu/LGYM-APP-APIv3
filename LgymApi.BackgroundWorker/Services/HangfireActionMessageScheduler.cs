@@ -1,8 +1,6 @@
 using Hangfire;
 using LgymApi.BackgroundWorker.Common;
 using LgymApi.BackgroundWorker.Common.Jobs;
-using LgymApi.Domain.Entities;
-using LgymApi.Domain.ValueObjects;
 
 namespace LgymApi.Infrastructure.Services;
 
@@ -19,7 +17,7 @@ public sealed class HangfireActionMessageScheduler : IActionMessageScheduler
         _backgroundJobClient = backgroundJobClient;
     }
 
-    public string? Enqueue(Id<CommandEnvelope> actionMessageId)
+    public string? Enqueue(string actionMessageId)
     {
         return _backgroundJobClient.Enqueue<IActionMessageJob>(job => job.ExecuteAsync(actionMessageId));
     }

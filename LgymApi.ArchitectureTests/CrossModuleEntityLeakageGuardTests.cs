@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using LgymApi.Application.Repositories;
 using LgymApi.Domain.Entities;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.ArchitectureTests;
 
@@ -10,6 +11,23 @@ namespace LgymApi.ArchitectureTests;
 public sealed class CrossModuleEntityLeakageGuardTests
 {
     private const string GuardId = "CrossModuleEntityLeakage";
+    private const string PlanRepositoryMetadataName = "LgymApi.Application.Repositories.IPlanRepository";
+    private const string PlanDayRepositoryMetadataName = "LgymApi.Application.Repositories.IPlanDayRepository";
+
+    private static readonly string[] RemainingTrainingPlanningApplicationAdapters =
+    [
+        "LgymApi.Application/Task7ApiCompatibility/PlanningNutrition/Adapters/PlanAccountCompatibilityAdapter.cs",
+        "LgymApi.Application/Task7ApiCompatibility/PlanningNutrition/Adapters/ManagedPlanAccountCompatibilityAdapter.cs"
+    ];
+
+    private static readonly HashSet<string> TrainingPlanningEntityMetadataNames =
+    [
+        "LgymApi.Domain.Entities.Plan",
+        "LgymApi.Domain.Entities.PlanDay",
+        "LgymApi.Domain.Entities.User",
+        "LgymApi.Domain.Entities.Exercise",
+        "LgymApi.Domain.Entities.Training"
+    ];
 
     private static readonly IReadOnlyDictionary<string, string> RepositoryOwnerByMetadataName = new Dictionary<string, string>(StringComparer.Ordinal)
     {
@@ -19,8 +37,11 @@ public sealed class CrossModuleEntityLeakageGuardTests
         ["LgymApi.Application.Repositories.IInAppNotificationRepository"] = "Notifications",
         ["LgymApi.Application.Notifications.Repositories.IPushInstallationRepository"] = "Notifications",
         ["LgymApi.Application.Repositories.IPushNotificationMessageRepository"] = "Notifications",
-        ["LgymApi.Application.Repositories.IReportingRepository"] = "Reporting",
-        ["LgymApi.Application.Repositories.IRecurringReportAssignmentRepository"] = "Reporting",
+        ["LgymApi.Application.Reporting.Persistence.IReportTemplatePersistence"] = "Reporting",
+        ["LgymApi.Application.Reporting.Persistence.IReportRequestSubmissionPersistence"] = "Reporting",
+        ["LgymApi.Application.Reporting.Persistence.IRecurringReportAssignmentPersistence"] = "Reporting",
+        ["LgymApi.Application.Reporting.Persistence.IReportPhotoPersistence"] = "Reporting",
+        ["LgymApi.Application.Reporting.Persistence.IReportingRelationshipAccessPersistence"] = "Reporting",
         ["LgymApi.Application.Repositories.IPlanRepository"] = "Training Planning",
         ["LgymApi.Application.Repositories.IPlanDayRepository"] = "Training Planning",
         ["LgymApi.Application.Repositories.IPlanDayExerciseRepository"] = "Training Planning",
@@ -60,29 +81,35 @@ public sealed class CrossModuleEntityLeakageGuardTests
             using PlanEntity = LgymApi.Domain.Entities.Plan;
             using UserEntity = LgymApi.Domain.Entities.User;
 
-            namespace LgymApi.Application.Features.Reporting;
-
-            public sealed class ForeignEntityExposure
+            namespace LgymApi.Application.Repositories
             {
-                public UserEntity ForeignUser { get; init; }
-                public Id<UserEntity> ForeignUserId { get; init; }
-                public Id<LgymApi.Domain.Entities.User> FullyQualifiedForeignUserId { get; init; }
-                public PlanEntity ForeignPlan { get; init; }
-                public Id<PlanEntity> ForeignPlanId { get; init; }
-                public UserEntity[] ForeignUserCollection { get; init; }
-                public ForeignWrapper<PlanEntity> ForeignPlanWrapper { get; init; }
-                public IUserRepository ForeignUserRepository { get; init; }
-                public IPlanRepository ForeignPlanRepository { get; init; }
-
-                public UserEntity ReturnForeignUser() => default;
-
-                public void AcceptForeignUser(UserEntity user)
-                {
-                }
+                public interface IPlanRepository { }
             }
 
-            public sealed class ForeignWrapper<T>
+            namespace LgymApi.Application.Features.Reporting
             {
+                public sealed class ForeignEntityExposure
+                {
+                    public UserEntity ForeignUser { get; init; }
+                    public Id<UserEntity> ForeignUserId { get; init; }
+                    public Id<LgymApi.Domain.Entities.User> FullyQualifiedForeignUserId { get; init; }
+                    public PlanEntity ForeignPlan { get; init; }
+                    public Id<PlanEntity> ForeignPlanId { get; init; }
+                    public UserEntity[] ForeignUserCollection { get; init; }
+                    public ForeignWrapper<PlanEntity> ForeignPlanWrapper { get; init; }
+                    public IUserRepository ForeignUserRepository { get; init; }
+                    public IPlanRepository ForeignPlanRepository { get; init; }
+
+                    public UserEntity ReturnForeignUser() => default;
+
+                    public void AcceptForeignUser(UserEntity user)
+                    {
+                    }
+                }
+
+                public sealed class ForeignWrapper<T>
+                {
+                }
             }
             """, path: Path.Combine(repoRoot, "LgymApi.Application", "Features", "Reporting", "ForeignEntityExposure.cs"));
         var compilation = CSharpCompilation.Create(
@@ -91,7 +118,7 @@ public sealed class CrossModuleEntityLeakageGuardTests
             [
                 MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(User).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(IUserRepository).Assembly.Location)
+                MetadataReference.CreateFromFile(typeof(AccountReference).Assembly.Location)
             ],
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         var violations = CollectViolations(
@@ -117,19 +144,270 @@ public sealed class CrossModuleEntityLeakageGuardTests
             Assert.That(violations.Select(violation => violation.SourceSymbolOrPath), Has.None.Contains("ForeignPlanId"));
             Assert.That(violations.Select(violation => violation.TargetSymbolOrPath), Has.Some.Contains(typeof(User).FullName));
             Assert.That(violations.Select(violation => violation.TargetSymbolOrPath), Has.Some.Contains(typeof(Plan).FullName));
-            Assert.That(violations.Select(violation => violation.TargetSymbolOrPath), Has.Some.Contains(typeof(IUserRepository).FullName));
-            Assert.That(violations.Select(violation => violation.TargetSymbolOrPath), Has.Some.Contains(typeof(IPlanRepository).FullName));
+            Assert.That(violations.Select(violation => violation.TargetSymbolOrPath), Has.Some.Contains("LgymApi.Application.Repositories.IUserRepository"));
+            Assert.That(violations.Select(violation => violation.TargetSymbolOrPath), Has.Some.Contains(PlanRepositoryMetadataName));
+        });
+    }
+
+    private static readonly object[] FormerEntityDebtGroupFixtures =
+    {
+        new object[]
+        {
+            "LgymApi.Application/Relocated/FormerReportingIdentityDebt.cs",
+            "LgymApi.Application.Features.Reporting.Relocated",
+            ArchitectureTestHelpers.ReportingModuleName
+        },
+        new object[]
+        {
+            "LgymApi.Application/WorkoutProgress/FormerWorkoutIdentityDebt.cs",
+            "LgymApi.Application.WorkoutProgress",
+            ArchitectureTestHelpers.WorkoutProgressModuleName
+        },
+        new object[]
+        {
+            "LgymApi.TrainingPlanning/FormerDebt/FormerPlanningIdentityDebt.cs",
+            "LgymApi.Application.TrainingPlanning.FormerDebt",
+            ArchitectureTestHelpers.TrainingPlanningModuleName
+        }
+    };
+
+    [TestCaseSource(nameof(FormerEntityDebtGroupFixtures))]
+    public void Every_Former_Identity_Entity_Debt_Group_Should_Produce_An_Observed_Violation(
+        string sourcePath,
+        string sourceNamespace,
+        string expectedSourceModule)
+    {
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var sourceTree = CSharpSyntaxTree.ParseText(
+            $$"""
+            using UserEntity = LgymApi.Domain.Entities.User;
+            namespace {{sourceNamespace}};
+            internal sealed class FormerIdentityDebtConsumer
+            {
+                public UserEntity DirectEntity { get; } = default!;
+            }
+            """,
+            path: Path.Combine(repoRoot, sourcePath.Replace('/', Path.DirectorySeparatorChar)));
+        var compilation = CSharpCompilation.Create(
+            "FormerIdentityDebtFixture",
+            [sourceTree],
+            [
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(User).Assembly.Location)
+            ],
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var violations = CollectViolations(compilation, [sourceTree], repoRoot);
+
+        Assert.That(
+            violations,
+            Has.Some.Matches<ModuleBoundaryObservedViolation>(violation =>
+                violation.SourceModule == expectedSourceModule
+                && violation.TargetModule == ArchitectureTestHelpers.IdentityModuleName
+                && violation.TargetSymbolOrPath == typeof(User).FullName));
+    }
+
+    [Test]
+    public void Nested_Generic_Foreign_Entity_Should_Fail_While_Nested_Marker_Id_Is_Allowed()
+    {
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var sourceTree = CSharpSyntaxTree.ParseText(
+            """
+            using System.Collections.Generic;
+            using LgymApi.Domain.Entities;
+            using LgymApi.Domain.ValueObjects;
+            namespace LgymApi.Application.Features.Reporting.Relocated;
+            internal sealed class NestedEntityDebt
+            {
+                public IReadOnlyDictionary<string, IReadOnlyList<User>> DirectNestedEntities { get; } = default!;
+                public IReadOnlyDictionary<string, IReadOnlyList<Id<User>>> NestedMarkerIds { get; } = default!;
+            }
+            """,
+            path: Path.Combine(repoRoot, "LgymApi.Application", "Relocated", "NestedEntityDebt.cs"));
+        var compilation = CSharpCompilation.Create(
+            "NestedEntityDebtFixture",
+            [sourceTree],
+            [
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(User).Assembly.Location)
+            ],
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var violations = CollectViolations(compilation, [sourceTree], repoRoot);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                violations,
+                Has.Some.Matches<ModuleBoundaryObservedViolation>(violation =>
+                    violation.SourceSymbolOrPath.Contains("DirectNestedEntities", StringComparison.Ordinal)
+                    && violation.TargetSymbolOrPath == typeof(User).FullName));
+            Assert.That(
+                violations,
+                Has.None.Matches<ModuleBoundaryObservedViolation>(violation =>
+                    violation.SourceSymbolOrPath.Contains("NestedMarkerIds", StringComparison.Ordinal)));
+        });
+    }
+
+    [Test]
+    public void TrainingPlanningRepositoriesAndPublicContracts_ShouldRemainInternalAndMarkerSafe()
+    {
+        var (_, compilation, syntaxTrees) = ArchitectureTestHelpers.PrepareCompilation("LgymApi.TrainingPlanning");
+        var planRepository = compilation.GetTypeByMetadataName(PlanRepositoryMetadataName);
+        var planDayRepository = compilation.GetTypeByMetadataName(PlanDayRepositoryMetadataName);
+        var violations = CollectTrainingPlanningPublicSurfaceViolations(compilation, syntaxTrees);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(planRepository, Is.Not.Null);
+            Assert.That(planRepository!.DeclaredAccessibility, Is.EqualTo(Accessibility.Internal));
+            Assert.That(planDayRepository, Is.Not.Null);
+            Assert.That(planDayRepository!.DeclaredAccessibility, Is.EqualTo(Accessibility.Internal));
+            Assert.That(
+                violations,
+                Is.Empty,
+                "Training Planning public contracts must remain marker-only, and their implementations and repositories must remain internal.");
+        });
+    }
+
+    [Test]
+    public void TrainingPlanningPublicSurfaceFixture_WithRecursiveLeaks_IsRejected()
+    {
+        var tree = CSharpSyntaxTree.ParseText("""
+            using System.Collections.Generic;
+            using LgymApi.Domain.ValueObjects;
+            using PlanEntity = LgymApi.Domain.Entities.Plan;
+            using PlanDayEntity = LgymApi.Domain.Entities.PlanDay;
+            using UserEntity = LgymApi.Domain.Entities.User;
+            using ExerciseEntity = LgymApi.Domain.Entities.Exercise;
+            using TrainingEntity = LgymApi.Domain.Entities.Training;
+
+            namespace LgymApi.Application.Repositories
+            {
+                public interface IPlanRepository { }
+                public interface IPlanDayRepository { }
+                public interface IRoleRepository { }
+                public interface IExerciseRepository { }
+                public interface ITrainingRepository { }
+            }
+
+            namespace LgymApi.Application.TrainingPlanning.Contracts
+            {
+                using LgymApi.Application.Repositories;
+
+                public sealed record PublicWrapper<T>(T Value);
+
+                public interface ILeakyPlanningUseCase
+                {
+                    PublicWrapper<IReadOnlyList<PlanEntity>> Plans { get; }
+                    PlanDayEntity Day { get; }
+                    UserEntity Owner { get; }
+                    Id<UserEntity> OwnerId { get; }
+                    PublicWrapper<IReadOnlyDictionary<UserEntity, IReadOnlyList<ExerciseEntity>>> NestedForeignTypes { get; }
+                    ExerciseEntity Exercise { get; }
+                    TrainingEntity Training { get; }
+                    IPlanRepository PlansRepository { get; }
+                    IPlanDayRepository PlanDaysRepository { get; }
+                    IRoleRepository RolesRepository { get; }
+                    IExerciseRepository ExerciseRepository { get; }
+                    ITrainingRepository TrainingRepository { get; }
+                }
+
+                public sealed class PublicImplementation : ILeakyPlanningUseCase
+                {
+                    public PublicWrapper<IReadOnlyList<PlanEntity>> Plans { get; } = default!;
+                    public PlanDayEntity Day { get; } = default!;
+                    public UserEntity Owner { get; } = default!;
+                    public Id<UserEntity> OwnerId { get; } = default!;
+                    public PublicWrapper<IReadOnlyDictionary<UserEntity, IReadOnlyList<ExerciseEntity>>> NestedForeignTypes { get; } = default!;
+                    public ExerciseEntity Exercise { get; } = default!;
+                    public TrainingEntity Training { get; } = default!;
+                    public IPlanRepository PlansRepository { get; } = default!;
+                    public IPlanDayRepository PlanDaysRepository { get; } = default!;
+                    public IRoleRepository RolesRepository { get; } = default!;
+                    public IExerciseRepository ExerciseRepository { get; } = default!;
+                    public ITrainingRepository TrainingRepository { get; } = default!;
+                }
+            }
+            """, path: "LgymApi.TrainingPlanning/Contracts/RecursiveLeakFixture.cs");
+        var compilation = ArchitectureTestHelpers.CreateCompilation([tree]);
+
+        var violations = CollectTrainingPlanningPublicSurfaceViolations(compilation, [tree]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(violations.Count(violation => violation.Category == "public repository declaration"), Is.EqualTo(2));
+            Assert.That(violations.Select(violation => violation.Target), Does.Contain("LgymApi.Domain.Entities.Plan"));
+            Assert.That(violations.Select(violation => violation.Target), Does.Contain("LgymApi.Domain.Entities.PlanDay"));
+            Assert.That(violations.Select(violation => violation.Target), Does.Contain("LgymApi.Domain.Entities.User"));
+            Assert.That(violations.Select(violation => violation.Target), Does.Contain("LgymApi.Domain.Entities.Exercise"));
+            Assert.That(violations.Select(violation => violation.Target), Does.Contain("LgymApi.Domain.Entities.Training"));
+            Assert.That(violations.Select(violation => violation.Target), Does.Contain(PlanRepositoryMetadataName));
+            Assert.That(violations.Select(violation => violation.Target), Does.Contain(PlanDayRepositoryMetadataName));
+            Assert.That(violations.Select(violation => violation.Target), Does.Contain("LgymApi.Application.Repositories.IRoleRepository"));
+            Assert.That(violations.Select(violation => violation.Target), Does.Contain("LgymApi.Application.Repositories.IExerciseRepository"));
+            Assert.That(violations.Select(violation => violation.Target), Does.Contain("LgymApi.Application.Repositories.ITrainingRepository"));
+            Assert.That(violations, Has.Some.Matches<TrainingPlanningPublicSurfaceViolation>(violation =>
+                violation.Source.EndsWith(".OwnerId", StringComparison.Ordinal)
+                && violation.Target == "LgymApi.Domain.Entities.User"));
+            Assert.That(violations, Has.Some.Matches<TrainingPlanningPublicSurfaceViolation>(violation =>
+                violation.Source.EndsWith(".NestedForeignTypes", StringComparison.Ordinal)
+                && violation.Target == "LgymApi.Domain.Entities.Exercise"));
+            Assert.That(violations, Has.Some.Matches<TrainingPlanningPublicSurfaceViolation>(violation =>
+                violation.Category == "public implementation"
+                && violation.Source.EndsWith("PublicImplementation", StringComparison.Ordinal)));
+        });
+    }
+
+    [Test]
+    public void TrainingPlanning_Production_And_Remaining_Application_Adapters_Should_Have_Zero_Direct_Foreign_Leaks()
+    {
+        var scan = ModuleBoundaryProductionScan.Prepare();
+        var observedSourcePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var violations = CollectViolations(scan.Compilation, scan.SyntaxTrees, scan.RepoRoot, observedSourcePaths)
+            .Where(violation => violation.SourceModule == ArchitectureTestHelpers.TrainingPlanningModuleName)
+            .ToArray();
+        var expectedSourcePaths = Directory
+            .EnumerateFiles(Path.Combine(scan.RepoRoot, "LgymApi.TrainingPlanning"), "*.cs", SearchOption.AllDirectories)
+            .Where(path => !IsBuildArtifactPath(path))
+            .Select(path => ArchitectureTestHelpers.NormalizePath(Path.GetRelativePath(scan.RepoRoot, path)))
+            .Concat(RemainingTrainingPlanningApplicationAdapters)
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+        var observedTrainingPlanningSourcePaths = observedSourcePaths
+            .Where(IsTrainingPlanningBoundarySourcePath)
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+
+        TestContext.Progress.WriteLine(
+            $"Training Planning boundary scan: {scan.DescribeSourceTreeCounts()}; observed={observedTrainingPlanningSourcePaths.Length}; violations={violations.Length}.");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(expectedSourcePaths, Has.Some.StartsWith("LgymApi.TrainingPlanning/"));
+            Assert.That(observedTrainingPlanningSourcePaths, Is.EqualTo(expectedSourcePaths));
+            Assert.That(
+                RemainingTrainingPlanningApplicationAdapters.All(adapter => observedTrainingPlanningSourcePaths.Contains(adapter, StringComparer.OrdinalIgnoreCase)),
+                Is.True,
+                "Every retained Application Planning compatibility adapter must stay inside the semantic scan.");
+            Assert.That(
+                violations,
+                Is.Empty,
+                "Training Planning production and retained Application adapters must not directly use foreign entities or repositories.");
         });
     }
 
     [Test]
     public void Application_Modules_Should_Not_Use_Other_Modules_Domain_Entities_Or_Repositories_Directly()
     {
-        var (repoRoot, compilation, syntaxTrees) = ArchitectureTestHelpers.PrepareCompilation("LgymApi.Application");
-        var violations = CollectViolations(compilation, syntaxTrees, repoRoot);
+        var scan = ModuleBoundaryProductionScan.Prepare();
+        var violations = CollectViolations(scan.Compilation, scan.SyntaxTrees, scan.RepoRoot);
+
+        TestContext.Progress.WriteLine($"Cross-module entity scan: {scan.DescribeSourceTreeCounts()}; violations={violations.Count}.");
 
         Assert.Multiple(() =>
         {
+            Assert.That(violations, Is.Empty);
             ArchitectureTestHelpers.AssertNoUnexpectedModuleBoundaryViolations(GuardId, violations);
 
             Assert.That(
@@ -142,7 +420,8 @@ public sealed class CrossModuleEntityLeakageGuardTests
     private static IReadOnlyList<ModuleBoundaryObservedViolation> CollectViolations(
         CSharpCompilation compilation,
         IEnumerable<SyntaxTree> syntaxTrees,
-        string repoRoot)
+        string repoRoot,
+        ISet<string>? observedSourcePaths = null)
     {
         var observedViolations = new Dictionary<string, ModuleBoundaryObservedViolation>(StringComparer.Ordinal);
 
@@ -154,19 +433,24 @@ public sealed class CrossModuleEntityLeakageGuardTests
                 continue;
             }
 
-            var sourceModule = TryGetApplicationModuleName(sourceFile.RelativePath);
+            var root = tree.GetCompilationUnitRoot();
+            var sourceModule = ModuleBoundaryProductionScan.ResolveCanonicalModule(tree, repoRoot)
+                ?? TryGetApplicationModuleName(sourceFile.RelativePath)
+                ?? TryGetTrainingPlanningModuleFromNamespace(root);
             if (string.IsNullOrWhiteSpace(sourceModule))
             {
                 continue;
             }
 
+            observedSourcePaths?.Add(sourceFile.RelativePath);
+
             var semanticModel = compilation.GetSemanticModel(tree, ignoreAccessibility: true);
-            var root = tree.GetCompilationUnitRoot();
 
             foreach (var typeSyntax in root.DescendantNodes().OfType<TypeSyntax>())
             {
                 if (IsTypedEntityIdUsage(typeSyntax, semanticModel)
-                    || IsTypedEntityIdAliasDeclaration(typeSyntax, semanticModel, root, sourceFile.RelativePath))
+                    || IsPersistedForeignKeyConfigurationUsage(typeSyntax, semanticModel)
+                    || IsTypedEntityIdAliasDeclaration(typeSyntax, semanticModel, root))
                 {
                     continue;
                 }
@@ -200,6 +484,179 @@ public sealed class CrossModuleEntityLeakageGuardTests
         return observedViolations.Values.OrderBy(violation => violation.IdentityKey, StringComparer.Ordinal).ToList();
     }
 
+    private static IReadOnlyList<TrainingPlanningPublicSurfaceViolation> CollectTrainingPlanningPublicSurfaceViolations(
+        CSharpCompilation compilation,
+        IEnumerable<SyntaxTree> syntaxTrees)
+    {
+        var violations = new Dictionary<string, TrainingPlanningPublicSurfaceViolation>(StringComparer.Ordinal);
+
+        foreach (var tree in syntaxTrees)
+        {
+            var semanticModel = compilation.GetSemanticModel(tree, ignoreAccessibility: true);
+            foreach (var declaration in tree.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>())
+            {
+                if (semanticModel.GetDeclaredSymbol(declaration) is not INamedTypeSymbol declaredType)
+                {
+                    continue;
+                }
+
+                var declaredTypeName = GetMetadataName(declaredType);
+                if (declaredTypeName is PlanRepositoryMetadataName or PlanDayRepositoryMetadataName
+                    && declaredType.DeclaredAccessibility != Accessibility.Internal)
+                {
+                    AddTrainingPlanningViolation(
+                        violations,
+                        new TrainingPlanningPublicSurfaceViolation(
+                            "public repository declaration",
+                            declaredTypeName,
+                            declaredTypeName));
+                }
+
+                if (!IsPubliclyVisible(declaredType))
+                {
+                    continue;
+                }
+
+                if (declaredType.TypeKind == TypeKind.Class
+                    && !declaredType.IsAbstract
+                    && !declaredType.IsRecord
+                    && declaredType.Interfaces.Any(IsTrainingPlanningImplementationContract))
+                {
+                    AddTrainingPlanningViolation(
+                        violations,
+                        new TrainingPlanningPublicSurfaceViolation(
+                            "public implementation",
+                            declaredTypeName,
+                            declaredTypeName));
+                }
+
+                CollectPublicTypeGraphLeaks(
+                    compilation,
+                    declaredType,
+                    declaredTypeName,
+                    violations,
+                    new HashSet<string>(StringComparer.Ordinal));
+            }
+        }
+
+        return violations.Values.OrderBy(violation => violation.Identity, StringComparer.Ordinal).ToList();
+    }
+
+    private static void CollectPublicTypeGraphLeaks(
+        CSharpCompilation compilation,
+        INamedTypeSymbol type,
+        string source,
+        IDictionary<string, TrainingPlanningPublicSurfaceViolation> violations,
+        ISet<string> visitedTypes)
+    {
+        var metadataName = GetMetadataName(type.OriginalDefinition);
+        if (!visitedTypes.Add(metadataName))
+        {
+            return;
+        }
+
+        foreach (var member in type.GetMembers().Where(IsPublicSurfaceMember))
+        {
+            foreach (var memberType in GetMemberTypes(member))
+            {
+                foreach (var exposedType in EnumerateNamedTypes(memberType, traverseTypedEntityIds: true))
+                {
+                    var exposedTypeName = GetMetadataName(exposedType.OriginalDefinition);
+                    if (TrainingPlanningEntityMetadataNames.Contains(exposedTypeName)
+                        || exposedTypeName is PlanRepositoryMetadataName or PlanDayRepositoryMetadataName
+                        || exposedType.Name.EndsWith("Repository", StringComparison.Ordinal))
+                    {
+                        AddTrainingPlanningViolation(
+                            violations,
+                            new TrainingPlanningPublicSurfaceViolation(
+                                "public contract leak",
+                                $"{source}.{member.Name}",
+                                exposedTypeName));
+                    }
+
+                    if (SymbolEqualityComparer.Default.Equals(exposedType.ContainingAssembly, compilation.Assembly)
+                        && IsPubliclyVisible(exposedType))
+                    {
+                        CollectPublicTypeGraphLeaks(compilation, exposedType, source, violations, visitedTypes);
+                    }
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<ITypeSymbol> GetMemberTypes(ISymbol member)
+    {
+        switch (member)
+        {
+            case IFieldSymbol field:
+                yield return field.Type;
+                break;
+            case IPropertySymbol property:
+                yield return property.Type;
+                break;
+            case IEventSymbol @event:
+                yield return @event.Type;
+                break;
+            case IMethodSymbol method:
+                yield return method.ReturnType;
+                foreach (var parameter in method.Parameters)
+                {
+                    yield return parameter.Type;
+                }
+
+                foreach (var typeParameter in method.TypeParameters)
+                {
+                    foreach (var constraintType in typeParameter.ConstraintTypes)
+                    {
+                        yield return constraintType;
+                    }
+                }
+
+                break;
+        }
+    }
+
+    private static bool IsPublicSurfaceMember(ISymbol member)
+        => member.DeclaredAccessibility is Accessibility.Public
+            or Accessibility.Protected
+            or Accessibility.ProtectedOrInternal;
+
+    private static bool IsPubliclyVisible(INamedTypeSymbol type)
+    {
+        for (var current = type; current != null; current = current.ContainingType)
+        {
+            if (current.DeclaredAccessibility != Accessibility.Public)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsTrainingPlanningImplementationContract(INamedTypeSymbol type)
+        => type.Name.EndsWith("UseCase", StringComparison.Ordinal)
+            || type.Name == "IPlanDayService";
+
+    private static void AddTrainingPlanningViolation(
+        IDictionary<string, TrainingPlanningPublicSurfaceViolation> violations,
+        TrainingPlanningPublicSurfaceViolation violation)
+        => violations.TryAdd(violation.Identity, violation);
+
+    private static string GetMetadataName(INamedTypeSymbol type)
+    {
+        var typeNames = new Stack<string>();
+        for (var current = type; current != null; current = current.ContainingType)
+        {
+            typeNames.Push(current.MetadataName);
+        }
+
+        var namespaceName = type.ContainingNamespace.ToDisplayString();
+        return string.IsNullOrEmpty(namespaceName)
+            ? string.Join(".", typeNames)
+            : $"{namespaceName}.{string.Join(".", typeNames)}";
+    }
+
     private static IEnumerable<INamedTypeSymbol> EnumerateRelevantNamedTypes(ITypeSymbol symbol)
     {
         foreach (var candidate in EnumerateNamedTypes(symbol))
@@ -208,20 +665,22 @@ public sealed class CrossModuleEntityLeakageGuardTests
         }
     }
 
-    private static IEnumerable<INamedTypeSymbol> EnumerateNamedTypes(ITypeSymbol symbol)
+    private static IEnumerable<INamedTypeSymbol> EnumerateNamedTypes(
+        ITypeSymbol symbol,
+        bool traverseTypedEntityIds = false)
     {
         if (symbol is INamedTypeSymbol namedType)
         {
             yield return namedType;
 
-            if (IsTypedEntityId(namedType))
+            if (!traverseTypedEntityIds && IsTypedEntityId(namedType))
             {
                 yield break;
             }
 
             foreach (var typeArgument in namedType.TypeArguments)
             {
-                foreach (var nested in EnumerateNamedTypes(typeArgument))
+                foreach (var nested in EnumerateNamedTypes(typeArgument, traverseTypedEntityIds))
                 {
                     yield return nested;
                 }
@@ -230,7 +689,7 @@ public sealed class CrossModuleEntityLeakageGuardTests
 
         if (symbol.NullableAnnotation != NullableAnnotation.None && symbol is INamedTypeSymbol { TypeArguments.Length: 1 } nullableType)
         {
-            foreach (var nested in EnumerateNamedTypes(nullableType.TypeArguments[0]))
+            foreach (var nested in EnumerateNamedTypes(nullableType.TypeArguments[0], traverseTypedEntityIds))
             {
                 yield return nested;
             }
@@ -238,7 +697,7 @@ public sealed class CrossModuleEntityLeakageGuardTests
 
         if (symbol is IArrayTypeSymbol arrayType)
         {
-            foreach (var nested in EnumerateNamedTypes(arrayType.ElementType))
+            foreach (var nested in EnumerateNamedTypes(arrayType.ElementType, traverseTypedEntityIds))
             {
                 yield return nested;
             }
@@ -286,22 +745,75 @@ public sealed class CrossModuleEntityLeakageGuardTests
         || typeSyntax.AncestorsAndSelf().OfType<GenericNameSyntax>().Any(genericName =>
             genericName.Identifier.ValueText == "Id"
             && genericName.TypeArgumentList.Arguments.Count == 1)
+        || IsTypedEntityIdRebindArgument(typeSyntax, semanticModel)
         || IsTypedEntityIdArgument(typeSyntax, semanticModel);
 
-    private static bool IsTypedEntityIdAliasDeclaration(
-        TypeSyntax typeSyntax,
-        SemanticModel semanticModel,
-        CompilationUnitSyntax root,
-        string relativePath)
+    private static bool IsTypedEntityIdRebindArgument(TypeSyntax typeSyntax, SemanticModel semanticModel)
     {
-        if (!relativePath.StartsWith("LgymApi.Application/TrainingPlanning/Plan/", StringComparison.OrdinalIgnoreCase)
-            && !relativePath.StartsWith("LgymApi.Application/TrainingPlanning/Contracts/ManagedPlans/", StringComparison.OrdinalIgnoreCase)
-            && !relativePath.Equals("LgymApi.Application/TrainingPlanning/Contracts/PlanDay/IPlanDayRelationshipAccessPort.cs", StringComparison.OrdinalIgnoreCase)
-            && !relativePath.Equals("LgymApi.Application/WorkoutProgress/Contracts/Measurements/IMeasurementsRelationshipAccessPort.cs", StringComparison.OrdinalIgnoreCase))
+        foreach (var genericName in typeSyntax.AncestorsAndSelf()
+                     .OfType<GenericNameSyntax>()
+                     .Where(name => name.Identifier.ValueText == "Rebind"))
+        {
+            if (semanticModel.GetSymbolInfo(genericName).Symbol is IMethodSymbol { ReturnType: INamedTypeSymbol returnType }
+                && IsTypedEntityId(returnType))
+            {
+                return true;
+            }
+
+            if (genericName.Parent is MemberAccessExpressionSyntax memberAccess
+                && genericName.TypeArgumentList.Arguments.Any(argument => argument.Span.Contains(typeSyntax.Span))
+                && (IsTypedEntityIdRebind(memberAccess, semanticModel)
+                    || memberAccess.Name.Identifier.ValueText == "Rebind"))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsTypedEntityIdRebind(MemberAccessExpressionSyntax memberAccess, SemanticModel semanticModel)
+    {
+        var receiverTypeInfo = semanticModel.GetTypeInfo(memberAccess.Expression);
+        if ((receiverTypeInfo.Type is INamedTypeSymbol receiverType && IsTypedEntityId(receiverType))
+            || (receiverTypeInfo.ConvertedType is INamedTypeSymbol convertedReceiverType && IsTypedEntityId(convertedReceiverType)))
+        {
+            return true;
+        }
+
+        var invocation = memberAccess.AncestorsAndSelf().OfType<InvocationExpressionSyntax>().FirstOrDefault();
+        if (invocation == null)
         {
             return false;
         }
 
+        var symbolInfo = semanticModel.GetSymbolInfo(invocation);
+        return symbolInfo.Symbol is IMethodSymbol { ReturnType: INamedTypeSymbol returnType } && IsTypedEntityId(returnType)
+            || symbolInfo.CandidateSymbols.OfType<IMethodSymbol>().Any(method =>
+                method.ReturnType is INamedTypeSymbol candidateReturnType && IsTypedEntityId(candidateReturnType));
+    }
+
+    private static bool IsPersistedForeignKeyConfigurationUsage(TypeSyntax typeSyntax, SemanticModel semanticModel)
+    {
+        foreach (var invocation in typeSyntax.AncestorsAndSelf().OfType<InvocationExpressionSyntax>())
+        {
+            if (invocation.Expression is MemberAccessExpressionSyntax memberAccess
+                && memberAccess.Name.Identifier.ValueText is "HasOne" or "WithMany" or "HasForeignKey"
+                && semanticModel.GetTypeInfo(memberAccess.Expression).Type is INamedTypeSymbol receiverType
+                && receiverType.ContainingNamespace.ToDisplayString().StartsWith("Microsoft.EntityFrameworkCore.Metadata.Builders", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsTypedEntityIdAliasDeclaration(
+        TypeSyntax typeSyntax,
+        SemanticModel semanticModel,
+        CompilationUnitSyntax root)
+    {
         var usingDirective = typeSyntax.AncestorsAndSelf().OfType<UsingDirectiveSyntax>().FirstOrDefault();
         if (usingDirective?.Alias == null || semanticModel.GetDeclaredSymbol(usingDirective) is not IAliasSymbol aliasSymbol)
         {
@@ -314,7 +826,7 @@ public sealed class CrossModuleEntityLeakageGuardTests
             .Where(identifier => SymbolEqualityComparer.Default.Equals(semanticModel.GetAliasInfo(identifier), aliasSymbol))
             .ToList();
 
-        return aliasUsages.Count > 0 && aliasUsages.All(aliasUsage => IsTypedEntityIdArgument(aliasUsage, semanticModel));
+        return aliasUsages.All(aliasUsage => IsTypedEntityIdUsage(aliasUsage, semanticModel));
     }
 
     private static bool IsTypedEntityId(INamedTypeSymbol type)
@@ -356,6 +868,9 @@ public sealed class CrossModuleEntityLeakageGuardTests
 
         return normalized switch
         {
+            var path when path.StartsWith("LgymApi.TrainingPlanning/", StringComparison.OrdinalIgnoreCase)
+                || RemainingTrainingPlanningApplicationAdapters.Contains(path, StringComparer.OrdinalIgnoreCase)
+                => "Training Planning",
             var path when path.StartsWith("LgymApi.Application/User/", StringComparison.OrdinalIgnoreCase)
                 || path.StartsWith("LgymApi.Application/Role/", StringComparison.OrdinalIgnoreCase)
                 || path.StartsWith("LgymApi.Application/ExternalAuth/", StringComparison.OrdinalIgnoreCase)
@@ -363,7 +878,7 @@ public sealed class CrossModuleEntityLeakageGuardTests
                 || path.StartsWith("LgymApi.Application/Features/PasswordReset/", StringComparison.OrdinalIgnoreCase)
                 || path.StartsWith("LgymApi.Application/Features/AdminManagement/", StringComparison.OrdinalIgnoreCase)
                 => "Identity & Accounts",
-            var path when path.StartsWith("LgymApi.Application/Notifications/", StringComparison.OrdinalIgnoreCase)
+            var path when path.StartsWith("LgymApi.Notifications/", StringComparison.OrdinalIgnoreCase)
                 => "Notifications",
             var path when path.StartsWith("LgymApi.Application/Features/Reporting/", StringComparison.OrdinalIgnoreCase)
                 => "Reporting",
@@ -388,5 +903,34 @@ public sealed class CrossModuleEntityLeakageGuardTests
                 => "Nutrition",
             _ => null
         };
+    }
+
+    private static bool IsTrainingPlanningBoundarySourcePath(string relativePath)
+        => TryGetApplicationModuleName(relativePath) == ArchitectureTestHelpers.TrainingPlanningModuleName;
+
+    private static string? TryGetTrainingPlanningModuleFromNamespace(CompilationUnitSyntax root)
+    {
+        var declaresTrainingPlanningNamespace = root.DescendantNodes()
+            .OfType<BaseNamespaceDeclarationSyntax>()
+            .Select(declaration => declaration.Name.ToString())
+            .Any(namespaceName =>
+                namespaceName.StartsWith("LgymApi.Application.TrainingPlanning", StringComparison.Ordinal)
+                || namespaceName.StartsWith("LgymApi.Application.Features.PlanDay", StringComparison.Ordinal));
+
+        return declaresTrainingPlanningNamespace
+            ? ArchitectureTestHelpers.TrainingPlanningModuleName
+            : null;
+    }
+
+    private static bool IsBuildArtifactPath(string path)
+    {
+        var normalized = ArchitectureTestHelpers.NormalizePath(path);
+        return normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed record TrainingPlanningPublicSurfaceViolation(string Category, string Source, string Target)
+    {
+        public string Identity => $"{Category}|{Source}|{Target}";
     }
 }

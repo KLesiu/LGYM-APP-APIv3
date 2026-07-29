@@ -5,6 +5,7 @@ using FluentAssertions;
 using LgymApi.Application.Notifications;
 using LgymApi.Application.Notifications.Contracts.Push;
 using LgymApi.Application.Notifications.Models;
+using LgymApi.Application.Notifications.Providers.Fcm;
 using LgymApi.Application.Notifications.Repositories;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Platform.Contracts.Serialization;
@@ -13,11 +14,9 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
-using LgymApi.Infrastructure.Notifications.Push;
-using LgymApi.Infrastructure.Options;
 using LgymApi.Infrastructure.Repositories;
-using LgymApi.Infrastructure.Services;
 using LgymApi.Infrastructure.UnitOfWork;
+using LgymApi.Identity.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -679,6 +678,30 @@ public sealed class PushNotificationPipelineTests
     }
 
     [Test]
+    public async Task FcmSender_WhenInstallationLookupIsCancelled_PropagatesCancellationWithoutHttpCall()
+    {
+        using var cancellationTokenSource = new CancellationTokenSource();
+        cancellationTokenSource.Cancel();
+        var httpClientFactory = new FakeHttpClientFactory();
+        var installationRepository = new FakePushInstallationRepository
+        {
+            FindByIdAsyncOverride = (_, cancellationToken) => Task.FromCanceled<PushInstallation?>(cancellationToken)
+        };
+        var sender = new FcmPushSender(
+            httpClientFactory,
+            installationRepository,
+            new PushNotificationOptions { SendEnabled = true },
+            NullLogger<FcmPushSender>.Instance);
+        var payload = new PushEventPayload(1, "internal.test.push", "event-1", null, null, null);
+
+        var action = () => sender.SendAsync(Id<PushInstallation>.New(), payload, cancellationTokenSource.Token);
+
+        await action.Should().ThrowAsync<OperationCanceledException>();
+        installationRepository.FindByIdCalls.Should().Be(1);
+        httpClientFactory.CreateClientCalls.Should().Be(0);
+    }
+
+    [Test]
     public void FcmSender_BuildsProjectScopedSendUrl()
     {
         var sender = new FcmPushSender(
@@ -869,15 +892,25 @@ public sealed class PushNotificationPipelineTests
         public List<Id<PushNotificationMessage>> EnqueuedNotificationIds { get; } = [];
         public List<(Id<PushNotificationMessage> notificationId, TimeSpan delay)> ScheduledRetries { get; } = [];
 
-        public string? Enqueue(Id<PushNotificationMessage> notificationId)
+        public string? Enqueue(string notificationId)
         {
-            EnqueuedNotificationIds.Add(notificationId);
+            if (!Id<PushNotificationMessage>.TryParse(notificationId, out var parsedNotificationId))
+            {
+                throw new FormatException("Notification ID must be a valid ID.");
+            }
+
+            EnqueuedNotificationIds.Add(parsedNotificationId);
             return "push-job-id";
         }
 
-        public string? ScheduleRetry(Id<PushNotificationMessage> notificationId, TimeSpan delay)
+        public string? ScheduleRetry(string notificationId, TimeSpan delay)
         {
-            ScheduledRetries.Add((notificationId, delay));
+            if (!Id<PushNotificationMessage>.TryParse(notificationId, out var parsedNotificationId))
+            {
+                throw new FormatException("Notification ID must be a valid ID.");
+            }
+
+            ScheduledRetries.Add((parsedNotificationId, delay));
             return "push-retry-job-id";
         }
     }
@@ -886,9 +919,9 @@ public sealed class PushNotificationPipelineTests
     {
         public int ScheduleRetryCalls { get; private set; }
 
-        public string? Enqueue(Id<PushNotificationMessage> notificationId) => "push-job-id";
+        public string? Enqueue(string notificationId) => "push-job-id";
 
-        public string? ScheduleRetry(Id<PushNotificationMessage> notificationId, TimeSpan delay)
+        public string? ScheduleRetry(string notificationId, TimeSpan delay)
         {
             ScheduleRetryCalls += 1;
             throw new InvalidOperationException("scheduler unavailable");
@@ -899,13 +932,13 @@ public sealed class PushNotificationPipelineTests
     {
         public int EnqueueCalls { get; private set; }
 
-        public string? Enqueue(Id<PushNotificationMessage> notificationId)
+        public string? Enqueue(string notificationId)
         {
             EnqueueCalls += 1;
             return EnqueueCalls == 1 ? null : "push-job-id";
         }
 
-        public string? ScheduleRetry(Id<PushNotificationMessage> notificationId, TimeSpan delay) => "push-retry-job-id";
+        public string? ScheduleRetry(string notificationId, TimeSpan delay) => "push-retry-job-id";
     }
 
     private sealed class FakePushProviderSender : IPushProviderSender
@@ -1138,9 +1171,16 @@ public sealed class PushNotificationPipelineTests
 
         public int FindByIdCalls { get; private set; }
 
+        public Func<Id<PushInstallation>, CancellationToken, Task<PushInstallation?>>? FindByIdAsyncOverride { get; init; }
+
         public Task<PushInstallation?> FindByIdAsync(Id<PushInstallation> id, CancellationToken cancellationToken = default)
         {
             FindByIdCalls += 1;
+            if (FindByIdAsyncOverride != null)
+            {
+                return FindByIdAsyncOverride(id, cancellationToken);
+            }
+
             return Task.FromResult<PushInstallation?>(_installations.FirstOrDefault(x => x.Id == id));
         }
 
@@ -1225,9 +1265,9 @@ public sealed class PushNotificationPipelineTests
             return Task.FromResult(true);
         }
 
-        public Task DisassociateForSessionAsync(Id<UserSession> sessionId, DateTimeOffset lastSeenAt, CancellationToken cancellationToken = default)
+        public Task DisassociateForSessionAsync(Id<AccountSessionReference> sessionId, DateTimeOffset lastSeenAt, CancellationToken cancellationToken = default)
         {
-            foreach (var installation in _installations.Where(entity => entity.SessionId == sessionId))
+            foreach (var installation in _installations.Where(entity => entity.SessionId == sessionId.Rebind<UserSession>()))
             {
                 installation.UserId = null;
                 installation.SessionId = null;

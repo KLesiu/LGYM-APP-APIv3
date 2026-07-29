@@ -5,11 +5,15 @@ using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.TrainingPlanning.Contracts.ManagedPlans;
+using LgymApi.Application.TrainingPlanning.Contracts.PlanDay;
 using LgymApi.Application.TrainingPlanning.Errors;
 using LgymApi.Application.TrainingPlanning;
 using LgymApi.Application.TrainingPlanning.Plan.ActivePlanPointer;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.TrainingPlanning;
+using LgymApi.TrainingPlanning.Contracts;
 using LgymApi.Resources;
 using LgymApi.TestUtils.Fakes;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,14 +42,14 @@ public sealed class ManagedPlanContractRegistrationTests
     {
         var plan = CreatePlan(Id<User>.New(), "Mapped", isActive: true, createdAt: DateTimeOffset.UtcNow);
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
 
         var result = mapper.Map<Plan, ManagedPlanReadModel>(plan, mapper.CreateContext());
 
-        result.Id.Should().Be(plan.Id);
+        result.Id.Should().Be(plan.Id.Rebind<PlanReference>());
         result.Name.Should().Be(plan.Name);
         result.IsActive.Should().Be(plan.IsActive);
         result.CreatedAt.Should().Be(plan.CreatedAt);
@@ -55,10 +59,11 @@ public sealed class ManagedPlanContractRegistrationTests
     public void AddTrainingPlanningModule_RegistersManagedPlanContractsExactlyOnceAndResolvesThem()
     {
         var services = CreateServices(
-            Substitute.For<IPlanRepository>(),
-            Substitute.For<IActivePlanPointerStore>(),
+            new PlanRepositoryFake(),
+            new ActivePlanPointerStoreFake(),
             Substitute.For<IAccountReadService>(),
-            new FakeUnitOfWork());
+            new FakeUnitOfWork(),
+            Substitute.For<IPlanExerciseClonePort>());
 
         var contracts = new[]
         {
@@ -92,8 +97,9 @@ public sealed class ManagedPlanContractRegistrationTests
         var cancellationToken = new CancellationTokenSource().Token;
         var oldPlan = CreatePlan(traineeId, "Old", createdAt: DateTimeOffset.UtcNow.AddDays(-1));
         var newPlan = CreatePlan(traineeId, "New", createdAt: DateTimeOffset.UtcNow);
-        var planRepository = Substitute.For<IPlanRepository>();
-        planRepository.GetByUserIdAsync(traineeId, cancellationToken).Returns([oldPlan, newPlan]);
+        var planRepository = new PlanRepositoryFake();
+        var traineeReference = traineeId.Rebind<AccountReference>();
+        planRepository.PlansByUserId[traineeId] = [oldPlan, newPlan];
 
         var useCase = Resolve<IGetManagedPlansUseCase>(planRepository);
 
@@ -101,7 +107,7 @@ public sealed class ManagedPlanContractRegistrationTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Select(plan => plan.Name).Should().Equal("New", "Old");
-        await planRepository.Received(1).GetByUserIdAsync(traineeId, cancellationToken);
+        planRepository.GetByUserCalls.Should().ContainSingle(call => call.UserId == traineeId && call.CancellationToken == cancellationToken);
     }
 
     [Test]
@@ -110,9 +116,7 @@ public sealed class ManagedPlanContractRegistrationTests
         var traineeId = Id<User>.New();
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        var planRepository = Substitute.For<IPlanRepository>();
-        planRepository.GetByUserIdAsync(traineeId, cancellation.Token)
-            .Returns(Task.FromCanceled<List<Plan>>(cancellation.Token));
+        var planRepository = new PlanRepositoryFake { GetByUserException = new TaskCanceledException("Canceled", null, cancellation.Token) };
         var useCase = Resolve<IGetManagedPlansUseCase>(planRepository);
 
         Func<Task> action = () => useCase.ExecuteAsync(new GetManagedPlansQuery(traineeId), cancellation.Token);
@@ -135,11 +139,10 @@ public sealed class ManagedPlanContractRegistrationTests
     {
         var trainerId = Id<User>.New();
         var traineeId = Id<User>.New();
-        var planRepository = Substitute.For<IPlanRepository>();
+        var planRepository = new PlanRepositoryFake();
         var unitOfWork = new FakeUnitOfWork();
         Plan? stagedPlan = null;
-        planRepository.AddAsync(Arg.Do<Plan>(plan => stagedPlan = plan), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+        planRepository.OnAdd = plan => stagedPlan = plan;
         var useCase = Resolve<ICreateManagedPlanUseCase>(planRepository, unitOfWork: unitOfWork);
 
         var result = await useCase.ExecuteAsync(new CreateManagedPlanCommand(trainerId, traineeId, "  Template  "));
@@ -150,7 +153,7 @@ public sealed class ManagedPlanContractRegistrationTests
         stagedPlan.Name.Should().Be("Template");
         stagedPlan.IsActive.Should().BeFalse();
         stagedPlan.IsDeleted.Should().BeFalse();
-        result.Value.Id.Should().Be(stagedPlan.Id);
+        result.Value.Id.Should().Be(stagedPlan.Id.Rebind<PlanReference>());
         unitOfWork.SaveChangesCalls.Should().Be(1);
         unitOfWork.BeginTransactionCalls.Should().Be(0);
     }
@@ -173,9 +176,9 @@ public sealed class ManagedPlanContractRegistrationTests
         var trainerId = Id<User>.New();
         var traineeId = Id<User>.New();
         var plan = CreatePlan(trainerId, "Old");
-        var planRepository = Substitute.For<IPlanRepository>();
+        var planRepository = new PlanRepositoryFake();
         var unitOfWork = new FakeUnitOfWork();
-        planRepository.FindByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        planRepository.PlansById[plan.Id] = plan;
         var useCase = Resolve<IUpdateManagedPlanUseCase>(planRepository, unitOfWork: unitOfWork);
 
         var trainerResult = await useCase.ExecuteAsync(new UpdateManagedPlanCommand(trainerId, traineeId, plan.Id, "  Trainer update  "));
@@ -185,7 +188,7 @@ public sealed class ManagedPlanContractRegistrationTests
         unitOfWork.SaveChangesCalls.Should().Be(1);
 
         var traineePlan = CreatePlan(traineeId, "Trainee old");
-        planRepository.FindByIdAsync(traineePlan.Id, Arg.Any<CancellationToken>()).Returns(traineePlan);
+        planRepository.PlansById[traineePlan.Id] = traineePlan;
 
         var traineeResult = await useCase.ExecuteAsync(new UpdateManagedPlanCommand(trainerId, traineeId, traineePlan.Id, "Trainee update"));
 
@@ -193,19 +196,19 @@ public sealed class ManagedPlanContractRegistrationTests
         traineePlan.Name.Should().Be("Trainee update");
 
         var foreignPlan = CreatePlan(Id<User>.New(), "Foreign");
-        planRepository.FindByIdAsync(foreignPlan.Id, Arg.Any<CancellationToken>()).Returns(foreignPlan);
+        planRepository.PlansById[foreignPlan.Id] = foreignPlan;
 
         var foreignResult = await useCase.ExecuteAsync(new UpdateManagedPlanCommand(trainerId, traineeId, foreignPlan.Id, "Nope"));
 
         foreignResult.IsFailure.Should().BeTrue();
         foreignResult.Error.Should().BeOfType<PlanNotFoundError>();
-        await planRepository.DidNotReceive().UpdateAsync(foreignPlan, Arg.Any<CancellationToken>());
+        planRepository.UpdatedPlans.Should().NotContain(foreignPlan);
     }
 
     [Test]
     public async Task UpdateManagedPlanAsync_WhenPlanIsMissing_ReturnsNotFound()
     {
-        var planRepository = Substitute.For<IPlanRepository>();
+        var planRepository = new PlanRepositoryFake();
         var useCase = Resolve<IUpdateManagedPlanUseCase>(planRepository);
 
         var result = await useCase.ExecuteAsync(
@@ -233,11 +236,12 @@ public sealed class ManagedPlanContractRegistrationTests
         var trainerId = Id<User>.New();
         var traineeId = Id<User>.New();
         var plan = CreatePlan(traineeId, "Assigned", isActive: true);
-        var planRepository = Substitute.For<IPlanRepository>();
-        var pointerStore = Substitute.For<IActivePlanPointerStore>();
+        var planRepository = new PlanRepositoryFake();
+        var pointerStore = new ActivePlanPointerStoreFake();
         var unitOfWork = new FakeUnitOfWork();
-        planRepository.FindByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
-        pointerStore.GetActivePlanIdAsync(traineeId, Arg.Any<CancellationToken>()).Returns(plan.Id);
+        var traineeReference = traineeId.Rebind<AccountReference>();
+        planRepository.PlansById[plan.Id] = plan;
+        pointerStore.ActivePlanId = plan.Id;
         var useCase = Resolve<IDeleteManagedPlanUseCase>(
             planRepository,
             pointerStore,
@@ -251,7 +255,7 @@ public sealed class ManagedPlanContractRegistrationTests
         plan.IsActive.Should().BeFalse();
         unitOfWork.SaveChangesCalls.Should().Be(1);
         unitOfWork.Transaction!.CommitCalls.Should().Be(1);
-        await pointerStore.Received(1).StageActivePlanIdAsync(traineeId, null, Arg.Any<CancellationToken>());
+        pointerStore.StagedPlanIds.Should().ContainSingle().Which.Should().BeNull();
     }
 
     [Test]
@@ -260,8 +264,8 @@ public sealed class ManagedPlanContractRegistrationTests
         var trainerId = Id<User>.New();
         var traineeId = Id<User>.New();
         var plan = CreatePlan(traineeId, "Assigned");
-        var planRepository = Substitute.For<IPlanRepository>();
-        planRepository.FindByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        var planRepository = new PlanRepositoryFake();
+        planRepository.PlansById[plan.Id] = plan;
         var useCase = Resolve<IDeleteManagedPlanUseCase>(planRepository);
 
         var result = await useCase.ExecuteAsync(new DeleteManagedPlanCommand(trainerId, traineeId, plan.Id));
@@ -278,22 +282,31 @@ public sealed class ManagedPlanContractRegistrationTests
         var traineeId = Id<User>.New();
         var template = CreatePlan(trainerId, "Template");
         var clone = CreatePlan(traineeId, "Clone", isActive: true);
-        var planRepository = Substitute.For<IPlanRepository>();
-        var pointerStore = Substitute.For<IActivePlanPointerStore>();
+        var planRepository = new PlanRepositoryFake();
+        var pointerStore = new ActivePlanPointerStoreFake();
         var unitOfWork = new FakeUnitOfWork();
-        planRepository.FindByIdAsync(template.Id, Arg.Any<CancellationToken>()).Returns(template);
-        planRepository.ClonePlanAsync(template.Id, traineeId, true, Arg.Any<CancellationToken>()).Returns(clone);
+        var traineeReference = traineeId.Rebind<AccountReference>();
+        var clonePort = Substitute.For<IPlanExerciseClonePort>();
+        var exerciseIdMap = new Dictionary<Id<PlanExerciseReference>, Id<PlanExerciseReference>>();
+        planRepository.PlansById[template.Id] = template;
+        planRepository.ExerciseIds = [];
+        clonePort.StageClonesAsync(traineeReference, [], Arg.Any<CancellationToken>()).Returns(exerciseIdMap);
+        planRepository.CloneResult = clone;
         var useCase = Resolve<IAssignManagedPlanUseCase>(
             planRepository,
             pointerStore,
             ExistingAccount(traineeId),
-            unitOfWork);
+            unitOfWork,
+            clonePort);
 
         var result = await useCase.ExecuteAsync(new AssignManagedPlanCommand(trainerId, traineeId, template.Id));
 
         result.IsSuccess.Should().BeTrue();
-        await planRepository.Received(1).ClearActivePlansAsync(traineeId, Arg.Any<CancellationToken>());
-        await pointerStore.Received(1).StageActivePlanIdAsync(traineeId, clone.Id, Arg.Any<CancellationToken>());
+        planRepository.FindByIdCalls.Should().ContainSingle(call => call.PlanId == template.Id);
+        planRepository.ClearedActiveUsers.Should().ContainSingle().Which.Should().Be(traineeId);
+        await clonePort.Received(1).StageClonesAsync(traineeReference, [], Arg.Any<CancellationToken>());
+        planRepository.CloneCalls.Should().ContainSingle(call => call.SourcePlanId == template.Id && call.UserId == traineeId && ReferenceEquals(call.ExerciseIdMap, exerciseIdMap));
+        pointerStore.StagedPlanIds.Should().ContainSingle().Which.Should().Be(clone.Id);
         unitOfWork.SaveChangesCalls.Should().Be(1);
         unitOfWork.Transaction!.CommitCalls.Should().Be(1);
     }
@@ -304,10 +317,12 @@ public sealed class ManagedPlanContractRegistrationTests
         var trainerId = Id<User>.New();
         var traineeId = Id<User>.New();
         var plan = CreatePlan(traineeId, "Trainee plan");
-        var planRepository = Substitute.For<IPlanRepository>();
-        var pointerStore = Substitute.For<IActivePlanPointerStore>();
+        var planRepository = new PlanRepositoryFake();
+        var pointerStore = new ActivePlanPointerStoreFake();
         var unitOfWork = new FakeUnitOfWork { SaveChangesException = new InvalidOperationException("save failed") };
-        planRepository.FindByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        var traineeReference = traineeId.Rebind<AccountReference>();
+        var planReference = plan.Id.Rebind<PlanReference>();
+        planRepository.PlansById[plan.Id] = plan;
         var useCase = Resolve<IAssignManagedPlanUseCase>(
             planRepository,
             pointerStore,
@@ -317,8 +332,8 @@ public sealed class ManagedPlanContractRegistrationTests
         Func<Task> action = () => useCase.ExecuteAsync(new AssignManagedPlanCommand(trainerId, traineeId, plan.Id));
 
         await action.Should().ThrowAsync<InvalidOperationException>();
-        await planRepository.Received(1).SetActivePlanAsync(traineeId, plan.Id, Arg.Any<CancellationToken>());
-        await pointerStore.Received(1).StageActivePlanIdAsync(traineeId, plan.Id, Arg.Any<CancellationToken>());
+        planRepository.SetActiveCalls.Should().ContainSingle(call => call.UserId == traineeId && call.PlanId == plan.Id);
+        pointerStore.StagedPlanIds.Should().ContainSingle().Which.Should().Be(plan.Id);
         unitOfWork.Transaction!.CommitCalls.Should().Be(0);
         unitOfWork.Transaction.RollbackCalls.Should().Be(1);
     }
@@ -331,11 +346,11 @@ public sealed class ManagedPlanContractRegistrationTests
         var plan = CreatePlan(traineeId, "Trainee plan");
         var transaction = new FakeUnitOfWorkTransaction { CommitException = new InvalidOperationException("commit failed") };
         var unitOfWork = new FakeUnitOfWork(transaction);
-        var planRepository = Substitute.For<IPlanRepository>();
-        planRepository.FindByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        var planRepository = new PlanRepositoryFake();
+        planRepository.PlansById[plan.Id] = plan;
         var useCase = Resolve<IAssignManagedPlanUseCase>(
             planRepository,
-            Substitute.For<IActivePlanPointerStore>(),
+            new ActivePlanPointerStoreFake(),
             ExistingAccount(traineeId),
             unitOfWork);
 
@@ -352,8 +367,8 @@ public sealed class ManagedPlanContractRegistrationTests
         var trainerId = Id<User>.New();
         var traineeId = Id<User>.New();
         var foreignPlan = CreatePlan(Id<User>.New(), "Foreign");
-        var planRepository = Substitute.For<IPlanRepository>();
-        planRepository.FindByIdAsync(foreignPlan.Id, Arg.Any<CancellationToken>()).Returns(foreignPlan);
+        var planRepository = new PlanRepositoryFake();
+        planRepository.PlansById[foreignPlan.Id] = foreignPlan;
         var useCase = Resolve<IAssignManagedPlanUseCase>(planRepository);
 
         var foreignResult = await useCase.ExecuteAsync(new AssignManagedPlanCommand(trainerId, traineeId, foreignPlan.Id));
@@ -362,7 +377,7 @@ public sealed class ManagedPlanContractRegistrationTests
         foreignResult.Error.Should().BeOfType<PlanNotFoundError>();
 
         var traineePlan = CreatePlan(traineeId, "Trainee");
-        planRepository.FindByIdAsync(traineePlan.Id, Arg.Any<CancellationToken>()).Returns(traineePlan);
+        planRepository.PlansById[traineePlan.Id] = traineePlan;
 
         var missingTraineeResult = await useCase.ExecuteAsync(new AssignManagedPlanCommand(trainerId, traineeId, traineePlan.Id));
 
@@ -374,9 +389,10 @@ public sealed class ManagedPlanContractRegistrationTests
     public async Task UnassignManagedPlanAsync_ClearsActivePlansAndPointer()
     {
         var traineeId = Id<User>.New();
-        var planRepository = Substitute.For<IPlanRepository>();
-        var pointerStore = Substitute.For<IActivePlanPointerStore>();
+        var planRepository = new PlanRepositoryFake();
+        var pointerStore = new ActivePlanPointerStoreFake();
         var unitOfWork = new FakeUnitOfWork();
+        var traineeReference = traineeId.Rebind<AccountReference>();
         var useCase = Resolve<IUnassignManagedPlanUseCase>(
             planRepository,
             pointerStore,
@@ -386,8 +402,8 @@ public sealed class ManagedPlanContractRegistrationTests
         var result = await useCase.ExecuteAsync(new UnassignManagedPlanCommand(traineeId));
 
         result.IsSuccess.Should().BeTrue();
-        await planRepository.Received(1).ClearActivePlansAsync(traineeId, Arg.Any<CancellationToken>());
-        await pointerStore.Received(1).StageActivePlanIdAsync(traineeId, null, Arg.Any<CancellationToken>());
+        planRepository.ClearedActiveUsers.Should().ContainSingle().Which.Should().Be(traineeId);
+        pointerStore.StagedPlanIds.Should().ContainSingle().Which.Should().BeNull();
         unitOfWork.Transaction!.CommitCalls.Should().Be(1);
     }
 
@@ -396,16 +412,17 @@ public sealed class ManagedPlanContractRegistrationTests
     {
         var traineeId = Id<User>.New();
         var activePlan = CreatePlan(traineeId, "Active", isActive: true);
-        var planRepository = Substitute.For<IPlanRepository>();
-        planRepository.FindActiveByUserIdAsync(traineeId, Arg.Any<CancellationToken>()).Returns(activePlan);
+        var planRepository = new PlanRepositoryFake();
+        var traineeReference = traineeId.Rebind<AccountReference>();
+        planRepository.ActivePlan = activePlan;
         var useCase = Resolve<IGetActiveAssignedPlanUseCase>(planRepository);
 
         var success = await useCase.ExecuteAsync(new GetActiveAssignedPlanQuery(traineeId));
 
         success.IsSuccess.Should().BeTrue();
-        success.Value.Id.Should().Be(activePlan.Id);
+        success.Value.Id.Should().Be(activePlan.Id.Rebind<PlanReference>());
 
-        planRepository.FindActiveByUserIdAsync(traineeId, Arg.Any<CancellationToken>()).Returns((Plan?)null);
+        planRepository.ActivePlan = null;
 
         var missing = await useCase.ExecuteAsync(new GetActiveAssignedPlanQuery(traineeId));
 
@@ -441,15 +458,17 @@ public sealed class ManagedPlanContractRegistrationTests
         IPlanRepository planRepository,
         IActivePlanPointerStore activePlanPointerStore,
         IAccountReadService accountReadService,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IPlanExerciseClonePort exerciseClone)
     {
         var services = new ServiceCollection();
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
+        services.AddTrainingPlanningModule();
         services.AddScoped(_ => planRepository);
         services.AddScoped(_ => activePlanPointerStore);
+        services.AddScoped(_ => exerciseClone);
         services.AddScoped(_ => accountReadService);
         services.AddScoped(_ => unitOfWork);
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
-        services.AddTrainingPlanningModule();
         return services;
     }
 
@@ -457,14 +476,16 @@ public sealed class ManagedPlanContractRegistrationTests
         IPlanRepository? planRepository = null,
         IActivePlanPointerStore? activePlanPointerStore = null,
         IAccountReadService? accountReadService = null,
-        IUnitOfWork? unitOfWork = null)
+        IUnitOfWork? unitOfWork = null,
+        IPlanExerciseClonePort? exerciseClone = null)
         where TContract : notnull
     {
         var services = CreateServices(
-            planRepository ?? Substitute.For<IPlanRepository>(),
-            activePlanPointerStore ?? Substitute.For<IActivePlanPointerStore>(),
+            planRepository ?? new PlanRepositoryFake(),
+            activePlanPointerStore ?? new ActivePlanPointerStoreFake(),
             accountReadService ?? Substitute.For<IAccountReadService>(),
-            unitOfWork ?? new FakeUnitOfWork());
+            unitOfWork ?? new FakeUnitOfWork(),
+            exerciseClone ?? Substitute.For<IPlanExerciseClonePort>());
         var provider = services.BuildServiceProvider();
         var scope = provider.CreateScope();
 
@@ -493,5 +514,109 @@ public sealed class ManagedPlanContractRegistrationTests
             IsActive = isActive,
             CreatedAt = createdAt ?? DateTimeOffset.UtcNow
         };
+    }
+
+    private sealed class PlanRepositoryFake : IPlanRepository
+    {
+        public Dictionary<Id<Plan>, Plan> PlansById { get; } = [];
+        public Dictionary<Id<User>, List<Plan>> PlansByUserId { get; } = [];
+        public List<(Id<User> UserId, CancellationToken CancellationToken)> GetByUserCalls { get; } = [];
+        public List<(Id<Plan> PlanId, CancellationToken CancellationToken)> FindByIdCalls { get; } = [];
+        public List<Plan> UpdatedPlans { get; } = [];
+        public List<Id<User>> ClearedActiveUsers { get; } = [];
+        public List<(Id<User> UserId, Id<Plan> PlanId)> SetActiveCalls { get; } = [];
+        public List<(Id<Plan> SourcePlanId, Id<User> UserId, IReadOnlyDictionary<Id<PlanExerciseReference>, Id<PlanExerciseReference>> ExerciseIdMap)> CloneCalls { get; } = [];
+        public Action<Plan>? OnAdd { get; set; }
+        public Exception? GetByUserException { get; set; }
+        public Plan? ActivePlan { get; set; }
+        public IReadOnlyCollection<Id<PlanExerciseReference>> ExerciseIds { get; set; } = [];
+        public Plan? CloneResult { get; set; }
+
+        public Task<Plan?> FindByIdAsync(Id<Plan> id, CancellationToken cancellationToken = default)
+        {
+            FindByIdCalls.Add((id, cancellationToken));
+            return Task.FromResult(PlansById.GetValueOrDefault(id));
+        }
+
+        public Task<Plan?> FindActiveByUserIdAsync(Id<User> userId, CancellationToken cancellationToken = default)
+            => Task.FromResult(ActivePlan);
+
+        public Task<LgymApi.Application.TrainingPlanning.Plan.Models.PlanReadModel?> FindActiveReadModelByUserIdAsync(Id<User> userId, CancellationToken cancellationToken = default)
+            => Task.FromResult<LgymApi.Application.TrainingPlanning.Plan.Models.PlanReadModel?>(null);
+
+        public Task<Plan?> FindLastActiveByUserIdAsync(Id<User> userId, CancellationToken cancellationToken = default)
+            => Task.FromResult<Plan?>(null);
+
+        public Task<List<Plan>> GetByUserIdAsync(Id<User> userId, CancellationToken cancellationToken = default)
+        {
+            GetByUserCalls.Add((userId, cancellationToken));
+            return GetByUserException is null
+                ? Task.FromResult(PlansByUserId.GetValueOrDefault(userId, []))
+                : Task.FromException<List<Plan>>(GetByUserException);
+        }
+
+        public Task<List<LgymApi.Application.TrainingPlanning.Plan.Models.PlanReadModel>> GetReadModelsByUserIdAsync(Id<User> userId, CancellationToken cancellationToken = default)
+            => Task.FromResult<List<LgymApi.Application.TrainingPlanning.Plan.Models.PlanReadModel>>([]);
+
+        public Task AddAsync(Plan plan, CancellationToken cancellationToken = default)
+        {
+            OnAdd?.Invoke(plan);
+            return Task.CompletedTask;
+        }
+
+        public Task UpdateAsync(Plan plan, CancellationToken cancellationToken = default)
+        {
+            UpdatedPlans.Add(plan);
+            return Task.CompletedTask;
+        }
+
+        public Task SetActivePlanAsync(Id<User> userId, Id<Plan> planId, CancellationToken cancellationToken = default)
+        {
+            SetActiveCalls.Add((userId, planId));
+            return Task.CompletedTask;
+        }
+
+        public Task ClearActivePlansAsync(Id<User> userId, CancellationToken cancellationToken = default)
+        {
+            ClearedActiveUsers.Add(userId);
+            return Task.CompletedTask;
+        }
+
+        public Task<Plan?> FindByShareCodeAsync(string shareCode, CancellationToken cancellationToken = default)
+            => Task.FromResult<Plan?>(null);
+
+        public Task<IReadOnlyCollection<Id<PlanExerciseReference>>> GetPlanExerciseIdsAsync(Id<Plan> planId, CancellationToken cancellationToken = default)
+            => Task.FromResult(ExerciseIds);
+
+        public Task<Plan> ClonePlanAsync(
+            Id<Plan> sourcePlanId,
+            Id<User> userId,
+            IReadOnlyDictionary<Id<PlanExerciseReference>, Id<PlanExerciseReference>> exerciseIdMap,
+            bool isActive = true,
+            CancellationToken cancellationToken = default)
+        {
+            CloneCalls.Add((sourcePlanId, userId, exerciseIdMap));
+            return CloneResult is null
+                ? Task.FromException<Plan>(new InvalidOperationException("A clone result must be configured."))
+                : Task.FromResult(CloneResult);
+        }
+
+        public Task<string> GenerateShareCodeAsync(Id<Plan> planId, Id<User> userId, CancellationToken cancellationToken = default)
+            => Task.FromResult(string.Empty);
+    }
+
+    private sealed class ActivePlanPointerStoreFake : IActivePlanPointerStore
+    {
+        public Id<Plan>? ActivePlanId { get; set; }
+        public List<Id<Plan>?> StagedPlanIds { get; } = [];
+
+        public Task<Id<Plan>?> GetActivePlanIdAsync(Id<User> userId, CancellationToken cancellationToken = default)
+            => Task.FromResult(ActivePlanId);
+
+        public Task StageActivePlanIdAsync(Id<User> userId, Id<Plan>? planId, CancellationToken cancellationToken = default)
+        {
+            StagedPlanIds.Add(planId);
+            return Task.CompletedTask;
+        }
     }
 }

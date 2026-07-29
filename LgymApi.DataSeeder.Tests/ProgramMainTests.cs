@@ -19,12 +19,15 @@ public sealed class ProgramMainTests
             Environment.SetEnvironmentVariable("LGYM_SEEDER_BASE_PATH", basePath);
             Environment.SetEnvironmentVariable("LGYM_SEEDER_TEST_MODE", "true");
 
-            Console.SetIn(new StringReader("n\nMigrate\nn\n"));
-            Console.SetOut(new StringWriter());
+            Console.SetIn(TextReader.Null);
+            var output = new StringWriter();
+            Console.SetOut(output);
 
             var code = await Program.Main(Array.Empty<string>());
 
             code.Should().Be(1);
+            output.ToString().Should().Contain("Connection: <empty>");
+            output.ToString().Should().NotContain("Password=");
         }
         finally
         {
@@ -50,7 +53,7 @@ public sealed class ProgramMainTests
             Environment.SetEnvironmentVariable("LGYM_SEEDER_BASE_PATH", basePath);
             Environment.SetEnvironmentVariable("LGYM_SEEDER_TEST_MODE", "true");
 
-            Console.SetIn(new StringReader("n\nMigrate\nn\n"));
+            Console.SetIn(TextReader.Null);
             Console.SetOut(new StringWriter());
 
             var code = await Program.Main(Array.Empty<string>());

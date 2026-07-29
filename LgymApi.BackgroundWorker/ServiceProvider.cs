@@ -14,6 +14,7 @@ using LgymApi.Application.Notifications;
 using LgymApi.Application.Notifications.Contracts.Events;
 using LgymApi.Application.Notifications.Contracts.Push;
 using LgymApi.BackgroundWorker.Services;
+using LgymApi.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using ApplicationCommandDispatcher = LgymApi.Application.Platform.Contracts.BackgroundCommands.ICommandDispatcher;
 using ApplicationCommandOutboxWriter = LgymApi.Application.Platform.Contracts.BackgroundCommands.ICommandOutboxWriter;
@@ -37,10 +38,18 @@ namespace LgymApi.BackgroundWorker;
 
 public static class ServiceProvider
 {
-    public static IServiceCollection AddBackgroundWorkerServices(this IServiceCollection services, bool isTesting)
+    public static IServiceCollection AddBackgroundWorkerServices(
+        this IServiceCollection services,
+        bool isTesting,
+        bool hostBackgroundServer = false)
     {
         var commandContractRegistry = CommandContractRegistry.CreateDefault();
         services.AddSingleton(commandContractRegistry);
+
+        if (!isTesting && hostBackgroundServer)
+        {
+            services.AddInfrastructureBackgroundServer();
+        }
 
         if (isTesting)
         {
@@ -75,9 +84,6 @@ public static class ServiceProvider
         services.AddScoped<IEmailScheduler<TrainingCompletedEmailPayload>, EmailSchedulerService<TrainingCompletedEmailPayload>>();
         services.AddScoped<IEmailScheduler<WelcomeEmailPayload>, EmailSchedulerService<WelcomeEmailPayload>>();
         services.AddScoped<IEmailScheduler<PasswordRecoveryEmailPayload>, EmailSchedulerService<PasswordRecoveryEmailPayload>>();
-        services.AddScoped<IPasswordRecoveryEmailScheduler, PasswordRecoveryEmailSchedulerAdapter>();
-        services.AddScoped<ICoachingEmailNotificationFeature, CoachingEmailNotificationSchedulerAdapter>();
-        services.AddScoped<ICoachingEmailNotificationScheduler, CoachingEmailNotificationSchedulerAdapter>();
         services.AddScoped<IEmailJobHandler, EmailJobHandlerService>();
         services.AddScoped<ApplicationCommandDispatcher, CommandDispatcher>();
         services.AddScoped<ApplicationCommandOutboxWriter, CommandOutboxWriter>();

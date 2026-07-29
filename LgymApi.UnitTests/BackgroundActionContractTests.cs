@@ -13,7 +13,7 @@ public sealed class BackgroundActionContractTests
     [Test]
     public void ApplicationIActionCommand_IsExactPublicMarkerInterface()
     {
-        var type = GetApplicationType(ApplicationActionCommandTypeName);
+        var type = GetPlatformType(ApplicationActionCommandTypeName);
 
         type.IsPublic.Should().BeTrue();
         type.IsInterface.Should().BeTrue();
@@ -164,10 +164,10 @@ public sealed class BackgroundActionContractTests
         }
     }
 
-    private static Type GetApplicationType(string metadataName)
+    private static Type GetPlatformType(string metadataName)
     {
-        var type = typeof(LgymApi.Application.ServiceCollectionExtensions).Assembly.GetType(metadataName);
-        type.Should().NotBeNull($"{metadataName} must be defined by the Application assembly");
+        var type = typeof(IActionCommand).Assembly.GetType(metadataName);
+        type.Should().NotBeNull($"{metadataName} must be defined by the Platform assembly");
         return type!;
     }
 }

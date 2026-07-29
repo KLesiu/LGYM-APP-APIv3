@@ -9,7 +9,7 @@ namespace LgymApi.ArchitectureTests;
 public sealed class NotificationPushContractArchitectureTests
 {
     private const string ContractNamespace = "LgymApi.Application.Notifications.Contracts.Push";
-    private const string ContractRelativePath = "LgymApi.Application/Notifications/Contracts/Push";
+    private const string ContractRelativePath = "LgymApi.Notifications/Contracts/Push";
 
     private static readonly string[] ExpectedFiles =
     [
@@ -45,8 +45,8 @@ public sealed class NotificationPushContractArchitectureTests
     [Test]
     public void ApplicationPushContracts_MustExposeOnlyDomainTypesAndPreserveTypedIdException()
     {
-        var applicationAssembly = typeof(LgymApi.Application.ServiceCollectionExtensions).Assembly;
-        var contractTypes = applicationAssembly.GetExportedTypes()
+        var notificationsAssembly = typeof(LgymApi.Notifications.Contracts.NotificationReference).Assembly;
+        var contractTypes = notificationsAssembly.GetExportedTypes()
             .Where(type => type.Namespace == ContractNamespace)
             .ToArray();
         var payloadType = contractTypes.Single(type => type.Name == "PushEventPayload");
@@ -55,7 +55,7 @@ public sealed class NotificationPushContractArchitectureTests
         Assert.Multiple(() =>
         {
             Assert.That(contractTypes, Has.Length.EqualTo(6));
-            Assert.That(contractTypes, Is.All.Matches<Type>(type => type.Assembly == applicationAssembly && type.IsPublic));
+            Assert.That(contractTypes, Is.All.Matches<Type>(type => type.Assembly == notificationsAssembly && type.IsPublic));
             Assert.That(payloadProperties.Single(property => property.Name == "EntityId").PropertyType, Is.EqualTo(typeof(string)));
             Assert.That(
                 payloadProperties.Single(property => property.Name == "InAppNotificationId").PropertyType,

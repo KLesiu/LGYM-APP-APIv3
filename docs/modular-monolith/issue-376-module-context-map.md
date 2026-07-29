@@ -1,7 +1,7 @@
 # Issue #376: Module Context Map
 
 ## Status
-Draft
+Current extracted-module catalog
 
 ## Source precedence
 
@@ -15,7 +15,7 @@ Draft
 
 ## Scope
 
-This file defines the current module catalog and the draft policy notes that later issue-376 tasks will refine.
+This file defines the current eight-module catalog and its dependency policy after the issue #387 extraction.
 
 ## Module catalog
 
@@ -39,9 +39,9 @@ The #375 baseline already shows these as the current feature-level dependency cl
 
 | Sub-boundary | Final root | Responsibility |
 | --- | --- | --- |
-| BuildingBlocks | `LgymApi.Application/BuildingBlocks/` | Exact neutral public manifest: results, `Unit`, and the eight base application errors only. |
-| Technical Platform | `LgymApi.Application/Platform/Contracts/` | Shared background-command and serialization contracts, pagination, reliability, Unit of Work ports, and the public Platform facade. |
-| Reference Data | `LgymApi.Application/Platform/ReferenceData/` | AppConfig, enum lookup, unit conversion, and the internal registration helper composed only by `AddPlatformModule`. |
+| BuildingBlocks | `LgymApi.Platform/BuildingBlocks/` | Exact neutral public manifest: results, `Unit`, and the eight base application errors only. |
+| Technical Platform | `LgymApi.Platform/Contracts/` | Shared background-command and serialization contracts, pagination, reliability, Unit of Work ports, and the public Platform facade. |
+| Reference Data | `LgymApi.Platform/ReferenceData/` | AppConfig, enum lookup, unit conversion, and the internal registration helper composed only by `PlatformModule.AddPlatformModule`. |
 
 BuildingBlocks may consume only the BCL. Technical Platform may consume BuildingBlocks and approved Domain-neutral primitives. Reference Data may consume BuildingBlocks, approved Technical Platform contracts, and Domain types. These classifications do not change the canonical owner name in the eight-module catalog.
 
@@ -60,6 +60,7 @@ Reference Data owns the six concrete enum-to-lookup mappings and the lookup serv
 
 - Exposes login, logout, profile, identity, and authorization contracts that other modules can rely on.
 - Publishes account identity events and account lookup data, while keeping credential handling and account mutation rules internal.
+- Publishes marker-ID account lookup, access/session facts, and immutable authenticated-account context so HTTP adapters do not need Identity repositories or account entities.
 
 ## Notifications
 
@@ -67,7 +68,7 @@ Reference Data owns the six concrete enum-to-lookup mappings and the lookup serv
 
 - Owns in-app notifications, push registration, push delivery lifecycle, and stale-installation cleanup.
 - Does not own the business event that triggered the message, only the delivery and audit of that message.
-- Owns module responsibility and writes, not a physical relocation of notification entities, projects, or runtime adapters; see `issue-381-notifications-boundary.md`.
+- Owns module responsibility, writes, policy, repositories, configurations, and provider implementation in `LgymApi.Notifications`; notification entities remain Domain types in the shared context. See `issue-381-notifications-boundary.md`.
 
 ### Public contract surface
 
@@ -85,6 +86,7 @@ Reference Data owns the six concrete enum-to-lookup mappings and the lookup serv
 
 - Exposes report request, submission, template, and photo-upload contracts to the rest of the system.
 - Publishes reporting statuses, submission views, and the Reporting-owned accepted-progress command without leaking storage concerns.
+- Uses five focused Application persistence ports for templates, requests/submissions, recurring assignments, photos/upload sessions, and relationship access. Their contracts carry `Id<AccountReference>` rather than Identity entities; Infrastructure owns EF projection and marker rebinding.
 
 ## Training Planning
 
@@ -151,7 +153,7 @@ The #375 baseline shows the current clusters already depend on shared platform, 
 | Platform / Reference Data | Its own shared bootstrap, configuration, reference data stores, and external runtime primitives | Any feature module's internal services, write models, or feature workflows |
 | Identity & Accounts | Platform / Reference Data | Internal persistence or private services from Notifications, Reporting, Training Planning, Workout & Progress, or Coaching |
 | Notifications | Platform / Reference Data; Identity & Accounts public contracts | Internal persistence or private services from Reporting, Training Planning, Workout & Progress, or Coaching |
-| Reporting | Platform / Reference Data; Identity & Accounts public contracts; Coaching `ICoachingRelationshipAccessService`; Training Planning read contracts | Internal persistence or private services from Notifications, Training Planning, Workout & Progress, or Coaching |
+| Reporting | Platform / Reference Data; Identity & Accounts marker contracts; Training Planning read contracts; consumer-owned `IReportingRelationshipAccessPersistence` | Internal persistence, Identity or Coaching entities/repositories, or private services from Notifications, Training Planning, Workout & Progress, or Coaching |
 | Training Planning | Platform / Reference Data; Identity & Accounts public contracts; its own `IPlanDayRelationshipAccessPort` | Internal persistence, private services, or public contracts from Notifications, Reporting, Workout & Progress, or Coaching |
 | Workout & Progress | Platform / Reference Data; Identity & Accounts public contracts; Training Planning plan contracts; its own `IMeasurementsRelationshipAccessPort` | Internal persistence, private services, or public contracts from Notifications, Reporting, or Coaching |
 | Coaching | Platform / Reference Data; Identity & Accounts public contracts; Training Planning; Workout & Progress; Notifications public contracts | Internal persistence or private services from Reporting or Nutrition |
@@ -208,7 +210,7 @@ The monolith has one production `AppDbContext`, one database, and one EF Core mi
 
 Internal known entity IDs use `Id<T>`. EF Core writes their provider values as PostgreSQL `uuid` columns. HTTP and JSON UUID values remain strings at the API boundary. The only polymorphic string ID exceptions are `PushNotificationMessage.EntityId` and `PushEventPayload.EntityId`.
 
-Architecture-debt allowlists are no-growth. A recorded violation may only be re-keyed when its owner changes and its source and target identities stay exactly the same. New violations, wildcard exemptions, and re-keying to a different source or target are forbidden. Remove stale entries instead of preserving debt that is no longer observed.
+The architecture-debt registry and its approved maximum are both zero. New entries, wildcard exemptions, path exclusions, and re-keying are forbidden. Independent scans of every observed production assembly must report zero violations.
 
 Repositories stage writes. Application services own `IUnitOfWork.SaveChangesAsync()` and, for multi-step writes, the explicit transaction commit or rollback. The PostgreSQL transaction tests prove visibility only after commit and prove rollback leaves no persisted write after a forced failure.
 
@@ -226,7 +228,7 @@ The eight-module catalog is the current baseline for those checks, and any later
 
 ## Executable topology and concern matrix
 
-`ProjectReferenceGraphGuardTests` fixes the current graph at 14 projects and 32 edges. The only approved graph delta is removal of `LgymApi.Domain -> LgymApi.Resources`; Domain no longer depends on Resources. The system remains one production `AppDbContext`, one PostgreSQL database, and one migration stream.
+`ProjectReferenceGraphGuardTests` fixes the current graph at 18 projects and 90 edges, while the direct-import guard verifies 89 source edges plus the Resources analyzer edge and the dependency-first order. The system remains one production `AppDbContext`, one PostgreSQL database, and one migration stream.
 
 `issue-393-platform-reference-data-boundary.md` is the executable concern-owner matrix for authentication, authorization, serialization, localization, logging, providers, pagination, clock, correlation, idempotency, enum lookup, AppConfig, and persistence topology. It supplements this map without adding an owner, project, provider, or persistence root.
 

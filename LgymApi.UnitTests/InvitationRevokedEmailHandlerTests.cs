@@ -1,13 +1,11 @@
-using FluentAssertions;
+using System.Text.Json;
 using LgymApi.Application.Coaching.Contracts.BackgroundCommands;
 using LgymApi.Application.Coaching.Contracts.Notifications;
-using LgymApi.Application.Identity.Contracts.Accounts;
-using LgymApi.Application.Notifications.Contracts.Events;
+using LgymApi.Application.Notifications.Contracts.Email;
+using LgymApi.Application.Platform.Contracts.Serialization;
 using LgymApi.BackgroundWorker.Actions;
 using LgymApi.Domain.Entities;
-using LgymApi.Domain.Notifications;
 using LgymApi.Domain.ValueObjects;
-using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -16,111 +14,61 @@ namespace LgymApi.UnitTests;
 [TestFixture]
 public sealed class InvitationRevokedEmailHandlerTests
 {
-    private ICoachingNotificationReadService _notificationReads = null!;
-    private IAccountReadService _accounts = null!;
-    private ICoachingNotificationIntentService _notificationIntents = null!;
-    private ICoachingEmailNotificationScheduler _scheduler = null!;
+    private IInvitationRevokedEmailPreparationPort _preparationPort = null!;
+    private IInvitationRevokedEmailDeliveryPort _deliveryPort = null!;
     private InvitationRevokedEmailHandler _handler = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _notificationReads = Substitute.For<ICoachingNotificationReadService>();
-        _accounts = Substitute.For<IAccountReadService>();
-        _notificationIntents = Substitute.For<ICoachingNotificationIntentService>();
-        _scheduler = Substitute.For<ICoachingEmailNotificationScheduler>();
-        _notificationIntents.SubmitAsync(Arg.Any<CoachingNotificationIntent>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new CoachingNotificationIntentResult(null, null)));
-        _handler = new InvitationRevokedEmailHandler(
-            _notificationReads,
-            _accounts,
-            _notificationIntents,
-            _scheduler,
-            NullLogger<InvitationRevokedEmailHandler>.Instance);
+        _preparationPort = Substitute.For<IInvitationRevokedEmailPreparationPort>();
+        _deliveryPort = Substitute.For<IInvitationRevokedEmailDeliveryPort>();
+        _handler = new InvitationRevokedEmailHandler(_preparationPort, _deliveryPort);
     }
 
     [Test]
-    public async Task ExecuteAsync_SubmitsRevokedEmailIntentAndSchedulesLegacyPayload()
+    public async Task ExecuteAsync_PreparesRawCommandAndDeliversScalarFacts()
     {
         var invitationId = Id<TrainerInvitation>.New();
-        var trainerId = Id<User>.New();
-        var trainer = new AccountReadModel(trainerId, "Coach", "coach@example.com", null, "pl-PL", "Europe/Warsaw");
-        var request = new CoachingEmailSchedulingRequest(
-            CoachingEmailSchedulingKind.InvitationRevoked,
-            EmailNotificationTypes.TrainerInvitationRevoked,
-            invitationId,
-            invitationId.Rebind<CorrelationScope>(),
+        var preparation = new InvitationRevokedEmailPreparation(
+            invitationId.ToString(),
+            Id<User>.New().ToString(),
             "invitee@example.com",
-            "en-US",
+            "coach@example.com",
+            "pl-PL",
             "Europe/Warsaw",
-            trainer.Name,
-            null,
-            null,
-            null);
-        _notificationReads.GetInvitationAsync(invitationId, Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<CoachingInvitationNotificationFact?>(new(
-                invitationId, trainerId, null, "invitee@example.com", "CODE123", DateTimeOffset.UtcNow)));
-        _accounts.GetByIdAsync(trainerId, Arg.Any<CancellationToken>()).Returns(Task.FromResult<AccountReadModel?>(trainer));
-        _notificationIntents.SubmitAsync(Arg.Any<CoachingNotificationIntent>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new CoachingNotificationIntentResult(request, null)));
+            "Coach");
+        _preparationPort.PrepareAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<InvitationRevokedEmailPreparation?>(preparation));
         using var cancellation = new CancellationTokenSource();
 
         await _handler.ExecuteAsync(new InvitationRevokedCommand { InvitationId = invitationId }, cancellation.Token);
 
-        await _notificationIntents.Received(1).SubmitAsync(
-            Arg.Is<CoachingNotificationIntent>(intent => IsRevokedEmailIntent(intent, invitationId, trainerId, trainer)),
+        await _preparationPort.Received(1).PrepareAsync(
+            Arg.Is<string>(payload => JsonSerializer.Deserialize<InvitationRevokedCommand>(payload, SharedSerializationOptions.Current)!.InvitationId == invitationId),
             cancellation.Token);
-        await _scheduler.Received(1).ScheduleAsync(
-            request,
+        await _deliveryPort.Received(1).DeliverAsync(
+            new InvitationRevokedEmailDeliveryRequest(
+                preparation.InvitationId,
+                preparation.TrainerId,
+                preparation.InviteeEmail,
+                preparation.TrainerEmail,
+                preparation.TrainerCultureName,
+                preparation.TrainerTimeZone,
+                preparation.TrainerName),
             cancellation.Token);
     }
 
     [Test]
-    public async Task ExecuteAsync_WhenTrainerAccountIsMissing_DoesNotSubmitAnIntent()
+    public async Task ExecuteAsync_WhenPreparationReturnsNull_DoesNotDeliver()
     {
-        var invitationId = Id<TrainerInvitation>.New();
-        var trainerId = Id<User>.New();
-        _notificationReads.GetInvitationAsync(invitationId, Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<CoachingInvitationNotificationFact?>(new(
-                invitationId, trainerId, null, "invitee@example.com", "CODE123", DateTimeOffset.UtcNow)));
-        _accounts.GetByIdAsync(trainerId, Arg.Any<CancellationToken>()).Returns(Task.FromResult<AccountReadModel?>(null));
+        _preparationPort.PrepareAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<InvitationRevokedEmailPreparation?>(null));
 
-        await _handler.ExecuteAsync(new InvitationRevokedCommand { InvitationId = invitationId });
+        await _handler.ExecuteAsync(new InvitationRevokedCommand { InvitationId = Id<TrainerInvitation>.New() });
 
-        await _notificationIntents.DidNotReceive().SubmitAsync(Arg.Any<CoachingNotificationIntent>(), Arg.Any<CancellationToken>());
-        await _scheduler.DidNotReceive().ScheduleAsync(Arg.Any<CoachingEmailSchedulingRequest>(), Arg.Any<CancellationToken>());
-    }
-
-    [Test]
-    public async Task ExecuteAsync_WhenNotificationsSuppressMissingInviteeEmail_DoesNotSchedule()
-    {
-        var invitationId = Id<TrainerInvitation>.New();
-        var trainerId = Id<User>.New();
-        var trainer = new AccountReadModel(trainerId, "Coach", "coach@example.com", null, "en-US", "Europe/Warsaw");
-        _notificationReads.GetInvitationAsync(invitationId, Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<CoachingInvitationNotificationFact?>(new(
-                invitationId, trainerId, null, string.Empty, "CODE123", DateTimeOffset.UtcNow)));
-        _accounts.GetByIdAsync(trainerId, Arg.Any<CancellationToken>()).Returns(Task.FromResult<AccountReadModel?>(trainer));
-
-        await _handler.ExecuteAsync(new InvitationRevokedCommand { InvitationId = invitationId });
-
-        await _notificationIntents.Received(1).SubmitAsync(
-            Arg.Is<CoachingNotificationIntent>(intent => intent is InvitationRevokedCoachingNotificationIntent),
+        await _deliveryPort.DidNotReceive().DeliverAsync(
+            Arg.Any<InvitationRevokedEmailDeliveryRequest>(),
             Arg.Any<CancellationToken>());
-        await _scheduler.DidNotReceive().ScheduleAsync(Arg.Any<CoachingEmailSchedulingRequest>(), Arg.Any<CancellationToken>());
-    }
-
-    private static bool IsRevokedEmailIntent(
-        CoachingNotificationIntent intent,
-        Id<TrainerInvitation> invitationId,
-        Id<User> trainerId,
-        AccountReadModel trainer)
-    {
-        return intent is InvitationRevokedCoachingNotificationIntent revoked
-            && revoked.EligibleLegacyChannel == CoachingNotificationLegacyChannel.Email
-            && revoked.InvitationId == invitationId
-            && revoked.TrainerId == trainerId
-            && revoked.InviteeEmail == "invitee@example.com"
-            && revoked.Trainer == trainer;
     }
 }

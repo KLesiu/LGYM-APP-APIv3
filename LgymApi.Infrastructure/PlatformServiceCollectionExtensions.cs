@@ -28,11 +28,9 @@ public static partial class ServiceCollectionExtensions
         AddPlatformPersistence(services, configuration, enableSensitiveLogging);
         AddPlatformBackgroundRuntime(services, configuration, isTesting, hostBackgroundServer);
 
-        AddPlatformPagination(services);
+        AddPlatformMapperRegistry(services);
         AddPlatformReliabilityDispatcher(services);
         AddPlatformUnitOfWork(services);
-        AddReferenceDataInfrastructure(services);
-        AddPlatformReliabilityRepositories(services);
 
         return services;
     }

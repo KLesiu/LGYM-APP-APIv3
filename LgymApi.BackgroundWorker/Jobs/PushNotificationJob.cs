@@ -1,8 +1,6 @@
 using Hangfire;
 using LgymApi.BackgroundWorker.Common.Jobs;
 using LgymApi.BackgroundWorker.Push;
-using LgymApi.Domain.Entities;
-using LgymApi.Domain.ValueObjects;
 
 namespace LgymApi.BackgroundWorker.Jobs;
 
@@ -16,7 +14,7 @@ public sealed class PushNotificationJob : IPushNotificationJob
         _handler = handler;
     }
 
-    public Task ExecuteAsync(Id<PushNotificationMessage> notificationId, CancellationToken cancellationToken = default)
+    public Task ExecuteAsync(string notificationId, CancellationToken cancellationToken = default)
     {
         return _handler.ProcessAsync(notificationId, cancellationToken);
     }

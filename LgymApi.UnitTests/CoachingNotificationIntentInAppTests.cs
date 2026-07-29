@@ -12,6 +12,7 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.Notifications;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
+using LgymApi.UnitTests.Fakes;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -166,8 +167,6 @@ public sealed class CoachingNotificationIntentInAppTests
                     return Task.FromResult(Result<InAppNotificationResult, AppError>.Success(new InAppNotificationResult(
                         Id<InAppNotification>.New(), Id<User>.New(), "message", null, false, InAppNotificationTypes.InvitationSent, false, null, DateTimeOffset.UtcNow)));
                 });
-            EmailNotificationLogRepository.FindByCorrelationAsync(Arg.Any<EmailNotificationType>(), Arg.Any<Id<CorrelationScope>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-                .Returns(Task.FromResult<NotificationMessage?>(null));
             EmailNotificationFeature.Enabled.Returns(true);
             Service = new CoachingNotificationIntentService(
                 InAppNotificationService,
@@ -178,7 +177,7 @@ public sealed class CoachingNotificationIntentInAppTests
 
         public List<CreateInAppNotificationInput> Inputs { get; } = [];
         public IInAppNotificationService InAppNotificationService { get; } = Substitute.For<IInAppNotificationService>();
-        public IEmailNotificationLogRepository EmailNotificationLogRepository { get; } = Substitute.For<IEmailNotificationLogRepository>();
+        public ConfigurableEmailNotificationLogRepository EmailNotificationLogRepository { get; } = new();
         public ICoachingEmailNotificationFeature EmailNotificationFeature { get; } = Substitute.For<ICoachingEmailNotificationFeature>();
         public CoachingNotificationIntentService Service { get; }
     }

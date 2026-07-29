@@ -1,6 +1,3 @@
-using LgymApi.Domain.Entities;
-using LgymApi.Domain.ValueObjects;
-
 namespace LgymApi.BackgroundWorker.Common.Jobs;
 
 /// <summary>
@@ -13,5 +10,5 @@ public interface IActionMessageJob
     /// Executes the orchestrated processing of a background action message.
     /// </summary>
     /// <param name="actionMessageId">The durable action message envelope id.</param>
-    Task ExecuteAsync(Id<CommandEnvelope> actionMessageId);
+    Task ExecuteAsync(string actionMessageId);
 }

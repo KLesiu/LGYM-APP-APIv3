@@ -171,7 +171,7 @@ public sealed class NoHostDependencyGuardTests
                 || path.StartsWith("LgymApi.Application/Features/PasswordReset/", StringComparison.OrdinalIgnoreCase)
                 || path.StartsWith("LgymApi.Application/Features/AdminManagement/", StringComparison.OrdinalIgnoreCase)
                 => "Identity & Accounts",
-            var path when path.StartsWith("LgymApi.Application/Notifications/", StringComparison.OrdinalIgnoreCase)
+            var path when path.StartsWith("LgymApi.Notifications/", StringComparison.OrdinalIgnoreCase)
                 => "Notifications",
             var path when path.StartsWith("LgymApi.Application/Features/Reporting/", StringComparison.OrdinalIgnoreCase)
                 => "Reporting",

@@ -1,5 +1,4 @@
 using LgymApi.Application.Platform.Contracts.BackgroundCommands;
-using LgymApi.Application.Repositories;
 using LgymApi.BackgroundWorker.Runtime;
 using Microsoft.Extensions.Logging;
 
@@ -9,18 +8,18 @@ public sealed class CommandOutboxWriter : ICommandOutboxWriter
 {
     private readonly IBackgroundActionResolver _backgroundActionResolver;
     private readonly CommandContractRegistry _commandContractRegistry;
-    private readonly ICommandEnvelopeRepository _commandEnvelopeRepository;
+    private readonly ICommandEnvelopeRuntime _commandEnvelopeRuntime;
     private readonly ILogger<CommandOutboxWriter> _logger;
 
     public CommandOutboxWriter(
         IBackgroundActionResolver backgroundActionResolver,
         CommandContractRegistry commandContractRegistry,
-        ICommandEnvelopeRepository commandEnvelopeRepository,
+        ICommandEnvelopeRuntime commandEnvelopeRuntime,
         ILogger<CommandOutboxWriter> logger)
     {
         _backgroundActionResolver = backgroundActionResolver;
         _commandContractRegistry = commandContractRegistry;
-        _commandEnvelopeRepository = commandEnvelopeRepository;
+        _commandEnvelopeRuntime = commandEnvelopeRuntime;
         _logger = logger;
     }
 
@@ -41,25 +40,24 @@ public sealed class CommandOutboxWriter : ICommandOutboxWriter
             return new CommandEnvelopeStageResult(null, false);
         }
 
-        var envelope = CommandEnvelopeFactory.Create(command, _commandContractRegistry);
-        var envelopeResult = await _commandEnvelopeRepository.AddOrGetExistingAsync(envelope, cancellationToken);
-        var wasExisting = !ReferenceEquals(envelopeResult, envelope);
+        var request = CommandEnvelopeFactory.Create(command, _commandContractRegistry);
+        var receipt = await _commandEnvelopeRuntime.StageAsync(request, cancellationToken);
 
-        if (wasExisting)
+        if (receipt.WasExisting)
         {
             _logger.LogInformation(
                 "Command envelope already exists for correlation {CorrelationId} (envelope {EnvelopeId}).",
-                envelope.CorrelationId,
-                envelopeResult.Id);
+                request.CommandId,
+                receipt.EnvelopeId);
         }
         else
         {
             _logger.LogInformation(
                 "Staged command {CommandId} with correlation {CorrelationId}.",
-                envelope.CommandTypeFullName,
-                envelope.CorrelationId);
+                request.CommandId,
+                receipt.EnvelopeId);
         }
 
-        return new CommandEnvelopeStageResult(envelopeResult, wasExisting);
+        return new CommandEnvelopeStageResult(receipt.EnvelopeId, receipt.WasExisting);
     }
 }

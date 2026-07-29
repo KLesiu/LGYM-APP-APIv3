@@ -13,6 +13,9 @@
   <ItemGroup>
     <ProjectReference Include="..\LgymApi.Application\LgymApi.Application.csproj" />
     <ProjectReference Include="..\LgymApi.BackgroundWorker.Common\LgymApi.BackgroundWorker.Common.csproj" />
+    <ProjectReference Include="..\LgymApi.Identity\LgymApi.Identity.csproj" />
     <ProjectReference Include="..\LgymApi.Infrastructure\LgymApi.Infrastructure.csproj" />
+    <ProjectReference Include="..\LgymApi.Notifications\LgymApi.Notifications.csproj" />
+    <ProjectReference Include="..\LgymApi.Platform\LgymApi.Platform.csproj" />
   </ItemGroup>
 </Project>

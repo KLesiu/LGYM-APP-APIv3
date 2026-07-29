@@ -1,11 +1,13 @@
 using FluentAssertions;
 using LgymApi.Application.Identity.Adapters;
-using LgymApi.Application.Identity;
+using LgymApi.Identity;
 using LgymApi.Application.Platform.ReferenceData.AppConfig.Contracts;
 using LgymApi.Application.Repositories;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Platform.Contracts;
+using LgymApi.UnitTests.Fakes;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
@@ -14,115 +16,150 @@ namespace LgymApi.UnitTests;
 [TestFixture]
 public sealed class AppConfigAuthorizationAdapterTests
 {
-    private IUserRepository _userRepository = null!;
-    private IRoleRepository _roleRepository = null!;
+    private ConfigurableUserRepository _userRepository = null!;
+    private ConfigurableRoleRepository _roleRepository = null!;
     private AppConfigAuthorizationAdapter _adapter = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _userRepository = Substitute.For<IUserRepository>();
-        _roleRepository = Substitute.For<IRoleRepository>();
+        _userRepository = new ConfigurableUserRepository();
+        _roleRepository = new ConfigurableRoleRepository();
         _adapter = new AppConfigAuthorizationAdapter(_userRepository, _roleRepository);
     }
 
     [Test]
     public async Task CanManageAppConfigAsync_EmptyUserId_ReturnsFalseWithoutRepositoryCalls()
     {
-        var result = await _adapter.CanManageAppConfigAsync(Id<User>.Empty);
+        var result = await _adapter.CanManageAppConfigAsync(Id<ActorReference>.Empty);
 
         result.Should().BeFalse();
-        await _userRepository.DidNotReceiveWithAnyArgs().FindByIdAsync(default, default);
-        await _roleRepository.DidNotReceiveWithAnyArgs().UserHasPermissionAsync(default, default!, default);
+        _userRepository.Calls.Should().NotContain(call => call.Method == nameof(IUserRepository.FindByIdAsync));
+        _roleRepository.Calls.Should().NotContain(call => call.Method == nameof(IRoleRepository.UserHasPermissionAsync));
     }
 
     [Test]
     public async Task CanManageAppConfigAsync_MissingUser_ReturnsFalseWithoutPermissionCheck()
     {
-        var userId = Id<User>.New();
-        _userRepository.FindByIdAsync(userId, CancellationToken.None).Returns(Task.FromResult<User?>(null));
+        var actorId = Id<ActorReference>.New();
+        var userId = actorId.Rebind<User>();
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(null);
 
-        var result = await _adapter.CanManageAppConfigAsync(userId);
+        var result = await _adapter.CanManageAppConfigAsync(actorId);
 
         result.Should().BeFalse();
-        await _userRepository.Received(1).FindByIdAsync(userId, CancellationToken.None);
-        await _roleRepository.DidNotReceiveWithAnyArgs().UserHasPermissionAsync(default, default!, default);
+        _userRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IUserRepository.FindByIdAsync)
+                && call.Argument is Id<User> id
+                && id == userId
+                && call.CancellationToken == CancellationToken.None)
+            .Should()
+            .ContainSingle();
+        _roleRepository.Calls.Should().NotContain(call => call.Method == nameof(IRoleRepository.UserHasPermissionAsync));
     }
 
     [Test]
     public async Task CanManageAppConfigAsync_UserLacksManageAppConfigPermission_ReturnsFalse()
     {
-        var userId = Id<User>.New();
-        _userRepository.FindByIdAsync(userId, CancellationToken.None).Returns(Task.FromResult<User?>(new User()));
-        _roleRepository.UserHasPermissionAsync(userId, AuthConstants.Permissions.ManageAppConfig, CancellationToken.None)
-            .Returns(Task.FromResult(false));
+        var actorId = Id<ActorReference>.New();
+        var userId = actorId.Rebind<User>();
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(new User());
+        _roleRepository.UserHasPermission = (_, _, _) => Task.FromResult(false);
 
-        var result = await _adapter.CanManageAppConfigAsync(userId);
+        var result = await _adapter.CanManageAppConfigAsync(actorId);
 
         result.Should().BeFalse();
-        await _roleRepository.Received(1)
-            .UserHasPermissionAsync(userId, AuthConstants.Permissions.ManageAppConfig, CancellationToken.None);
+        _roleRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IRoleRepository.UserHasPermissionAsync)
+                && call.Argument is ValueTuple<Id<User>, string> arguments
+                && arguments.Item1 == userId
+                && arguments.Item2 == AuthConstants.Permissions.ManageAppConfig
+                && call.CancellationToken == CancellationToken.None)
+            .Should()
+            .ContainSingle();
     }
 
     [Test]
     public async Task CanManageAppConfigAsync_UserHasManageAppConfigPermission_ReturnsTrue()
     {
-        var userId = Id<User>.New();
-        _userRepository.FindByIdAsync(userId, CancellationToken.None).Returns(Task.FromResult<User?>(new User()));
-        _roleRepository.UserHasPermissionAsync(userId, AuthConstants.Permissions.ManageAppConfig, CancellationToken.None)
-            .Returns(Task.FromResult(true));
+        var actorId = Id<ActorReference>.New();
+        var userId = actorId.Rebind<User>();
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(new User());
+        _roleRepository.UserHasPermission = (_, _, _) => Task.FromResult(true);
 
-        var result = await _adapter.CanManageAppConfigAsync(userId);
+        var result = await _adapter.CanManageAppConfigAsync(actorId);
 
         result.Should().BeTrue();
-        await _roleRepository.Received(1)
-            .UserHasPermissionAsync(userId, AuthConstants.Permissions.ManageAppConfig, CancellationToken.None);
+        _roleRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IRoleRepository.UserHasPermissionAsync)
+                && call.Argument is ValueTuple<Id<User>, string> arguments
+                && arguments.Item1 == userId
+                && arguments.Item2 == AuthConstants.Permissions.ManageAppConfig
+                && call.CancellationToken == CancellationToken.None)
+            .Should()
+            .ContainSingle();
     }
 
     [Test]
     public async Task CanManageAppConfigAsync_AllowedUser_ForwardsCancellationTokenToBothRepositories()
     {
-        var userId = Id<User>.New();
+        var actorId = Id<ActorReference>.New();
+        var userId = actorId.Rebind<User>();
         using var cancellationTokenSource = new CancellationTokenSource();
         var cancellationToken = cancellationTokenSource.Token;
         cancellationTokenSource.Cancel();
-        _userRepository.FindByIdAsync(userId, cancellationToken).Returns(Task.FromResult<User?>(new User()));
-        _roleRepository.UserHasPermissionAsync(userId, AuthConstants.Permissions.ManageAppConfig, cancellationToken)
-            .Returns(Task.FromResult(true));
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(new User());
+        _roleRepository.UserHasPermission = (_, _, _) => Task.FromResult(true);
 
-        var result = await _adapter.CanManageAppConfigAsync(userId, cancellationToken);
+        var result = await _adapter.CanManageAppConfigAsync(actorId, cancellationToken);
 
         result.Should().BeTrue();
-        await _userRepository.Received(1).FindByIdAsync(userId, cancellationToken);
-        await _roleRepository.Received(1)
-            .UserHasPermissionAsync(userId, AuthConstants.Permissions.ManageAppConfig, cancellationToken);
+        _userRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IUserRepository.FindByIdAsync)
+                && call.Argument is Id<User> id
+                && id == userId
+                && call.CancellationToken == cancellationToken)
+            .Should()
+            .ContainSingle();
+        _roleRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IRoleRepository.UserHasPermissionAsync)
+                && call.Argument is ValueTuple<Id<User>, string> arguments
+                && arguments.Item1 == userId
+                && arguments.Item2 == AuthConstants.Permissions.ManageAppConfig
+                && call.CancellationToken == cancellationToken)
+            .Should()
+            .ContainSingle();
     }
 
     [Test]
     public async Task CanManageAppConfigAsync_UserRepositoryThrows_PropagatesException()
     {
         var expectedException = new InvalidOperationException("User lookup failed.");
-        _userRepository.FindByIdAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<User?>(expectedException));
+        _userRepository.FindById = (_, _) => Task.FromException<User?>(expectedException);
 
         var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await _adapter.CanManageAppConfigAsync(Id<User>.New()));
+            await _adapter.CanManageAppConfigAsync(Id<ActorReference>.New()));
 
         exception.Should().BeSameAs(expectedException);
-        await _roleRepository.DidNotReceiveWithAnyArgs().UserHasPermissionAsync(default, default!, default);
+        _roleRepository.Calls.Should().NotContain(call => call.Method == nameof(IRoleRepository.UserHasPermissionAsync));
     }
 
     [Test]
     public async Task CanManageAppConfigAsync_RoleRepositoryThrows_PropagatesException()
     {
-        var userId = Id<User>.New();
+        var actorId = Id<ActorReference>.New();
+        var userId = actorId.Rebind<User>();
         var expectedException = new InvalidOperationException("Permission lookup failed.");
-        _userRepository.FindByIdAsync(userId, CancellationToken.None).Returns(Task.FromResult<User?>(new User()));
-        _roleRepository.UserHasPermissionAsync(userId, AuthConstants.Permissions.ManageAppConfig, CancellationToken.None)
-            .Returns(Task.FromException<bool>(expectedException));
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(new User());
+        _roleRepository.UserHasPermission = (_, _, _) => Task.FromException<bool>(expectedException);
 
         var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await _adapter.CanManageAppConfigAsync(userId));
+            await _adapter.CanManageAppConfigAsync(actorId));
 
         exception.Should().BeSameAs(expectedException);
     }
@@ -149,28 +186,26 @@ public sealed class AppConfigAuthorizationAdapterTests
         using var serviceProvider = services.BuildServiceProvider(validateScopes: true);
         using var scope = serviceProvider.CreateScope();
         var port = scope.ServiceProvider.GetRequiredService<IAppConfigAuthorizationPort>();
-        var userId = Id<User>.New();
-        _userRepository.FindByIdAsync(userId, CancellationToken.None).Returns(Task.FromResult<User?>(new User()));
-        _roleRepository.UserHasPermissionAsync(userId, AuthConstants.Permissions.ManageAppConfig, CancellationToken.None)
-            .Returns(Task.FromResult(true));
+        var actorId = Id<ActorReference>.New();
+        var userId = actorId.Rebind<User>();
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(new User());
+        _roleRepository.UserHasPermission = (_, _, _) => Task.FromResult(true);
 
-        var result = await port.CanManageAppConfigAsync(userId);
+        var result = await port.CanManageAppConfigAsync(actorId);
 
         result.Should().BeTrue();
 
-        _roleRepository.UserHasPermissionAsync(userId, AuthConstants.Permissions.ManageAppConfig, CancellationToken.None)
-            .Returns(Task.FromResult(false));
+        _roleRepository.UserHasPermission = (_, _, _) => Task.FromResult(false);
 
-        var denied = await port.CanManageAppConfigAsync(userId);
+        var denied = await port.CanManageAppConfigAsync(actorId);
 
         denied.Should().BeFalse();
 
         var expectedException = new InvalidOperationException("Permission lookup failed.");
-        _roleRepository.UserHasPermissionAsync(userId, AuthConstants.Permissions.ManageAppConfig, CancellationToken.None)
-            .Returns(Task.FromException<bool>(expectedException));
+        _roleRepository.UserHasPermission = (_, _, _) => Task.FromException<bool>(expectedException);
 
         var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await port.CanManageAppConfigAsync(userId));
+            await port.CanManageAppConfigAsync(actorId));
 
         exception.Should().BeSameAs(expectedException);
     }

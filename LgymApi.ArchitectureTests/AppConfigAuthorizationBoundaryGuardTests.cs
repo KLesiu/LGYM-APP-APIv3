@@ -1,6 +1,6 @@
 using LgymApi.Application.Platform.ReferenceData.AppConfig.Contracts;
-using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Platform.Contracts;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -24,7 +24,7 @@ public sealed class AppConfigAuthorizationBoundaryGuardTests
             Assert.That(method.ReturnType, Is.EqualTo(typeof(Task<bool>)));
             Assert.That(parameters.Select(parameter => parameter.ParameterType), Is.EqualTo(new[]
             {
-                typeof(Id<User>),
+                typeof(Id<ActorReference>),
                 typeof(CancellationToken)
             }));
             Assert.That(parameters[1].IsOptional, Is.True);
@@ -37,8 +37,7 @@ public sealed class AppConfigAuthorizationBoundaryGuardTests
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var filePath = Path.Combine(
             repositoryRoot,
-            "LgymApi.Application",
-            "Platform",
+            "LgymApi.Platform",
             "ReferenceData",
             "AppConfig",
             "Contracts",
@@ -76,10 +75,10 @@ public sealed class AppConfigAuthorizationBoundaryGuardTests
     }
 
     [TestCase(
-        "Task<bool> CanManageAppConfigAsync(Id<User> userId, CancellationToken cancellationToken = default);",
+        "Task<bool> CanManageAppConfigAsync(Id<ActorReference> actorId, CancellationToken cancellationToken = default);",
         true)]
     [TestCase(
-        "Task<bool> CanManageAppConfigAsync(User user, CancellationToken cancellationToken = default);",
+        "Task<bool> CanManageAppConfigAsync(Id<User> userId, CancellationToken cancellationToken = default);",
         false)]
     [TestCase(
         "Task<bool> CanManageAppConfigAsync(Id<Role> roleId, CancellationToken cancellationToken = default);",
@@ -87,7 +86,7 @@ public sealed class AppConfigAuthorizationBoundaryGuardTests
     [TestCase(
         "Task<bool> CanManageAppConfigAsync(Id<User> userId, string permission, CancellationToken cancellationToken = default);",
         false)]
-    public void AppConfigAuthorizationPortShapeFixture_ShouldAllowOnlyIdUserAndNoPermissionParameter(
+    public void AppConfigAuthorizationPortShapeFixture_ShouldAllowOnlyActorReferenceAndNoPermissionParameter(
         string declaration,
         bool isAllowed)
     {
@@ -103,10 +102,13 @@ public sealed class AppConfigAuthorizationBoundaryGuardTests
             using System.Threading.Tasks;
             using Fixture.Domain.Entities;
             using Fixture.Domain.ValueObjects;
+            using Fixture.Platform.Contracts;
+            using Fixture.Platform.Contracts;
 
             namespace Fixture.Domain.Entities { public sealed class User { } public sealed class Role { } }
+            namespace Fixture.Platform.Contracts { public sealed class ActorReference { private ActorReference() { } } }
             namespace Fixture.Domain.ValueObjects { public readonly record struct Id<T>; }
-            namespace Fixture.ReferenceData.AppConfig.Contracts { public interface IAppConfigAuthorizationPort { Task<bool> CanManageAppConfigAsync(Fixture.Domain.ValueObjects.Id<Fixture.Domain.Entities.User> userId, CancellationToken cancellationToken = default); } }
+            namespace Fixture.ReferenceData.AppConfig.Contracts { public interface IAppConfigAuthorizationPort { Task<bool> CanManageAppConfigAsync(Fixture.Domain.ValueObjects.Id<Fixture.Platform.Contracts.ActorReference> actorId, CancellationToken cancellationToken = default); } }
             namespace Fixture.Identity.Contracts.Access { public interface IUserAdminAccessService { } }
             namespace Fixture.Identity.Repositories { public interface IUserRepository { } public interface IRoleRepository { } }
             namespace Fixture.Identity.Authorization { public interface IGenericPermissionService { Task<bool> HasPermissionAsync(Fixture.Domain.ValueObjects.Id<Fixture.Domain.Entities.User> userId, string permission, CancellationToken cancellationToken = default); } }
@@ -138,8 +140,10 @@ public sealed class AppConfigAuthorizationBoundaryGuardTests
             using System.Threading.Tasks;
             using Fixture.Domain.Entities;
             using Fixture.Domain.ValueObjects;
+            using Fixture.Platform.Contracts;
 
             namespace Fixture.Domain.Entities { public sealed class User { } public sealed class Role { } }
+            namespace Fixture.Platform.Contracts { public sealed class ActorReference { private ActorReference() { } } }
             namespace Fixture.Domain.ValueObjects { public readonly record struct Id<T>; }
             namespace Fixture.ReferenceData.AppConfig.Contracts { public interface IAppConfigAuthorizationPort { {{declaration}} } }
             """, path: "LgymApi.Application/Platform/ReferenceData/AppConfig/Contracts/IAppConfigAuthorizationPort.cs");
@@ -150,9 +154,9 @@ public sealed class AppConfigAuthorizationBoundaryGuardTests
             "The compiler fixture must be valid before the AppConfig authorization-port shape is evaluated.");
 
         var contract = compilation.GetTypeByMetadataName("Fixture.ReferenceData.AppConfig.Contracts.IAppConfigAuthorizationPort");
-        var user = compilation.GetTypeByMetadataName("Fixture.Domain.Entities.User");
+        var actorReference = compilation.GetTypeByMetadataName("Fixture.Platform.Contracts.ActorReference");
         Assert.That(contract, Is.Not.Null);
-        Assert.That(user, Is.Not.Null);
+        Assert.That(actorReference, Is.Not.Null);
 
         var method = contract!.GetMembers().OfType<IMethodSymbol>().Single();
         var violations = new List<string>();
@@ -172,9 +176,9 @@ public sealed class AppConfigAuthorizationBoundaryGuardTests
             return violations;
         }
 
-        if (!IsIdOfUser(method.Parameters[0].Type, user!))
+        if (!IsIdOfActorReference(method.Parameters[0].Type, actorReference!))
         {
-            violations.Add("The first parameter must be Id<User>.");
+            violations.Add("The first parameter must be Id<ActorReference>.");
         }
 
         if (method.Parameters[1].Type.ToDisplayString() != typeof(CancellationToken).FullName
@@ -192,9 +196,9 @@ public sealed class AppConfigAuthorizationBoundaryGuardTests
                && task.TypeArguments[0].SpecialType == SpecialType.System_Boolean;
     }
 
-    private static bool IsIdOfUser(ITypeSymbol type, INamedTypeSymbol user)
+    private static bool IsIdOfActorReference(ITypeSymbol type, INamedTypeSymbol actorReference)
     {
         return type is INamedTypeSymbol { Name: "Id", Arity: 1 } id
-               && SymbolEqualityComparer.Default.Equals(id.TypeArguments[0], user);
+               && SymbolEqualityComparer.Default.Equals(id.TypeArguments[0], actorReference);
     }
 }

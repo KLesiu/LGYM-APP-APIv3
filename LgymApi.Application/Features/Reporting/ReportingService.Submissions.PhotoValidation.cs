@@ -1,7 +1,7 @@
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Reporting.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
-using LgymApi.Domain.Entities;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Enums;
 using LgymApi.Resources;
 
@@ -10,7 +10,7 @@ namespace LgymApi.Application.Features.Reporting;
 public sealed partial class ReportingService
 {
     private async Task<Result<Unit, AppError>> ValidateRequiredPhotosAsync(
-        ReportRequest request,
+        ReportRequestPersistenceModel request,
         CancellationToken cancellationToken)
     {
         var photoFields = request.Template.Fields
@@ -50,7 +50,7 @@ public sealed partial class ReportingService
             return Result<Unit, AppError>.Failure(new InvalidReportingError(Messages.ReportFieldValidationFailed));
         }
 
-        var uploadedPhotos = await _reportingRepository.GetPhotosByRequestIdAsync(request.Id, cancellationToken);
+        var uploadedPhotos = await _photoPersistence.ListByRequestAsync(request.Id, cancellationToken);
         var uploadedViews = uploadedPhotos
             .Where(p => !p.IsDeleted)
             .Select(p => p.ViewType)

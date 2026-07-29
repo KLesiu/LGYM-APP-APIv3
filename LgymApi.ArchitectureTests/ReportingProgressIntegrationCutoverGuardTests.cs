@@ -12,7 +12,11 @@ public sealed class ReportingProgressIntegrationCutoverGuardTests
         "IMeasurementRepository",
         "MeasurementEntity",
         "IReportSubmissionMeasurementWriter",
-        "ReportSubmissionMeasurementWriter"
+        "ReportSubmissionMeasurementWriter",
+        "ReportSubmissionAcceptedProgressEvent",
+        "ReportSubmissionAcceptedMeasurement",
+        "ReportSubmissionAcceptedProgressValidationResult",
+        "ReportSubmissionAcceptedProgressValidationOutcome"
     ];
 
     private const string AcceptedProgressCommandRelativePath =
@@ -56,8 +60,9 @@ public sealed class ReportingProgressIntegrationCutoverGuardTests
         Assert.Multiple(() =>
         {
             consumerSource.Should().Contain("IReportSubmissionAcceptedProgressConsumer");
-            consumerSource.Should().Contain("IMeasurementRepository");
-            consumerSource.Should().Contain("Measurement");
+            consumerSource.Should().Contain("IReportSubmissionAcceptedProgressPersistence");
+            consumerSource.Should().Contain("AcceptedReportMeasurementPersistenceModel");
+            consumerSource.Should().NotContain("IMeasurementRepository");
             registrationSource.Should().Contain(
                 "IReportSubmissionAcceptedProgressConsumer, ReportSubmissionAcceptedProgressConsumer");
         });

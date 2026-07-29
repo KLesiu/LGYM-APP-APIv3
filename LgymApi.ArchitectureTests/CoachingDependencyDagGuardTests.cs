@@ -21,6 +21,7 @@ public sealed class CoachingDependencyDagGuardTests
             ["Nutrition"] = CreateSet("Fixture.Contracts.ICoachingRelationshipAccessService"),
             ["Training Planning"] = CreateSet("Fixture.Contracts.IPlanDayRelationshipAccessPort"),
             ["Workout & Progress"] = CreateSet("Fixture.Contracts.IMeasurementsRelationshipAccessPort"),
+            ["Coaching"] = CreateSet("Fixture.Contracts.IGetManagedPlansUseCase"),
             ["API"] = CreateSet("Fixture.Contracts.ICoachingPublicReadService"),
             ["Worker"] = CreateSet("Fixture.Contracts.ICoachingNotificationIntentService")
         };
@@ -95,6 +96,10 @@ public sealed class CoachingDependencyDagGuardTests
         yield return Case("Workout_consumer_port", "Workout & Progress", "IMeasurementsRelationshipAccessPort", true);
         yield return Case("Workout_direct_access", "Workout & Progress", "ICoachingRelationshipAccessService", false);
         yield return Case("Workout_entity", "Workout & Progress", "TrainerTraineeLink", false);
+        yield return Case("Coaching_planning_managed_plan_contract", "Coaching", "IGetManagedPlansUseCase", true);
+        yield return Case("Coaching_planning_repository", "Coaching", "IPlanRepository", false);
+        yield return Case("Coaching_planning_entity", "Coaching", "Plan", false);
+        yield return Case("Coaching_planning_private_service", "Coaching", "GetManagedPlansUseCase", false);
         yield return Case("API_public_read", "API", "ICoachingPublicReadService", true);
         yield return Case("API_repository", "API", RelationshipRepositoryName, false);
         yield return Case("Worker_public_intent", "Worker", "ICoachingNotificationIntentService", true);
@@ -121,6 +126,8 @@ public sealed class CoachingDependencyDagGuardTests
                 public interface ITrainerRelationshipRepository { }
                 public interface IPlanDayRelationshipAccessPort { }
                 public interface IMeasurementsRelationshipAccessPort { }
+                public interface IGetManagedPlansUseCase { }
+                public interface IPlanRepository { }
                 public interface ICoachingPublicReadService { }
                 public interface ICoachingNotificationIntentService { }
                 public interface IReportingInternalService { }
@@ -128,6 +135,8 @@ public sealed class CoachingDependencyDagGuardTests
                 public sealed class CoachingRelationshipAccessService { }
                 public sealed class TrainerRelationshipService { }
                 public sealed class TrainerTraineeLink { }
+                public sealed class Plan { }
+                internal sealed class GetManagedPlansUseCase { }
                 public sealed class CoachingDependencyBag { }
             }
 
@@ -135,7 +144,7 @@ public sealed class CoachingDependencyDagGuardTests
             {
                 public sealed class Consumer
                 {
-                    public {{fixture.TargetContract}} Dependency { get; init; } = default!;
+                    internal {{fixture.TargetContract}} Dependency { get; init; } = default!;
                 }
             }
             """, path: $"Fixtures/{fixture.Name}.cs");

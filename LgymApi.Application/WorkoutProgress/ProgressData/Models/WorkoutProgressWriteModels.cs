@@ -9,15 +9,15 @@ public sealed record MeasurementWriteModel(
     double Value);
 
 public sealed record MainRecordCreateWriteModel(
-    Id<LgymApi.Domain.Entities.User> UserId,
+    Id<LgymApi.Identity.Contracts.AccountReference> UserId,
     Id<LgymApi.Domain.Entities.Exercise> ExerciseId,
     double Weight,
     WeightUnits Unit,
     DateTime Date);
 
 public sealed record MainRecordUpdateWriteModel(
-    Id<LgymApi.Domain.Entities.User> RouteUserId,
-    Id<LgymApi.Domain.Entities.User> CurrentUserId,
+    Id<LgymApi.Identity.Contracts.AccountReference> RouteUserId,
+    Id<LgymApi.Identity.Contracts.AccountReference> CurrentUserId,
     Id<LgymApi.Domain.Entities.MainRecord> RecordId,
     Id<LgymApi.Domain.Entities.Exercise> ExerciseId,
     double Weight,

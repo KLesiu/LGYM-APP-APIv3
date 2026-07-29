@@ -50,14 +50,14 @@ public sealed partial class TrainerEmailInvitationTests
         using (var processScope = Factory.Services.CreateScope())
         {
             var handler = processScope.ServiceProvider.GetRequiredService<IEmailJobHandler>();
-            await handler.ProcessAsync(notificationId);
+            await handler.ProcessAsync(notificationId.ToString());
         }
 
         // Act again: a duplicate dispatch of the same notification must not send a second email.
         using (var processScope2 = Factory.Services.CreateScope())
         {
             var handler = processScope2.ServiceProvider.GetRequiredService<IEmailJobHandler>();
-            await handler.ProcessAsync(notificationId);
+            await handler.ProcessAsync(notificationId.ToString());
         }
 
         // Assert
@@ -118,7 +118,7 @@ public sealed partial class TrainerEmailInvitationTests
         using (var processScope = Factory.Services.CreateScope())
         {
             var handler = processScope.ServiceProvider.GetRequiredService<IEmailJobHandler>();
-            await handler.ProcessAsync(notificationId);
+            await handler.ProcessAsync(notificationId.ToString());
         }
 
         // Assert

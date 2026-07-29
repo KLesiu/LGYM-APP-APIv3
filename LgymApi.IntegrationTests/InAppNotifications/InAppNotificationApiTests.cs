@@ -46,6 +46,22 @@ public sealed class InAppNotificationApiTests : IntegrationTestBase
     }
 
     [Test]
+    public async Task GetNotifications_InvalidCursorId_PreservesTheInitialPageResponse()
+    {
+        var user = await SeedUserAsync(name: "notif-invalid-cursor", email: "notif-invalid-cursor@example.com");
+        var notification = await SeedNotificationAsync(user.Id, "initial-page-notification");
+        SetAuthorizationHeader(user.Id);
+
+        var cursorCreatedAt = Uri.EscapeDataString(notification.CreatedAt.ToString("O"));
+        var response = await Client.GetAsync($"/api/{user.Id}/notifications?cursorCreatedAt={cursorCreatedAt}&cursorId=not-a-notification-id");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<PagedNotificationsResponse>();
+        body.Should().NotBeNull();
+        body!.Items.Select(item => item.Id).Should().Contain(notification.Id.ToString());
+    }
+
+    [Test]
     public async Task GetNotifications_WithSeededData_ReturnsPaged()
     {
         var user = await SeedUserAsync(name: "notif-page", email: "notif-page@example.com");
@@ -94,6 +110,9 @@ public sealed class InAppNotificationApiTests : IntegrationTestBase
         var response = await Client.PostAsync($"/api/{otherUser.Id}/notifications/{notification.Id}/mark-read", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        body.Should().NotBeNull();
+        body!.Message.Should().Be("Notification forbidden");
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();

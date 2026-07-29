@@ -6,7 +6,7 @@ namespace LgymApi.ArchitectureTests;
 [TestFixture]
 public sealed class WorkoutProgressReadQueryGuardTests
 {
-    [TestCase("LgymApi.Infrastructure/Repositories/UserRepository.cs", "GetRankingEligibleAccountProfilesAsync", "AsNoTracking", "Select", "RankingAccountProfile")]
+    [TestCase("LgymApi.Identity/Persistence/Repositories/UserRepository.cs", "GetRankingEligibleAccountProfilesAsync", "AsNoTracking", "Select", "RankingAccountProfile")]
     [TestCase("LgymApi.Infrastructure/Repositories/EloRegistryRepository.cs", "GetLatestEloAsync", "AsNoTracking", "OrderByDescending", "Select")]
     [TestCase("LgymApi.Infrastructure/Repositories/TrainingRepository.cs", "GetDatesByUserIdAsync", "AsNoTracking", "OrderBy", "Select")]
     [TestCase("LgymApi.Infrastructure/Repositories/TrainingRepository.cs", "GetByUserIdAndDateAsync", "AsNoTracking", "Include", "PlanDay", "Gym")]

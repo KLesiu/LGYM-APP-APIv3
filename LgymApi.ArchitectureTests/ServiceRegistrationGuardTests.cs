@@ -28,9 +28,12 @@ public sealed class ServiceRegistrationGuardTests
     public void Feature_Services_Should_Be_Registered_In_ServiceCollection()
     {
         var parseOptions = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
-        var applicationFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Application");
+        var applicationFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Application")
+            .Concat(ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Identity"))
+            .ToList();
         var serviceExtensionFiles = applicationFiles
-            .Where(path => Path.GetFileName(path).EndsWith("ServiceCollectionExtensions.cs", StringComparison.Ordinal))
+            .Where(path => Path.GetFileName(path).EndsWith("ServiceCollectionExtensions.cs", StringComparison.Ordinal)
+                || Path.GetFileName(path).Equals("IdentityModule.cs", StringComparison.Ordinal))
             .ToList();
 
         Assert.That(serviceExtensionFiles, Is.Not.Empty, "No Application ServiceCollectionExtensions files found for the DI guard test.");
@@ -84,9 +87,12 @@ public sealed class ServiceRegistrationGuardTests
     public void Workout_Progress_Public_Contracts_Should_Be_Registered_Exactly_Once_By_Their_Owning_Module()
     {
         var parseOptions = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
-        var applicationFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Application");
+        var applicationFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Application")
+            .Concat(ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Identity"))
+            .ToList();
         var registrations = CollectRegistrations(
-            applicationFiles.Where(path => Path.GetFileName(path).EndsWith("ServiceCollectionExtensions.cs", StringComparison.Ordinal)),
+            applicationFiles.Where(path => Path.GetFileName(path).EndsWith("ServiceCollectionExtensions.cs", StringComparison.Ordinal)
+                || Path.GetFileName(path).Equals("IdentityModule.cs", StringComparison.Ordinal)),
             parseOptions);
 
         var violations = WorkoutProgressContractRegistrations
@@ -185,7 +191,8 @@ public sealed class ServiceRegistrationGuardTests
     private static bool IsFeatureServicePath(string path)
     {
         var normalized = path.Replace('\\', '/');
-        if (!normalized.Contains("/LgymApi.Application/", StringComparison.OrdinalIgnoreCase))
+        if (!normalized.Contains("/LgymApi.Application/", StringComparison.OrdinalIgnoreCase)
+            && !normalized.Contains("/LgymApi.Identity/", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

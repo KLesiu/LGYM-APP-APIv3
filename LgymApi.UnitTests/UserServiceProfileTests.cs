@@ -15,6 +15,7 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.Services;
 using LgymApi.Domain.ValueObjects;
 using Microsoft.Extensions.DependencyInjection;
+using LgymApi.UnitTests.Fakes;
 using NSubstitute;
 
 namespace LgymApi.UnitTests;
@@ -22,22 +23,22 @@ namespace LgymApi.UnitTests;
 [TestFixture]
 public sealed class UserServiceProfileTests
 {
-    private IRoleRepository _roleRepository = null!;
+    private ConfigurableRoleRepository _roleRepository = null!;
     private ITutorialService _tutorialService = null!;
     private IUnitOfWork _unitOfWork = null!;
-    private IUserRepository _userRepository = null!;
+    private ConfigurableUserRepository _userRepository = null!;
     private IRankService _rankService = null!;
     private UserProfileService _profileService = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _roleRepository = Substitute.For<IRoleRepository>();
+        _roleRepository = new ConfigurableRoleRepository();
         _tutorialService = Substitute.For<ITutorialService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _userRepository = Substitute.For<IUserRepository>();
+        _userRepository = new ConfigurableUserRepository();
         _rankService = Substitute.For<IRankService>();
-        _userRepository.UpdateAsync(Arg.Any<User>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        _userRepository.Update = (_, _) => Task.CompletedTask;
         _unitOfWork.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(1));
         _profileService = new UserProfileService(new UserProfileServiceDependencies(
             _userRepository,
@@ -56,8 +57,8 @@ public sealed class UserServiceProfileTests
         var cancellationToken = cancellationSource.Token;
         var user = CreateUser();
         user.PreferredTimeZone = string.Empty;
-        _roleRepository.GetRoleNamesByUserIdAsync(user.Id, cancellationToken).Returns(["User", "Trainer"]);
-        _roleRepository.GetPermissionClaimsByUserIdAsync(user.Id, cancellationToken).Returns(["users.read"]);
+        _roleRepository.GetRoleNamesByUserId = (_, _) => Task.FromResult<List<string>>(["User", "Trainer"]);
+        _roleRepository.GetPermissionClaimsByUserId = (_, _) => Task.FromResult<List<string>>(["users.read"]);
         _tutorialService.HasActiveTutorialsAsync(user.Id, cancellationToken).Returns(true);
         _rankService.GetNextRank(user.ProfileRank).Returns(new RankDefinition { Name = "Senior 1", NeedElo = 1500 });
 
@@ -79,7 +80,14 @@ public sealed class UserServiceProfileTests
         result.Value.UpdatedAt.Should().Be(user.UpdatedAt.UtcDateTime);
         result.Value.IsDeleted.Should().Be(user.IsDeleted);
         result.Value.IsVisibleInRanking.Should().Be(user.IsVisibleInRanking);
-        await _roleRepository.Received(1).GetRoleNamesByUserIdAsync(user.Id, cancellationToken);
+        _roleRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IRoleRepository.GetRoleNamesByUserIdAsync)
+                && call.Argument is Id<User> id
+                && id == user.Id
+                && call.CancellationToken == cancellationToken)
+            .Should()
+            .ContainSingle();
     }
 
     [Test]
@@ -95,7 +103,10 @@ public sealed class UserServiceProfileTests
         user.IsDeleted.Should().BeTrue();
         user.Name.Should().Be($"anonymized_user_{user.Id}");
         user.Email.Value.Should().Be($"anonymized_{user.Id}@example.com");
-        await _userRepository.Received(1).UpdateAsync(user, cancellationToken);
+        _userRepository.Calls.Should().ContainSingle(call =>
+            call.Method == nameof(IUserRepository.UpdateAsync)
+            && call.Argument == user
+            && call.CancellationToken == cancellationToken);
         await _unitOfWork.Received(1).SaveChangesAsync(cancellationToken);
     }
 
@@ -108,7 +119,7 @@ public sealed class UserServiceProfileTests
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<InvalidUserError>();
-        await _userRepository.DidNotReceive().UpdateAsync(Arg.Any<User>(), Arg.Any<CancellationToken>());
+        _userRepository.Calls.Should().NotContain(call => call.Method == nameof(IUserRepository.UpdateAsync));
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -124,7 +135,7 @@ public sealed class UserServiceProfileTests
     private static IMapper BuildMapper()
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
         using var provider = services.BuildServiceProvider();
         return provider.GetRequiredService<IMapper>();

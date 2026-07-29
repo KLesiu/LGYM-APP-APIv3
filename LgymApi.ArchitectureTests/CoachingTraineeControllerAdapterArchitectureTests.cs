@@ -1,5 +1,6 @@
 using FluentAssertions;
 using LgymApi.Api.Features.Trainer.Controllers;
+using LgymApi.Application.Coaching.Compatibility;
 using LgymApi.Application.Coaching.Invitations.Accept;
 using LgymApi.Application.Coaching.Invitations.Reject;
 using LgymApi.Application.Coaching.ManagedPlans.GetActive;
@@ -16,6 +17,7 @@ using LgymApi.Application.Coaching.TraineeNotes.VisibleSingle;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.ArchitectureTests;
 
@@ -27,24 +29,15 @@ public sealed class CoachingTraineeControllerAdapterArchitectureTests
     {
         AssertConstructor(
             typeof(TraineeRelationshipController),
-            typeof(IAcceptInvitationUseCase),
-            typeof(IRejectInvitationUseCase),
-            typeof(IDetachFromTrainerUseCase),
-            typeof(IGetCurrentTrainerUseCase),
-            typeof(IGetActiveManagedPlanUseCase),
+            typeof(ITraineeRelationshipApiPort),
             typeof(IMapper));
         AssertConstructor(
             typeof(TrainerTraineeNotesController),
-            typeof(IListTrainerNotesUseCase),
-            typeof(ICreateTraineeNoteUseCase),
-            typeof(IUpdateTraineeNoteUseCase),
-            typeof(IDeleteTraineeNoteUseCase),
-            typeof(IGetTraineeNoteHistoryUseCase),
+            typeof(ITrainerTraineeNotesApiPort),
             typeof(IMapper));
         AssertConstructor(
             typeof(TraineeNotesController),
-            typeof(IListVisibleTraineeNotesUseCase),
-            typeof(IGetVisibleTraineeNoteUseCase),
+            typeof(ITraineeNotesApiPort),
             typeof(IMapper));
     }
 
@@ -98,6 +91,7 @@ public sealed class CoachingTraineeControllerAdapterArchitectureTests
 
     private static bool IsAllowedIdentifier(Type type)
         => type == typeof(Id<User>)
+            || type == typeof(Id<AccountReference>)
             || type == typeof(Id<TraineeNote>)
             || type == typeof(Id<TrainerInvitation>);
 }

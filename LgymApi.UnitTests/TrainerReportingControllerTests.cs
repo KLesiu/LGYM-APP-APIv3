@@ -2,16 +2,20 @@ using FluentAssertions;
 using LgymApi.Api;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Features.Trainer.Controllers;
+using LgymApi.Api.Middleware;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Reporting.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Reporting;
 using LgymApi.Application.Features.Reporting.Models;
+using LgymApi.Application.Reporting.Compatibility;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,7 +44,7 @@ public sealed class TrainerReportingControllerTests
         var service = Substitute.For<IReportingService>();
         CreateReportTemplateCommand? captured = null;
         var templateResult = CreateTemplateResult();
-        service.CreateTemplateAsync(Arg.Any<User>(), Arg.Do<CreateReportTemplateCommand>(cmd => captured = cmd), Arg.Any<CancellationToken>())
+        service.CreateTemplateAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Do<CreateReportTemplateCommand>(cmd => captured = cmd), Arg.Any<CancellationToken>())
             .Returns(Result.Success<ReportTemplateResult, AppError>(templateResult));
         var controller = CreateController(service);
 
@@ -65,7 +69,7 @@ public sealed class TrainerReportingControllerTests
     public async Task GetTemplates_ReturnsMappedDtos()
     {
         var service = Substitute.For<IReportingService>();
-        service.GetTrainerTemplatesAsync(Arg.Any<User>(), Arg.Any<CancellationToken>())
+        service.GetTrainerTemplatesAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success<List<ReportTemplateResult>, AppError>([CreateTemplateResult()]));
         var controller = CreateController(service);
 
@@ -81,7 +85,7 @@ public sealed class TrainerReportingControllerTests
         var service = Substitute.For<IReportingService>();
         var templateId = Id<ReportTemplate>.New();
         Id<ReportTemplate> capturedId = Id<ReportTemplate>.Empty;
-        service.UpdateTemplateAsync(Arg.Any<User>(), Arg.Do<Id<ReportTemplate>>(id => capturedId = id), Arg.Any<CreateReportTemplateCommand>(), Arg.Any<CancellationToken>())
+        service.UpdateTemplateAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Do<Id<ReportTemplate>>(id => capturedId = id), Arg.Any<CreateReportTemplateCommand>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success<ReportTemplateResult, AppError>(CreateTemplateResult(templateId)));
         var controller = CreateController(service);
 
@@ -95,7 +99,7 @@ public sealed class TrainerReportingControllerTests
     public async Task DeleteTemplate_WithValidId_ReturnsDeletedMessage()
     {
         var service = Substitute.For<IReportingService>();
-        service.DeleteTemplateAsync(Arg.Any<User>(), Arg.Any<Id<ReportTemplate>>(), Arg.Any<CancellationToken>())
+        service.DeleteTemplateAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Any<Id<ReportTemplate>>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success<Unit, AppError>(Unit.Value));
         var controller = CreateController(service);
 
@@ -121,9 +125,9 @@ public sealed class TrainerReportingControllerTests
         var service = Substitute.For<IReportingService>();
         var traineeId = Id<User>.New();
         var templateId = Id<ReportTemplate>.New();
-        Id<User> capturedTraineeId = Id<User>.Empty;
+        Id<AccountReference> capturedTraineeId = Id<AccountReference>.Empty;
         CreateReportRequestCommand? capturedCommand = null;
-        service.CreateReportRequestAsync(Arg.Any<User>(), Arg.Do<Id<User>>(id => capturedTraineeId = id), Arg.Do<CreateReportRequestCommand>(cmd => capturedCommand = cmd), Arg.Any<CancellationToken>())
+        service.CreateReportRequestAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Do<Id<AccountReference>>(id => capturedTraineeId = id), Arg.Do<CreateReportRequestCommand>(cmd => capturedCommand = cmd), Arg.Any<CancellationToken>())
             .Returns(Result.Success<ReportRequestResult, AppError>(CreateRequestResult(traineeId, templateId)));
         var controller = CreateController(service);
 
@@ -134,7 +138,7 @@ public sealed class TrainerReportingControllerTests
         });
 
         ((ObjectResult)result).StatusCode.Should().Be(StatusCodes.Status201Created);
-        capturedTraineeId.Should().Be(traineeId);
+        capturedTraineeId.Should().Be(traineeId.Rebind<AccountReference>());
         capturedCommand!.TemplateId.Should().Be(templateId);
     }
 
@@ -156,7 +160,7 @@ public sealed class TrainerReportingControllerTests
         var traineeId = Id<User>.New();
         var submissionId = Id<ReportSubmission>.New();
         UpdateReportSubmissionFeedbackCommand? captured = null;
-        service.UpdateTrainerFeedbackAsync(Arg.Any<User>(), traineeId, submissionId, Arg.Do<UpdateReportSubmissionFeedbackCommand>(cmd => captured = cmd), Arg.Any<CancellationToken>())
+        service.UpdateTrainerFeedbackAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), submissionId, Arg.Do<UpdateReportSubmissionFeedbackCommand>(cmd => captured = cmd), Arg.Any<CancellationToken>())
             .Returns(Result.Success<ReportSubmissionResult, AppError>(CreateSubmissionResult(traineeId)));
         var controller = CreateController(service);
 
@@ -178,7 +182,7 @@ public sealed class TrainerReportingControllerTests
         var traineeId = Id<User>.New();
         var submissionId = Id<ReportSubmission>.New();
         UpdateReportSubmissionFeedbackCommand? captured = null;
-        service.UpdateTrainerFeedbackAsync(Arg.Any<User>(), traineeId, submissionId, Arg.Do<UpdateReportSubmissionFeedbackCommand>(cmd => captured = cmd), Arg.Any<CancellationToken>())
+        service.UpdateTrainerFeedbackAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), submissionId, Arg.Do<UpdateReportSubmissionFeedbackCommand>(cmd => captured = cmd), Arg.Any<CancellationToken>())
             .Returns(Result.Success<ReportSubmissionResult, AppError>(CreateSubmissionResult(traineeId)));
         var controller = CreateController(service);
 
@@ -214,7 +218,7 @@ public sealed class TrainerReportingControllerTests
         var traineeId = Id<User>.New();
         var templateId = Id<ReportTemplate>.New();
         UpsertRecurringReportAssignmentCommand? captured = null;
-        recurringService.CreateAsync(Arg.Any<User>(), traineeId, Arg.Do<UpsertRecurringReportAssignmentCommand>(cmd => captured = cmd), Arg.Any<CancellationToken>())
+        recurringService.CreateAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), Arg.Do<UpsertRecurringReportAssignmentCommand>(cmd => captured = cmd), Arg.Any<CancellationToken>())
             .Returns(Result.Success<RecurringReportAssignmentResult, AppError>(CreateAssignmentResult(traineeId, templateId)));
         var controller = CreateController(reportingService, recurringService);
         var startsAt = DateTimeOffset.UtcNow;
@@ -243,7 +247,7 @@ public sealed class TrainerReportingControllerTests
     {
         var recurringService = Substitute.For<IRecurringReportAssignmentService>();
         var traineeId = Id<User>.New();
-        recurringService.CreateAsync(Arg.Any<User>(), traineeId, Arg.Any<UpsertRecurringReportAssignmentCommand>(), Arg.Any<CancellationToken>())
+        recurringService.CreateAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), Arg.Any<UpsertRecurringReportAssignmentCommand>(), Arg.Any<CancellationToken>())
             .Returns(Result.Failure<RecurringReportAssignmentResult, AppError>(new InvalidReportingError("bad request")));
         var controller = CreateController(Substitute.For<IReportingService>(), recurringService);
 
@@ -275,7 +279,7 @@ public sealed class TrainerReportingControllerTests
         var reportingService = Substitute.For<IReportingService>();
         var recurringService = Substitute.For<IRecurringReportAssignmentService>();
         var traineeId = Id<User>.New();
-        recurringService.GetForTraineeAsync(Arg.Any<User>(), traineeId, Arg.Any<CancellationToken>())
+        recurringService.GetForTraineeAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success<List<RecurringReportAssignmentResult>, AppError>([CreateAssignmentResult(traineeId, Id<ReportTemplate>.New())]));
         var controller = CreateController(reportingService, recurringService);
 
@@ -290,7 +294,7 @@ public sealed class TrainerReportingControllerTests
     {
         var recurringService = Substitute.For<IRecurringReportAssignmentService>();
         var traineeId = Id<User>.New();
-        recurringService.GetForTraineeAsync(Arg.Any<User>(), traineeId, Arg.Any<CancellationToken>())
+        recurringService.GetForTraineeAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), Arg.Any<CancellationToken>())
             .Returns(Result.Failure<List<RecurringReportAssignmentResult>, AppError>(new InvalidReportingError("bad request")));
         var controller = CreateController(Substitute.For<IReportingService>(), recurringService);
 
@@ -319,7 +323,7 @@ public sealed class TrainerReportingControllerTests
         var assignmentId = Id<RecurringReportAssignment>.New();
         var templateId = Id<ReportTemplate>.New();
         Id<RecurringReportAssignment> capturedAssignmentId = Id<RecurringReportAssignment>.Empty;
-        recurringService.UpdateAsync(Arg.Any<User>(), traineeId, Arg.Do<Id<RecurringReportAssignment>>(id => capturedAssignmentId = id), Arg.Any<UpsertRecurringReportAssignmentCommand>(), Arg.Any<CancellationToken>())
+        recurringService.UpdateAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), Arg.Do<Id<RecurringReportAssignment>>(id => capturedAssignmentId = id), Arg.Any<UpsertRecurringReportAssignmentCommand>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success<RecurringReportAssignmentResult, AppError>(CreateAssignmentResult(traineeId, templateId)));
         var controller = CreateController(reportingService, recurringService);
 
@@ -341,7 +345,7 @@ public sealed class TrainerReportingControllerTests
         var recurringService = Substitute.For<IRecurringReportAssignmentService>();
         var traineeId = Id<User>.New();
         var assignmentId = Id<RecurringReportAssignment>.New();
-        recurringService.UpdateAsync(Arg.Any<User>(), traineeId, assignmentId, Arg.Any<UpsertRecurringReportAssignmentCommand>(), Arg.Any<CancellationToken>())
+        recurringService.UpdateAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), assignmentId, Arg.Any<UpsertRecurringReportAssignmentCommand>(), Arg.Any<CancellationToken>())
             .Returns(Result.Failure<RecurringReportAssignmentResult, AppError>(new InvalidReportingError("bad request")));
         var controller = CreateController(Substitute.For<IReportingService>(), recurringService);
 
@@ -372,14 +376,14 @@ public sealed class TrainerReportingControllerTests
         var recurringService = Substitute.For<IRecurringReportAssignmentService>();
         var traineeId = Id<User>.New();
         var assignmentId = Id<RecurringReportAssignment>.New();
-        recurringService.PauseAsync(Arg.Any<User>(), traineeId, assignmentId, Arg.Any<CancellationToken>())
+        recurringService.PauseAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), assignmentId, Arg.Any<CancellationToken>())
             .Returns(Result.Success<RecurringReportAssignmentResult, AppError>(CreateAssignmentResult(traineeId, Id<ReportTemplate>.New())));
         var controller = CreateController(reportingService, recurringService);
 
         var result = await controller.PauseRecurringReportAssignment(traineeId.ToString(), assignmentId.ToString());
 
         result.Should().BeOfType<OkObjectResult>();
-        await recurringService.Received(1).PauseAsync(Arg.Any<User>(), traineeId, assignmentId, Arg.Any<CancellationToken>());
+        await recurringService.Received(1).PauseAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), assignmentId, Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -388,7 +392,7 @@ public sealed class TrainerReportingControllerTests
         var recurringService = Substitute.For<IRecurringReportAssignmentService>();
         var traineeId = Id<User>.New();
         var assignmentId = Id<RecurringReportAssignment>.New();
-        recurringService.PauseAsync(Arg.Any<User>(), traineeId, assignmentId, Arg.Any<CancellationToken>())
+        recurringService.PauseAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), assignmentId, Arg.Any<CancellationToken>())
             .Returns(Result.Failure<RecurringReportAssignmentResult, AppError>(new InvalidReportingError("bad request")));
         var controller = CreateController(Substitute.For<IReportingService>(), recurringService);
 
@@ -413,14 +417,14 @@ public sealed class TrainerReportingControllerTests
         var recurringService = Substitute.For<IRecurringReportAssignmentService>();
         var traineeId = Id<User>.New();
         var assignmentId = Id<RecurringReportAssignment>.New();
-        recurringService.ResumeAsync(Arg.Any<User>(), traineeId, assignmentId, Arg.Any<CancellationToken>())
+        recurringService.ResumeAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), assignmentId, Arg.Any<CancellationToken>())
             .Returns(Result.Success<RecurringReportAssignmentResult, AppError>(CreateAssignmentResult(traineeId, Id<ReportTemplate>.New())));
         var controller = CreateController(reportingService, recurringService);
 
         var result = await controller.ResumeRecurringReportAssignment(traineeId.ToString(), assignmentId.ToString());
 
         result.Should().BeOfType<OkObjectResult>();
-        await recurringService.Received(1).ResumeAsync(Arg.Any<User>(), traineeId, assignmentId, Arg.Any<CancellationToken>());
+        await recurringService.Received(1).ResumeAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), assignmentId, Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -429,7 +433,7 @@ public sealed class TrainerReportingControllerTests
         var recurringService = Substitute.For<IRecurringReportAssignmentService>();
         var traineeId = Id<User>.New();
         var assignmentId = Id<RecurringReportAssignment>.New();
-        recurringService.ResumeAsync(Arg.Any<User>(), traineeId, assignmentId, Arg.Any<CancellationToken>())
+        recurringService.ResumeAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), assignmentId, Arg.Any<CancellationToken>())
             .Returns(Result.Failure<RecurringReportAssignmentResult, AppError>(new InvalidReportingError("bad request")));
         var controller = CreateController(Substitute.For<IReportingService>(), recurringService);
 
@@ -454,14 +458,14 @@ public sealed class TrainerReportingControllerTests
         var recurringService = Substitute.For<IRecurringReportAssignmentService>();
         var traineeId = Id<User>.New();
         var assignmentId = Id<RecurringReportAssignment>.New();
-        recurringService.DeleteAsync(Arg.Any<User>(), traineeId, assignmentId, Arg.Any<CancellationToken>())
+        recurringService.DeleteAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), assignmentId, Arg.Any<CancellationToken>())
             .Returns(Result.Success<Unit, AppError>(Unit.Value));
         var controller = CreateController(reportingService, recurringService);
 
         var result = await controller.DeleteRecurringReportAssignment(traineeId.ToString(), assignmentId.ToString());
 
         result.Should().BeOfType<OkObjectResult>();
-        await recurringService.Received(1).DeleteAsync(Arg.Any<User>(), traineeId, assignmentId, Arg.Any<CancellationToken>());
+        await recurringService.Received(1).DeleteAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), assignmentId, Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -470,7 +474,7 @@ public sealed class TrainerReportingControllerTests
         var recurringService = Substitute.For<IRecurringReportAssignmentService>();
         var traineeId = Id<User>.New();
         var assignmentId = Id<RecurringReportAssignment>.New();
-        recurringService.DeleteAsync(Arg.Any<User>(), traineeId, assignmentId, Arg.Any<CancellationToken>())
+        recurringService.DeleteAsync(Arg.Any<AuthenticatedAccountContext>(), traineeId.Rebind<AccountReference>(), assignmentId, Arg.Any<CancellationToken>())
             .Returns(Result.Failure<Unit, AppError>(new InvalidReportingError("bad request")));
         var controller = CreateController(Substitute.For<IReportingService>(), recurringService);
 
@@ -482,14 +486,15 @@ public sealed class TrainerReportingControllerTests
     private static TrainerReportingController CreateController(IReportingService reportingService, IRecurringReportAssignmentService? recurringService = null)
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
-        var controller = new TrainerReportingController(reportingService, recurringService ?? Substitute.For<IRecurringReportAssignmentService>(), mapper)
+        var controller = new TrainerReportingController(new TrainerReportTemplateApiAdapter(reportingService), new TrainerReportRequestApiAdapter(reportingService), new TrainerReportPhotoApiAdapter(reportingService, mapper), new RecurringReportAssignmentApiAdapter(recurringService ?? Substitute.For<IRecurringReportAssignmentService>()), mapper)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
-        controller.HttpContext.Items["User"] = new User { Id = Id<User>.New(), Name = "Trainer", Email = "trainer@example.com", ProfileRank = "Rookie" };
+        controller.HttpContext.Features.Set<IAuthenticatedAccountContextFeature>(new AuthenticatedAccountContextFeature(
+            new AuthenticatedAccountContext(Id<AccountReference>.New(), null, [], [], false, false)));
         return controller;
     }
 
@@ -497,7 +502,7 @@ public sealed class TrainerReportingControllerTests
         => new()
         {
             Id = templateId ?? Id<ReportTemplate>.New(),
-            TrainerId = Id<User>.New(),
+            TrainerId = Id<AccountReference>.New(),
             Name = "Weekly",
             CreatedAt = DateTimeOffset.UtcNow,
             Fields = [new ReportTemplateFieldResult { Key = "weight", Label = "Weight", Type = ReportFieldType.Number, Order = 1 }]
@@ -507,8 +512,8 @@ public sealed class TrainerReportingControllerTests
         => new()
         {
             Id = Id<ReportRequest>.New(),
-            TrainerId = Id<User>.New(),
-            TraineeId = traineeId,
+            TrainerId = Id<AccountReference>.New(),
+            TraineeId = traineeId.Rebind<AccountReference>(),
             TemplateId = templateId,
             Status = ReportRequestStatus.Pending,
             CreatedAt = DateTimeOffset.UtcNow,
@@ -520,7 +525,7 @@ public sealed class TrainerReportingControllerTests
         {
             Id = Id<ReportSubmission>.New(),
             ReportRequestId = Id<ReportRequest>.New(),
-            TraineeId = traineeId,
+            TraineeId = traineeId.Rebind<AccountReference>(),
             SubmittedAt = DateTimeOffset.UtcNow,
             Request = CreateRequestResult(traineeId, Id<ReportTemplate>.New())
         };
@@ -529,8 +534,8 @@ public sealed class TrainerReportingControllerTests
         => new()
         {
             Id = Id<RecurringReportAssignment>.New(),
-            TrainerId = Id<User>.New(),
-            TraineeId = traineeId,
+            TrainerId = Id<AccountReference>.New(),
+            TraineeId = traineeId.Rebind<AccountReference>(),
             TemplateId = templateId,
             IntervalValue = 1,
             IntervalUnit = RecurringReportIntervalUnit.Week,

@@ -2,8 +2,8 @@ using LgymApi.Application.Coaching.Contracts.Access;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Coaching.Errors;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using LgymApi.Resources;
-using UserEntity = LgymApi.Domain.Entities.User;
 
 namespace LgymApi.Application.Coaching.ManagedPlans;
 
@@ -11,7 +11,7 @@ internal static class ManagedPlanAccess
 {
     public static AppError? GetError(
         CoachingRelationshipAccessDecision access,
-        Id<UserEntity> traineeId)
+        Id<AccountReference> traineeId)
     {
         if (!access.IsTrainer)
         {

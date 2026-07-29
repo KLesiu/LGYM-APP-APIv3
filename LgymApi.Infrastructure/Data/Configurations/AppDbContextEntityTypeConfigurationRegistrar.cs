@@ -1,82 +1,91 @@
 using System;
 using LgymApi.Infrastructure.Data.Configurations.Coaching;
-using LgymApi.Infrastructure.Data.Configurations.Identity;
 using LgymApi.Infrastructure.Data.Configurations.Nutrition;
-using LgymApi.Infrastructure.Data.Configurations.Notifications;
 using LgymApi.Infrastructure.Data.Configurations.Platform;
 using LgymApi.Infrastructure.Data.Configurations.ReferenceData;
 using LgymApi.Infrastructure.Data.Configurations.Reporting;
-using LgymApi.Infrastructure.Data.Configurations.TrainingPlanning;
 using LgymApi.Infrastructure.Data.Configurations.WorkoutProgress;
+using LgymApi.Identity.Persistence;
+using LgymApi.Notifications.Persistence;
+using LgymApi.Platform.Persistence;
+using LgymApi.TrainingPlanning.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace LgymApi.Infrastructure.Data.Configurations;
 
 internal static class AppDbContextEntityTypeConfigurationRegistrar
 {
-    private static readonly Action<ModelBuilder>[] Registrations =
-    {
-        Register(new UserEntityTypeConfiguration()),
-        Register(new RoleEntityTypeConfiguration()),
-        Register(new UserRoleEntityTypeConfiguration()),
-        Register(new RoleClaimEntityTypeConfiguration()),
-        Register(new PasswordResetTokenEntityTypeConfiguration()),
-        Register(new UserExternalLoginEntityTypeConfiguration()),
-        Register(new PlanEntityTypeConfiguration()),
-        Register(new PlanDayEntityTypeConfiguration()),
-        Register(new PlanDayExerciseEntityTypeConfiguration()),
-        Register(new ExerciseEntityTypeConfiguration()),
-        Register(new ExerciseTranslationEntityTypeConfiguration()),
-        Register(new TrainingEntityTypeConfiguration()),
-        Register(new TrainingExerciseScoreEntityTypeConfiguration()),
-        Register(new ExerciseScoreEntityTypeConfiguration()),
-        Register(new MeasurementEntityTypeConfiguration()),
-        Register(new MainRecordEntityTypeConfiguration()),
-        Register(new GymEntityTypeConfiguration()),
-        Register(new AddressEntityTypeConfiguration()),
-        Register(new EloRegistryEntityTypeConfiguration()),
-        Register(new AppConfigEntityTypeConfiguration()),
-        Register(new TrainerInvitationEntityTypeConfiguration()),
-        Register(new TrainerTraineeLinkEntityTypeConfiguration()),
-        Register(new TraineeNoteEntityTypeConfiguration()),
-        Register(new TraineeNoteHistoryEntityTypeConfiguration()),
-        Register(new PushInstallationEntityTypeConfiguration()),
-        Register(new PushNotificationMessageEntityTypeConfiguration()),
-        Register(new NotificationMessageEntityTypeConfiguration()),
-        Register(new EmailNotificationSubscriptionEntityTypeConfiguration()),
-        Register(new InAppNotificationEntityTypeConfiguration()),
-        Register(new UserTutorialProgressEntityTypeConfiguration()),
-        Register(new UserTutorialStepProgressEntityTypeConfiguration()),
-        Register(new ApiIdempotencyRecordEntityTypeConfiguration()),
-        Register(new UserSessionEntityTypeConfiguration()),
-        Register(new CommandEnvelopeEntityTypeConfiguration()),
-        Register(new ActionExecutionLogEntityTypeConfiguration()),
-        Register(new SupplementPlanEntityTypeConfiguration()),
-        Register(new SupplementPlanItemEntityTypeConfiguration()),
-        Register(new SupplementIntakeLogEntityTypeConfiguration()),
-        Register(new DietPlanEntityTypeConfiguration()),
-        Register(new DietMealEntityTypeConfiguration()),
-        Register(new DietPlanHistoryEntityTypeConfiguration()),
-        Register(new ReportTemplateEntityTypeConfiguration()),
-        Register(new ReportTemplateFieldEntityTypeConfiguration()),
-        Register(new ReportRequestEntityTypeConfiguration()),
-        Register(new ReportSubmissionEntityTypeConfiguration()),
-        Register(new RecurringReportAssignmentEntityTypeConfiguration()),
-        Register(new PhotoEntityTypeConfiguration()),
-        Register(new PhotoUploadSessionEntityTypeConfiguration()),
-    };
-
     public static void Apply(ModelBuilder modelBuilder)
     {
-        foreach (var registration in Registrations)
-        {
-            registration(modelBuilder);
-        }
+        IdentityModelConfigurationRegistrar.Apply(modelBuilder);
+        TrainingPlanningModelConfigurationRegistrar.Apply(modelBuilder);
+        ApplyWorkoutProgress(modelBuilder);
+        PlatformModelConfigurationRegistrar.ApplyReferenceData(modelBuilder, ApplyPlatformReferenceData);
+        ApplyCoaching(modelBuilder);
+        NotificationsModelConfigurationRegistrar.Apply(modelBuilder);
+        PlatformModelConfigurationRegistrar.ApplyReliability(modelBuilder, ApplyPlatformReliability);
+        ApplyNutrition(modelBuilder);
+        ApplyReporting(modelBuilder);
     }
 
-    private static Action<ModelBuilder> Register<TEntity>(IEntityTypeConfiguration<TEntity> configuration)
+    private static void ApplyWorkoutProgress(ModelBuilder modelBuilder)
+    {
+        Register(modelBuilder, new ExerciseEntityTypeConfiguration());
+        Register(modelBuilder, new ExerciseTranslationEntityTypeConfiguration());
+        Register(modelBuilder, new TrainingEntityTypeConfiguration());
+        Register(modelBuilder, new TrainingExerciseScoreEntityTypeConfiguration());
+        Register(modelBuilder, new ExerciseScoreEntityTypeConfiguration());
+        Register(modelBuilder, new MeasurementEntityTypeConfiguration());
+        Register(modelBuilder, new MainRecordEntityTypeConfiguration());
+        Register(modelBuilder, new GymEntityTypeConfiguration());
+        Register(modelBuilder, new AddressEntityTypeConfiguration());
+        Register(modelBuilder, new EloRegistryEntityTypeConfiguration());
+    }
+
+    private static void ApplyPlatformReferenceData(ModelBuilder modelBuilder)
+    {
+        Register(modelBuilder, new AppConfigEntityTypeConfiguration());
+    }
+
+    private static void ApplyCoaching(ModelBuilder modelBuilder)
+    {
+        Register(modelBuilder, new TrainerInvitationEntityTypeConfiguration());
+        Register(modelBuilder, new TrainerTraineeLinkEntityTypeConfiguration());
+        Register(modelBuilder, new TraineeNoteEntityTypeConfiguration());
+        Register(modelBuilder, new TraineeNoteHistoryEntityTypeConfiguration());
+    }
+
+    private static void ApplyPlatformReliability(ModelBuilder modelBuilder)
+    {
+        Register(modelBuilder, new ApiIdempotencyRecordEntityTypeConfiguration());
+        Register(modelBuilder, new CommandEnvelopeEntityTypeConfiguration());
+        Register(modelBuilder, new ActionExecutionLogEntityTypeConfiguration());
+    }
+
+    private static void ApplyNutrition(ModelBuilder modelBuilder)
+    {
+        Register(modelBuilder, new SupplementPlanEntityTypeConfiguration());
+        Register(modelBuilder, new SupplementPlanItemEntityTypeConfiguration());
+        Register(modelBuilder, new SupplementIntakeLogEntityTypeConfiguration());
+        Register(modelBuilder, new DietPlanEntityTypeConfiguration());
+        Register(modelBuilder, new DietMealEntityTypeConfiguration());
+        Register(modelBuilder, new DietPlanHistoryEntityTypeConfiguration());
+    }
+
+    private static void ApplyReporting(ModelBuilder modelBuilder)
+    {
+        Register(modelBuilder, new ReportTemplateEntityTypeConfiguration());
+        Register(modelBuilder, new ReportTemplateFieldEntityTypeConfiguration());
+        Register(modelBuilder, new ReportRequestEntityTypeConfiguration());
+        Register(modelBuilder, new ReportSubmissionEntityTypeConfiguration());
+        Register(modelBuilder, new RecurringReportAssignmentEntityTypeConfiguration());
+        Register(modelBuilder, new PhotoEntityTypeConfiguration());
+        Register(modelBuilder, new PhotoUploadSessionEntityTypeConfiguration());
+    }
+
+    private static void Register<TEntity>(ModelBuilder modelBuilder, IEntityTypeConfiguration<TEntity> configuration)
         where TEntity : class
     {
-        return modelBuilder => modelBuilder.ApplyConfiguration(configuration);
+        modelBuilder.ApplyConfiguration(configuration);
     }
 }

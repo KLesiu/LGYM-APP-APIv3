@@ -10,6 +10,7 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.TestUtils.Fakes;
+using LgymApi.UnitTests.Fakes;
 using NSubstitute;
 
 namespace LgymApi.UnitTests;
@@ -17,20 +18,20 @@ namespace LgymApi.UnitTests;
 [TestFixture]
 public sealed class ExternalAuthServiceTests
 {
-    private IGoogleTokenValidator _googleTokenValidator = null!;
-    private IUserExternalLoginRepository _userExternalLoginRepository = null!;
-    private IGoogleUserRegistrar _googleUserRegistrar = null!;
-    private ILoginResultBuilder _loginResultBuilder = null!;
+    private ConfigurableGoogleTokenValidator _googleTokenValidator = null!;
+    private ConfigurableUserExternalLoginRepository _userExternalLoginRepository = null!;
+    private ConfigurableGoogleUserRegistrar _googleUserRegistrar = null!;
+    private ConfigurableLoginResultBuilder _loginResultBuilder = null!;
     private FakeUnitOfWork _unitOfWork = null!;
     private ExternalAuthService _service = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _googleTokenValidator = Substitute.For<IGoogleTokenValidator>();
-        _userExternalLoginRepository = Substitute.For<IUserExternalLoginRepository>();
-        _googleUserRegistrar = Substitute.For<IGoogleUserRegistrar>();
-        _loginResultBuilder = Substitute.For<ILoginResultBuilder>();
+        _googleTokenValidator = new ConfigurableGoogleTokenValidator();
+        _userExternalLoginRepository = new ConfigurableUserExternalLoginRepository();
+        _googleUserRegistrar = new ConfigurableGoogleUserRegistrar();
+        _loginResultBuilder = new ConfigurableLoginResultBuilder();
         _unitOfWork = new FakeUnitOfWork();
 
         _service = new ExternalAuthService(
@@ -44,8 +45,7 @@ public sealed class ExternalAuthServiceTests
     [Test]
     public async Task GoogleSignIn_InvalidToken_ReturnsUnauthorized()
     {
-        _googleTokenValidator.ValidateAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<GoogleTokenPayload?>(null));
+        _googleTokenValidator.Validate = (_, _, _) => Task.FromResult<GoogleTokenPayload?>(null);
 
         var result = await _service.GoogleSignInAsync("invalid-token", null, CancellationToken.None);
 
@@ -57,14 +57,13 @@ public sealed class ExternalAuthServiceTests
     [Test]
     public async Task GoogleSignIn_UnverifiedEmail_ReturnsUnauthorized()
     {
-        _googleTokenValidator.ValidateAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GoogleTokenPayload("sub123", "test@example.com", false, "Test User", null));
+        _googleTokenValidator.Validate = (_, _, _) => Task.FromResult<GoogleTokenPayload?>(new GoogleTokenPayload("sub123", "test@example.com", false, "Test User", null));
 
         var result = await _service.GoogleSignInAsync("token", null, CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<UserUnauthorizedError>();
-        await _userExternalLoginRepository.DidNotReceiveWithAnyArgs().FindByProviderAsync(default!, default!, default);
+        _userExternalLoginRepository.Calls.Should().NotContain(call => call.Method == nameof(IUserExternalLoginRepository.FindByProviderAsync));
         _unitOfWork.SaveChangesCalls.Should().Be(0);
     }
 
@@ -82,12 +81,9 @@ public sealed class ExternalAuthServiceTests
             User = existingUser
         };
 
-        _googleTokenValidator.ValidateAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GoogleTokenPayload("sub123", "test@example.com", true, "Test User", null));
-        _userExternalLoginRepository.FindByProviderAsync(AuthConstants.ExternalProviders.Google, "sub123", Arg.Any<CancellationToken>())
-            .Returns(externalLogin);
-        _loginResultBuilder.BuildAsync(existingUser, existingUser.PreferredTimeZone, Arg.Any<CancellationToken>())
-            .Returns(Result.Success<LoginResult, AppError>(CreateLoginResult()));
+        _googleTokenValidator.Validate = (_, _, _) => Task.FromResult<GoogleTokenPayload?>(new GoogleTokenPayload("sub123", "test@example.com", true, "Test User", null));
+        _userExternalLoginRepository.FindByProvider = (_, _, _) => Task.FromResult<UserExternalLogin?>(externalLogin);
+        _loginResultBuilder.Build = (_, _, _) => Task.FromResult(Result.Success<LoginResult, AppError>(CreateLoginResult()));
 
         var result = await _service.GoogleSignInAsync("token", null, CancellationToken.None);
 
@@ -111,16 +107,14 @@ public sealed class ExternalAuthServiceTests
             User = blockedUser
         };
 
-        _googleTokenValidator.ValidateAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GoogleTokenPayload("sub123", "test@example.com", true, "Test User", null));
-        _userExternalLoginRepository.FindByProviderAsync(AuthConstants.ExternalProviders.Google, "sub123", Arg.Any<CancellationToken>())
-            .Returns(externalLogin);
+        _googleTokenValidator.Validate = (_, _, _) => Task.FromResult<GoogleTokenPayload?>(new GoogleTokenPayload("sub123", "test@example.com", true, "Test User", null));
+        _userExternalLoginRepository.FindByProvider = (_, _, _) => Task.FromResult<UserExternalLogin?>(externalLogin);
 
         var result = await _service.GoogleSignInAsync("token", null, CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<ForbiddenError>();
-        await _loginResultBuilder.DidNotReceiveWithAnyArgs().BuildAsync(default!, default!, default);
+        _loginResultBuilder.Calls.Should().BeEmpty();
         _unitOfWork.SaveChangesCalls.Should().Be(0);
     }
 
@@ -129,14 +123,10 @@ public sealed class ExternalAuthServiceTests
     {
         var createdUser = CreateUser(preferredTimeZone: "UTC");
 
-        _googleTokenValidator.ValidateAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GoogleTokenPayload("sub123", "test@example.com", true, "Test User", null));
-        _userExternalLoginRepository.FindByProviderAsync(AuthConstants.ExternalProviders.Google, "sub123", Arg.Any<CancellationToken>())
-            .Returns((UserExternalLogin?)null);
-        _googleUserRegistrar.RegisterAsync(Arg.Any<GoogleTokenPayload>(), Arg.Any<CancellationToken>())
-            .Returns(Result.Success<User, AppError>(createdUser));
-        _loginResultBuilder.BuildAsync(createdUser, createdUser.PreferredTimeZone, Arg.Any<CancellationToken>())
-            .Returns(Result.Success<LoginResult, AppError>(CreateLoginResult()));
+        _googleTokenValidator.Validate = (_, _, _) => Task.FromResult<GoogleTokenPayload?>(new GoogleTokenPayload("sub123", "test@example.com", true, "Test User", null));
+        _userExternalLoginRepository.FindByProvider = (_, _, _) => Task.FromResult<UserExternalLogin?>(null);
+        _googleUserRegistrar.Register = (_, _) => Task.FromResult(Result.Success<User, AppError>(createdUser));
+        _loginResultBuilder.Build = (_, _, _) => Task.FromResult(Result.Success<LoginResult, AppError>(CreateLoginResult()));
 
         var result = await _service.GoogleSignInAsync("token", null, CancellationToken.None);
 
@@ -148,18 +138,15 @@ public sealed class ExternalAuthServiceTests
     [Test]
     public async Task GoogleSignIn_EmailCollision_NoLink_ReturnsConflict()
     {
-        _googleTokenValidator.ValidateAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GoogleTokenPayload("sub123", "test@example.com", true, "Test User", null));
-        _userExternalLoginRepository.FindByProviderAsync(AuthConstants.ExternalProviders.Google, "sub123", Arg.Any<CancellationToken>())
-            .Returns((UserExternalLogin?)null);
-        _googleUserRegistrar.RegisterAsync(Arg.Any<GoogleTokenPayload>(), Arg.Any<CancellationToken>())
-            .Returns(Result.Failure<User, AppError>(new ConflictError("email conflict")));
+        _googleTokenValidator.Validate = (_, _, _) => Task.FromResult<GoogleTokenPayload?>(new GoogleTokenPayload("sub123", "test@example.com", true, "Test User", null));
+        _userExternalLoginRepository.FindByProvider = (_, _, _) => Task.FromResult<UserExternalLogin?>(null);
+        _googleUserRegistrar.Register = (_, _) => Task.FromResult(Result.Failure<User, AppError>(new ConflictError("email conflict")));
 
         var result = await _service.GoogleSignInAsync("token", null, CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<ConflictError>();
-        await _loginResultBuilder.DidNotReceiveWithAnyArgs().BuildAsync(default!, default!, default);
+        _loginResultBuilder.Calls.Should().BeEmpty();
         _unitOfWork.SaveChangesCalls.Should().Be(0);
     }
 

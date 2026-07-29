@@ -1,33 +1,32 @@
 using System.Text.Json;
 using LgymApi.Application.Features.Measurements;
 using LgymApi.Application.Reporting.Contracts.BackgroundCommands;
-using LgymApi.Application.WorkoutProgress.Contracts.ReportingIntegration;
-using LgymApi.Domain.Entities;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
-using UserEntity = LgymApi.Domain.Entities.User;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.Application.Features.Reporting;
 
 public interface IReportSubmissionAcceptedProgressCommandFactory
 {
     Dictionary<string, JsonElement> FilterInvalidMeasurementAnswers(
-        ReportTemplate template,
+        ReportTemplatePersistenceModel template,
         IReadOnlyDictionary<string, JsonElement> answers);
 
     ReportSubmissionAcceptedProgressCommand? Create(
-        ReportTemplate template,
+        ReportTemplatePersistenceModel template,
         IReadOnlyDictionary<string, JsonElement> answers,
-        Id<ReportSubmission> submissionId,
-        Id<ReportRequest> requestId,
-        Id<UserEntity> traineeId,
+        Id<LgymApi.Domain.Entities.ReportSubmission> submissionId,
+        Id<LgymApi.Domain.Entities.ReportRequest> requestId,
+        Id<AccountReference> traineeId,
         DateTimeOffset acceptedAtUtc);
 }
 
 public sealed class ReportSubmissionAcceptedProgressCommandFactory : IReportSubmissionAcceptedProgressCommandFactory
 {
     public Dictionary<string, JsonElement> FilterInvalidMeasurementAnswers(
-        ReportTemplate template,
+        ReportTemplatePersistenceModel template,
         IReadOnlyDictionary<string, JsonElement> answers)
     {
         var filteredAnswers = new Dictionary<string, JsonElement>(answers, StringComparer.OrdinalIgnoreCase);
@@ -70,11 +69,11 @@ public sealed class ReportSubmissionAcceptedProgressCommandFactory : IReportSubm
     }
 
     public ReportSubmissionAcceptedProgressCommand? Create(
-        ReportTemplate template,
+        ReportTemplatePersistenceModel template,
         IReadOnlyDictionary<string, JsonElement> answers,
-        Id<ReportSubmission> submissionId,
-        Id<ReportRequest> requestId,
-        Id<UserEntity> traineeId,
+        Id<LgymApi.Domain.Entities.ReportSubmission> submissionId,
+        Id<LgymApi.Domain.Entities.ReportRequest> requestId,
+        Id<AccountReference> traineeId,
         DateTimeOffset acceptedAtUtc)
     {
         var measurements = CollectMeasurements(template, answers);
@@ -88,8 +87,8 @@ public sealed class ReportSubmissionAcceptedProgressCommandFactory : IReportSubm
 
         return new ReportSubmissionAcceptedProgressCommand
         {
-            Event = new ReportSubmissionAcceptedProgressEvent(
-                ReportSubmissionAcceptedProgressEvent.CurrentSchemaVersion,
+            Event = new ReportSubmissionAcceptedProgressPayload(
+                ReportSubmissionAcceptedProgressPayload.CurrentSchemaVersion,
                 submissionIdValue,
                 submissionIdValue,
                 requestId.ToString(),
@@ -101,11 +100,11 @@ public sealed class ReportSubmissionAcceptedProgressCommandFactory : IReportSubm
         };
     }
 
-    private List<ReportSubmissionAcceptedMeasurement> CollectMeasurements(
-        ReportTemplate template,
+    private List<ReportSubmissionAcceptedProgressMeasurement> CollectMeasurements(
+        ReportTemplatePersistenceModel template,
         IReadOnlyDictionary<string, JsonElement> answers)
     {
-        var candidates = new Dictionary<BodyParts, ReportSubmissionAcceptedMeasurement>();
+        var candidates = new Dictionary<BodyParts, ReportSubmissionAcceptedProgressMeasurement>();
         var filteredAnswers = FilterInvalidMeasurementAnswers(template, answers);
 
         foreach (var field in template.Fields.Where(field => field.Type == ReportFieldType.Measurements))
@@ -137,7 +136,7 @@ public sealed class ReportSubmissionAcceptedProgressCommandFactory : IReportSubm
     private static bool TryParseMeasurement(
         JsonElement rawValue,
         BodyParts bodyPart,
-        out ReportSubmissionAcceptedMeasurement measurement)
+        out ReportSubmissionAcceptedProgressMeasurement measurement)
     {
         measurement = default!;
 
@@ -154,7 +153,7 @@ public sealed class ReportSubmissionAcceptedProgressCommandFactory : IReportSubm
             return false;
         }
 
-        measurement = new ReportSubmissionAcceptedMeasurement(bodyPart, value, unit);
+        measurement = new ReportSubmissionAcceptedProgressMeasurement(bodyPart, value, unit);
         return true;
     }
 }

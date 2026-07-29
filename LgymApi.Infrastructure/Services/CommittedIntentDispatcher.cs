@@ -64,7 +64,7 @@ public sealed class CommittedIntentDispatcher : ICommittedIntentDispatcher
         {
             try
             {
-                var schedulerJobId = scheduler.Enqueue(envelope.Id);
+                var schedulerJobId = scheduler.Enqueue(envelope.Id.ToString());
                 envelope.DispatchedAt = DateTimeOffset.UtcNow;
                 envelope.SchedulerJobId = schedulerJobId;
                 await dbContext.SaveChangesAsync(cancellationToken);
@@ -94,7 +94,7 @@ public sealed class CommittedIntentDispatcher : ICommittedIntentDispatcher
         {
             try
             {
-                var schedulerJobId = scheduler.Enqueue(notification.Id);
+                var schedulerJobId = scheduler.Enqueue(notification.Id.ToString());
                 notification.DispatchedAt = DateTimeOffset.UtcNow;
                 notification.SchedulerJobId = schedulerJobId;
                 await dbContext.SaveChangesAsync(cancellationToken);
@@ -130,7 +130,7 @@ public sealed class CommittedIntentDispatcher : ICommittedIntentDispatcher
         {
             try
             {
-                var schedulerJobId = scheduler.Enqueue(notification.Id);
+                var schedulerJobId = scheduler.Enqueue(notification.Id.ToString());
                 notification.DispatchedAt = DateTimeOffset.UtcNow;
                 notification.SchedulerJobId = schedulerJobId;
                 await dbContext.SaveChangesAsync(cancellationToken);

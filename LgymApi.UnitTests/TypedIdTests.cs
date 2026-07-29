@@ -80,6 +80,20 @@ public sealed class TypedIdTests
         nullableId.Value.Should().Be(id);
     }
 
+    [Test]
+    public void Baseline_ValueEquality_HashAndNullableJsonSemantics_AreStable()
+    {
+        var first = ParseTestId<User>("00000000-0000-0000-0000-000000000003");
+        var same = ParseTestId<User>("00000000-0000-0000-0000-000000000003");
+        Id<User>? missing = null;
+
+        first.Should().Be(same);
+        first.GetHashCode().Should().Be(same.GetHashCode());
+        missing.Should().BeNull();
+        JsonSerializer.Serialize(missing, _serializerOptions).Should().Be("null");
+        JsonSerializer.Deserialize<Id<User>?>("null", _serializerOptions).Should().BeNull();
+    }
+
     #endregion
 
     #region New() Factory

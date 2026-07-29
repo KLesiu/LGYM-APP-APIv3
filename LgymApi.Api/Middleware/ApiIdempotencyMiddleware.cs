@@ -165,8 +165,9 @@ public sealed class ApiIdempotencyMiddleware
         string callerScope;
         if (metadata.ScopeSource == ApiIdempotencyScopeSource.AuthenticatedUser)
         {
-            var user = context.Items["User"] as User;
-            callerScope = user?.Id.ToString() ?? "anonymous";
+            callerScope = context.GetCurrentAccountId().IsEmpty
+                ? "anonymous"
+                : context.GetCurrentAccountId().ToString();
         }
         else // NormalizedEmail
         {

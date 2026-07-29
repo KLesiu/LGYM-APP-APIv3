@@ -97,8 +97,9 @@ public sealed class NotificationsBoundaryDocumentationTests
         AssertFieldContains(
             artifactRows["notifications.artifact.provider-adapters"],
             "Responsibility and allowed access",
-            "Infrastructure",
-            "external delivery",
+            "Notifications",
+            "private FCM transport/configuration",
+            "provider-private mapping",
             "without exposing");
         AssertFieldContains(
             contractRows["notifications.contract.push-payload"],

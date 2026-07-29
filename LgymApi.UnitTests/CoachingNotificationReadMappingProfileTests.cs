@@ -35,7 +35,7 @@ public sealed class CoachingNotificationReadMappingProfileTests
             expiresAt.AddDays(-1),
             expiresAt.AddDays(-1));
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
@@ -71,7 +71,7 @@ public sealed class CoachingNotificationReadMappingProfileTests
             expiresAt.AddDays(-1),
             expiresAt.AddDays(-1))));
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
         using var provider = services.BuildServiceProvider();
         var service = new CoachingNotificationReadService(

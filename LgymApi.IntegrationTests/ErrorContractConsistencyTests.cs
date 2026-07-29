@@ -7,6 +7,7 @@ using FluentAssertions;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
+using LgymApi.Resources;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 
@@ -43,7 +44,10 @@ public sealed class ErrorContractConsistencyTests : IntegrationTestBase
         var response = await Client.GetAsync($"/api/gym/{user.Id}/getGyms");
 
         // Assert: 401 + "msg" field present
-        await _harness.AssertErrorMessageResponseAsync(response, HttpStatusCode.Unauthorized);
+        await _harness.AssertErrorMessageResponseAsync(
+            response,
+            HttpStatusCode.Unauthorized,
+            CompatibilityResourceMessage.InCulture("en", () => Messages.InvalidToken));
     }
 
     /// <summary>
@@ -65,7 +69,46 @@ public sealed class ErrorContractConsistencyTests : IntegrationTestBase
         var response = await Client.GetAsync($"/api/gym/{user.Id}/getGyms");
 
         // Assert: 401 + "msg" field present
-        await _harness.AssertErrorMessageResponseAsync(response, HttpStatusCode.Unauthorized);
+        await _harness.AssertErrorMessageResponseAsync(
+            response,
+            HttpStatusCode.Unauthorized,
+            CompatibilityResourceMessage.InCulture("en", () => Messages.InvalidToken));
+    }
+
+    [Test]
+    public async Task MissingSessionClaim_Returns401WithResourceBackedMsgField()
+    {
+        var user = await SeedUserAsync(
+            name: "missing_session_claim_user",
+            email: "missing_session_claim@example.com");
+        var token = GenerateJwtWithoutSessionClaim(user.Id);
+        Client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+        var response = await Client.GetAsync($"/api/gym/{user.Id}/getGyms");
+
+        await _harness.AssertErrorMessageResponseAsync(
+            response,
+            HttpStatusCode.Unauthorized,
+            CompatibilityResourceMessage.InCulture("en", () => Messages.InvalidToken));
+    }
+
+    [Test]
+    public async Task MissingSessionRow_Returns401WithResourceBackedMsgField()
+    {
+        var user = await SeedUserAsync(
+            name: "missing_session_row_user",
+            email: "missing_session_row@example.com");
+        var token = GenerateJwt(user.Id, Id<UserSession>.New(), Id<UserSession>.New().ToString());
+        Client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+        var response = await Client.GetAsync($"/api/gym/{user.Id}/getGyms");
+
+        await _harness.AssertErrorMessageResponseAsync(
+            response,
+            HttpStatusCode.Unauthorized,
+            CompatibilityResourceMessage.InCulture("en", () => Messages.Unauthorized));
     }
 
     /// <summary>
@@ -120,7 +163,10 @@ public sealed class ErrorContractConsistencyTests : IntegrationTestBase
         var response = await Client.GetAsync($"/api/gym/{user.Id}/getGyms");
 
         // Assert: 401 + "msg" field present
-        await _harness.AssertErrorMessageResponseAsync(response, HttpStatusCode.Unauthorized);
+        await _harness.AssertErrorMessageResponseAsync(
+            response,
+            HttpStatusCode.Unauthorized,
+            CompatibilityResourceMessage.InCulture("en", () => Messages.ExpiredToken));
     }
 
     /// <summary>
@@ -163,7 +209,10 @@ public sealed class ErrorContractConsistencyTests : IntegrationTestBase
         var response = await Client.GetAsync($"/api/gym/{user.Id}/getGyms");
 
         // Assert: 401 + "msg" field present
-        await _harness.AssertErrorMessageResponseAsync(response, HttpStatusCode.Unauthorized);
+        await _harness.AssertErrorMessageResponseAsync(
+            response,
+            HttpStatusCode.Unauthorized,
+            CompatibilityResourceMessage.InCulture("en", () => Messages.Unauthorized));
     }
 
     /// <summary>
@@ -184,7 +233,10 @@ public sealed class ErrorContractConsistencyTests : IntegrationTestBase
         var response = await Client.GetAsync($"/api/gym/{user.Id}/getGyms");
 
         // Assert: 401 + "msg" field present
-        await _harness.AssertErrorMessageResponseAsync(response, HttpStatusCode.Unauthorized);
+        await _harness.AssertErrorMessageResponseAsync(
+            response,
+            HttpStatusCode.Unauthorized,
+            CompatibilityResourceMessage.InCulture("en", () => Messages.Unauthorized));
     }
 
     /// <summary>
@@ -212,7 +264,10 @@ public sealed class ErrorContractConsistencyTests : IntegrationTestBase
         var response = await Client.GetAsync($"/api/gym/{user.Id}/getGyms");
 
         // Assert: 403 + "msg" field present
-        await _harness.AssertErrorMessageResponseAsync(response, HttpStatusCode.Forbidden);
+        await _harness.AssertErrorMessageResponseAsync(
+            response,
+            HttpStatusCode.Forbidden,
+            CompatibilityResourceMessage.InCulture("en", () => Messages.AccountBlocked));
     }
 
     /// <summary>
@@ -243,7 +298,10 @@ public sealed class ErrorContractConsistencyTests : IntegrationTestBase
         });
 
         // Assert: 403 + "msg" field present
-        await _harness.AssertErrorMessageResponseAsync(response, HttpStatusCode.Forbidden);
+        await _harness.AssertErrorMessageResponseAsync(
+            response,
+            HttpStatusCode.Forbidden,
+            CompatibilityResourceMessage.InCulture("en", () => Messages.Forbidden));
     }
 
     /// <summary>
@@ -275,5 +333,23 @@ public sealed class ErrorContractConsistencyTests : IntegrationTestBase
 
         json.RootElement.TryGetProperty("message", out _)
             .Should().BeFalse("error response must not use 'message' field");
+    }
+
+    private static string GenerateJwtWithoutSessionClaim(Id<User> userId)
+    {
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(CustomWebApplicationFactory.TestJwtSigningKey));
+        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, userId.ToString()),
+            new("userId", userId.ToString()),
+            new(JwtRegisteredClaimNames.Jti, Id<UserSession>.New().ToString())
+        };
+        var token = new JwtSecurityToken(
+            claims: claims,
+            expires: DateTime.UtcNow.AddHours(1),
+            signingCredentials: credentials);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }

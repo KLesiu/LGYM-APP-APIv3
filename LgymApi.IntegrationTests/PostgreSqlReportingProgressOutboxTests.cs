@@ -6,13 +6,16 @@ using System.Text.Json;
 using FluentAssertions;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Reporting.Errors;
+using LgymApi.Application.Reporting.Contracts.BackgroundCommands;
 using LgymApi.Application.Features.Reporting;
 using LgymApi.Application.Features.Reporting.Models;
-using LgymApi.Application.WorkoutProgress.Contracts.ReportingIntegration;
+using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using LgymApi.BackgroundWorker.Common.Jobs;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.UnitOfWork;
 using LgymApi.Resources;
@@ -45,7 +48,7 @@ internal sealed class PostgreSqlReportingProgressOutboxTests : PostgreSqlIntegra
         {
             var reportingService = scope.ServiceProvider.GetRequiredService<IReportingService>();
             var result = await reportingService.SubmitReportRequestAsync(
-                scenario.Trainee,
+                scenario.Account,
                 scenario.RequestId,
                 CreateMeasurementSubmissionCommand());
 
@@ -74,9 +77,9 @@ internal sealed class PostgreSqlReportingProgressOutboxTests : PostgreSqlIntegra
         await using (var scope = Factory.Services.CreateAsyncScope())
         {
             var reportingService = scope.ServiceProvider.GetRequiredService<IReportingService>();
-            var first = await reportingService.SubmitReportRequestAsync(scenario.Trainee, scenario.RequestId, submissionCommand);
+            var first = await reportingService.SubmitReportRequestAsync(scenario.Account, scenario.RequestId, submissionCommand);
             var envelopeCountAfterFirstSubmission = await CountAcceptedProgressEnvelopesAsync();
-            var second = await reportingService.SubmitReportRequestAsync(scenario.Trainee, scenario.RequestId, submissionCommand);
+            var second = await reportingService.SubmitReportRequestAsync(scenario.Account, scenario.RequestId, submissionCommand);
             var envelopeCountAfterDuplicate = await CountAcceptedProgressEnvelopesAsync();
 
             Assert.Multiple(() =>
@@ -100,7 +103,7 @@ internal sealed class PostgreSqlReportingProgressOutboxTests : PostgreSqlIntegra
         {
             var reportingService = submissionScope.ServiceProvider.GetRequiredService<IReportingService>();
             var result = await reportingService.SubmitReportRequestAsync(
-                scenario.Trainee,
+                scenario.Account,
                 scenario.RequestId,
                 CreateMeasurementSubmissionCommand());
 
@@ -132,7 +135,7 @@ internal sealed class PostgreSqlReportingProgressOutboxTests : PostgreSqlIntegra
         await using (var deliveryScope = Factory.Services.CreateAsyncScope())
         {
             var job = deliveryScope.ServiceProvider.GetRequiredService<IActionMessageJob>();
-            await job.ExecuteAsync(stagedEnvelope.Id);
+            await job.ExecuteAsync(stagedEnvelope.Id.ToString());
         }
 
         await ResetEnvelopeForReplayAsync(stagedEnvelope.Id);
@@ -140,7 +143,7 @@ internal sealed class PostgreSqlReportingProgressOutboxTests : PostgreSqlIntegra
         await using (var replayScope = Factory.Services.CreateAsyncScope())
         {
             var job = replayScope.ServiceProvider.GetRequiredService<IActionMessageJob>();
-            await job.ExecuteAsync(stagedEnvelope.Id);
+            await job.ExecuteAsync(stagedEnvelope.Id.ToString());
         }
 
         var delivery = await ReadDeliveryStateAsync(stagedEnvelope.Id, scenario.Trainee.Id);
@@ -275,7 +278,10 @@ internal sealed class PostgreSqlReportingProgressOutboxTests : PostgreSqlIntegra
         database.ReportRequests.Add(request);
         await database.SaveChangesAsync();
 
-        return new PendingMeasurementScenario(trainee, request.Id);
+        return new PendingMeasurementScenario(
+            trainee,
+            new AuthenticatedAccountContext(trainee.Id.Rebind<AccountReference>(), null, [], [], false, false),
+            request.Id);
     }
 
     private async Task<PersistedSubmissionState> ReadSubmissionStateAsync(Id<ReportRequest> requestId)
@@ -392,7 +398,7 @@ internal sealed class PostgreSqlReportingProgressOutboxTests : PostgreSqlIntegra
     {
         var applicationAssembly = typeof(IReportingService).Assembly;
         var commandType = applicationAssembly.GetType(AcceptedProgressCommandTypeName);
-        var outboxWriterType = applicationAssembly.GetType(CommandOutboxWriterTypeName);
+        var outboxWriterType = typeof(ICommandOutboxWriter).Assembly.GetType(CommandOutboxWriterTypeName);
 
         commandType.Should().NotBeNull("#386 requires a Reporting-owned accepted-progress command contract");
         outboxWriterType.Should().NotBeNull("#386 requires a stage-only command outbox writer");
@@ -400,8 +406,8 @@ internal sealed class PostgreSqlReportingProgressOutboxTests : PostgreSqlIntegra
         var command = Activator.CreateInstance(commandType!)
             ?? throw new InvalidOperationException($"Could not create {AcceptedProgressCommandTypeName}.");
         var eventProperty = commandType!.GetProperties(BindingFlags.Instance | BindingFlags.Public)
-            .SingleOrDefault(property => property.PropertyType == typeof(ReportSubmissionAcceptedProgressEvent));
-        eventProperty.Should().NotBeNull("the accepted-progress command must carry the published event contract");
+            .SingleOrDefault(property => property.PropertyType == typeof(ReportSubmissionAcceptedProgressPayload));
+        eventProperty.Should().NotBeNull("the accepted-progress command must carry the Reporting-owned payload contract");
         eventProperty!.SetValue(command, CreateAcceptedProgressEvent(submission, traineeId, requestId));
 
         var outboxWriter = serviceProvider.GetService(outboxWriterType!)
@@ -421,26 +427,29 @@ internal sealed class PostgreSqlReportingProgressOutboxTests : PostgreSqlIntegra
         await task;
     }
 
-    private static ReportSubmissionAcceptedProgressEvent CreateAcceptedProgressEvent(
+    private static ReportSubmissionAcceptedProgressPayload CreateAcceptedProgressEvent(
         ReportSubmission submission,
         Id<User> traineeId,
         Id<ReportRequest> requestId)
     {
         var acceptedAt = new DateTimeOffset(2026, 7, 21, 12, 0, 0, TimeSpan.Zero);
 
-        return new ReportSubmissionAcceptedProgressEvent(
-            ReportSubmissionAcceptedProgressEvent.CurrentSchemaVersion,
-            Id<ReportSubmissionAcceptedProgressEvent>.New().ToString(),
+        return new ReportSubmissionAcceptedProgressPayload(
+            ReportSubmissionAcceptedProgressPayload.CurrentSchemaVersion,
+            Id<ReportSubmissionAcceptedProgressPayload>.New().ToString(),
             submission.Id.ToString(),
             requestId.ToString(),
             submission.Id.ToString(),
-            traineeId,
+            traineeId.Rebind<AccountReference>(),
             acceptedAt,
             acceptedAt,
-            [new ReportSubmissionAcceptedMeasurement(BodyParts.BodyWeight, 82.4, MeasurementUnits.Kilograms)]);
+            [new ReportSubmissionAcceptedProgressMeasurement(BodyParts.BodyWeight, 82.4, MeasurementUnits.Kilograms)]);
     }
 
-    private sealed record PendingMeasurementScenario(User Trainee, Id<ReportRequest> RequestId);
+    private sealed record PendingMeasurementScenario(
+        User Trainee,
+        AuthenticatedAccountContext Account,
+        Id<ReportRequest> RequestId);
 
     private sealed record PersistedSubmissionState(
         ReportRequestStatus RequestStatus,

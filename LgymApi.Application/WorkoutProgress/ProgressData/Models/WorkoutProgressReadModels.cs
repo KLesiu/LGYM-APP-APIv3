@@ -12,7 +12,7 @@ public sealed record ExerciseScoreChartPoint(
 
 public sealed record MeasurementReadModel(
     Id<LgymApi.Domain.Entities.Measurement> Id,
-    Id<LgymApi.Domain.Entities.User> UserId,
+    Id<LgymApi.Identity.Contracts.AccountReference> UserId,
     BodyParts BodyPart,
     MeasurementUnits Unit,
     double Value,
@@ -44,11 +44,26 @@ public sealed record MainRecordReadModel(
 public sealed record ProgressExerciseReadModel(
     Id<LgymApi.Domain.Entities.Exercise> Id,
     string Name,
-    Id<LgymApi.Domain.Entities.User>? UserId,
+    Id<LgymApi.Identity.Contracts.AccountReference>? UserId,
     BodyParts BodyPart,
     ExerciseEloFormula? EloFormula,
     string? Description,
     string? Image);
+
+public sealed record WorkoutExerciseScoreReadModel(
+    Id<LgymApi.Domain.Entities.ExerciseScore> Id,
+    Id<LgymApi.Domain.Entities.Exercise> ExerciseId,
+    double Weight,
+    WeightUnits Unit,
+    double Reps,
+    int Series,
+    WorkoutScoreTrainingReadModel? Training);
+
+public sealed record WorkoutScoreTrainingReadModel(
+    Id<LgymApi.Domain.Entities.Training> Id,
+    Id<LgymApi.Domain.Entities.Gym> GymId,
+    string? GymName,
+    DateTimeOffset CreatedAt);
 
 public sealed record MainRecordBestReadModel(
     MainRecordReadModel Record,

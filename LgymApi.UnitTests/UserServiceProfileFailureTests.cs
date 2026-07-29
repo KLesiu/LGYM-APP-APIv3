@@ -6,6 +6,7 @@ using LgymApi.Application.Identity.Ranking;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Repositories;
 using LgymApi.Domain.Entities;
+using LgymApi.UnitTests.Fakes;
 using NSubstitute;
 
 namespace LgymApi.UnitTests;
@@ -14,17 +15,17 @@ namespace LgymApi.UnitTests;
 public sealed class UserServiceProfileFailureTests
 {
     private IUnitOfWork _unitOfWork = null!;
-    private IUserRepository _userRepository = null!;
+    private ConfigurableUserRepository _userRepository = null!;
     private UserProfileService _profileService = null!;
 
     [SetUp]
     public void SetUp()
     {
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _userRepository = Substitute.For<IUserRepository>();
+        _userRepository = new ConfigurableUserRepository();
         _profileService = new UserProfileService(new UserProfileServiceDependencies(
             _userRepository,
-            Substitute.For<IRoleRepository>(),
+            new ConfigurableRoleRepository(),
             Substitute.For<LgymApi.Application.Services.IRankService>(),
             _unitOfWork,
             new LgymApi.Application.Options.AppDefaultsOptions(),

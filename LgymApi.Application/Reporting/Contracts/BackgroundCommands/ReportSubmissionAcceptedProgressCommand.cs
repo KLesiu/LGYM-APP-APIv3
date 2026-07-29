@@ -1,15 +1,19 @@
 using LgymApi.Application.Platform.Contracts.BackgroundCommands;
-using LgymApi.Application.WorkoutProgress.Contracts.ReportingIntegration;
 
 namespace LgymApi.Application.Reporting.Contracts.BackgroundCommands;
 
 public sealed class ReportSubmissionAcceptedProgressCommand : IActionCommand
 {
-    public required ReportSubmissionAcceptedProgressEvent Event { get; init; }
+    public required ReportSubmissionAcceptedProgressPayload Event { get; init; }
 
-    public ReportSubmissionAcceptedProgressValidationResult Validate()
+    public ReportSubmissionAcceptedProgressPayloadValidationResult Validate()
     {
-        ArgumentNullException.ThrowIfNull(Event);
+        if (Event is null)
+        {
+            return ReportSubmissionAcceptedProgressPayloadValidationResult.Poison(
+                "The accepted report submission payload is missing.");
+        }
+
         return Event.Validate();
     }
 }

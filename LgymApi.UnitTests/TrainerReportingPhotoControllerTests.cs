@@ -3,14 +3,18 @@ using LgymApi.Api;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Features.Trainer.Controllers;
+using LgymApi.Api.Middleware;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Reporting;
 using LgymApi.Application.Features.Reporting.Models;
+using LgymApi.Application.Reporting.Compatibility;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using LgymApi.Resources;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -48,7 +52,7 @@ public sealed class TrainerReportingPhotoControllerTests
         var requestId = Id<ReportRequest>.New();
 
         reportingService
-            .InitiatePhotoUploadAsync(Arg.Any<User>(), Arg.Do<InitiatePhotoUploadCommand>(command => capturedCommand = command), Arg.Any<CancellationToken>())
+            .InitiatePhotoUploadAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Do<InitiatePhotoUploadCommand>(command => capturedCommand = command), Arg.Any<CancellationToken>())
             .Returns(Result.Success<InitiatePhotoUploadResult, AppError>(new InitiatePhotoUploadResult
             {
                 UploadUrl = "https://upload.example.com",
@@ -82,7 +86,7 @@ public sealed class TrainerReportingPhotoControllerTests
         var photoId = Id<Photo>.New();
 
         reportingService
-            .GetSignedReadUrlAsync(Arg.Any<User>(), photoId, Arg.Any<CancellationToken>())
+            .GetSignedReadUrlAsync(Arg.Any<AuthenticatedAccountContext>(), photoId, Arg.Any<CancellationToken>())
             .Returns(Result.Success<SignedReadUrlResult, AppError>(new SignedReadUrlResult
             {
                 ReadUrl = "https://read.example.com",
@@ -96,7 +100,7 @@ public sealed class TrainerReportingPhotoControllerTests
         result.Should().BeOfType<OkObjectResult>();
         var response = ((OkObjectResult)result).Value.Should().BeOfType<GetSignedReadUrlResponse>().Subject;
         response.ReadUrl.Should().Be("https://read.example.com");
-        await reportingService.Received(1).GetSignedReadUrlAsync(Arg.Any<User>(), photoId, Arg.Any<CancellationToken>());
+        await reportingService.Received(1).GetSignedReadUrlAsync(Arg.Any<AuthenticatedAccountContext>(), photoId, Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -110,7 +114,7 @@ public sealed class TrainerReportingPhotoControllerTests
         var objectResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
         objectResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
         objectResult.Value.Should().BeOfType<ResponseMessageDto>().Which.Message.Should().Be("Invalid photo ID format");
-        await reportingService.DidNotReceive().GetSignedReadUrlAsync(Arg.Any<User>(), Arg.Any<Id<Photo>>(), Arg.Any<CancellationToken>());
+        await reportingService.DidNotReceive().GetSignedReadUrlAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Any<Id<Photo>>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -124,7 +128,7 @@ public sealed class TrainerReportingPhotoControllerTests
         var objectResult = result.Should().BeOfType<BadRequestObjectResult>().Subject;
         objectResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
         objectResult.Value.Should().BeOfType<ResponseMessageDto>().Which.Message.Should().Be(Messages.FieldRequired);
-        await reportingService.DidNotReceive().GetSignedReadUrlAsync(Arg.Any<User>(), Arg.Any<Id<Photo>>(), Arg.Any<CancellationToken>());
+        await reportingService.DidNotReceive().GetSignedReadUrlAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Any<Id<Photo>>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -155,7 +159,7 @@ public sealed class TrainerReportingPhotoControllerTests
         var photoId = Id<Photo>.New();
 
         reportingService
-            .CompletePhotoUploadAsync(Arg.Any<User>(), Arg.Do<CompletePhotoUploadCommand>(command => capturedCommand = command), Arg.Any<CancellationToken>())
+            .CompletePhotoUploadAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Do<CompletePhotoUploadCommand>(command => capturedCommand = command), Arg.Any<CancellationToken>())
             .Returns(Result.Success<CompletePhotoUploadResult, AppError>(new CompletePhotoUploadResult
             {
                 PhotoId = photoId,
@@ -203,7 +207,7 @@ public sealed class TrainerReportingPhotoControllerTests
         var photoId = Id<Photo>.New();
 
         reportingService
-            .GetPhotoHistoryAsync(Arg.Any<User>(), Arg.Do<GetPhotoHistoryCommand>(command => capturedCommand = command), Arg.Any<CancellationToken>())
+            .GetPhotoHistoryAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Do<GetPhotoHistoryCommand>(command => capturedCommand = command), Arg.Any<CancellationToken>())
             .Returns(Result.Success<List<PhotoHistoryItemResult>, AppError>(
             [
                 new PhotoHistoryItemResult
@@ -223,7 +227,7 @@ public sealed class TrainerReportingPhotoControllerTests
 
         result.Should().BeOfType<OkObjectResult>();
         capturedCommand.Should().NotBeNull();
-        capturedCommand!.TraineeId.Should().Be(traineeId);
+        capturedCommand!.TraineeId.Should().Be(traineeId.Rebind<AccountReference>());
         capturedCommand.RequestId.Should().Be(requestId);
         var response = ((OkObjectResult)result).Value.Should().BeOfType<GetPhotoHistoryResponse>().Subject;
         response.Photos.Should().ContainSingle();
@@ -233,12 +237,12 @@ public sealed class TrainerReportingPhotoControllerTests
     private static TrainerReportingController CreateController(IReportingService reportingService)
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
         var recurringService = Substitute.For<IRecurringReportAssignmentService>();
 
-        var controller = new TrainerReportingController(reportingService, recurringService, mapper)
+        var controller = new TrainerReportingController(new TrainerReportTemplateApiAdapter(reportingService), new TrainerReportRequestApiAdapter(reportingService), new TrainerReportPhotoApiAdapter(reportingService, mapper), new RecurringReportAssignmentApiAdapter(recurringService), mapper)
         {
             ControllerContext = new ControllerContext
             {
@@ -246,13 +250,8 @@ public sealed class TrainerReportingPhotoControllerTests
             }
         };
 
-        controller.HttpContext.Items["User"] = new User
-        {
-            Id = Id<User>.New(),
-            Name = "Trainer",
-            Email = "trainer@example.com",
-            ProfileRank = "Rookie"
-        };
+        controller.HttpContext.Features.Set<IAuthenticatedAccountContextFeature>(new AuthenticatedAccountContextFeature(
+            new AuthenticatedAccountContext(Id<AccountReference>.New(), null, [], [], false, false)));
 
         return controller;
     }

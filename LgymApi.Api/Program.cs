@@ -2,17 +2,14 @@ using System.Threading.RateLimiting;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using LgymApi.BackgroundWorker;
+using LgymApi.Application;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Coaching;
-using LgymApi.Application.Identity;
+using LgymApi.Identity;
 using LgymApi.Application.Notifications;
-using LgymApi.Application.Nutrition;
-using LgymApi.Application.Platform;
-using LgymApi.Application.Reporting;
-using LgymApi.Application.TrainingPlanning;
-using LgymApi.Application.WorkoutProgress;
+using LgymApi.TrainingPlanning;
 using LgymApi.Infrastructure;
+using LgymApi.Platform;
 using Microsoft.AspNetCore.RateLimiting;
 using LgymApi.Api;
 using LgymApi.Api.Configuration;
@@ -23,7 +20,6 @@ using LgymApi.Api.Constants;
 using Hangfire;
 using LgymApi.Api.Serialization;
 using LgymApi.Api.Logging;
-using LgymApi.BackgroundWorker.Common.Jobs;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -72,35 +68,22 @@ builder.Services.AddCors(options =>
 });
 builder.Services.AddHttpContextAccessor();
 var localizationOptions = builder.Services.AddApiLocalization();
-builder.Services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+builder.Services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 var isTesting = builder.Environment.IsEnvironment(TestingEnvironment);
 
 builder.Services
+    .AddPlatformModule()
     .AddIdentityModule()
     .AddTrainingPlanningModule()
-    .AddWorkoutAndProgressModule()
-    .AddCoachingModule()
-    .AddNutritionModule()
-    .AddReportingModule()
-    .AddPlatformModule();
-
-builder.Services.AddPlatformServices(
-    builder.Configuration,
-    builder.Environment.IsDevelopment(),
-    isTesting,
-    hostBackgroundServer: true);
-
-var isDevelopmentOrTesting = builder.Environment.IsDevelopment() || isTesting;
-
-builder.Services
-    .AddIdentityInfrastructure()
-    .AddTrainingPlanningInfrastructure()
-    .AddWorkoutProgressInfrastructure()
-    .AddCoachingInfrastructure()
-    .AddNutritionInfrastructure()
-    .AddReportingInfrastructure(builder.Configuration, isDevelopmentOrTesting)
-    .AddNotificationsModule(builder.Configuration);
-builder.Services.AddBackgroundWorkerServices(isTesting);
+    .AddNotificationsModule(builder.Configuration)
+    .AddApplication()
+    .AddInfrastructure(
+        builder.Configuration,
+        builder.Environment.IsDevelopment(),
+        isTesting,
+        hostBackgroundServer: false)
+    .AddTask7ApiCompatibility();
+builder.Services.AddNotificationsApiAdapters();
 
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<IUserIdProvider, LgymApi.Api.Hubs.NotificationHubUserIdProvider>();
@@ -162,6 +145,8 @@ if (!builder.Environment.IsEnvironment(TestingEnvironment))
         });
     });
 }
+
+builder.Services.AddBackgroundWorkerServices(isTesting, hostBackgroundServer: true);
 
 var app = builder.Build();
 

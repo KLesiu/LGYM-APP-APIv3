@@ -5,17 +5,22 @@ using System.Text.Json;
 using FluentAssertions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Controllers;
+using LgymApi.Api.Middleware;
 using LgymApi.Application.Features.Reporting;
 using LgymApi.Application.Mapping.Core;
+using LgymApi.Application.Reporting.Compatibility;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Data.SeedData;
 using LgymApi.Resources;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace LgymApi.IntegrationTests;
 
@@ -267,9 +272,22 @@ internal sealed class PostgreSqlApiCompatibilityTests : PostgreSqlIntegrationTes
         using var scope = Factory.Services.CreateScope();
         var serviceProvider = scope.ServiceProvider;
         var controller = new TrainerReportingController(
-            serviceProvider.GetRequiredService<IReportingService>(),
-            serviceProvider.GetRequiredService<IRecurringReportAssignmentService>(),
-            serviceProvider.GetRequiredService<IMapper>());
+            Substitute.For<ITrainerReportTemplateApiPort>(),
+            Substitute.For<ITrainerReportRequestApiPort>(),
+            Substitute.For<ITrainerReportPhotoApiPort>(),
+            Substitute.For<IRecurringReportAssignmentApiPort>(),
+            serviceProvider.GetRequiredService<IMapper>())
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+        controller.HttpContext.Features.Set<IAuthenticatedAccountContextFeature>(new TestAuthenticatedAccountContextFeature(
+            new AuthenticatedAccountContext(
+                Id<AccountReference>.New(),
+                null,
+                [],
+                [],
+                false,
+                false)));
 
         var result = await controller.GetPhotoSignedReadUrl(string.Empty);
         return result.Should().BeOfType<BadRequestObjectResult>().Subject;
@@ -335,6 +353,9 @@ internal sealed class PostgreSqlApiCompatibilityTests : PostgreSqlIntegrationTes
         value.Should().NotBeNullOrWhiteSpace($"{propertyName} must not be empty");
         return value!;
     }
+
+    private sealed record TestAuthenticatedAccountContextFeature(AuthenticatedAccountContext Context)
+        : IAuthenticatedAccountContextFeature;
 
     private sealed class UuidValidationEntity;
 }

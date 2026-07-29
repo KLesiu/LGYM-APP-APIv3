@@ -8,11 +8,11 @@ namespace LgymApi.Application.Coaching.Progress.TrainingDates;
 
 internal sealed class GetTrainingDatesUseCase : IGetTrainingDatesUseCase
 {
-    private readonly ICoachingRelationshipAccessService _relationshipAccess;
+    private readonly IMarkerCoachingRelationshipAccessService _relationshipAccess;
     private readonly IWorkoutProgressDashboardReadService _progress;
 
     public GetTrainingDatesUseCase(
-        ICoachingRelationshipAccessService relationshipAccess,
+        IMarkerCoachingRelationshipAccessService relationshipAccess,
         IWorkoutProgressDashboardReadService progress)
     {
         _relationshipAccess = relationshipAccess;

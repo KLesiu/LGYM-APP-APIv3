@@ -1,8 +1,7 @@
-using LgymApi.Application.Services;
 using LgymApi.DataSeeder;
 using LgymApi.DataSeeder.Seeders;
+using LgymApi.Identity;
 using LgymApi.Infrastructure.Data;
-using LgymApi.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -71,7 +70,7 @@ public static class Program
         services.AddSingleton<IConfiguration>(configuration);
         services.AddDbContext<AppDbContext>(optionsBuilder =>
             optionsBuilder.UseNpgsql(connectionString));
-        services.AddScoped<ILegacyPasswordService, LegacyPasswordService>();
+        services.AddIdentityModule();
         services.AddScoped<IEntitySeeder, UserSeeder>();
         services.AddScoped<IEntitySeeder, PasswordResetTokenSeeder>();
         services.AddScoped<IEntitySeeder, EloRegistrySeeder>();
@@ -99,6 +98,7 @@ public static class Program
         services.AddScoped<IEntitySeeder, ReportTemplateFieldSeeder>();
         services.AddScoped<IEntitySeeder, ReportRequestSeeder>();
         services.AddScoped<IEntitySeeder, ReportSubmissionSeeder>();
+        services.AddScoped<IEntitySeeder, RecurringReportAssignmentSeeder>();
         services.AddScoped<IEntitySeeder, SupplementPlanSeeder>();
         services.AddScoped<IEntitySeeder, SupplementPlanItemSeeder>();
         services.AddScoped<IEntitySeeder, SupplementIntakeLogSeeder>();

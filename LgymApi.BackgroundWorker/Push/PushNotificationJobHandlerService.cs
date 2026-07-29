@@ -1,6 +1,4 @@
 using LgymApi.Application.Notifications;
-using LgymApi.Domain.Entities;
-using LgymApi.Domain.ValueObjects;
 
 namespace LgymApi.BackgroundWorker.Push;
 
@@ -13,6 +11,6 @@ public sealed class PushNotificationJobHandlerService
         _pushNotificationDeliveryService = pushNotificationDeliveryService;
     }
 
-    public Task ProcessAsync(Id<PushNotificationMessage> notificationId, CancellationToken cancellationToken = default)
+    public Task ProcessAsync(string notificationId, CancellationToken cancellationToken = default)
         => _pushNotificationDeliveryService.ProcessAsync(notificationId, cancellationToken);
 }

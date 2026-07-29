@@ -28,7 +28,7 @@ public sealed class CoachingBackgroundCommandContractTests
 
         Assert.Multiple(() =>
         {
-            commandType.Assembly.Should().BeSameAs(typeof(IActionCommand).Assembly);
+            commandType.Assembly.Should().BeSameAs(typeof(LgymApi.Application.ServiceCollectionExtensions).Assembly);
             commandType.Namespace.Should().Be(CommandsNamespace);
             commandType.IsPublic.Should().BeTrue();
             commandType.IsSealed.Should().BeTrue();
@@ -128,13 +128,21 @@ public sealed class CoachingBackgroundCommandContractTests
             .ToArray();
 
         if (constructorParameterTypes.Any(type => type.FullName is "LgymApi.Application.Notifications.Contracts.Events.ICoachingEmailNotificationScheduler"
-            or "LgymApi.BackgroundWorker.Common.Notifications.IEmailScheduler`1"))
+            or "LgymApi.BackgroundWorker.Common.Notifications.IEmailScheduler`1"
+            or "LgymApi.Application.Coaching.Contracts.Notifications.IInvitationCreatedEmailPreparationPort"
+            or "LgymApi.Application.Coaching.Contracts.Notifications.IInvitationAcceptedEmailPreparationPort"
+            or "LgymApi.Application.Coaching.Contracts.Notifications.IInvitationRevokedEmailPreparationPort"))
         {
             return DeliveryChannel.Email;
         }
 
         if (constructorParameterTypes.Any(type => type.FullName is "LgymApi.Application.Notifications.IInAppNotificationService"
-            or "LgymApi.Application.Notifications.Contracts.Events.ICoachingNotificationIntentService"))
+            or "LgymApi.Application.Notifications.Contracts.Events.ICoachingNotificationIntentService"
+            or "LgymApi.Application.Coaching.Contracts.Notifications.ITrainerInvitationAcceptedInAppPreparationPort"
+            or "LgymApi.Application.Coaching.Contracts.Notifications.ITrainerInvitationRejectedInAppPreparationPort"
+            or "LgymApi.Application.Coaching.Contracts.Notifications.ITrainerInvitationCreatedInAppPreparationPort"
+            or "LgymApi.Application.Coaching.Contracts.Notifications.ITraineeNoteUpdatedInAppPreparationPort"
+            or "LgymApi.Application.Coaching.Contracts.Notifications.IRelationshipEndedPreparationPort"))
         {
             return DeliveryChannel.InApp;
         }
@@ -155,7 +163,7 @@ public sealed class CoachingBackgroundCommandContractTests
 
     private static Type GetCommandType(string typeName)
     {
-        var commandType = typeof(IActionCommand).Assembly.GetType($"{CommandsNamespace}.{typeName}");
+        var commandType = typeof(LgymApi.Application.ServiceCollectionExtensions).Assembly.GetType($"{CommandsNamespace}.{typeName}");
         commandType.Should().NotBeNull($"{typeName} must be owned by the Coaching Application module");
         return commandType!;
     }

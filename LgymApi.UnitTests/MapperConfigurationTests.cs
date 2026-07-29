@@ -25,7 +25,7 @@ public sealed class MapperConfigurationTests
     public void Mapper_Should_Load_All_Profiles_And_Validate()
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
@@ -38,13 +38,35 @@ public sealed class MapperConfigurationTests
         concrete!.RegisteredMappings.Count.Should().BeGreaterThan(0, "No mappings registered");
         var action = () => concrete.ValidateMappings();
         action.Should().NotThrow("Mapping validation failed");
+        mapper.Map<BodyParts, LgymApi.Application.Platform.ReferenceData.Enums.Models.EnumLookupEntry>(BodyParts.Chest)
+            .Id.Should().Be(nameof(BodyParts.Chest));
+    }
+
+    [Test]
+    public void Mapper_Should_Register_Each_Discovered_Profile_Exactly_Once()
+    {
+        var services = new ServiceCollection();
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
+
+        using var provider = services.BuildServiceProvider();
+        var registeredProfiles = provider.GetServices<IMappingProfile>()
+            .Select(profile => profile.GetType())
+            .ToArray();
+        var discoveredProfiles = LgymApi.Api.Mapping.MappingAssemblyMarkers.All
+            .SelectMany(assembly => assembly.GetTypes())
+            .Where(type => typeof(IMappingProfile).IsAssignableFrom(type))
+            .Where(type => type is { IsAbstract: false, IsInterface: false })
+            .ToArray();
+
+        registeredProfiles.Should().BeEquivalentTo(discoveredProfiles);
+        registeredProfiles.Should().OnlyHaveUniqueItems();
     }
 
     [Test]
     public void MappingContext_Should_Reject_Unknown_Key()
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
@@ -71,7 +93,7 @@ public sealed class MapperConfigurationTests
     public void ExerciseExtendedFormDto_Should_Map_Formula_String_To_Application_Enum()
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
@@ -94,13 +116,13 @@ public sealed class MapperConfigurationTests
     public void ExerciseExtendedFormDto_Should_Map_User_Id_Through_Context()
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
         var context = mapper.CreateContext();
-        var userId = Id<LgymApi.Domain.Entities.User>.New();
-        context.Set(new ContextKey<Id<LgymApi.Domain.Entities.User>>("Exercise.UserId"), userId);
+        var userId = Id<LgymApi.Identity.Contracts.AccountReference>.New();
+        context.Set(new ContextKey<Id<LgymApi.Identity.Contracts.AccountReference>>("Exercise.UserId"), userId);
 
         var dto = new ExerciseExtendedFormDto
         {
@@ -150,7 +172,7 @@ public sealed class MapperConfigurationTests
         dto.EloFormula!.Id.Should().Be(ExerciseEloFormula.PullupWeighted.ToString());
 
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
@@ -179,7 +201,7 @@ public sealed class MapperConfigurationTests
         dto.EloFormula.DisplayName.Should().Be("Pull-up weighted");
 
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
@@ -215,7 +237,7 @@ public sealed class MapperConfigurationTests
         eloRegistryIdProperty.SetValue(eloRegistry, eloRegistryId);
 
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
 

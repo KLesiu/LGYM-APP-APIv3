@@ -1,9 +1,10 @@
 using FluentAssertions;
 using LgymApi.Application.Identity.Contracts.Ranking;
-using LgymApi.Application.Repositories;
+using LgymApi.Application.WorkoutProgress.Persistence;
 using LgymApi.Application.WorkoutProgress.Ranking;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using NSubstitute;
 
 namespace LgymApi.UnitTests;
@@ -14,10 +15,10 @@ public sealed class WorkoutProgressRankingReadServiceTests
     [Test]
     public async Task GetUsersRankingAsync_ProjectsEligibleProfilesWithLatestEloDefaultAndDescendingOrder()
     {
-        var higherEloUserId = Id<User>.New();
-        var defaultEloUserId = Id<User>.New();
+        var higherEloUserId = Id<AccountReference>.New();
+        var defaultEloUserId = Id<AccountReference>.New();
         var profiles = Substitute.For<IRankingAccountProfileReadService>();
-        var eloRegistry = Substitute.For<IEloRegistryRepository>();
+        var eloRegistry = Substitute.For<IWorkoutEloPersistence>();
         profiles.GetRankingEligibleAccountProfilesAsync(Arg.Any<CancellationToken>()).Returns(
         [
             new RankingAccountProfile(defaultEloUserId, "default", null, "Junior 1"),
@@ -43,12 +44,12 @@ public sealed class WorkoutProgressRankingReadServiceTests
     {
         var profiles = Substitute.For<IRankingAccountProfileReadService>();
         profiles.GetRankingEligibleAccountProfilesAsync(Arg.Any<CancellationToken>()).Returns([]);
-        var eloRegistry = Substitute.For<IEloRegistryRepository>();
+        var eloRegistry = Substitute.For<IWorkoutEloPersistence>();
         var service = new WorkoutProgressRankingReadService(profiles, eloRegistry);
 
         var result = await service.GetUsersRankingAsync();
 
         result.IsFailure.Should().BeTrue();
-        await eloRegistry.DidNotReceive().GetLatestEloAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>());
+        await eloRegistry.DidNotReceive().GetLatestEloAsync(Arg.Any<Id<AccountReference>>(), Arg.Any<CancellationToken>());
     }
 }

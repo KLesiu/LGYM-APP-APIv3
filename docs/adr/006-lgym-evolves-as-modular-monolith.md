@@ -7,22 +7,23 @@ Accepted
 
 LGYM already has a layered runtime and a single production deployable backed by one PostgreSQL database and one production `AppDbContext`.
 
-Issue #375 captured the current-state inventory, and issue #376 turns that inventory into a modular-monolith contract so later work can define boundaries without changing the deployment shape.
+Issue #375 captured the historical inventory. Issue #387 then extracted Platform, Identity, Training Planning, and Notifications into stable assemblies without changing the deployment shape.
 
 ## Source precedence
 
 - `#311` is the constraint authority.
-- `#375` is the factual baseline and inventory source.
+- `#375` is the historical baseline and inventory source. Its graph capture remains unchanged.
+- `#387` is the completed extraction that established the current 18-project, 90-edge topology.
 - `docs/ARCHITECTURE.md` is the integration target and reader guide.
 - This ADR records the decision layer only and must stay aligned with those sources.
 
 ## Decision
 
-LGYM evolves as a modular monolith.
+LGYM is a modular monolith.
 
 The current system stays as one deployable, one PostgreSQL database, one production `AppDbContext`, and one migration stream.
 
-The modular-monolith decision changes how the system is described and governed, not the current runtime shape in this issue.
+The extraction establishes four stable module assemblies while retaining the existing runtime shape. Module-owned repositories, EF configurations, and providers use internal persistence bridges over the shared context.
 
 ## Rationale
 
@@ -34,17 +35,17 @@ The modular-monolith decision changes how the system is described and governed, 
 
 ## Consequences
 
-1. Later issue-376 docs must stay consistent with the eight-module catalog, the ownership map, and the dependency policy matrix.
+1. Durable docs must stay consistent with the eight-module catalog, the ownership map, the dependency policy matrix, and the current graph.
 2. Ownership rules remain one-owner-per-artifact, with no shared write ownership hidden behind the one production `AppDbContext`.
-3. The current layered runtime remains the implementation baseline; this ADR does not authorize any change to the current deployment or persistence shape.
+3. The current layered runtime remains the implementation baseline. The extraction does not authorize a second deployment, database, context, schema, or migration stream.
 4. The single migration stream remains the only migration history for the current production system.
 5. `docs/ARCHITECTURE.md` can point at this ADR and the companion module docs as the durable modular-monolith references.
 
 ## Follow-up
 
-1. Keep the module context map aligned with #311 and #375.
-2. Keep the ownership map aligned with the module catalog and dependency policy.
-3. Update `docs/ARCHITECTURE.md` to link the finalized modular-monolith docs.
+1. Keep the module context and ownership maps aligned with the extracted assemblies and their public contracts.
+2. Keep the project-reference graph at its guarded 18-project, 90-edge manifest.
+3. Keep `docs/ARCHITECTURE.md` and project documents aligned with the finalized modular-monolith docs.
 
 ## Links
 

@@ -221,7 +221,7 @@ public sealed class CoachingLegacyEnvelopeReplayIntegrationTests : PostgreSqlInt
     {
         using var scope = Factory.Services.CreateScope();
         var handler = scope.ServiceProvider.GetRequiredService<LgymApi.BackgroundWorker.Common.Notifications.IEmailJobHandler>();
-        await handler.ProcessAsync(notificationId);
+        await handler.ProcessAsync(notificationId.ToString());
     }
 
     private async Task ProcessPendingCommandsAsync()
@@ -247,7 +247,7 @@ public sealed class CoachingLegacyEnvelopeReplayIntegrationTests : PostgreSqlInt
             {
                 try
                 {
-                    await orchestrator.OrchestrateAsync(envelopeId);
+                    await orchestrator.OrchestrateAsync(envelopeId.ToString());
                 }
                 catch
                 {

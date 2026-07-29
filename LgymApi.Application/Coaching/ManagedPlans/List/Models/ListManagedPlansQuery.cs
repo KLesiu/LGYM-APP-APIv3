@@ -1,6 +1,6 @@
 using LgymApi.Domain.ValueObjects;
-using UserEntity = LgymApi.Domain.Entities.User;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.Application.Coaching.ManagedPlans.List;
 
-public sealed record ListManagedPlansQuery(Id<UserEntity> TrainerId, Id<UserEntity> TraineeId);
+public sealed record ListManagedPlansQuery(Id<AccountReference> TrainerId, Id<AccountReference> TraineeId);

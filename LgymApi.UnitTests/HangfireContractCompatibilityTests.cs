@@ -6,6 +6,7 @@ using Hangfire.Logging;
 using Hangfire.States;
 using Hangfire.Storage;
 using LgymApi.Api;
+using LgymApi.BackgroundWorker;
 using LgymApi.BackgroundWorker.Common.Jobs;
 using LgymApi.BackgroundWorker.Jobs;
 using WorkerHangfirePushBackgroundScheduler = LgymApi.BackgroundWorker.Services.HangfirePushBackgroundScheduler;
@@ -37,11 +38,11 @@ public sealed class HangfireContractCompatibilityTests
 
     private static readonly PersistedJobContract[] PersistedJobs =
     [
-        new("ActionMessage", typeof(IActionMessageJob), typeof(ActionMessageJob), "LgymApi.BackgroundWorker.Jobs", [typeof(Id<CommandEnvelope>)], []),
-        new("Email", typeof(IEmailJob), typeof(EmailJob), "LgymApi.Infrastructure.Jobs", [typeof(Id<NotificationMessage>)], []),
-        new("InvitationEmail", typeof(IInvitationEmailJob), typeof(InvitationEmailJob), "LgymApi.Infrastructure.Jobs", [typeof(Id<NotificationMessage>)], []),
-        new("WelcomeEmail", typeof(IWelcomeEmailJob), typeof(WelcomeEmailJob), "LgymApi.Infrastructure.Jobs", [typeof(Id<NotificationMessage>)], []),
-        new("PushNotification", typeof(IPushNotificationJob), typeof(PushNotificationJob), "LgymApi.BackgroundWorker.Jobs", [typeof(Id<PushNotificationMessage>), typeof(CancellationToken)], [1]),
+        new("ActionMessage", typeof(IActionMessageJob), typeof(ActionMessageJob), "LgymApi.BackgroundWorker.Jobs", [typeof(string)], []),
+        new("Email", typeof(IEmailJob), typeof(EmailJob), "LgymApi.Infrastructure.Jobs", [typeof(string)], []),
+        new("InvitationEmail", typeof(IInvitationEmailJob), typeof(InvitationEmailJob), "LgymApi.Infrastructure.Jobs", [typeof(string)], []),
+        new("WelcomeEmail", typeof(IWelcomeEmailJob), typeof(WelcomeEmailJob), "LgymApi.Infrastructure.Jobs", [typeof(string)], []),
+        new("PushNotification", typeof(IPushNotificationJob), typeof(PushNotificationJob), "LgymApi.BackgroundWorker.Jobs", [typeof(string), typeof(CancellationToken)], [1]),
         new("CommittedIntentDispatch", typeof(ICommittedIntentDispatchJob), typeof(CommittedIntentDispatchJob), "LgymApi.BackgroundWorker.Jobs", [typeof(CancellationToken)], [0]),
         new("ExpiredPhotoUploadCleanup", typeof(IExpiredPhotoUploadCleanupJob), typeof(ExpiredPhotoUploadCleanupJob), "LgymApi.BackgroundWorker.Jobs", [typeof(CancellationToken)], [0]),
         new("RecurringReportAssignmentProcessing", typeof(IRecurringReportAssignmentProcessingJob), typeof(RecurringReportAssignmentProcessingJob), "LgymApi.BackgroundWorker.Jobs", [typeof(CancellationToken)], [0]),
@@ -130,10 +131,10 @@ public sealed class HangfireContractCompatibilityTests
         pushScheduler.ScheduleRetry(pushNotificationId, TimeSpan.FromMinutes(5));
 
         client.CreatedJobs.Should().HaveCount(4);
-        AssertCapturedJob(client.CreatedJobs[0], typeof(IActionMessageJob), actionMessageId, typeof(EnqueuedState));
-        AssertCapturedJob(client.CreatedJobs[1], typeof(IEmailJob), notificationId, typeof(EnqueuedState));
-        AssertCapturedJob(client.CreatedJobs[2], typeof(IPushNotificationJob), pushNotificationId, typeof(EnqueuedState), hasCancellationToken: true);
-        AssertCapturedJob(client.CreatedJobs[3], typeof(IPushNotificationJob), pushNotificationId, typeof(ScheduledState), hasCancellationToken: true);
+        AssertCapturedJob(client.CreatedJobs[0], typeof(IActionMessageJob), actionMessageId.ToString(), typeof(EnqueuedState));
+        AssertCapturedJob(client.CreatedJobs[1], typeof(IEmailJob), notificationId.ToString(), typeof(EnqueuedState));
+        AssertCapturedJob(client.CreatedJobs[2], typeof(IPushNotificationJob), pushNotificationId.ToString(), typeof(EnqueuedState), hasCancellationToken: true);
+        AssertCapturedJob(client.CreatedJobs[3], typeof(IPushNotificationJob), pushNotificationId.ToString(), typeof(ScheduledState), hasCancellationToken: true);
     }
 
     [Test]
@@ -209,6 +210,81 @@ public sealed class HangfireContractCompatibilityTests
         serverDescriptor!.Lifetime.Should().Be(ServiceLifetime.Transient);
     }
 
+    [TestCase(typeof(IActionMessageJob), "LgymApi.Domain.ValueObjects.Id`1[[LgymApi.Domain.Entities.CommandEnvelope, LgymApi.Domain]], LgymApi.Domain")]
+    [TestCase(typeof(IEmailJob), "LgymApi.Domain.ValueObjects.Id`1[[LgymApi.Domain.Entities.NotificationMessage, LgymApi.Domain]], LgymApi.Domain")]
+    [TestCase(typeof(IInvitationEmailJob), "LgymApi.Domain.ValueObjects.Id`1[[LgymApi.Domain.Entities.NotificationMessage, LgymApi.Domain]], LgymApi.Domain")]
+    [TestCase(typeof(IWelcomeEmailJob), "LgymApi.Domain.ValueObjects.Id`1[[LgymApi.Domain.Entities.NotificationMessage, LgymApi.Domain]], LgymApi.Domain")]
+    [TestCase(typeof(IPushNotificationJob), "LgymApi.Domain.ValueObjects.Id`1[[LgymApi.Domain.Entities.PushNotificationMessage, LgymApi.Domain]], LgymApi.Domain")]
+    public void LegacyInvocationData_ReplaysAllowlistedTypedIdAsCurrentString(Type contractType, string legacyParameterType)
+    {
+        ConfigureHangfireTypeResolver();
+        const string uuid = "11111111-1111-1111-1111-111111111111";
+        var parameterTypes = contractType == typeof(IPushNotificationJob)
+            ? new[] { legacyParameterType, "System.Threading.CancellationToken, System.Private.CoreLib" }
+            : new[] { legacyParameterType };
+        var arguments = contractType == typeof(IPushNotificationJob)
+            ? new[] { JsonConvert.SerializeObject(uuid), JsonConvert.SerializeObject(CancellationToken.None) }
+            : new[] { JsonConvert.SerializeObject(uuid) };
+        var invocation = new InvocationData(
+            $"{contractType.FullName}, {contractType.Assembly.GetName().Name}",
+            "ExecuteAsync",
+            JsonConvert.SerializeObject(parameterTypes),
+            JsonConvert.SerializeObject(arguments));
+
+        var job = invocation.DeserializeJob();
+
+        job.Type.Should().Be(contractType);
+        var expectedParameterTypes = contractType == typeof(IPushNotificationJob)
+            ? new[] { typeof(string), typeof(CancellationToken) }
+            : new[] { typeof(string) };
+        job.Method.GetParameters().Select(parameter => parameter.ParameterType)
+            .Should().Equal(expectedParameterTypes);
+        job.Args[0].Should().Be(uuid);
+    }
+
+    [TestCase("LgymApi.Domain.ValueObjects.Id`1[[LgymApi.Domain.Entities.User, LgymApi.Domain]], LgymApi.Domain")]
+    [TestCase("not-a-type")]
+    public void LegacyInvocationData_RejectsUnapprovedOrMalformedParameterMetadata(string parameterType)
+    {
+        ConfigureHangfireTypeResolver();
+        var invocation = new InvocationData(
+            "LgymApi.BackgroundWorker.Common.Jobs.IEmailJob, LgymApi.BackgroundWorker.Common",
+            "ExecuteAsync",
+            JsonConvert.SerializeObject(new[] { parameterType }),
+            JsonConvert.SerializeObject(new[] { JsonConvert.SerializeObject("11111111-1111-1111-1111-111111111111") }));
+
+        Action action = () => invocation.DeserializeJob();
+
+        action.Should().Throw<Exception>();
+    }
+
+    private static void ConfigureHangfireTypeResolver()
+    {
+        var configuration = TestConfigurationBuilder.BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:Postgres"] = "Host=localhost;Database=hangfire-replay;Username=test;Password=test"
+        });
+        new ServiceCollection().AddPlatformServices(configuration, enableSensitiveLogging: false, isTesting: false, hostBackgroundServer: false);
+        InvocationData.SetTypeResolver(LgymApi.Infrastructure.ServiceCollectionExtensions.ResolvePersistedJobType);
+    }
+
+    [Test]
+    public void WorkerFacade_DelegatesHostedServerRegistrationToInfrastructure()
+    {
+        var configuration = TestConfigurationBuilder.BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:Postgres"] = "Host=localhost;Database=hangfire-worker-host;Username=test;Password=test"
+        });
+        var services = new ServiceCollection();
+        services.AddPlatformServices(configuration, enableSensitiveLogging: false, isTesting: false, hostBackgroundServer: false);
+
+        services.AddBackgroundWorkerServices(isTesting: false, hostBackgroundServer: true);
+
+        var serverDescriptor = FindHangfireServerDescriptor(services);
+        serverDescriptor.Should().NotBeNull();
+        serverDescriptor!.Lifetime.Should().Be(ServiceLifetime.Transient);
+    }
+
     [Test]
     public void HangfireServerDescriptor_DoesNotTreatUnrelatedHostedServiceAsHangfireServer()
     {
@@ -237,7 +313,7 @@ public sealed class HangfireContractCompatibilityTests
         method.GetParameters()
             .Where(parameter => parameter.ParameterType != typeof(CancellationToken))
             .Select(parameter => parameter.ParameterType)
-            .Should().OnlyContain(parameterType => parameterType.IsGenericType && parameterType.GetGenericTypeDefinition() == typeof(Id<>));
+            .Should().OnlyContain(parameterType => parameterType == typeof(string));
     }
 
     private static void AssertCapturedJob(CapturedBackgroundJob captured, Type expectedContractType, object expectedId, Type expectedStateType, bool hasCancellationToken = false)

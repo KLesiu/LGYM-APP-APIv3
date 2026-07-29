@@ -1,12 +1,9 @@
-using LgymApi.BackgroundWorker.Common.Notifications;
 using LgymApi.Infrastructure.Data;
 using LgymApi.TestUtils;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace LgymApi.IntegrationTests;
@@ -23,6 +20,8 @@ public sealed class PostgreSqlWebApplicationFactory : WebApplicationFactory<Prog
     public string DatabaseName => _lease.DatabaseName;
 
     public TestEmailSender EmailSender { get; } = new();
+
+    public TestPushProviderSender PushSender { get; } = new();
 
     public static async Task<PostgreSqlWebApplicationFactory> CreateAsync(CancellationToken cancellationToken = default)
     {
@@ -80,8 +79,7 @@ public sealed class PostgreSqlWebApplicationFactory : WebApplicationFactory<Prog
             RemoveAppDbContextRegistrations(services);
 
             services.AddDbContext<AppDbContext>(options => options.UseNpgsql(_lease.ConnectionString));
-            services.RemoveAll<IEmailSender>();
-            services.AddSingleton<IEmailSender>(EmailSender);
+            IntegrationHostServiceOverrides.ReplaceExternalEffects(services, EmailSender, PushSender);
         });
 
         builder.UseSetting("Jwt:SigningKey", CustomWebApplicationFactory.TestJwtSigningKey);
@@ -96,22 +94,7 @@ public sealed class PostgreSqlWebApplicationFactory : WebApplicationFactory<Prog
     }
 
     internal static void RemoveAppDbContextRegistrations(IServiceCollection services)
-    {
-        var descriptorsToRemove = services.Where(IsAppDbContextRegistration).ToList();
-        foreach (var descriptor in descriptorsToRemove)
-        {
-            services.Remove(descriptor);
-        }
-    }
-
-    private static bool IsAppDbContextRegistration(ServiceDescriptor descriptor)
-    {
-        var serviceType = descriptor.ServiceType;
-        return serviceType == typeof(AppDbContext)
-            || serviceType == typeof(DbContextOptions)
-            || serviceType == typeof(DbContextOptions<AppDbContext>)
-            || serviceType == typeof(IDbContextOptionsConfiguration<AppDbContext>);
-    }
+        => IntegrationHostServiceOverrides.RemoveAppDbContextRegistrations(services);
 
     public override async ValueTask DisposeAsync()
     {

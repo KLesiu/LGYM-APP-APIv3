@@ -170,7 +170,7 @@ public sealed class CoachingInvitationSliceTests
         var workUnit = unitOfWork;
         var paginationService = pagination;
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         services.AddScoped(_ => userAccessService);
         services.AddScoped(_ => accountReadService);
         services.AddScoped(_ => invitationPersistence);

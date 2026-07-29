@@ -88,7 +88,7 @@ public sealed class PublicInvitationControllerTests
     private static PublicInvitationController CreateController(IPublicInvitationStatusUseCase useCase)
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         using var provider = services.BuildServiceProvider();
         return new PublicInvitationController(useCase, provider.GetRequiredService<IMapper>());
     }

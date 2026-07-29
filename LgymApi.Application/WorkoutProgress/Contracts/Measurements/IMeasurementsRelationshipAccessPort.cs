@@ -1,12 +1,12 @@
 using LgymApi.Domain.ValueObjects;
-using UserEntity = LgymApi.Domain.Entities.User;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.Application.WorkoutProgress.Contracts.Measurements;
 
 public interface IMeasurementsRelationshipAccessPort
 {
     Task<bool> HasActiveRelationshipAsync(
-        Id<UserEntity> trainerId,
-        Id<UserEntity> traineeId,
+        Id<AccountReference> trainerId,
+        Id<AccountReference> traineeId,
         CancellationToken cancellationToken = default);
 }

@@ -111,7 +111,5 @@ public sealed class CommandDescriptorTests
         restoredDescriptor.ToString().Should().Be(contract.CanonicalId);
     }
 
-    private static Type GetApplicationRuntimeType(LegacyCommandContract contract) =>
-        typeof(LgymApi.Application.Platform.Contracts.BackgroundCommands.IActionCommand).Assembly
-            .GetType(contract.FutureClrNameReadAlias)!;
+    private static Type GetApplicationRuntimeType(LegacyCommandContract contract) => contract.CommandType;
 }

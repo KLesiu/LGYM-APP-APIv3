@@ -4,7 +4,9 @@ using Hangfire.Logging;
 using LgymApi.BackgroundWorker.Jobs;
 using LgymApi.Application;
 using LgymApi.Application.Abstractions.Storage;
+using LgymApi.Application.Coaching.ManagedPlans;
 using LgymApi.Application.Identity.Adapters;
+using LgymApi.Identity.Contracts.Accounts;
 using LgymApi.Application.Platform.ReferenceData.AppConfig;
 using LgymApi.Application.Platform.ReferenceData.AppConfig.Contracts;
 using LgymApi.Application.Platform.ReferenceData.Enums;
@@ -16,28 +18,36 @@ using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Notifications;
 using LgymApi.Application.Notifications.Contracts.Events;
 using LgymApi.Application.Notifications.Contracts.Push;
+using LgymApi.Application.Notifications.Providers.Fcm;
 using LgymApi.Application.Options;
 using LgymApi.Application.Pagination;
 using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using LgymApi.Application.Repositories;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Application.Services;
+using LgymApi.Application.WorkoutProgress.Adapters;
 using LgymApi.BackgroundWorker;
 using LgymApi.BackgroundWorker.Actions.Contracts;
 using LgymApi.BackgroundWorker.Common;
 using LgymApi.BackgroundWorker.Common.Notifications;
 using LgymApi.BackgroundWorker.Common.Notifications.Models;
 using LgymApi.BackgroundWorker.Notifications;
+using LgymApi.Notifications;
 using LgymApi.BackgroundWorker.Runtime;
 using LgymApi.BackgroundWorker.Services;
 using LgymApi.Infrastructure;
 using LgymApi.Infrastructure.Options;
 using LgymApi.Infrastructure.Pagination;
 using LgymApi.Infrastructure.Repositories;
+using LgymApi.Infrastructure.Repositories.Reporting;
 using LgymApi.Infrastructure.Repositories.ReferenceData;
 using LgymApi.Infrastructure.Services;
 using LgymApi.Infrastructure.UnitOfWork;
 using LgymApi.Domain.Enums;
+using LgymApi.Identity;
+using LgymApi.Platform;
 using LgymApi.TestUtils;
+using LgymApi.TrainingPlanning;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -120,7 +130,7 @@ public sealed class CompositionRootConvergenceTests
 
             scopedServices.GetRequiredService<IEmailSender>().Should().BeOfType(expectedEmailSenderType);
             scopedServices.GetRequiredService<IPhotoStorageProvider>().Should().BeOfType(expectedPhotoStorageType);
-            scopedServices.GetRequiredService<IPhotoUploadInitTracker>().Should().BeOfType<DbPhotoUploadInitTracker>();
+            scopedServices.GetRequiredService<IReportPhotoPersistence>().Should().BeOfType<ReportPhotoPersistenceRepository>();
             scopedServices.GetRequiredService<IPushProviderSender>().Should().BeOfType<FcmPushSender>();
             scopedServices.GetRequiredService<IEmailBackgroundScheduler>().Should().BeOfType(expectedEmailSchedulerType);
             scopedServices.GetRequiredService<IActionMessageScheduler>().Should().BeOfType(expectedActionSchedulerType);
@@ -347,10 +357,6 @@ public sealed class CompositionRootConvergenceTests
         services.AddScoped<IEmailScheduler<InvitationAcceptedEmailPayload>, EmailSchedulerService<InvitationAcceptedEmailPayload>>();
         services.AddScoped<IEmailScheduler<InvitationRevokedEmailPayload>, EmailSchedulerService<InvitationRevokedEmailPayload>>();
         services.AddScoped<IEmailScheduler<PasswordRecoveryEmailPayload>, EmailSchedulerService<PasswordRecoveryEmailPayload>>();
-        services.AddScoped<IPasswordRecoveryEmailScheduler, PasswordRecoveryEmailSchedulerAdapter>();
-        services.AddScoped<ICoachingEmailNotificationFeature, CoachingEmailNotificationSchedulerAdapter>();
-        services.AddScoped<ICoachingEmailNotificationScheduler, CoachingEmailNotificationSchedulerAdapter>();
-        services.AddScoped<IPushProviderSender, FcmPushSender>();
 
         if (isTesting)
         {
@@ -380,15 +386,21 @@ public sealed class CompositionRootConvergenceTests
         services.AddSingleton<IConfiguration>(configuration);
         services.AddLogging();
         services.AddSingleton<IHostApplicationLifetime, TestHostApplicationLifetime>();
-        services.AddSignalR();
-        services.AddScoped<IInAppNotificationPushPublisher, LgymApi.Api.Features.InAppNotification.SignalRNotificationPushPublisher>();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
-        services.AddApplicationServices();
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
+        services.AddPlatformModule();
+        services.AddIdentityModule();
+        services.AddTrainingPlanningModule();
+        services.AddNotificationsModule(configuration);
+        services.AddApplication();
         services.AddInfrastructure(
             configuration,
             enableSensitiveLogging: false,
             isTesting,
             hostBackgroundServer: true);
+        services.AddTask7ApiCompatibility();
+        services.AddNotificationsApiAdapters();
+        services.AddSignalR();
+        services.AddScoped<IInAppNotificationPushPublisher, LgymApi.Api.Features.InAppNotification.SignalRNotificationPushPublisher>();
         services.AddBackgroundWorkerServices(isTesting);
 
         return services;
@@ -472,9 +484,9 @@ public sealed class CompositionRootConvergenceTests
             isTesting ? typeof(LocalPhotoStorageProvider) : typeof(CloudflareR2PhotoStorageProvider));
         ValidateSingleDescriptor(
             services,
-            typeof(IPhotoUploadInitTracker),
+            typeof(IReportPhotoPersistence),
             ServiceLifetime.Scoped,
-            typeof(DbPhotoUploadInitTracker));
+            typeof(ReportPhotoPersistenceRepository));
         ValidateSingleDescriptor(services, typeof(IPushProviderSender), ServiceLifetime.Scoped, typeof(FcmPushSender));
         ValidateSingleDescriptor(services, typeof(ITokenService), ServiceLifetime.Scoped, typeof(TokenService));
         ValidateSingleDescriptor(
@@ -502,10 +514,20 @@ public sealed class CompositionRootConvergenceTests
         ValidateSingleDescriptor(services, typeof(IPushBackgroundScheduler), ServiceLifetime.Scoped, expectedPushSchedulerType);
 
         ValidateImplementationCollection(services, typeof(IEmailTemplateComposer), ServiceLifetime.Scoped, expectedCount: 6);
-        ValidateImplementationCollection(services, typeof(IMappingProfile), ServiceLifetime.Singleton, expectedCount: 36);
+        ValidateImplementationCollection(services, typeof(IMappingProfile), ServiceLifetime.Singleton, expectedCount: 44);
+        services.Count(descriptor => descriptor.ServiceType == typeof(IAccountLookupService)).Should().Be(1);
+        services.Count(descriptor => descriptor.ServiceType == typeof(IAccountAccessReader)).Should().Be(1);
+        services.Count(descriptor => descriptor.ServiceType == typeof(IAccountSessionValidator)).Should().Be(1);
+        services.Count(descriptor => descriptor.ServiceType == typeof(IAuthenticatedAccountContextResolver)).Should().Be(1);
         services.Where(descriptor => descriptor.ServiceType == typeof(IMappingProfile))
             .Should()
             .ContainSingle(descriptor => descriptor.ImplementationType == typeof(EnumLookupMappingProfile));
+        services.Where(descriptor => descriptor.ServiceType == typeof(IMappingProfile))
+            .Should()
+            .ContainSingle(descriptor => descriptor.ImplementationType == typeof(PlanExerciseWorkoutAdapterMappingProfile));
+        services.Where(descriptor => descriptor.ServiceType == typeof(IMappingProfile))
+            .Should()
+            .ContainSingle(descriptor => descriptor.ImplementationType == typeof(ManagedPlanCollaborationMappingProfile));
 
         var hangfireServerDescriptors = services.Where(descriptor => descriptor.ServiceType == typeof(IHostedService)).ToArray();
         hangfireServerDescriptors.Should().HaveCount(isTesting ? 0 : 1);

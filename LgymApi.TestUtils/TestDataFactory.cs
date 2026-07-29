@@ -1,9 +1,10 @@
+using System.Security.Cryptography;
+using System.Text;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
-using LgymApi.Infrastructure.Data.SeedData;
-using LgymApi.Infrastructure.Services;
+using LgymApi.Identity.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace LgymApi.TestUtils;
@@ -48,7 +49,7 @@ public static class TestDataFactory
         dbContext.Roles.AddRange(
             new Role
             {
-                Id = RoleSeedDataConfiguration.UserRoleSeedId,
+                Id = ParseSeedId<Role>(IdentitySeedIds.UserRole),
                 Name = AuthConstants.Roles.User,
                 Description = "Default role for all users",
                 CreatedAt = timestamp,
@@ -56,7 +57,7 @@ public static class TestDataFactory
             },
             new Role
             {
-                Id = RoleSeedDataConfiguration.AdminRoleSeedId,
+                Id = ParseSeedId<Role>(IdentitySeedIds.AdminRole),
                 Name = AuthConstants.Roles.Admin,
                 Description = "Administrative privileges",
                 CreatedAt = timestamp,
@@ -64,7 +65,7 @@ public static class TestDataFactory
             },
             new Role
             {
-                Id = RoleSeedDataConfiguration.TesterRoleSeedId,
+                Id = ParseSeedId<Role>(IdentitySeedIds.TesterRole),
                 Name = AuthConstants.Roles.Tester,
                 Description = "Excluded from ranking",
                 CreatedAt = timestamp,
@@ -72,7 +73,7 @@ public static class TestDataFactory
             },
             new Role
             {
-                Id = RoleSeedDataConfiguration.TrainerRoleSeedId,
+                Id = ParseSeedId<Role>(IdentitySeedIds.TrainerRole),
                 Name = AuthConstants.Roles.Trainer,
                 Description = "Trainer role for coach-facing APIs",
                 CreatedAt = timestamp,
@@ -82,8 +83,8 @@ public static class TestDataFactory
         dbContext.RoleClaims.AddRange(
             new RoleClaim
             {
-                Id = RoleSeedDataConfiguration.AdminAccessClaimSeedId,
-                RoleId = RoleSeedDataConfiguration.AdminRoleSeedId,
+                Id = ParseSeedId<RoleClaim>(IdentitySeedIds.AdminAccessClaim),
+                RoleId = ParseSeedId<Role>(IdentitySeedIds.AdminRole),
                 ClaimType = AuthConstants.PermissionClaimType,
                 ClaimValue = AuthConstants.Permissions.AdminAccess,
                 CreatedAt = timestamp,
@@ -91,8 +92,8 @@ public static class TestDataFactory
             },
             new RoleClaim
             {
-                Id = RoleSeedDataConfiguration.ManageUserRolesClaimSeedId,
-                RoleId = RoleSeedDataConfiguration.AdminRoleSeedId,
+                Id = ParseSeedId<RoleClaim>(IdentitySeedIds.ManageUserRolesClaim),
+                RoleId = ParseSeedId<Role>(IdentitySeedIds.AdminRole),
                 ClaimType = AuthConstants.PermissionClaimType,
                 ClaimValue = AuthConstants.Permissions.ManageUserRoles,
                 CreatedAt = timestamp,
@@ -100,8 +101,8 @@ public static class TestDataFactory
             },
             new RoleClaim
             {
-                Id = RoleSeedDataConfiguration.ManageAppConfigClaimSeedId,
-                RoleId = RoleSeedDataConfiguration.AdminRoleSeedId,
+                Id = ParseSeedId<RoleClaim>(IdentitySeedIds.ManageAppConfigClaim),
+                RoleId = ParseSeedId<Role>(IdentitySeedIds.AdminRole),
                 ClaimType = AuthConstants.PermissionClaimType,
                 ClaimValue = AuthConstants.Permissions.ManageAppConfig,
                 CreatedAt = timestamp,
@@ -109,8 +110,8 @@ public static class TestDataFactory
             },
             new RoleClaim
             {
-                Id = RoleSeedDataConfiguration.ManageGlobalExercisesClaimSeedId,
-                RoleId = RoleSeedDataConfiguration.AdminRoleSeedId,
+                Id = ParseSeedId<RoleClaim>(IdentitySeedIds.ManageGlobalExercisesClaim),
+                RoleId = ParseSeedId<Role>(IdentitySeedIds.AdminRole),
                 ClaimType = AuthConstants.PermissionClaimType,
                 ClaimValue = AuthConstants.Permissions.ManageGlobalExercises,
                 CreatedAt = timestamp,
@@ -149,7 +150,7 @@ public static class TestDataFactory
         CancellationToken cancellationToken = default)
     {
         password ??= DefaultUserSecret;
-        var passwordData = new LegacyPasswordService().Create(password);
+        var passwordData = CreateLegacyPasswordData(password);
         var user = new User
         {
             Id = Id<User>.New(),
@@ -166,16 +167,16 @@ public static class TestDataFactory
         };
 
         dbContext.Users.Add(user);
-        dbContext.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = RoleSeedDataConfiguration.UserRoleSeedId });
+        dbContext.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = ParseSeedId<Role>(IdentitySeedIds.UserRole) });
 
         if (isAdmin)
         {
-            dbContext.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = RoleSeedDataConfiguration.AdminRoleSeedId });
+            dbContext.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = ParseSeedId<Role>(IdentitySeedIds.AdminRole) });
         }
 
         if (isTester)
         {
-            dbContext.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = RoleSeedDataConfiguration.TesterRoleSeedId });
+            dbContext.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = ParseSeedId<Role>(IdentitySeedIds.TesterRole) });
         }
 
         dbContext.EloRegistries.Add(new EloRegistry
@@ -187,5 +188,21 @@ public static class TestDataFactory
         });
 
         return Task.FromResult(user);
+    }
+
+    private static (string Hash, string Salt, int Iterations, int KeyLength, string Digest) CreateLegacyPasswordData(string password)
+    {
+        var salt = RandomNumberGenerator.GetBytes(32);
+        var saltHex = Convert.ToHexString(salt).ToLowerInvariant();
+        var hash = Rfc2898DeriveBytes.Pbkdf2(password, Encoding.UTF8.GetBytes(saltHex), 25000, HashAlgorithmName.SHA256, 512);
+
+        return (Convert.ToHexString(hash).ToLowerInvariant(), saltHex, 25000, 512, "sha256");
+    }
+
+    private static Id<TEntity> ParseSeedId<TEntity>(string value)
+    {
+        return Id<TEntity>.TryParse(value, out var id)
+            ? id
+            : throw new InvalidOperationException($"Invalid Identity seed ID '{value}'.");
     }
 }

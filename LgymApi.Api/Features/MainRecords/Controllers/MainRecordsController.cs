@@ -4,11 +4,11 @@ using LgymApi.Api.Features.MainRecords.Contracts;
 using LgymApi.Api.Extensions;
 using LgymApi.Api.Middleware;
 using LgymApi.Api.Mapping.Profiles;
-using LgymApi.Application.Features.MainRecords;
-using LgymApi.Application.Features.MainRecords.Models;
 using LgymApi.Application.Mapping.Core;
+using LgymApi.Application.Task7ApiCompatibility.WorkoutProgress;
 using LgymApi.Application.WorkoutProgress.ProgressData.Models;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using Microsoft.AspNetCore.Mvc;
 namespace LgymApi.Api.Features.MainRecords.Controllers;
 
@@ -16,10 +16,10 @@ namespace LgymApi.Api.Features.MainRecords.Controllers;
 [Route("api")]
 public sealed class MainRecordsController : ControllerBase
 {
-    private readonly IMainRecordsService _mainRecordsService;
+    private readonly IMainRecordsApiCompatibilityService _mainRecordsService;
     private readonly IMapper _mapper;
 
-    public MainRecordsController(IMainRecordsService mainRecordsService, IMapper mapper)
+    public MainRecordsController(IMainRecordsApiCompatibilityService mainRecordsService, IMapper mapper)
     {
         _mainRecordsService = mainRecordsService;
         _mapper = mapper;
@@ -31,10 +31,9 @@ public sealed class MainRecordsController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> AddNewRecord([FromRoute] string id, [FromBody] MainRecordsFormDto form, CancellationToken cancellationToken = default)
     {
-        var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
+        var accountId = ParseRouteAccountIdForCurrentAccount(id);
         var exerciseId = form.ExerciseId.ToIdOrEmpty<Domain.Entities.Exercise>();
-        var input = new AddMainRecordInput(userId, exerciseId, form.Weight, form.Unit, form.Date);
-        var result = await _mainRecordsService.AddNewRecordAsync(input, cancellationToken);
+        var result = await _mainRecordsService.AddNewRecordAsync(accountId, exerciseId, form.Weight, form.Unit, form.Date, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -49,8 +48,8 @@ public sealed class MainRecordsController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetMainRecordsHistory([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
-        var result = await _mainRecordsService.GetMainRecordsHistoryAsync(userId, cancellationToken);
+        var accountId = ParseRouteAccountIdForCurrentAccount(id);
+        var result = await _mainRecordsService.GetMainRecordsHistoryAsync(accountId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -67,8 +66,8 @@ public sealed class MainRecordsController : ControllerBase
     // Route name is legacy; payload contains best (max) record per exercise.
     public async Task<IActionResult> GetLastMainRecords([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
-        var result = await _mainRecordsService.GetLastMainRecordsAsync(userId, cancellationToken);
+        var accountId = ParseRouteAccountIdForCurrentAccount(id);
+        var result = await _mainRecordsService.GetLastMainRecordsAsync(accountId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -84,9 +83,9 @@ public sealed class MainRecordsController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteMainRecord([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var currentUserId = HttpContext.GetCurrentUserId();
+        var currentAccountId = HttpContext.GetAuthenticatedAccountContext()?.Id ?? Id<AccountReference>.Empty;
         var recordId = id.ToIdOrEmpty<Domain.Entities.MainRecord>();
-        var result = await _mainRecordsService.DeleteMainRecordAsync(currentUserId, recordId, cancellationToken);
+        var result = await _mainRecordsService.DeleteMainRecordAsync(currentAccountId, recordId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -101,11 +100,10 @@ public sealed class MainRecordsController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateMainRecords([FromRoute] string id, [FromBody] MainRecordsFormDto form, CancellationToken cancellationToken = default)
     {
-        var routeUserId = HttpContext.ParseRouteUserIdForCurrentUser(id);
+        var routeAccountId = ParseRouteAccountIdForCurrentAccount(id);
         var recordId = form.Id.ToIdOrEmpty<Domain.Entities.MainRecord>();
         var exerciseId = form.ExerciseId.ToIdOrEmpty<Domain.Entities.Exercise>();
-        var input = new UpdateMainRecordInput(routeUserId, routeUserId, recordId, exerciseId, form.Weight, form.Unit, form.Date);
-        var result = await _mainRecordsService.UpdateMainRecordAsync(input, cancellationToken);
+        var result = await _mainRecordsService.UpdateMainRecordAsync(routeAccountId, routeAccountId, recordId, exerciseId, form.Weight, form.Unit, form.Date, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -119,14 +117,27 @@ public sealed class MainRecordsController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetRecordOrPossibleRecordInExercise([FromBody] RecordOrPossibleRequestDto request, CancellationToken cancellationToken = default)
     {
-        var userId = HttpContext.GetCurrentUserId();
+        var accountId = HttpContext.GetAuthenticatedAccountContext()?.Id ?? Id<AccountReference>.Empty;
         var exerciseId = request.ExerciseId.ToIdOrEmpty<Domain.Entities.Exercise>();
-        var result = await _mainRecordsService.GetRecordOrPossibleRecordInExerciseAsync(userId, exerciseId, cancellationToken);
+        var result = await _mainRecordsService.GetRecordOrPossibleRecordInExerciseAsync(accountId, exerciseId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
 
         return Ok(_mapper.Map<PossibleRecordReadModel, PossibleRecordForExerciseDto>(result.Value));
+    }
+
+    private Id<AccountReference> ParseRouteAccountIdForCurrentAccount(string routeAccountId)
+    {
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
+        if (currentAccount is null || currentAccount.Id.IsEmpty ||
+            !Id<AccountReference>.TryParse(routeAccountId, out var parsedAccountId) ||
+            parsedAccountId != currentAccount.Id)
+        {
+            throw new UnauthorizedAccessException(Messages.Forbidden);
+        }
+
+        return parsedAccountId;
     }
 }

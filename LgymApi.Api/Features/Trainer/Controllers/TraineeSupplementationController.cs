@@ -4,10 +4,7 @@ using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Nutrition.Supplementation.CheckOffIntake.Contracts;
-using LgymApi.Application.Nutrition.Supplementation.CheckOffIntake.Models;
-using LgymApi.Application.Nutrition.Supplementation.GetSchedule.Contracts;
-using LgymApi.Application.Nutrition.Supplementation.GetSchedule.Models;
+using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
 using LgymApi.Application.Nutrition.Supplementation.Models;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
@@ -21,17 +18,14 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 [Authorize]
 public sealed class TraineeSupplementationController : ControllerBase
 {
-    private readonly IGetSupplementScheduleUseCase _getSupplementSchedule;
-    private readonly ICheckOffSupplementIntakeUseCase _checkOffSupplementIntake;
+    private readonly ISupplementationAccountCompatibilityAdapter _supplementation;
     private readonly IMapper _mapper;
 
     public TraineeSupplementationController(
-        IGetSupplementScheduleUseCase getSupplementSchedule,
-        ICheckOffSupplementIntakeUseCase checkOffSupplementIntake,
+        ISupplementationAccountCompatibilityAdapter supplementation,
         IMapper mapper)
     {
-        _getSupplementSchedule = getSupplementSchedule;
-        _checkOffSupplementIntake = checkOffSupplementIntake;
+        _supplementation = supplementation;
         _mapper = mapper;
     }
 
@@ -39,9 +33,9 @@ public sealed class TraineeSupplementationController : ControllerBase
     [ProducesResponseType(typeof(List<SupplementScheduleEntryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetSchedule([FromQuery] DateOnly? date, CancellationToken cancellationToken = default)
     {
-        var result = await _getSupplementSchedule.ExecuteAsync(
-            new GetSupplementScheduleQuery(
-                HttpContext.GetCurrentUserId(),
+        var result = await _supplementation.GetScheduleAsync(
+            new SupplementScheduleAccountQuery(
+                HttpContext.GetAuthenticatedAccountContext()!.Id,
                 date ?? DateOnly.FromDateTime(DateTime.UtcNow)),
             cancellationToken);
 
@@ -60,9 +54,9 @@ public sealed class TraineeSupplementationController : ControllerBase
     {
         Id<LgymApi.Domain.Entities.SupplementPlanItem>.TryParse(request.PlanItemId, out var parsedPlanItemId);
 
-        var result = await _checkOffSupplementIntake.ExecuteAsync(
-            new CheckOffSupplementIntakeCommand(
-                HttpContext.GetCurrentUserId(),
+        var result = await _supplementation.CheckOffAsync(
+            new SupplementCheckOffAccountCommand(
+                HttpContext.GetAuthenticatedAccountContext()!.Id,
                 parsedPlanItemId,
                 request.IntakeDate,
                 request.TakenAt),

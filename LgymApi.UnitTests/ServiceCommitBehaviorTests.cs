@@ -23,6 +23,7 @@ using LgymApi.Application.Platform.ReferenceData.Units;
 using LgymApi.Application.TrainingPlanning.Plan.ActivePlanPointer;
 using LgymApi.Application.TrainingPlanning.Plan.CreatePlan;
 using LgymApi.Application.WorkoutProgress.ProgressData;
+using LgymApi.Application.WorkoutProgress.Persistence;
 using LgymApi.BackgroundWorker.Common.Notifications;
 using LgymApi.BackgroundWorker.Common.Notifications.Models;
 using LgymApi.Application.Platform.Contracts.BackgroundCommands;
@@ -33,6 +34,8 @@ using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Pagination;
 using LgymApi.Infrastructure.Repositories;
+using LgymApi.Infrastructure.Repositories.WorkoutProgress;
+using LgymApi.Identity.Contracts.Accounts;
 using LgymApi.Infrastructure.Services;
 using LgymApi.Infrastructure.UnitOfWork;
 using LgymApi.TestUtils.Fakes;
@@ -48,7 +51,7 @@ namespace LgymApi.UnitTests;
 public sealed class ServiceCommitBehaviorTests
 {
     [Test]
-    public async Task CreatePlanAsync_PersistsPlanAndUserPointer()
+    public async Task CreatePlanAsync_PersistsPlanAndActivePlanProjection()
     {
         var dbName = $"service-commit-plan-{Id<Plan>.New():N}";
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -83,8 +86,7 @@ public sealed class ServiceCommitBehaviorTests
         var savedPlan = await dbContext.Plans.FirstOrDefaultAsync(p => p.UserId == user.Id && p.Name == "UoW Plan");
         savedPlan.Should().NotBeNull();
 
-        var savedUser = await dbContext.Users.FirstAsync(u => u.Id == user.Id);
-        savedUser.PlanId.Should().Be(savedPlan!.Id);
+        (await activePlanPointerStore.GetActivePlanIdAsync(user.Id)).Should().Be(savedPlan!.Id);
     }
 
     [Test]
@@ -107,7 +109,7 @@ public sealed class ServiceCommitBehaviorTests
 
         IUserRepository userRepository = CreateUserRepository(dbContext);
         IRoleRepository roleRepository = CreateRoleRepository(dbContext);
-        IEloRegistryRepository eloRepository = new EloRegistryRepository(dbContext);
+        IWorkoutEloPersistence eloRepository = new WorkoutEloPersistenceRepository(dbContext);
         ILegacyPasswordService legacyPasswordService = new LegacyPasswordService();
         IUnitOfWork unitOfWork = new EfUnitOfWork(dbContext);
         ICommandDispatcher commandDispatcher = new NoOpCommandDispatcher();
@@ -122,12 +124,12 @@ public sealed class ServiceCommitBehaviorTests
             new AppDefaultsOptions(),
             new NoOpTutorialService()));
         var progress = new WorkoutProgressReadWriteService(new WorkoutProgressReadWriteServiceDependencies(
-            Substitute.For<IExerciseRepository>(),
-            Substitute.For<IExerciseScoreRepository>(),
-            Substitute.For<IMeasurementRepository>(),
-            Substitute.For<IMainRecordRepository>(),
+            Substitute.For<IWorkoutExercisePersistence>(),
+            Substitute.For<IWorkoutExerciseScorePersistence>(),
+            Substitute.For<IWorkoutMeasurementPersistence>(),
+            Substitute.For<IWorkoutMainRecordPersistence>(),
             eloRepository,
-            Substitute.For<IUserAccessReadService>(),
+            Substitute.For<IAccountAccessReader>(),
             Substitute.For<IUnitConverter<HeightUnits>>(),
             Substitute.For<IUnitConverter<WeightUnits>>(),
             unitOfWork));

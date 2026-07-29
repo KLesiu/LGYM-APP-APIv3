@@ -285,7 +285,7 @@ public sealed class DirectGuidUsageGuardTests
             return true;
         }
 
-        if (normalized.EndsWith("/LgymApi.Infrastructure/Pagination/FilterToGridifyAdapter.cs", StringComparison.OrdinalIgnoreCase))
+        if (normalized.EndsWith("/LgymApi.Platform/Pagination/FilterToGridifyAdapter.cs", StringComparison.OrdinalIgnoreCase))
         {
             // Gridify field type resolution requires typeof(Guid) and Guid.TryParse to properly map Guid-typed fields
             // in filter expressions. This is unavoidable for a generic filter-to-Gridify adapter.

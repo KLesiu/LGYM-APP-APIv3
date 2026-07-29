@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
 using LgymApi.Infrastructure.Data;
+using LgymApi.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -91,6 +92,39 @@ public sealed class PushInstallationApiTests : IntegrationTestBase
         installation.UserId.Should().Be(user.Id);
         installation.SessionId.Should().NotBeNull();
         installation.DisabledAt.Should().BeNull();
+    }
+
+    [Test]
+    public async Task RegisterPushInstallation_MissingTokenOrPlatform_ReturnsLocalizedBadRequestWithoutEchoingToken()
+    {
+        var user = await SeedUserAsync(name: "push-token-platform", email: "push-token-platform@example.com", password: "push-pass-123");
+        SetAuthorizationHeader(user.Id);
+
+        var missingToken = await Client.PostAsJsonAsync("/api/push/installations/register", new
+        {
+            installationId = "device-missing-token",
+            platform = "android",
+            fcmToken = "",
+            environment = "development"
+        });
+        var missingPlatform = await Client.PostAsJsonAsync("/api/push/installations/register", new
+        {
+            installationId = "device-missing-platform",
+            platform = "",
+            fcmToken = "token-that-must-not-leak",
+            environment = "development"
+        });
+
+        missingToken.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        missingPlatform.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await missingToken.Content.ReadAsStringAsync()).Should().Contain("All fields are required.");
+        (await missingPlatform.Content.ReadAsStringAsync())
+            .Should().Contain("All fields are required.")
+            .And.NotContain("token-that-must-not-leak");
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        (await db.PushInstallations.CountAsync()).Should().Be(0);
     }
 
     [Test]
@@ -337,6 +371,12 @@ public sealed class PushInstallationApiTests : IntegrationTestBase
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        using (var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()))
+        {
+            body.RootElement.GetProperty("msg").GetString().Should().Be(
+                CompatibilityResourceMessage.InCulture("en", () => Messages.InvalidToken));
+            body.RootElement.TryGetProperty("message", out _).Should().BeFalse();
+        }
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();

@@ -3,6 +3,7 @@ using LgymApi.Api;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.User.Contracts;
 using LgymApi.Api.Features.User.Controllers;
+using LgymApi.Api.Middleware;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Identity.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
@@ -15,6 +16,7 @@ using LgymApi.Application.Identity.Contracts.Authentication;
 using LgymApi.Application.Identity.Contracts.Profile;
 using LgymApi.Application.Identity.Contracts.Ranking;
 using LgymApi.Application.Identity.Contracts.Sessions;
+using LgymApi.Application.Identity.ApiCompatibility;
 using LgymApi.Application.WorkoutProgress.Ranking;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
@@ -23,6 +25,8 @@ using NotificationsPushInstallationActionInput = LgymApi.Application.Notificatio
 using NotificationsRegisterPushInstallationInput = LgymApi.Application.Notifications.Models.RegisterPushInstallationInput;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -110,8 +114,8 @@ public sealed class UserControllerTests
     {
         var pushInstallationLifecycleService = new StubPushInstallationLifecycleService();
         var controller = CreatePushInstallationController(pushInstallationLifecycleService);
-        var userId = Id<User>.New();
-        var sessionId = Id<UserSession>.New();
+        var userId = Id<AccountReference>.New();
+        var sessionId = Id<AccountSessionReference>.New();
         controller.ControllerContext = new ControllerContext { HttpContext = BuildAuthenticatedHttpContext(userId, sessionId.ToString()) };
 
         var action = await controller.Register(new RegisterPushInstallationRequest
@@ -137,8 +141,8 @@ public sealed class UserControllerTests
     {
         var pushInstallationLifecycleService = new StubPushInstallationLifecycleService();
         var controller = CreatePushInstallationController(pushInstallationLifecycleService);
-        var userId = Id<User>.New();
-        var sessionId = Id<UserSession>.New();
+        var userId = Id<AccountReference>.New();
+        var sessionId = Id<AccountSessionReference>.New();
         controller.ControllerContext = new ControllerContext { HttpContext = BuildAuthenticatedHttpContext(userId, sessionId.ToString()) };
 
         var action = await controller.Disassociate(new PushInstallationActionRequest
@@ -158,8 +162,8 @@ public sealed class UserControllerTests
     {
         var pushInstallationLifecycleService = new StubPushInstallationLifecycleService();
         var controller = CreatePushInstallationController(pushInstallationLifecycleService);
-        var userId = Id<User>.New();
-        var sessionId = Id<UserSession>.New();
+        var userId = Id<AccountReference>.New();
+        var sessionId = Id<AccountSessionReference>.New();
         controller.ControllerContext = new ControllerContext { HttpContext = BuildAuthenticatedHttpContext(userId, sessionId.ToString()) };
 
         var action = await controller.Unregister(new PushInstallationActionRequest
@@ -185,7 +189,7 @@ public sealed class UserControllerTests
         var controller = CreatePushInstallationController(pushInstallationLifecycleService);
         controller.ControllerContext = new ControllerContext
         {
-            HttpContext = BuildAuthenticatedHttpContext(Id<User>.New(), Id<UserSession>.New().ToString())
+            HttpContext = BuildAuthenticatedHttpContext(Id<AccountReference>.New(), Id<AccountSessionReference>.New().ToString())
         };
 
         var action = await controller.Register(new RegisterPushInstallationRequest
@@ -210,7 +214,7 @@ public sealed class UserControllerTests
         var controller = CreatePushInstallationController(pushInstallationLifecycleService);
         controller.ControllerContext = new ControllerContext
         {
-            HttpContext = BuildAuthenticatedHttpContext(Id<User>.New(), Id<UserSession>.New().ToString())
+            HttpContext = BuildAuthenticatedHttpContext(Id<AccountReference>.New(), Id<AccountSessionReference>.New().ToString())
         };
 
         var action = await controller.Unregister(new PushInstallationActionRequest { InstallationId = "device-1" });
@@ -229,7 +233,7 @@ public sealed class UserControllerTests
         var controller = CreatePushInstallationController(pushInstallationLifecycleService);
         controller.ControllerContext = new ControllerContext
         {
-            HttpContext = BuildAuthenticatedHttpContext(Id<User>.New(), Id<UserSession>.New().ToString())
+            HttpContext = BuildAuthenticatedHttpContext(Id<AccountReference>.New(), Id<AccountSessionReference>.New().ToString())
         };
 
         var action = await controller.Disassociate(new PushInstallationActionRequest { InstallationId = "device-1" });
@@ -249,7 +253,7 @@ public sealed class UserControllerTests
         var controller = CreatePushInstallationController(pushInstallationLifecycleService);
         controller.ControllerContext = new ControllerContext
         {
-            HttpContext = BuildAuthenticatedHttpContext(Id<User>.New(), rawSessionId)
+            HttpContext = BuildAuthenticatedHttpContext(Id<AccountReference>.New(), rawSessionId)
         };
 
         var action = await controller.Register(new RegisterPushInstallationRequest
@@ -278,46 +282,38 @@ public sealed class UserControllerTests
     private static UserController CreateController(IEloRegistryService? eloRegistryService = null)
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
         var stubPasswordResetService = new StubPasswordResetService();
         return new UserController(
             Substitute.For<IUserCredentialLoginService>(),
-            Substitute.For<IUserSessionTerminationService>(),
-            Substitute.For<IUserProfileService>(),
-            Substitute.For<IUserRankingService>(),
+            Substitute.For<IAuthenticatedAccountApiAdapter>(),
             Substitute.For<IWorkoutProgressRankingReadService>(),
-            Substitute.For<IUserAdminAccessService>(),
+            Substitute.For<IAccountAccessApiAdapter>(),
+            Substitute.For<IAccountEloApiAdapter>(),
             eloRegistryService ?? new StubEloRegistryService(),
             stubPasswordResetService,
             mapper);
     }
 
-    private static PushInstallationController CreatePushInstallationController(IPushInstallationLifecycleService pushInstallationLifecycleService)
+    private static PushInstallationController CreatePushInstallationController(IAccountPushInstallationApiAdapter pushInstallationLifecycleService)
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
         return new PushInstallationController(pushInstallationLifecycleService, mapper);
     }
 
-    private static DefaultHttpContext BuildAuthenticatedHttpContext(Id<User> userId, string? rawSessionId)
+    private static DefaultHttpContext BuildAuthenticatedHttpContext(Id<AccountReference> userId, string? rawSessionId)
     {
         var context = new DefaultHttpContext();
-        context.Items["User"] = new User { Id = userId, Name = "test-user", Email = "test-user@example.com" };
-        var claims = new List<System.Security.Claims.Claim>
-        {
-            new("userId", userId.ToString())
-        };
-        if (rawSessionId != null)
-        {
-            claims.Add(new System.Security.Claims.Claim("sid", rawSessionId));
-        }
-
-        context.User = new System.Security.Claims.ClaimsPrincipal(
-            new System.Security.Claims.ClaimsIdentity(claims, authenticationType: "Test"));
+        var sessionId = !string.IsNullOrWhiteSpace(rawSessionId) && Id<AccountSessionReference>.TryParse(rawSessionId, out var parsedSessionId)
+            ? parsedSessionId
+            : (Id<AccountSessionReference>?)null;
+        context.Features.Set<IAuthenticatedAccountContextFeature>(new AuthenticatedAccountContextFeature(
+            new AuthenticatedAccountContext(userId, sessionId, [], [], false, false)));
         return context;
     }
 
@@ -330,18 +326,18 @@ public sealed class UserControllerTests
             Task.FromResult(Result<Unit, AppError>.Success(Unit.Value));
     }
 
-    private sealed class StubPushInstallationLifecycleService : IPushInstallationLifecycleService
+    private sealed class StubPushInstallationLifecycleService : IAccountPushInstallationApiAdapter
     {
-        public (Id<User>? CurrentUserId, Id<UserSession>? SessionId, NotificationsRegisterPushInstallationInput Input)? LastRegistration { get; private set; }
-        public (Id<User>? CurrentUserId, Id<UserSession>? SessionId, NotificationsPushInstallationActionInput Input)? LastUnregister { get; private set; }
-        public (Id<User>? CurrentUserId, Id<UserSession>? SessionId, NotificationsPushInstallationActionInput Input)? LastDisassociate { get; private set; }
+        public (Id<AccountReference>? CurrentUserId, Id<AccountSessionReference>? SessionId, NotificationsRegisterPushInstallationInput Input)? LastRegistration { get; private set; }
+        public (Id<AccountReference>? CurrentUserId, Id<AccountSessionReference>? SessionId, NotificationsPushInstallationActionInput Input)? LastUnregister { get; private set; }
+        public (Id<AccountReference>? CurrentUserId, Id<AccountSessionReference>? SessionId, NotificationsPushInstallationActionInput Input)? LastDisassociate { get; private set; }
         public Result<Unit, AppError> RegistrationResult { get; set; } = Result<Unit, AppError>.Success(Unit.Value);
         public Result<Unit, AppError> UnregisterResult { get; set; } = Result<Unit, AppError>.Success(Unit.Value);
         public Result<Unit, AppError> DisassociateResult { get; set; } = Result<Unit, AppError>.Success(Unit.Value);
 
         public Task<Result<Unit, AppError>> RegisterAsync(
-            Id<User>? currentUserId,
-            Id<UserSession>? sessionId,
+            Id<AccountReference>? currentUserId,
+            Id<AccountSessionReference>? sessionId,
             NotificationsRegisterPushInstallationInput input,
             CancellationToken cancellationToken = default)
         {
@@ -350,8 +346,8 @@ public sealed class UserControllerTests
         }
 
         public Task<Result<Unit, AppError>> UnregisterAsync(
-            Id<User>? currentUserId,
-            Id<UserSession>? sessionId,
+            Id<AccountReference>? currentUserId,
+            Id<AccountSessionReference>? sessionId,
             NotificationsPushInstallationActionInput input,
             CancellationToken cancellationToken = default)
         {
@@ -360,8 +356,8 @@ public sealed class UserControllerTests
         }
 
         public Task<Result<Unit, AppError>> DisassociateAsync(
-            Id<User>? currentUserId,
-            Id<UserSession>? sessionId,
+            Id<AccountReference>? currentUserId,
+            Id<AccountSessionReference>? sessionId,
             NotificationsPushInstallationActionInput input,
             CancellationToken cancellationToken = default)
         {
@@ -384,10 +380,13 @@ public sealed class UserControllerTests
         public Task PopulateLatestEloAsync(UserInfoResult userInfo, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task<Result<int, AppError>> GetUserEloAsync(Id<User> userId, CancellationToken cancellationToken = default)
+        public Task<Result<int, AppError>> GetUserEloAsync(Id<AccountReference> userId, CancellationToken cancellationToken = default)
             => Task.FromResult(Result<int, AppError>.Success(0));
 
-        public Task<Result<List<EloRegistryChartEntry>, AppError>> GetChartAsync(Id<User> userId, CancellationToken cancellationToken = default)
+        public Task<Result<List<EloRegistryChartEntry>, AppError>> GetChartAsync(Id<AccountReference> userId, CancellationToken cancellationToken = default)
             => Task.FromResult(Result<List<EloRegistryChartEntry>, AppError>.Success([]));
+
+        public Task<int> GetLatestEloOrDefaultAsync(Id<AccountReference> accountId, CancellationToken cancellationToken = default)
+            => Task.FromResult(1000);
     }
 }

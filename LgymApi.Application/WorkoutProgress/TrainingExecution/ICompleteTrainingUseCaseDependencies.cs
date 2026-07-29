@@ -1,62 +1,46 @@
-using LgymApi.Application.WorkoutProgress.Scoring.Elo;
-using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Services;
+using LgymApi.Application.WorkoutProgress.Persistence;
+using LgymApi.Application.WorkoutProgress.Scoring.Elo;
+using LgymApi.Application.TrainingPlanning.Contracts.PlanDay;
+using LgymApi.Identity.Contracts.Accounts;
 
 namespace LgymApi.Application.WorkoutProgress.TrainingExecution;
 
 public interface ICompleteTrainingUseCaseDependencies
 {
-    IUserRepository UserRepository { get; }
-    IGymRepository GymRepository { get; }
-    ITrainingRepository TrainingRepository { get; }
-    IExerciseRepository ExerciseRepository { get; }
-    IExerciseScoreRepository ExerciseScoreRepository { get; }
-    ITrainingExerciseScoreRepository TrainingExerciseScoreRepository { get; }
-    ICommandDispatcher CommandDispatcher { get; }
-    IEloRegistryRepository EloRepository { get; }
+    IAccountAccessReader AccountAccess { get; }
+    IWorkoutGymPersistence GymRepository { get; }
+    IPlanDayReferenceReadService PlanDayReferences { get; }
+    IWorkoutTrainingPersistence TrainingRepository { get; }
+    IWorkoutExercisePersistence ExerciseRepository { get; }
+    IWorkoutExerciseScorePersistence ExerciseScoreRepository { get; }
+    IWorkoutEloPersistence EloRepository { get; }
     IRankService RankService { get; }
     IUnitOfWork UnitOfWork { get; }
     IReadOnlyCollection<IExerciseEloCalculator> ExerciseEloCalculators { get; }
 }
 
-internal sealed class TrainingServiceDependencies : ICompleteTrainingUseCaseDependencies
+internal sealed class TrainingServiceDependencies(
+    IAccountAccessReader accountAccess,
+    IWorkoutGymPersistence gymRepository,
+    IPlanDayReferenceReadService planDayReferences,
+    IWorkoutTrainingPersistence trainingRepository,
+    IWorkoutExercisePersistence exerciseRepository,
+    IWorkoutExerciseScorePersistence exerciseScoreRepository,
+    IWorkoutEloPersistence eloRepository,
+    IRankService rankService,
+    IUnitOfWork unitOfWork,
+    IEnumerable<IExerciseEloCalculator> exerciseEloCalculators) : ICompleteTrainingUseCaseDependencies
 {
-    public TrainingServiceDependencies(
-        IUserRepository userRepository,
-        IGymRepository gymRepository,
-        ITrainingRepository trainingRepository,
-        IExerciseRepository exerciseRepository,
-        IExerciseScoreRepository exerciseScoreRepository,
-        ITrainingExerciseScoreRepository trainingExerciseScoreRepository,
-        ICommandDispatcher commandDispatcher,
-        IEloRegistryRepository eloRepository,
-        IRankService rankService,
-        IUnitOfWork unitOfWork,
-        IEnumerable<IExerciseEloCalculator> exerciseEloCalculators)
-    {
-        UserRepository = userRepository;
-        GymRepository = gymRepository;
-        TrainingRepository = trainingRepository;
-        ExerciseRepository = exerciseRepository;
-        ExerciseScoreRepository = exerciseScoreRepository;
-        TrainingExerciseScoreRepository = trainingExerciseScoreRepository;
-        CommandDispatcher = commandDispatcher;
-        EloRepository = eloRepository;
-        RankService = rankService;
-        UnitOfWork = unitOfWork;
-        ExerciseEloCalculators = exerciseEloCalculators.ToArray();
-    }
-
-    public IUserRepository UserRepository { get; }
-    public IGymRepository GymRepository { get; }
-    public ITrainingRepository TrainingRepository { get; }
-    public IExerciseRepository ExerciseRepository { get; }
-    public IExerciseScoreRepository ExerciseScoreRepository { get; }
-    public ITrainingExerciseScoreRepository TrainingExerciseScoreRepository { get; }
-    public ICommandDispatcher CommandDispatcher { get; }
-    public IEloRegistryRepository EloRepository { get; }
-    public IRankService RankService { get; }
-    public IUnitOfWork UnitOfWork { get; }
-    public IReadOnlyCollection<IExerciseEloCalculator> ExerciseEloCalculators { get; }
+    public IAccountAccessReader AccountAccess { get; } = accountAccess;
+    public IWorkoutGymPersistence GymRepository { get; } = gymRepository;
+    public IPlanDayReferenceReadService PlanDayReferences { get; } = planDayReferences;
+    public IWorkoutTrainingPersistence TrainingRepository { get; } = trainingRepository;
+    public IWorkoutExercisePersistence ExerciseRepository { get; } = exerciseRepository;
+    public IWorkoutExerciseScorePersistence ExerciseScoreRepository { get; } = exerciseScoreRepository;
+    public IWorkoutEloPersistence EloRepository { get; } = eloRepository;
+    public IRankService RankService { get; } = rankService;
+    public IUnitOfWork UnitOfWork { get; } = unitOfWork;
+    public IReadOnlyCollection<IExerciseEloCalculator> ExerciseEloCalculators { get; } = exerciseEloCalculators.ToArray();
 }

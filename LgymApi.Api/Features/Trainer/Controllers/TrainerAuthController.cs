@@ -5,8 +5,8 @@ using LgymApi.Api.Idempotency;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.Features.EloRegistry;
 using LgymApi.Application.Features.User.Models;
+using LgymApi.Application.Identity.ApiCompatibility;
 using LgymApi.Application.Identity.Contracts.Authentication;
-using LgymApi.Application.Identity.Contracts.Profile;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -19,18 +19,21 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 public sealed class TrainerAuthController : ControllerBase
 {
     private readonly IUserCredentialLoginService _userCredentialLoginService;
-    private readonly IUserProfileService _userProfileService;
+    private readonly IAuthenticatedAccountApiAdapter _authenticatedAccountApiAdapter;
+    private readonly IAccountEloApiAdapter _accountEloApiAdapter;
     private readonly IEloRegistryService _eloRegistryService;
     private readonly IMapper _mapper;
 
     public TrainerAuthController(
         IUserCredentialLoginService userCredentialLoginService,
-        IUserProfileService userProfileService,
+        IAuthenticatedAccountApiAdapter authenticatedAccountApiAdapter,
+        IAccountEloApiAdapter accountEloApiAdapter,
         IEloRegistryService eloRegistryService,
         IMapper mapper)
     {
         _userCredentialLoginService = userCredentialLoginService;
-        _userProfileService = userProfileService;
+        _authenticatedAccountApiAdapter = authenticatedAccountApiAdapter;
+        _accountEloApiAdapter = accountEloApiAdapter;
         _eloRegistryService = eloRegistryService;
         _mapper = mapper;
     }
@@ -78,14 +81,13 @@ public sealed class TrainerAuthController : ControllerBase
     [ProducesResponseType(typeof(UserInfoDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> CheckToken(CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
-        var result = await _userProfileService.CheckTokenAsync(user, cancellationToken);
+        var result = await _authenticatedAccountApiAdapter.CheckTokenAsync(HttpContext.GetCurrentAccountId(), cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
 
-        await _eloRegistryService.PopulateLatestEloAsync(result.Value, cancellationToken);
-        return Ok(_mapper.Map<LgymApi.Application.Features.User.Models.UserInfoResult, UserInfoDto>(result.Value));
+        var account = await _accountEloApiAdapter.PopulateLatestEloAsync(result.Value, cancellationToken);
+        return Ok(_mapper.Map<AccountProfileProjection, UserInfoDto>(account));
     }
 }

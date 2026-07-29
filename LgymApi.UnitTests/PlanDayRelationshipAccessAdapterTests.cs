@@ -1,12 +1,14 @@
 using FluentAssertions;
+using LgymApi.Application;
 using LgymApi.Application.Coaching;
 using LgymApi.Application.Coaching.Adapters;
 using LgymApi.Application.Coaching.Contracts.Access;
 using LgymApi.Application.Coaching.Persistence;
 using LgymApi.Application.Identity.Contracts.Access;
+using LgymApi.Identity.Contracts.Accounts;
 using LgymApi.Application.TrainingPlanning.Contracts.PlanDay;
-using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
@@ -19,9 +21,9 @@ public sealed class PlanDayRelationshipAccessAdapterTests
     [TestCase(false)]
     public async Task HasActiveRelationshipAsync_ReturnsCoachingRelationshipDecision(bool hasActiveRelationship)
     {
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
-        var relationshipAccess = Substitute.For<ICoachingRelationshipAccessService>();
+        var trainerId = Id<AccountReference>.New();
+        var traineeId = Id<AccountReference>.New();
+        var relationshipAccess = Substitute.For<IMarkerCoachingRelationshipAccessService>();
         relationshipAccess.GetAccessDecisionAsync(trainerId, traineeId, CancellationToken.None)
             .Returns(new CoachingRelationshipAccessDecision(true, hasActiveRelationship));
         var adapter = new PlanDayRelationshipAccessAdapter(relationshipAccess);
@@ -36,11 +38,11 @@ public sealed class PlanDayRelationshipAccessAdapterTests
     [Test]
     public async Task HasActiveRelationshipAsync_ForwardsTypedIdsAndCancellation()
     {
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
+        var trainerId = Id<AccountReference>.New();
+        var traineeId = Id<AccountReference>.New();
         using var cancellationSource = new CancellationTokenSource();
         var cancellationToken = cancellationSource.Token;
-        var relationshipAccess = Substitute.For<ICoachingRelationshipAccessService>();
+        var relationshipAccess = Substitute.For<IMarkerCoachingRelationshipAccessService>();
         relationshipAccess.GetAccessDecisionAsync(trainerId, traineeId, cancellationToken)
             .Returns(new CoachingRelationshipAccessDecision(true, false));
         var adapter = new PlanDayRelationshipAccessAdapter(relationshipAccess);
@@ -52,12 +54,13 @@ public sealed class PlanDayRelationshipAccessAdapterTests
     }
 
     [Test]
-    public void AddCoachingModule_RegistersPlanDayRelationshipAccessAdapterExactlyOnceAndResolvesIt()
+    public void AddApplication_RegistersPlanDayRelationshipAccessAdapterExactlyOnceAndResolvesIt()
     {
         var services = new ServiceCollection();
+        services.AddApplication();
         services.AddScoped(_ => Substitute.For<IUserAccessReadService>());
+        services.AddScoped(_ => Substitute.For<IAccountAccessReader>());
         services.AddScoped(_ => Substitute.For<ICoachingActiveLinkPersistence>());
-        services.AddCoachingModule();
 
         services.Count(descriptor => descriptor.ServiceType == typeof(IPlanDayRelationshipAccessPort))
             .Should()

@@ -1,6 +1,7 @@
 using LgymApi.Domain.ValueObjects;
 using System.Text.Json;
 using LgymApi.Application.Repositories;
+using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using LgymApi.BackgroundWorker;
 using LgymApi.BackgroundWorker.Actions.Contracts;
 using LgymApi.BackgroundWorker.Runtime;
@@ -37,6 +38,7 @@ public sealed class BackgroundActionOrchestratorTests
     {
         _repository = new FakeCommandEnvelopeRepository();
         _unitOfWork = new FakeUnitOfWork();
+        _repository.UnitOfWork = _unitOfWork;
         _commandContractRegistry = CommandContractRegistry.CreateForTesting(
         [
             new CommandContract(
@@ -680,7 +682,6 @@ public sealed class BackgroundActionOrchestratorTests
             new BackgroundActionResolver(_serviceProvider.GetRequiredService<IServiceScopeFactory>()),
             _commandContractRegistry,
             _repository,
-            _unitOfWork,
             logger ?? new FakeLogger());
     }
 
@@ -852,9 +853,10 @@ public sealed class BackgroundActionOrchestratorTests
     }
 
     // Fake implementations for testing
-    private sealed class FakeCommandEnvelopeRepository : ICommandEnvelopeRepository
+    private sealed class FakeCommandEnvelopeRepository : ICommandEnvelopeRepository, ICommandEnvelopeRuntime
     {
         private readonly Dictionary<Id<CommandEnvelope>, CommandEnvelope> _envelopes = new();
+        public FakeUnitOfWork UnitOfWork { private get; set; } = null!;
         public int UpdateCallCount { get; private set; }
         public List<CancellationToken> UpdateTokens { get; } = [];
 
@@ -906,6 +908,136 @@ public sealed class BackgroundActionOrchestratorTests
 
             _envelopes[envelope.Id] = envelope;
             return Task.FromResult(envelope);
+        }
+
+        public Task<CommandEnvelopeReceipt> PersistAsync(CommandEnvelopeRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<CommandEnvelopeReceipt> StageAsync(CommandEnvelopeRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public async Task<CommandEnvelopeStart> BeginAsync(string envelopeId, CancellationToken cancellationToken = default)
+        {
+            if (!Id<CommandEnvelope>.TryParse(envelopeId, out var id))
+            {
+                throw new ArgumentException("Command envelope ID is invalid.", nameof(envelopeId));
+            }
+
+            var envelope = await FindByIdAsync(id, cancellationToken);
+            if (envelope is null)
+            {
+                return new CommandEnvelopeStart("not-found", null, null, 0);
+            }
+
+            if (envelope.Status is ActionExecutionStatus.Completed or ActionExecutionStatus.DeadLettered or ActionExecutionStatus.Processing)
+            {
+                return new CommandEnvelopeStart(envelope.Status.ToString().ToLowerInvariant(), null, null, 0);
+            }
+
+            var attemptNumber = envelope.GetExecutionAttemptCount();
+            envelope.Status = ActionExecutionStatus.Processing;
+            envelope.LastAttemptAt = DateTimeOffset.UtcNow;
+            envelope.ProcessingStartedAtUtc = DateTimeOffset.UtcNow;
+            envelope.NextAttemptAt = null;
+            envelope.ExecutionLogs.Add(new ActionExecutionLog
+            {
+                Id = Id<ActionExecutionLog>.New(),
+                CommandEnvelopeId = envelope.Id,
+                ActionType = ActionExecutionLogType.Execute,
+                Status = ActionExecutionStatus.Processing,
+                AttemptNumber = attemptNumber
+            });
+            await UpdateAsync(envelope, cancellationToken);
+            await UnitOfWork.SaveChangesAsync(cancellationToken);
+            return new CommandEnvelopeStart("running", envelope.CommandTypeFullName, envelope.PayloadJson, attemptNumber);
+        }
+
+        public async Task<CommandEnvelopeFinalization> FinalizeAsync(
+            string envelopeId,
+            int attemptNumber,
+            IReadOnlyList<CommandHandlerResult> results,
+            CancellationToken cancellationToken = default)
+        {
+            var envelope = await FindRequiredAsync(envelopeId, cancellationToken);
+            var attemptLog = envelope.ExecutionLogs.Last(log => log.ActionType == ActionExecutionLogType.Execute && log.AttemptNumber == attemptNumber);
+            foreach (var result in results)
+            {
+                envelope.ExecutionLogs.Add(new ActionExecutionLog
+                {
+                    Id = Id<ActionExecutionLog>.New(),
+                    CommandEnvelopeId = envelope.Id,
+                    ActionType = ActionExecutionLogType.HandlerExecution,
+                    Status = result.Success ? ActionExecutionStatus.Completed : ActionExecutionStatus.Failed,
+                    AttemptNumber = attemptNumber,
+                    HandlerTypeName = result.HandlerTypeName,
+                    ErrorMessage = result.ErrorMessage,
+                    ErrorDetails = result.ErrorDetails
+                });
+            }
+
+            var failures = results.Where(result => !result.Success).ToList();
+            if (failures.Count == 0)
+            {
+                attemptLog.Status = ActionExecutionStatus.Completed;
+                envelope.MarkCompleted();
+                await UpdateAsync(envelope, cancellationToken);
+                await UnitOfWork.SaveChangesAsync(cancellationToken);
+                return new CommandEnvelopeFinalization(false, null, false, null);
+            }
+
+            var errorMessage = string.Join("; ", failures.Select(result => result.ErrorMessage));
+            var errorDetails = string.Join(Environment.NewLine + Environment.NewLine, failures
+                .Where(result => !string.IsNullOrWhiteSpace(result.ErrorDetails))
+                .Select(result => result.ErrorDetails));
+            attemptLog.Status = ActionExecutionStatus.Failed;
+            attemptLog.ErrorMessage = errorMessage;
+            attemptLog.ErrorDetails = string.IsNullOrWhiteSpace(errorDetails) ? null : errorDetails;
+            envelope.RecordAttemptFailure(errorMessage);
+            await UpdateAsync(envelope, cancellationToken);
+            await UnitOfWork.SaveChangesAsync(cancellationToken);
+            if (envelope.ShouldRetry())
+            {
+                return new CommandEnvelopeFinalization(true, envelope.NextAttemptAt?.ToString("O"), false, errorMessage);
+            }
+
+            envelope.MarkDeadLettered("Dead-lettered after maximum retry attempts exceeded", string.IsNullOrWhiteSpace(errorDetails) ? errorMessage : errorDetails);
+            await UpdateAsync(envelope, cancellationToken);
+            await UnitOfWork.SaveChangesAsync(cancellationToken);
+            return new CommandEnvelopeFinalization(false, null, true, errorMessage);
+        }
+
+        public async Task RecordFaultAsync(string envelopeId, string reason, string errorMessage, string errorDetails, CancellationToken cancellationToken = default)
+        {
+            var envelope = await FindRequiredAsync(envelopeId, cancellationToken);
+            var attemptLog = envelope.ExecutionLogs.Last(log => log.ActionType == ActionExecutionLogType.Execute && log.Status == ActionExecutionStatus.Processing);
+            attemptLog.Status = ActionExecutionStatus.Failed;
+            attemptLog.ErrorMessage = errorMessage;
+            attemptLog.ErrorDetails = errorDetails;
+            envelope.MarkDeadLettered(reason, errorDetails);
+            await UpdateAsync(envelope, cancellationToken);
+            await UnitOfWork.SaveChangesAsync(cancellationToken);
+        }
+
+        public async Task RecordCancellationAsync(string envelopeId)
+        {
+            var envelope = await FindRequiredAsync(envelopeId, CancellationToken.None);
+            const string message = "Command orchestration was cancelled.";
+            var attemptLog = envelope.ExecutionLogs.Last(log => log.ActionType == ActionExecutionLogType.Execute && log.Status == ActionExecutionStatus.Processing);
+            attemptLog.Status = ActionExecutionStatus.Failed;
+            attemptLog.ErrorMessage = message;
+            attemptLog.ErrorDetails = message;
+            envelope.RecordAttemptFailure(message, message);
+            await UpdateAsync(envelope, CancellationToken.None);
+            await UnitOfWork.SaveChangesAsync(CancellationToken.None);
+        }
+
+        private async Task<CommandEnvelope> FindRequiredAsync(string envelopeId, CancellationToken cancellationToken)
+        {
+            if (!Id<CommandEnvelope>.TryParse(envelopeId, out var id))
+            {
+                throw new ArgumentException("Command envelope ID is invalid.", nameof(envelopeId));
+            }
+
+            return await FindByIdAsync(id, cancellationToken)
+                ?? throw new InvalidOperationException($"Command envelope {envelopeId} was not found.");
         }
 
         public Task<List<CommandEnvelope>> GetPendingUndispatchedAsync(CancellationToken cancellationToken = default)

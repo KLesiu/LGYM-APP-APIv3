@@ -7,6 +7,8 @@ using LgymApi.Application.WorkoutProgress.TrainingExecution;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.TrainingPlanning.Contracts;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -24,10 +26,10 @@ public sealed class TrainingServiceFacadeTests
         dependencies.CompleteTrainingUseCase.Returns(completionUseCase);
         dependencies.TrainingHistoryReadService.Returns(historyReadService);
         var service = new TrainingService(dependencies);
-        var userId = Id<User>.New();
+        var userId = Id<AccountReference>.New();
         var input = new AddTrainingInput(
             Id<Gym>.New(),
-            Id<PlanDay>.New(),
+            Id<PlanDayReference>.New(),
             DateTime.UtcNow,
             [new TrainingExerciseInput { ExerciseId = Id<Exercise>.New(), Series = 1, Reps = 8, Weight = 80, Unit = WeightUnits.Kilograms }]);
         var expected = new TrainingSummaryResult { Message = "Created" };
@@ -59,10 +61,10 @@ public sealed class TrainingServiceFacadeTests
         dependencies.CompleteTrainingUseCase.Returns(completionUseCase);
         dependencies.TrainingHistoryReadService.Returns(historyReadService);
         var service = new TrainingService(dependencies);
-        var userId = Id<User>.New();
+        var userId = Id<AccountReference>.New();
         var createdAt = DateTime.UtcNow;
         historyReadService.GetLastTrainingAsync(userId, Arg.Any<CancellationToken>())
-            .Returns(Result<Training, AppError>.Success(new Training()));
+            .Returns(Result<WorkoutTrainingReadModel, AppError>.Success(new WorkoutTrainingReadModel(Id<Training>.New(), Id<PlanDayReference>.New(), DateTimeOffset.UtcNow, null)));
         historyReadService.GetTrainingByDateAsync(userId, createdAt, Arg.Any<CancellationToken>())
             .Returns(Result<List<TrainingByDateDetails>, AppError>.Success([]));
         historyReadService.GetTrainingDatesAsync(userId, Arg.Any<CancellationToken>())
