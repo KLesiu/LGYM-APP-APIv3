@@ -2,15 +2,15 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Measurements.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Features.Measurements;
 using LgymApi.Application.Features.Measurements.Models;
 using LgymApi.Application.Mapping.Core;
+using LgymApi.Application.Task7ApiCompatibility.WorkoutProgress;
 using LgymApi.Application.WorkoutProgress.ProgressData.Models;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using UserEntity = LgymApi.Domain.Entities.User;
 
 namespace LgymApi.Api.Features.Measurements.Controllers;
 
@@ -19,10 +19,10 @@ namespace LgymApi.Api.Features.Measurements.Controllers;
 [Route("api")]
 public sealed class MeasurementsController : ControllerBase
 {
-    private readonly IMeasurementsService _measurementsService;
+    private readonly IMeasurementsApiCompatibilityService _measurementsService;
     private readonly IMapper _mapper;
 
-    public MeasurementsController(IMeasurementsService measurementsService, IMapper mapper)
+    public MeasurementsController(IMeasurementsApiCompatibilityService measurementsService, IMapper mapper)
     {
         _measurementsService = measurementsService;
         _mapper = mapper;
@@ -33,8 +33,8 @@ public sealed class MeasurementsController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> AddMeasurement([FromBody] MeasurementFormDto form, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
-        var result = await _measurementsService.AddMeasurementAsync(user!, form.BodyPart, form.Unit, form.Value, cancellationToken);
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
+        var result = await _measurementsService.AddMeasurementAsync(currentAccount, form.BodyPart, form.Unit, form.Value, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -49,7 +49,7 @@ public sealed class MeasurementsController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> AddMeasurementsBulk([FromBody] MeasurementsBulkFormDto form, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
         var inputs = form.Measurements
             .Select(item => new MeasurementCreateInput
             {
@@ -59,7 +59,7 @@ public sealed class MeasurementsController : ControllerBase
             })
             .ToList();
 
-        var result = await _measurementsService.AddMeasurementsAsync(user!, inputs, cancellationToken);
+        var result = await _measurementsService.AddMeasurementsAsync(currentAccount, inputs, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -75,9 +75,9 @@ public sealed class MeasurementsController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetMeasurementDetail([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
         var measurementId = Id<LgymApi.Domain.Entities.Measurement>.TryParse(id, out var parsedId) ? parsedId : Id<LgymApi.Domain.Entities.Measurement>.Empty;
-        var result = await _measurementsService.GetMeasurementDetailAsync(user!, measurementId, cancellationToken);
+        var result = await _measurementsService.GetMeasurementDetailAsync(currentAccount, measurementId, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -94,9 +94,9 @@ public sealed class MeasurementsController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetMeasurementsHistory([FromRoute] string id, [FromQuery] MeasurementsHistoryRequestDto? request, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
-        Id<UserEntity>.TryParse(id, out var parsedUserId);
-        var result = await _measurementsService.GetMeasurementsHistoryAsync(user!, parsedUserId, request?.BodyPart, request?.Unit, cancellationToken);
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
+        Id<AccountReference>.TryParse(id, out var parsedAccountId);
+        var result = await _measurementsService.GetMeasurementsHistoryAsync(currentAccount, parsedAccountId, request?.BodyPart, request?.Unit, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -114,9 +114,9 @@ public sealed class MeasurementsController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetMeasurementsList([FromRoute] string id, [FromQuery] MeasurementsHistoryRequestDto? request, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
-        Id<UserEntity>.TryParse(id, out var parsedUserId);
-        var result = await _measurementsService.GetMeasurementsListAsync(user!, parsedUserId, request?.BodyPart, request?.Unit, cancellationToken);
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
+        Id<AccountReference>.TryParse(id, out var parsedAccountId);
+        var result = await _measurementsService.GetMeasurementsListAsync(currentAccount, parsedAccountId, request?.BodyPart, request?.Unit, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -134,9 +134,9 @@ public sealed class MeasurementsController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetMeasurementsTrend([FromRoute] string id, [FromQuery] MeasurementTrendRequestDto request, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
-        Id<UserEntity>.TryParse(id, out var parsedUserId);
-        var result = await _measurementsService.GetMeasurementsTrendAsync(user!, parsedUserId, request.BodyPart, request.Unit, cancellationToken);
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
+        Id<AccountReference>.TryParse(id, out var parsedAccountId);
+        var result = await _measurementsService.GetMeasurementsTrendAsync(currentAccount, parsedAccountId, request.BodyPart, request.Unit, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -152,9 +152,9 @@ public sealed class MeasurementsController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetMeasurementsTrends([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
-        Id<UserEntity>.TryParse(id, out var parsedUserId);
-        var result = await _measurementsService.GetMeasurementsTrendsAsync(user!, parsedUserId, cancellationToken);
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
+        Id<AccountReference>.TryParse(id, out var parsedAccountId);
+        var result = await _measurementsService.GetMeasurementsTrendsAsync(currentAccount, parsedAccountId, cancellationToken);
 
         if (result.IsFailure)
         {

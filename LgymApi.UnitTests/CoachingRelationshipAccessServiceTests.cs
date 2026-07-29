@@ -4,6 +4,7 @@ using LgymApi.Application.Coaching.Access;
 using LgymApi.Application.Coaching.Contracts.Access;
 using LgymApi.Application.Coaching.Persistence;
 using LgymApi.Application.Identity.Contracts.Access;
+using LgymApi.Identity.Contracts.Accounts;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,7 +24,7 @@ public sealed class CoachingRelationshipAccessServiceTests
     {
         _userAccess = Substitute.For<IUserAccessReadService>();
         _activeLinks = Substitute.For<ICoachingActiveLinkPersistence>();
-        _service = new CoachingRelationshipAccessService(_userAccess, _activeLinks);
+        _service = new CoachingRelationshipAccessService(_userAccess, _activeLinks, Substitute.For<IAccountAccessReader>());
     }
 
     [Test]
@@ -126,6 +127,7 @@ public sealed class CoachingRelationshipAccessServiceTests
         var services = new ServiceCollection();
         services.AddScoped(_ => Substitute.For<IUserAccessReadService>());
         services.AddScoped(_ => Substitute.For<ICoachingActiveLinkPersistence>());
+        services.AddScoped(_ => Substitute.For<IAccountAccessReader>());
         services.AddCoachingModule();
 
         services.Count(descriptor => descriptor.ServiceType == typeof(ICoachingRelationshipAccessService))

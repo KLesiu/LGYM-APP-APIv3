@@ -3,9 +3,10 @@ using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Gym.Contracts;
 using LgymApi.Api.Middleware;
 using LgymApi.Api.Mapping.Profiles;
-using LgymApi.Application.Features.Gym;
 using LgymApi.Application.Mapping.Core;
+using LgymApi.Application.Task7ApiCompatibility.WorkoutProgress;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LgymApi.Api.Features.Gym.Controllers;
@@ -14,10 +15,10 @@ namespace LgymApi.Api.Features.Gym.Controllers;
 [Route("api")]
 public sealed class GymController : ControllerBase
 {
-    private readonly IGymService _gymService;
+    private readonly IGymApiCompatibilityService _gymService;
     private readonly IMapper _mapper;
 
-    public GymController(IGymService gymService, IMapper mapper)
+    public GymController(IGymApiCompatibilityService gymService, IMapper mapper)
     {
         _gymService = gymService;
         _mapper = mapper;
@@ -30,10 +31,10 @@ public sealed class GymController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> AddGym([FromRoute] string id, [FromBody] GymFormDto form, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
-        var routeUserId = Id<LgymApi.Domain.Entities.User>.TryParse(id, out var parsedUserId) ? parsedUserId : Id<LgymApi.Domain.Entities.User>.Empty;
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
+        var routeAccountId = Id<AccountReference>.TryParse(id, out var parsedAccountId) ? parsedAccountId : Id<AccountReference>.Empty;
 
-        var result = await _gymService.AddGymAsync(user!, routeUserId, form.Name, form.Address, cancellationToken);
+        var result = await _gymService.AddGymAsync(currentAccount, routeAccountId, form.Name, form.Address, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -49,10 +50,10 @@ public sealed class GymController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteGym([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
         var gymId = Id<LgymApi.Domain.Entities.Gym>.TryParse(id, out var parsedGymId) ? parsedGymId : Id<LgymApi.Domain.Entities.Gym>.Empty;
 
-        var result = await _gymService.DeleteGymAsync(user!, gymId, cancellationToken);
+        var result = await _gymService.DeleteGymAsync(currentAccount, gymId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -67,10 +68,10 @@ public sealed class GymController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetGyms([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
-        var routeUserId = Id<LgymApi.Domain.Entities.User>.TryParse(id, out var parsedUserId) ? parsedUserId : Id<LgymApi.Domain.Entities.User>.Empty;
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
+        var routeAccountId = Id<AccountReference>.TryParse(id, out var parsedAccountId) ? parsedAccountId : Id<AccountReference>.Empty;
 
-        var result = await _gymService.GetGymsAsync(user!, routeUserId, cancellationToken);
+        var result = await _gymService.GetGymsAsync(currentAccount, routeAccountId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -79,8 +80,9 @@ public sealed class GymController : ControllerBase
         var context = result.Value;
         var mappingContext = _mapper.CreateContext();
         mappingContext.Set(GymProfile.Keys.LastTrainingMap, context.LastTrainings);
+        mappingContext.Set(GymProfile.Keys.PlanDayMap, context.PlanDays);
 
-        var gyms = _mapper.MapList<LgymApi.Domain.Entities.Gym, GymChoiceInfoDto>(context.Gyms, mappingContext);
+        var gyms = _mapper.MapList<LgymApi.Application.WorkoutProgress.Persistence.WorkoutGymPersistenceModel, GymChoiceInfoDto>(context.Gyms, mappingContext);
 
         return Ok(gyms);
     }
@@ -92,16 +94,16 @@ public sealed class GymController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetGym([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
         var gymId = Id<LgymApi.Domain.Entities.Gym>.TryParse(id, out var parsedGymId) ? parsedGymId : Id<LgymApi.Domain.Entities.Gym>.Empty;
 
-        var result = await _gymService.GetGymAsync(user!, gymId, cancellationToken);
+        var result = await _gymService.GetGymAsync(currentAccount, gymId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
 
-        return Ok(_mapper.Map<LgymApi.Domain.Entities.Gym, GymFormDto>(result.Value));
+        return Ok(_mapper.Map<LgymApi.Application.WorkoutProgress.Persistence.WorkoutGymPersistenceModel, GymFormDto>(result.Value));
     }
 
     [HttpPost("gym/editGym")]
@@ -111,10 +113,10 @@ public sealed class GymController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> EditGym([FromBody] GymFormDto form, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
         var gymId = Id<LgymApi.Domain.Entities.Gym>.TryParse(form.Id, out var parsedGymId) ? parsedGymId : Id<LgymApi.Domain.Entities.Gym>.Empty;
 
-        var result = await _gymService.UpdateGymAsync(user!, gymId, form.Name, form.Address, cancellationToken);
+        var result = await _gymService.UpdateGymAsync(currentAccount, gymId, form.Name, form.Address, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();

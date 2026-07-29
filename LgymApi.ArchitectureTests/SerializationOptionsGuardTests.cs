@@ -28,10 +28,10 @@ public sealed class SerializationOptionsGuardTests
     }
 
     [Test]
-    public void Future_Application_Platform_Owner_Fixture_Is_Accepted()
+    public void Future_Platform_Owner_Fixture_Is_Accepted()
     {
         var compilation = CreateFixtureCompilation(
-            ("LgymApi.Application/Platform/Contracts/Serialization/SharedSerializationOptions.cs", """
+            ("LgymApi.Platform/Contracts/Serialization/SharedSerializationOptions.cs", """
                 using System.Text.Json;
 
                 namespace LgymApi.Application.Platform.Contracts.Serialization;
@@ -63,7 +63,7 @@ public sealed class SerializationOptionsGuardTests
     }
 
     [Test]
-    public void Future_Application_Platform_Owner_Fixture_Rejects_Default_JsonSerializerOptions()
+    public void Future_Platform_Owner_Fixture_Rejects_Default_JsonSerializerOptions()
     {
         var compilation = CreateFixtureCompilation(("LgymApi.BackgroundWorker/Fixtures/DefaultOptionsConsumer.cs", """
             using System.Text.Json;
@@ -87,7 +87,7 @@ public sealed class SerializationOptionsGuardTests
     }
 
     [Test]
-    public void Future_Application_Platform_Owner_Fixture_Rejects_Legacy_Common_Owner()
+    public void Future_Platform_Owner_Fixture_Rejects_Legacy_Common_Owner()
     {
         var compilation = CreateFixtureCompilation(
             ("LgymApi.BackgroundWorker.Common/Serialization/SharedSerializationOptions.cs", """

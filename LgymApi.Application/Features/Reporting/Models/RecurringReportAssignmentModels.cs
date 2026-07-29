@@ -1,6 +1,7 @@
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.Application.Features.Reporting.Models;
 
@@ -17,8 +18,8 @@ public sealed class UpsertRecurringReportAssignmentCommand
 public sealed class RecurringReportAssignmentResult
 {
     public Id<RecurringReportAssignment> Id { get; set; }
-    public Id<LgymApi.Domain.Entities.User> TrainerId { get; set; }
-    public Id<LgymApi.Domain.Entities.User> TraineeId { get; set; }
+    public Id<AccountReference> TrainerId { get; set; }
+    public Id<AccountReference> TraineeId { get; set; }
     public Id<ReportTemplate> TemplateId { get; set; }
     public int IntervalValue { get; set; }
     public RecurringReportIntervalUnit IntervalUnit { get; set; }

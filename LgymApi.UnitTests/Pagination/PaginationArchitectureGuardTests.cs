@@ -2,6 +2,7 @@ using System.Reflection;
 using FluentAssertions;
 using LgymApi.Infrastructure.Pagination;
 using NUnit.Framework;
+using System.Xml.Linq;
 
 namespace LgymApi.UnitTests.Pagination;
 
@@ -9,6 +10,9 @@ namespace LgymApi.UnitTests.Pagination;
 public sealed class PaginationArchitectureGuardTests
 {
     private static readonly Assembly ApplicationAssembly =
+        typeof(LgymApi.Application.ServiceCollectionExtensions).Assembly;
+
+    private static readonly Assembly PaginationContractAssembly =
         typeof(LgymApi.Application.Pagination.Pagination<>).Assembly;
 
     private static readonly Assembly InfrastructureAssembly =
@@ -17,7 +21,7 @@ public sealed class PaginationArchitectureGuardTests
     [Test]
     public void PaginationContracts_DoNotReferenceGridifyOrEfTypes()
     {
-        var paginationTypes = ApplicationAssembly.GetTypes()
+        var paginationTypes = PaginationContractAssembly.GetTypes()
             .Where(t => t.Namespace is "LgymApi.Application.Pagination")
             .ToList();
 
@@ -52,19 +56,22 @@ public sealed class PaginationArchitectureGuardTests
     }
 
     [Test]
-    public void ApplicationAssembly_DoesNotReferenceEfCorePackage()
+    public void ApplicationProject_DoesNotDirectlyReferenceEfCorePackage()
     {
-        var referencedAssemblies = ApplicationAssembly.GetReferencedAssemblies();
-
-        var efCoreReferences = referencedAssemblies
-            .Where(a => a.Name != null &&
-                        a.Name.Contains("EntityFrameworkCore", StringComparison.OrdinalIgnoreCase))
-            .Select(a => a.FullName)
-            .ToList();
+        var applicationProject = Path.Combine(ResolveRepositoryRoot(), "LgymApi.Application", "LgymApi.Application.csproj");
+        var efCoreReferences = FindDirectEfCorePackageReferences(File.ReadAllText(applicationProject));
 
         efCoreReferences.Should().BeEmpty(
-            "LgymApi.Application must not reference EF Core assemblies — " +
+            "LgymApi.Application must not directly reference EF Core packages — " +
             "EF Core is an infrastructure concern");
+    }
+
+    [Test]
+    public void DirectEfCorePackageFixture_ShouldBeDetected()
+    {
+        const string project = "<Project><ItemGroup><PackageReference Include=\"Microsoft.EntityFrameworkCore\" /></ItemGroup></Project>";
+
+        FindDirectEfCorePackageReferences(project).Should().ContainSingle().Which.Should().Be("Microsoft.EntityFrameworkCore");
     }
 
     [Test]
@@ -180,4 +187,29 @@ public sealed class PaginationArchitectureGuardTests
         }
     }
 
+    private static IReadOnlyList<string> FindDirectEfCorePackageReferences(string projectXml)
+    {
+        return XDocument.Parse(projectXml).Descendants()
+            .Where(element => element.Name.LocalName == "PackageReference")
+            .Select(element => element.Attribute("Include")?.Value)
+            .Where(package => package?.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.OrdinalIgnoreCase) == true)
+            .Cast<string>()
+            .ToList();
+    }
+
+    private static string ResolveRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "LgymApi.sln")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Unable to locate repository root.");
+    }
 }

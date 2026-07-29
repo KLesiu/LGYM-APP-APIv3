@@ -3,11 +3,16 @@ using LgymApi.Infrastructure.Data.Configurations;
 using LgymApi.Infrastructure.Data.Conventions;
 using LgymApi.Infrastructure.Data.SeedData;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using System.Linq.Expressions;
+using IIdentityPersistenceContext = LgymApi.Identity.Persistence.IIdentityPersistenceContext;
+using INotificationsPersistenceContext = LgymApi.Notifications.Persistence.INotificationsPersistenceContext;
+using IPlatformPersistenceContext = LgymApi.Platform.Persistence.IPlatformPersistenceContext;
+using ITrainingPlanningPersistenceContext = LgymApi.TrainingPlanning.Persistence.ITrainingPlanningPersistenceContext;
 
 namespace LgymApi.Infrastructure.Data;
 
-public sealed class AppDbContext : DbContext
+public sealed class AppDbContext : DbContext, IPlatformPersistenceContext, IIdentityPersistenceContext, ITrainingPlanningPersistenceContext, INotificationsPersistenceContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
     {
@@ -61,6 +66,35 @@ public sealed class AppDbContext : DbContext
     public DbSet<UserExternalLogin> UserExternalLogins => Set<UserExternalLogin>();
     public DbSet<Photo> Photos => Set<Photo>();
     public DbSet<PhotoUploadSession> PhotoUploadSessions => Set<PhotoUploadSession>();
+
+    DbSet<AppConfig> IPlatformPersistenceContext.AppConfigs => AppConfigs;
+    DbSet<ActionExecutionLog> IPlatformPersistenceContext.ActionExecutionLogs => ActionExecutionLogs;
+    DbSet<CommandEnvelope> IPlatformPersistenceContext.CommandEnvelopes => CommandEnvelopes;
+    DbSet<ApiIdempotencyRecord> IPlatformPersistenceContext.ApiIdempotencyRecords => ApiIdempotencyRecords;
+    EntityEntry<CommandEnvelope> IPlatformPersistenceContext.Entry(CommandEnvelope entity) => Entry(entity);
+
+    DbSet<User> IIdentityPersistenceContext.Users => Users;
+    DbSet<Role> IIdentityPersistenceContext.Roles => Roles;
+    DbSet<UserRole> IIdentityPersistenceContext.UserRoles => UserRoles;
+    DbSet<RoleClaim> IIdentityPersistenceContext.RoleClaims => RoleClaims;
+    DbSet<PasswordResetToken> IIdentityPersistenceContext.PasswordResetTokens => PasswordResetTokens;
+    DbSet<UserExternalLogin> IIdentityPersistenceContext.UserExternalLogins => UserExternalLogins;
+    DbSet<UserSession> IIdentityPersistenceContext.UserSessions => UserSessions;
+    DbSet<UserTutorialProgress> IIdentityPersistenceContext.UserTutorialProgresses => UserTutorialProgresses;
+    DbSet<UserTutorialStepProgress> IIdentityPersistenceContext.UserTutorialStepProgresses => UserTutorialStepProgresses;
+    string? IIdentityPersistenceContext.ProviderName => Database.ProviderName;
+
+    DbSet<Plan> ITrainingPlanningPersistenceContext.Plans => Plans;
+    DbSet<PlanDay> ITrainingPlanningPersistenceContext.PlanDays => PlanDays;
+    DbSet<PlanDayExercise> ITrainingPlanningPersistenceContext.PlanDayExercises => PlanDayExercises;
+
+    DbSet<NotificationMessage> INotificationsPersistenceContext.NotificationMessages => NotificationMessages;
+    DbSet<EmailNotificationSubscription> INotificationsPersistenceContext.EmailNotificationSubscriptions => EmailNotificationSubscriptions;
+    DbSet<PushInstallation> INotificationsPersistenceContext.PushInstallations => PushInstallations;
+    DbSet<PushNotificationMessage> INotificationsPersistenceContext.PushNotificationMessages => PushNotificationMessages;
+    DbSet<InAppNotification> INotificationsPersistenceContext.InAppNotifications => InAppNotifications;
+    EntityEntry<InAppNotification> INotificationsPersistenceContext.Entry(InAppNotification entity) => Entry(entity);
+    EntityEntry<PushNotificationMessage> INotificationsPersistenceContext.Entry(PushNotificationMessage entity) => Entry(entity);
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {

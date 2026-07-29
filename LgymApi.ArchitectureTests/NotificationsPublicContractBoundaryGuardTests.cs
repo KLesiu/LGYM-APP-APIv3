@@ -7,9 +7,10 @@ namespace LgymApi.ArchitectureTests;
 [TestFixture]
 public sealed class NotificationsPublicContractBoundaryGuardTests
 {
-    private const string ContractsPath = "LgymApi.Application/Notifications/Contracts/";
-    private const string EventInputPath = "LgymApi.Application/Notifications/Models/EnqueueNotificationEventInput.cs";
-    private const string EventBridgePath = "LgymApi.Application/Notifications/INotificationEventBridge.cs";
+    private const string ContractsPath = "LgymApi.Notifications/Contracts/";
+    private const string EventInputPath = "LgymApi.Notifications/Models/EnqueueNotificationEventInput.cs";
+    private const string EventBridgePath = "LgymApi.Notifications/INotificationEventBridge.cs";
+    private const string AppErrorPath = "LgymApi.Platform/BuildingBlocks/Errors/AppError.cs";
 
     private static readonly HashSet<string> NotificationsPersistedEntityNames = PersistedEntityOwnershipCatalog.Entries
         .Where(entry => entry.Owner == PersistedEntityOwnershipCatalog.NotificationsModuleName)
@@ -220,7 +221,8 @@ public sealed class NotificationsPublicContractBoundaryGuardTests
         var paths = Directory
             .EnumerateFiles(contractsDirectory, "*.cs", SearchOption.AllDirectories)
             .Append(Path.Combine(repoRoot, EventInputPath.Replace('/', Path.DirectorySeparatorChar)))
-            .Append(Path.Combine(repoRoot, EventBridgePath.Replace('/', Path.DirectorySeparatorChar)));
+            .Append(Path.Combine(repoRoot, EventBridgePath.Replace('/', Path.DirectorySeparatorChar)))
+            .Append(Path.Combine(repoRoot, AppErrorPath.Replace('/', Path.DirectorySeparatorChar)));
 
         return paths
             .Select(path => new SourceFixture(

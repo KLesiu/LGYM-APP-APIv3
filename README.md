@@ -13,12 +13,16 @@ gyms, measurements, records, scores, and application configuration.
 
 ## Solution structure
 
-- `LgymApi.Api` - HTTP API layer (controllers, DTOs, validation, middleware, mapping profiles).
-- `LgymApi.BackgroundWorker` - background job implementations (Hangfire jobs/schedulers) in a separate project.
-- `LgymApi.Application` - use-case orchestration and business services.
-- `LgymApi.Domain` - domain entities and core model.
-- `LgymApi.Infrastructure` - EF Core persistence, repositories, Unit of Work, migrations.
-- `LgymApi.UnitTests` / `LgymApi.IntegrationTests` - automated tests.
+The solution has 18 projects and 90 direct project references. The authoritative graph, dependency-first order, and forbidden complement are in `docs/modular-monolith/issue-380-project-reference-graph.md`.
+
+- `LgymApi.Api` is the HTTP host and composition root.
+- `LgymApi.Application` contains the remaining Reporting, Workout & Progress, Coaching, and Nutrition use cases.
+- `LgymApi.Platform`, `LgymApi.Identity`, `LgymApi.TrainingPlanning`, and `LgymApi.Notifications` are stable module assemblies with small public facades and internal implementations.
+- `LgymApi.Domain` contains entities, enums, IDs, and security constants.
+- `LgymApi.Infrastructure` owns the shared EF runtime: one `AppDbContext`, one migration stream, the Unit of Work, Hangfire persistence, and module persistence bridges.
+- `LgymApi.BackgroundWorker` executes durable jobs and selects no-op or Hangfire schedulers. `LgymApi.BackgroundWorker.Common` is the closed persisted-job and email-wire seam.
+- `LgymApi.Resources` and `LgymApi.Resources.Generator` provide localized resources and their analyzer.
+- `LgymApi.DataSeeder`, `LgymApi.DataSeeder.Tests`, `LgymApi.UnitTests`, `LgymApi.IntegrationTests`, `LgymApi.ArchitectureTests`, and `LgymApi.TestUtils` provide bootstrap and verification support.
 - Project-level docs live next to each `.csproj` as `<ProjectName>.md`.
 
 ## Requirements

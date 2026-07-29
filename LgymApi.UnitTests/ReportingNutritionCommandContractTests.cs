@@ -3,6 +3,7 @@ using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using LgymApi.Application.Platform.Contracts.Serialization;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using NUnit.Framework;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -23,20 +24,20 @@ public sealed class ReportingNutritionCommandContractTests
         AssertCommandContract<ReportRequestCreatedInAppNotificationCommand>(
             "LgymApi.Application.Reporting.Contracts.BackgroundCommands",
             ("RequestId", typeof(Id<ReportRequest>)),
-            ("TraineeId", typeof(Id<User>)),
-            ("TrainerId", typeof(Id<User>)),
+            ("TraineeId", typeof(Id<AccountReference>)),
+            ("TrainerId", typeof(Id<AccountReference>)),
             ("TemplateName", typeof(string)));
         AssertCommandContract<ReportSubmissionCreatedInAppNotificationCommand>(
             "LgymApi.Application.Reporting.Contracts.BackgroundCommands",
             ("SubmissionId", typeof(Id<ReportSubmission>)),
-            ("TrainerId", typeof(Id<User>)),
-            ("TraineeId", typeof(Id<User>)),
+            ("TrainerId", typeof(Id<AccountReference>)),
+            ("TraineeId", typeof(Id<AccountReference>)),
             ("TemplateName", typeof(string)));
         AssertCommandContract<ReportFeedbackAddedInAppNotificationCommand>(
             "LgymApi.Application.Reporting.Contracts.BackgroundCommands",
             ("SubmissionId", typeof(Id<ReportSubmission>)),
-            ("TraineeId", typeof(Id<User>)),
-            ("TrainerId", typeof(Id<User>)),
+            ("TraineeId", typeof(Id<AccountReference>)),
+            ("TrainerId", typeof(Id<AccountReference>)),
             ("TemplateName", typeof(string)),
             ("TriggeredAt", typeof(DateTimeOffset)));
         AssertCommandContract<DietPlanUpdatedInAppNotificationCommand>(
@@ -64,15 +65,15 @@ public sealed class ReportingNutritionCommandContractTests
         var reportRequest = new ReportRequestCreatedInAppNotificationCommand
         {
             RequestId = ParseId<ReportRequest>("00000000-0000-0000-0000-000000000101"),
-            TraineeId = ParseId<User>("00000000-0000-0000-0000-000000000102"),
-            TrainerId = ParseId<User>("00000000-0000-0000-0000-000000000103"),
+            TraineeId = ParseId<AccountReference>("00000000-0000-0000-0000-000000000102"),
+            TrainerId = ParseId<AccountReference>("00000000-0000-0000-0000-000000000103"),
             TemplateName = "Weekly request"
         };
         var reportSubmission = new ReportSubmissionCreatedInAppNotificationCommand
         {
             SubmissionId = ParseId<ReportSubmission>("00000000-0000-0000-0000-000000000201"),
-            TrainerId = ParseId<User>("00000000-0000-0000-0000-000000000202"),
-            TraineeId = ParseId<User>("00000000-0000-0000-0000-000000000203"),
+            TrainerId = ParseId<AccountReference>("00000000-0000-0000-0000-000000000202"),
+            TraineeId = ParseId<AccountReference>("00000000-0000-0000-0000-000000000203"),
             TemplateName = "Weekly submission"
         };
         var feedbackTriggeredAt = new DateTimeOffset(2026, 7, 18, 14, 15, 16, TimeSpan.FromHours(2))
@@ -80,8 +81,8 @@ public sealed class ReportingNutritionCommandContractTests
         var reportFeedback = new ReportFeedbackAddedInAppNotificationCommand
         {
             SubmissionId = ParseId<ReportSubmission>("00000000-0000-0000-0000-000000000301"),
-            TraineeId = ParseId<User>("00000000-0000-0000-0000-000000000302"),
-            TrainerId = ParseId<User>("00000000-0000-0000-0000-000000000303"),
+            TraineeId = ParseId<AccountReference>("00000000-0000-0000-0000-000000000302"),
+            TrainerId = ParseId<AccountReference>("00000000-0000-0000-0000-000000000303"),
             TemplateName = "Coach feedback",
             TriggeredAt = feedbackTriggeredAt
         };

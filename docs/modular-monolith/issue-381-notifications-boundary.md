@@ -2,7 +2,7 @@
 
 ## Status
 
-Current boundary definition for the Notifications module. This document records responsibility, write ownership, and compatibility constraints for the current modular monolith.
+Current boundary definition for the extracted Notifications module. This document records responsibility, write ownership, provider privacy, and compatibility constraints for the current modular monolith.
 
 ## Source precedence
 
@@ -20,17 +20,17 @@ When this document is more specific, it clarifies the Notifications boundary wit
 
 Notifications owns notification decisions and writes, including in-app persistence, delivery intent, channel policy, push installation lifecycle, delivery status, and notification maintenance. Source modules own the business facts that cause notification requests.
 
-This boundary does not authorize moving all code, replacing Hangfire, adding a new `DbContext`, adding a new migration stream, creating a schema per module, introducing microservices, or changing endpoints, payloads, job identities, providers, schedulers, or persistence roots.
+The original #381 boundary did not authorize physical moves. #387 later approved the focused move of Notifications implementation, persistence, provider, and template sources into `LgymApi.Notifications`. It still does not authorize replacing Hangfire, adding a new `DbContext`, adding a migration stream, creating a schema per module, introducing microservices, or changing endpoints, payloads, job identities, schedulers, or persistence roots.
 
 The current system remains one deployable application with one production database, one `AppDbContext`, and one migration stream. Existing physical layers remain in place.
 
 ## Ownership semantics
 
-Module ownership means write and responsibility ownership, not physical relocation. The Notifications owner may define notification write rules, validate notification intents, and coordinate delivery. It does not imply that files or projects must move in #381.
+Module ownership means write and responsibility ownership. Notifications defines notification write rules, validates notification intents, coordinates delivery, and compiles its five stage-only repository and mapping implementations behind the internal persistence seam. The private FCM provider implementation and its configuration compile from `LgymApi.Notifications` within the guarded 18-project, 90-edge graph.
 
-The notification entities remain under `LgymApi.Domain/Entities` until a later approved move. Their current physical location does not change their module owner, and a shared `AppDbContext` does not create shared write authority. Non-owner modules use published contracts, read models, or in-process events and do not mutate notification rows directly.
+The notification entities remain under `LgymApi.Domain/Entities`. Their physical location does not change their module owner, and a shared `AppDbContext` does not create shared write authority. Non-owner modules use published contracts, read models, or in-process events and do not mutate notification rows directly.
 
-Application owns provider-neutral notification ports and models. Infrastructure owns notification persistence and external provider adapters. Worker owns runtime handlers, scheduler selection, and job execution. Common keeps only its existing bounded persisted-job and email wire seam.
+Notifications owns provider-neutral notification ports and models, five stage-only persistence implementations/mappings behind `INotificationsPersistenceContext`, its email template stack, and its private FCM provider adapter/configuration. Infrastructure retains the one `AppDbContext`, scoped seam alias, global registrar phase coordinator, and migration stream. Worker owns runtime handlers, scheduler selection, and job execution. Common keeps only its existing bounded persisted-job and email wire seam.
 
 ## Notifications-owned artifacts
 
@@ -45,7 +45,7 @@ The following catalog is the stable ownership surface for #381. The `Artifact ID
 | `notifications.artifact.push-message` | `PushNotificationMessage` | Notifications | Owns push delivery records, status, deduplication, and retry claims. Other modules may receive provider-neutral status views. |
 | `notifications.artifact.delivery-status-retry-policy` | Notification delivery status/retry policy | Notifications | `PushNotificationDeliveryService` claims durable work, applies provider outcomes, persists state and bounded post-claim recovery, decides retry eligibility, and owns UoW commits. |
 | `notifications.artifact.delivery-jobs-cleanup` | Notification delivery jobs and cleanup jobs | Notifications | Owns the intent and sequencing of delivery and stale-data cleanup work. Worker provides ID-only job execution and scheduler adapters. |
-| `notifications.artifact.provider-adapters` | Email/push provider adapters | Notifications | Owns the provider boundary and provider-private mapping. Infrastructure implements external delivery details without exposing them to other modules. |
+| `notifications.artifact.provider-adapters` | Email/push provider adapters | Notifications | Notifications owns the provider boundary, private FCM transport/configuration, and provider-private mapping without exposing them to other modules. |
 | `notifications.artifact.event-bridge` | Notification event bridge | Notifications | Owns translation from published business events or notification intents into notification workflows. Producers retain ownership of their business events. |
 
 ## Public contract surface
@@ -60,7 +60,7 @@ The public surface is provider-neutral. Contracts describe notification intent, 
 | `notifications.contract.push-payload` | Carry the stable push payload shape | Schema version, type, event ID, entity ID, in-app notification ID, deeplink, and approved metadata | No provider-specific transport type, credential, raw token, or notification entity |
 | `notifications.contract.installation-registration` | Register or refresh a recipient installation | Recipient identity, installation identifier, platform category, and lifecycle state | No raw installation token in another module's public API |
 
-FCM, Hangfire, Worker and Common runtime types, EF entities, repositories, provider credentials, and raw installation tokens are private implementation concerns. They must not appear in other modules' public Notifications contracts. The Common job and email wire seam remains closed and is not an Application-facing Notifications contract.
+FCM, Hangfire, Worker and Common runtime types, EF entities, repositories, provider credentials, and raw installation tokens are private implementation concerns. FCM configuration and credentials are internal to Notifications and must not appear in public Notifications contracts. The Common job and email wire seam remains closed and is not an Application-facing Notifications contract.
 
 ## Integration events consumed
 
@@ -82,7 +82,7 @@ Notifications owns channel policy and preference evaluation, in-app persistence 
 
 Coaching compatibility is expressed as six typed Notifications intents. The eight preserved commands select one eligible channel each: invitation created and accepted have separate email and in-app commands, invitation revoked is email-only, and invitation rejected, relationship ended, and trainee note updated are in-app-only. Notifications owns rendering, culture fallback, delivery metadata, email eligibility, and provider-neutral scheduling requests. Worker adapters execute the selected path without regaining policy ownership.
 
-Worker implements runtime handlers and chooses the configured scheduler implementation. Infrastructure implements persistence and external provider adapters. These layers apply the Notifications policy and do not redefine source module business event semantics or expose runtime details through the public contract.
+Worker implements runtime handlers and chooses the configured scheduler implementation. Notifications implements stage-only persistence behind the Infrastructure-provided internal seam and the private FCM provider adapter; Infrastructure retains the single context and migration stream. These layers apply the Notifications policy and do not redefine source module business event semantics or expose runtime details through the public contract.
 
 ## Privacy, idempotency, and retry rules
 
@@ -94,7 +94,7 @@ Retries must be bounded by the delivery policy and must not create a second logi
 
 ## Compatibility adapters during migration
 
-Compatibility adapters preserve current wire shapes and durable identities while the boundary is documented and later implementation work proceeds. They are adapters, not new ownership seams.
+Compatibility adapters preserve current wire shapes and durable identities after the extraction. They are adapters, not new ownership seams.
 
 | Adapter ID | Current compatibility surface | Boundary rule |
 | --- | --- | --- |
@@ -105,9 +105,9 @@ Compatibility adapters preserve current wire shapes and durable identities while
 | `notifications.adapter.scheduler-runtime` | Worker scheduler and Common persisted job interfaces | Worker owns scheduler selection and execution. The Common identities remain stable persisted targets. |
 | `notifications.adapter.coaching-intents` | Six Coaching intent records and eight legacy Coaching commands | Notifications owns intent and channel policy; Worker preserves canonical IDs, handler identities, and adapter execution. |
 
-## Migration sequence
+## Historical Migration Sequence
 
-The sequence preserves the current monolith and its compatibility contracts.
+The sequence records the pre-extraction boundary plan. The #387 extraction completed the approved source move while preserving the monolith and compatibility contracts.
 
 | Step ID | Change | Ownership result | Constraint |
 | --- | --- | --- | --- |

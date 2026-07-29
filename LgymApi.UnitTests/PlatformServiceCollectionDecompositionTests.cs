@@ -3,6 +3,7 @@ using Hangfire;
 using Hangfire.Logging;
 using System.Reflection;
 using LgymApi.Application.Pagination;
+using LgymApi.Application.Notifications;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Services;
 using LgymApi.Infrastructure;
@@ -47,11 +48,7 @@ public sealed class PlatformServiceCollectionDecompositionTests
 
             scopedServices.GetRequiredService<AppDbContext>().Database.ProviderName.Should().Be("Npgsql.EntityFrameworkCore.PostgreSQL");
             scopedServices.GetRequiredService<IUnitOfWork>().Should().BeOfType<EfUnitOfWork>();
-            scopedServices.GetRequiredService<IAppConfigRepository>().GetType().Name.Should().Be("AppConfigRepository");
             scopedServices.GetRequiredService<ICommittedIntentDispatcher>().GetType().Name.Should().Be("CommittedIntentDispatcher");
-            scopedServices.GetRequiredService<ICommandEnvelopeRepository>().GetType().Name.Should().Be("CommandEnvelopeRepository");
-            scopedServices.GetRequiredService<IApiIdempotencyRecordRepository>().GetType().Name.Should().Be("ApiIdempotencyRecordRepository");
-            scopedServices.GetRequiredService<IQueryPaginationService>().Should().BeOfType<QueryPaginationService>();
             provider.GetRequiredService<IMapperRegistry>().GetType().Name.Should().Be("MapperRegistry");
 
             if (isTesting)
@@ -94,13 +91,13 @@ public sealed class PlatformServiceCollectionDecompositionTests
     }
 
     [Test]
-    public void AddNotificationsInfrastructure_Validates_EmailOptions_Before_Adding_Descriptors()
+    public void AddNotificationsModule_Validates_EmailOptions_Before_Adding_Descriptors()
     {
         var services = CreateServices();
         var values = TestConfigurationBuilder.ToDictionary(TestConfigurationBuilder.BuildEnabledEmailConfiguration());
         values["Email:DeliveryMode"] = "invalid";
 
-        var action = () => services.AddNotificationsInfrastructure(TestConfigurationBuilder.BuildConfiguration(values));
+        var action = () => services.AddNotificationsModule(TestConfigurationBuilder.BuildConfiguration(values));
 
         action.Should().Throw<InvalidOperationException>().WithMessage("Email:DeliveryMode must be one of: Smtp, Dummy.");
         services.Should().ContainSingle(descriptor => descriptor.ServiceType == typeof(Microsoft.Extensions.Logging.ILoggerFactory));
@@ -126,7 +123,6 @@ public sealed class PlatformServiceCollectionDecompositionTests
         AssertSingleTypeDescriptor(services, typeof(AppDbContext), ServiceLifetime.Scoped, typeof(AppDbContext));
         AssertSingleTypeDescriptor(services, typeof(IUnitOfWork), ServiceLifetime.Scoped, typeof(EfUnitOfWork));
         AssertSingleFactoryDescriptor(services, typeof(IMapperRegistry), ServiceLifetime.Singleton);
-        AssertSingleTypeDescriptor(services, typeof(IQueryPaginationService), ServiceLifetime.Scoped, typeof(QueryPaginationService));
         AssertSingleInstanceDescriptor(services, typeof(PaginationPolicy), ServiceLifetime.Singleton);
 
         if (isTesting)

@@ -1,9 +1,8 @@
 using FluentAssertions;
 using LgymApi.Application.Abstractions.Storage;
-using LgymApi.Application.Coaching.Contracts.Access;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Reporting.Errors;
-using LgymApi.Application.Repositories;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
@@ -35,8 +34,8 @@ public sealed class PhotoSignedReadServiceTests
             Checksum = "etag"
         };
 
-        var repo = Substitute.For<IReportingRepository>();
-        repo.FindPhotoByIdAsync(photoId, Arg.Any<CancellationToken>()).Returns(photo);
+        var repo = Substitute.For<IReportPhotoPersistence>();
+        repo.FindByIdAsync(photoId, Arg.Any<CancellationToken>()).Returns(ReportingTestData.Photo(photo));
         var storageProvider = Substitute.For<IPhotoStorageProvider>();
         storageProvider.GenerateSignedReadUrlAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns("https://storage.example.com/read-url");
 
@@ -53,8 +52,8 @@ public sealed class PhotoSignedReadServiceTests
         var ownerId = Id<User>.New();
         var currentUser = PhotoServiceTestFactory.CreateUser(ownerId, "user@example.com");
         var photoId = Id<Photo>.New();
-        var repo = Substitute.For<IReportingRepository>();
-        repo.FindPhotoByIdAsync(photoId, Arg.Any<CancellationToken>()).Returns((Photo?)null);
+        var repo = Substitute.For<IReportPhotoPersistence>();
+        repo.FindByIdAsync(photoId, Arg.Any<CancellationToken>()).Returns((ReportPhotoPersistenceModel?)null);
 
         var service = PhotoServiceTestFactory.CreateService(reportingRepository: repo);
         var result = await service.GetSignedReadUrlAsync(currentUser, photoId);
@@ -81,8 +80,8 @@ public sealed class PhotoSignedReadServiceTests
             SizeBytes = 1024,
             Checksum = "etag"
         };
-        var repo = Substitute.For<IReportingRepository>();
-        repo.FindPhotoByIdAsync(photoId, Arg.Any<CancellationToken>()).Returns(photo);
+        var repo = Substitute.For<IReportPhotoPersistence>();
+        repo.FindByIdAsync(photoId, Arg.Any<CancellationToken>()).Returns(ReportingTestData.Photo(photo));
         var storageProvider = Substitute.For<IPhotoStorageProvider>();
 
         var service = PhotoServiceTestFactory.CreateService(reportingRepository: repo, photoStorageProvider: storageProvider);
@@ -112,8 +111,8 @@ public sealed class PhotoSignedReadServiceTests
             SizeBytes = 1024,
             Checksum = "etag"
         };
-        var repository = Substitute.For<IReportingRepository>();
-        repository.FindPhotoByIdAsync(photoId, Arg.Any<CancellationToken>()).Returns(photo);
+        var repository = Substitute.For<IReportPhotoPersistence>();
+        repository.FindByIdAsync(photoId, Arg.Any<CancellationToken>()).Returns(ReportingTestData.Photo(photo));
         var storageProvider = Substitute.For<IPhotoStorageProvider>();
         storageProvider.GenerateSignedReadUrlAsync(photo.StorageKey, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns("https://storage.example.com/read-url");
@@ -121,7 +120,7 @@ public sealed class PhotoSignedReadServiceTests
             reportingRepository: repository,
             photoStorageProvider: storageProvider,
             relationshipAccess: (currentTrainerId, currentTraineeId, _) => Task.FromResult(
-                new CoachingRelationshipAccessDecision(true, currentTrainerId == trainerId && currentTraineeId == traineeId)));
+                currentTrainerId == trainerId && currentTraineeId == traineeId));
 
         var result = await service.GetSignedReadUrlAsync(trainer, photoId);
 
@@ -148,13 +147,13 @@ public sealed class PhotoSignedReadServiceTests
             SizeBytes = 1024,
             Checksum = "etag"
         };
-        var repository = Substitute.For<IReportingRepository>();
-        repository.FindPhotoByIdAsync(photoId, Arg.Any<CancellationToken>()).Returns(photo);
+        var repository = Substitute.For<IReportPhotoPersistence>();
+        repository.FindByIdAsync(photoId, Arg.Any<CancellationToken>()).Returns(ReportingTestData.Photo(photo));
         var storageProvider = Substitute.For<IPhotoStorageProvider>();
         var service = PhotoServiceTestFactory.CreateService(
             reportingRepository: repository,
             photoStorageProvider: storageProvider,
-            relationshipAccess: (_, _, _) => Task.FromResult(new CoachingRelationshipAccessDecision(true, false)));
+            relationshipAccess: (_, _, _) => Task.FromResult(false));
 
         var result = await service.GetSignedReadUrlAsync(trainer, photoId);
 

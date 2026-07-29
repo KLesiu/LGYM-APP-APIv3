@@ -2,6 +2,7 @@ using FluentAssertions;
 using LgymApi.Application.Pagination;
 using LgymApi.Infrastructure;
 using LgymApi.Infrastructure.Pagination;
+using LgymApi.Platform;
 using LgymApi.TestUtils;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -97,6 +98,7 @@ public sealed class GridifyExecutionServiceTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddPlatformModule();
         services.AddInfrastructure(
             TestConfigurationBuilder.BuildEnabledEmailConfiguration(),
             enableSensitiveLogging: false,

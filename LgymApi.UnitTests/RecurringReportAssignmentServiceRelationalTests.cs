@@ -1,14 +1,14 @@
 using FluentAssertions;
-using LgymApi.Application.Coaching.Contracts.Access;
 using LgymApi.Application.Features.Reporting;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using LgymApi.Application.Reporting.Contracts.BackgroundCommands;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
-using LgymApi.Infrastructure.Repositories;
+using LgymApi.Infrastructure.Repositories.Reporting;
 using LgymApi.Infrastructure.UnitOfWork;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -112,8 +112,8 @@ public sealed class RecurringReportAssignmentServiceRelationalTests
 
         await commandDispatcher.Received(1).EnqueueAsync(Arg.Is<ReportRequestCreatedInAppNotificationCommand>(command =>
             command.RequestId == nextRequest.Id
-            && command.TraineeId == storedAssignment.TraineeId
-            && command.TrainerId == storedAssignment.TrainerId
+            && command.TraineeId == storedAssignment.TraineeId.Rebind<LgymApi.Identity.Contracts.AccountReference>()
+            && command.TrainerId == storedAssignment.TrainerId.Rebind<LgymApi.Identity.Contracts.AccountReference>()
             && command.TemplateName == "Weekly check-in"));
     }
 
@@ -199,12 +199,14 @@ public sealed class RecurringReportAssignmentServiceRelationalTests
 
     private static RecurringReportAssignmentService CreateService(AppDbContext db, ICommandDispatcher commandDispatcher)
     {
-        var relationshipAccess = Substitute.For<ICoachingRelationshipAccessService>();
+        var relationshipAccess = Substitute.For<IReportingRelationshipAccessPersistence>();
 
         return new RecurringReportAssignmentService(new RecurringReportAssignmentServiceDependencies(
+            new ReportTemplatePersistenceRepository(db),
+            new ReportRequestSubmissionPersistenceRepository(db),
+            new RecurringReportAssignmentPersistenceRepository(db),
             relationshipAccess,
-            new ReportingRepository(db),
-            new RecurringReportAssignmentRepository(db),
+            ReportingTestData.Mapper(),
             commandDispatcher,
             new EfUnitOfWork(db)));
     }

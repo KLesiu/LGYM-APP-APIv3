@@ -52,7 +52,5 @@ public sealed class CommandTypeDiscriminatorPolicyTests
         policy.IsExactMatch("", "Known.Command").Should().BeFalse();
     }
 
-    private static Type GetApplicationRuntimeType(LegacyCommandContract contract) =>
-        typeof(LgymApi.Application.Platform.Contracts.BackgroundCommands.IActionCommand).Assembly
-            .GetType(contract.FutureClrNameReadAlias)!;
+    private static Type GetApplicationRuntimeType(LegacyCommandContract contract) => contract.CommandType;
 }

@@ -21,6 +21,7 @@ using LgymApi.Application.WorkoutProgress.ProgressData.Models;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
@@ -37,7 +38,8 @@ public sealed class CoachingDashboardProgressSliceTests
         var missingId = Id<User>.New();
         var revokedId = Id<User>.New();
         var now = DateTimeOffset.UtcNow;
-        var services = CreateServices(out var access, out var facts, out var accounts, out var pagination, out _);
+        var services = CreateServices(out _, out var facts, out var accounts, out var pagination, out _);
+        var access = Resolve<ICoachingRelationshipAccessService>(services);
         access.GetAccessDecisionAsync(trainerId, Id<User>.Empty, Arg.Any<CancellationToken>())
             .Returns(new CoachingRelationshipAccessDecision(true, false));
         facts.GetDashboardFactsAsync(trainerId, Arg.Any<CancellationToken>()).Returns(
@@ -90,7 +92,8 @@ public sealed class CoachingDashboardProgressSliceTests
     public async Task Dashboard_WhenCallerIsNotTrainerReturnsForbiddenWithoutReads()
     {
         var trainerId = Id<User>.New();
-        var services = CreateServices(out var access, out var facts, out var accounts, out var pagination, out _);
+        var services = CreateServices(out _, out var facts, out var accounts, out var pagination, out _);
+        var access = Resolve<ICoachingRelationshipAccessService>(services);
         access.GetAccessDecisionAsync(trainerId, Id<User>.Empty, Arg.Any<CancellationToken>())
             .Returns(new CoachingRelationshipAccessDecision(false, false));
 
@@ -106,8 +109,8 @@ public sealed class CoachingDashboardProgressSliceTests
     [Test]
     public async Task ProgressReads_AuthorizeThenCallEachWorkoutProgressOperationExactlyOnce()
     {
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
+        var trainerId = Id<AccountReference>.New();
+        var traineeId = Id<AccountReference>.New();
         var exerciseId = Id<Exercise>.New();
         var createdAt = new DateTime(2026, 7, 1);
         var services = CreateServices(out var access, out _, out _, out _, out var progress);
@@ -141,8 +144,8 @@ public sealed class CoachingDashboardProgressSliceTests
     [Test]
     public async Task ProgressReads_WhenRelationshipIsForeignReturnNotFoundWithoutWorkoutProgressCalls()
     {
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
+        var trainerId = Id<AccountReference>.New();
+        var traineeId = Id<AccountReference>.New();
         var services = CreateServices(out var access, out _, out _, out _, out var progress);
         access.GetAccessDecisionAsync(trainerId, traineeId, Arg.Any<CancellationToken>())
             .Returns(new CoachingRelationshipAccessDecision(true, false));
@@ -167,8 +170,8 @@ public sealed class CoachingDashboardProgressSliceTests
     [Test]
     public async Task ProgressReads_MapEveryDownstreamFailureToRelationshipNotFound()
     {
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
+        var trainerId = Id<AccountReference>.New();
+        var traineeId = Id<AccountReference>.New();
         var exerciseId = Id<Exercise>.New();
         var createdAt = DateTime.UtcNow;
         var services = CreateServices(out var access, out _, out _, out _, out var progress);
@@ -195,8 +198,8 @@ public sealed class CoachingDashboardProgressSliceTests
     [Test]
     public async Task ExerciseScoresChart_WhenExerciseIdIsEmptyReturnsInvalidWithoutWorkoutRead()
     {
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
+        var trainerId = Id<AccountReference>.New();
+        var traineeId = Id<AccountReference>.New();
         var services = CreateServices(out var access, out _, out _, out _, out var progress);
         access.GetAccessDecisionAsync(trainerId, traineeId, Arg.Any<CancellationToken>())
             .Returns(new CoachingRelationshipAccessDecision(true, true));
@@ -212,25 +215,27 @@ public sealed class CoachingDashboardProgressSliceTests
         => Result<List<T>, AppError>.Failure(new BadRequestError("downstream failure"));
 
     private static ServiceCollection CreateServices(
-        out ICoachingRelationshipAccessService access,
+        out IMarkerCoachingRelationshipAccessService access,
         out ICoachingFactReader facts,
         out IAccountReadService accounts,
         out IQueryPaginationService pagination,
         out IWorkoutProgressDashboardReadService progress)
     {
-        access = Substitute.For<ICoachingRelationshipAccessService>();
+        access = Substitute.For<IMarkerCoachingRelationshipAccessService>();
         facts = Substitute.For<ICoachingFactReader>();
         accounts = Substitute.For<IAccountReadService>();
         pagination = Substitute.For<IQueryPaginationService>();
         progress = Substitute.For<IWorkoutProgressDashboardReadService>();
+        var legacyRelationshipAccess = Substitute.For<ICoachingRelationshipAccessService>();
         var relationshipAccess = access;
         var factReader = facts;
         var accountReader = accounts;
         var paginationService = pagination;
         var progressService = progress;
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         services.AddCoachingModule();
+        services.AddScoped(_ => legacyRelationshipAccess);
         services.AddScoped(_ => relationshipAccess);
         services.AddScoped(_ => factReader);
         services.AddScoped(_ => accountReader);

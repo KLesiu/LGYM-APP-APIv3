@@ -1,5 +1,6 @@
 using LgymApi.Api.Features.User.Contracts;
 using LgymApi.Application.Features.User.Models;
+using LgymApi.Application.Identity.ApiCompatibility;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Models;
 using LgymApi.Application.WorkoutProgress.Ranking.Models;
@@ -50,6 +51,31 @@ public sealed class UserProfile : IMappingProfile
             Avatar = source.Avatar,
             Elo = source.Elo,
             ProfileRank = source.ProfileRank
+        });
+
+        configuration.CreateMap<AccountRankProjection, RankDto>((source, _) => new RankDto
+        {
+            Name = source.Name,
+            NeedElo = source.NeedElo
+        });
+
+        configuration.CreateMap<AccountProfileProjection, UserInfoDto>((source, context) => new UserInfoDto
+        {
+            Name = source.Name,
+            Id = source.Id.ToString(),
+            Email = source.Email,
+            Avatar = source.Avatar,
+            ProfileRank = source.ProfileRank,
+            PreferredTimeZone = source.PreferredTimeZone,
+            CreatedAt = source.CreatedAt,
+            UpdatedAt = source.UpdatedAt,
+            Elo = source.Elo,
+            NextRank = source.NextRank == null ? null : context!.Map<AccountRankProjection, RankDto>(source.NextRank),
+            IsDeleted = source.IsDeleted,
+            IsVisibleInRanking = source.IsVisibleInRanking,
+            Roles = source.Roles.ToList(),
+            PermissionClaims = source.PermissionClaims.ToList(),
+            HasActiveTutorials = source.HasActiveTutorials
         });
 
         configuration.CreateMap<RankingReadModel, UserBaseInfoDto>((source, _) => new UserBaseInfoDto

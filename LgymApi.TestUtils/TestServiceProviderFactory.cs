@@ -1,35 +1,65 @@
+using LgymApi.Application;
 using LgymApi.BackgroundWorker;
-using LgymApi.Infrastructure;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LgymApi.TestUtils;
 
 /// <summary>
-/// Builds pre-configured ServiceProvider instances for infrastructure and background worker testing.
+/// Builds service providers through the same ordered composition phases as the production host.
 /// </summary>
 public static class TestServiceProviderFactory
 {
-    /// <summary>
-    /// Creates a ServiceProvider with Infrastructure services and optional BackgroundWorker registration.
-    /// </summary>
-    public static Microsoft.Extensions.DependencyInjection.ServiceProvider CreateInfrastructureProvider(
-        IConfiguration configuration,
-        bool isTesting,
-        bool includeBackgroundWorker = false,
-        bool enableSensitiveLogging = false,
-        Action<IServiceCollection>? configureServices = null)
+    public static IServiceCollection AddApplicationAndWorkerServicesForTesting(this IServiceCollection services)
     {
+        services.AddApplication();
+        services.AddBackgroundWorkerServices(isTesting: true);
+        return services;
+    }
+
+    public static ServiceCollection CreateServiceCollection(
+        TestHostServiceComposition composition,
+        Action<IServiceCollection>? configureServicesBeforeModules = null,
+        Action<IServiceCollection>? replaceServicesAfterModules = null)
+    {
+        ArgumentNullException.ThrowIfNull(composition);
+
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddInfrastructure(configuration, enableSensitiveLogging, isTesting);
+        configureServicesBeforeModules?.Invoke(services);
+        composition.AddMappings(services);
+        composition.AddPlatformModule(services);
+        composition.AddIdentityModule(services);
+        composition.AddTrainingPlanningModule(services);
+        composition.AddNotificationsModule(services);
+        composition.AddApplication(services);
+        composition.AddInfrastructure(services);
+        composition.AddApplicationApiAdapters(services);
+        composition.AddNotificationsApiAdapters(services);
+        composition.AddWorker?.Invoke(services);
+        replaceServicesAfterModules?.Invoke(services);
 
-        if (includeBackgroundWorker)
-        {
-            services.AddBackgroundWorkerServices(isTesting);
-        }
-
-        configureServices?.Invoke(services);
-        return services.BuildServiceProvider();
+        return services;
     }
+
+    public static Microsoft.Extensions.DependencyInjection.ServiceProvider CreateServiceProvider(
+        TestHostServiceComposition composition,
+        Action<IServiceCollection>? configureServicesBeforeModules = null,
+        Action<IServiceCollection>? replaceServicesAfterModules = null)
+        => CreateServiceCollection(
+                composition,
+                configureServicesBeforeModules,
+                replaceServicesAfterModules)
+            .BuildServiceProvider();
 }
+
+public sealed record TestHostServiceComposition(
+    Action<IServiceCollection> AddMappings,
+    Action<IServiceCollection> AddPlatformModule,
+    Action<IServiceCollection> AddIdentityModule,
+    Action<IServiceCollection> AddTrainingPlanningModule,
+    Action<IServiceCollection> AddNotificationsModule,
+    Action<IServiceCollection> AddApplication,
+    Action<IServiceCollection> AddInfrastructure,
+    Action<IServiceCollection> AddApplicationApiAdapters,
+    Action<IServiceCollection> AddNotificationsApiAdapters,
+    Action<IServiceCollection>? AddWorker);

@@ -1,6 +1,4 @@
 using LgymApi.BackgroundWorker.Common;
-using LgymApi.Domain.Entities;
-using LgymApi.Domain.ValueObjects;
 
 namespace LgymApi.Infrastructure.Services;
 
@@ -9,7 +7,7 @@ namespace LgymApi.Infrastructure.Services;
 /// </summary>
 public sealed class NoOpActionMessageScheduler : IActionMessageScheduler
 {
-    public string? Enqueue(Id<CommandEnvelope> actionMessageId)
+    public string? Enqueue(string actionMessageId)
     {
         return $"noop-command-{actionMessageId}";
     }

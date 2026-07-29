@@ -1,4 +1,5 @@
 using LgymApi.Application.Features.Training.Models;
+using LgymApi.Application.WorkoutProgress.Persistence;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 
@@ -8,7 +9,7 @@ public static class TrainingComparisonReportBuilder
 {
     public static List<GroupedExerciseComparison> Build(
         IReadOnlyCollection<TrainingExerciseInput> currentExercises,
-        Dictionary<string, ExerciseScore> previousScores,
+        Dictionary<string, WorkoutExerciseScorePersistenceModel> previousScores,
         Dictionary<Id<Exercise>, string> exerciseDetails)
     {
         var comparisonMap = new Dictionary<Id<Exercise>, GroupedExerciseComparison>();
@@ -47,8 +48,8 @@ public static class TrainingComparisonReportBuilder
                     : new ScoreResult
                     {
                         Reps = previous.Reps,
-                        Weight = previous.Weight.Value,
-                        Unit = previous.Weight.Unit
+                        Weight = previous.Weight,
+                        Unit = previous.Unit
                     }
             });
         }

@@ -30,14 +30,8 @@ public sealed class CommandContractRegistryTests
                 .Should().Equal(legacyContract.HandlerTypeFullNames);
         }
 
-        var applicationCommandTypes = typeof(ApplicationActionCommand).Assembly
-            .GetTypes()
-            .Where(type => type is { IsClass: true, IsAbstract: false }
-                && typeof(ApplicationActionCommand).IsAssignableFrom(type))
-            .ToArray();
-
         registry.Contracts.Select(contract => contract.RuntimeType)
-            .Should().BeEquivalentTo(applicationCommandTypes);
+            .Should().BeEquivalentTo(LegacyCommandContractManifest.ExpectedRuntimeTypes);
     }
 
     [TestCaseSource(typeof(LegacyCommandContractManifest), nameof(LegacyCommandContractManifest.CommandCases))]
@@ -45,7 +39,7 @@ public sealed class CommandContractRegistryTests
         LegacyCommandContract legacyContract)
     {
         var registry = CommandContractRegistry.CreateDefault();
-        var runtimeType = typeof(ApplicationActionCommand).Assembly.GetType(legacyContract.FutureClrNameReadAlias)!;
+        var runtimeType = legacyContract.CommandType;
 
         var writeDescriptor = registry.DescribeForWrite(runtimeType);
         var canonicalReadDescriptor = registry.Resolve(legacyContract.CanonicalId);
@@ -160,6 +154,24 @@ public sealed class CommandContractRegistryTests
         var trainingCompleted = rows.Single(row => row.CanonicalId.EndsWith(
             ".TrainingCompletedCommand",
             StringComparison.Ordinal));
+        AssertInvalidDefault(
+            rows.Select(row => row == trainingCompleted
+                ? trainingCompleted with { ExpectedHandlerTypes = [trainingCompleted.ExpectedHandlerTypes[0]] }
+                : row).ToArray(),
+            "The default command registry must declare exactly 16 handlers.");
+        AssertInvalidDefault(
+            rows.Select(row => row == trainingCompleted
+                ? trainingCompleted with
+                {
+                    ExpectedHandlerTypes =
+                    [
+                        .. trainingCompleted.ExpectedHandlerTypes,
+                        typeof(AlternateTrainingCompletedHandler)
+                    ]
+                }
+                : row).ToArray(),
+            "The default command registry must declare exactly 16 handlers.");
+
         var changedTrainingHandlers = trainingCompleted with
         {
             ExpectedHandlerTypes =

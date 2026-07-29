@@ -1,5 +1,7 @@
 using System.Reflection;
 using LgymApi.Api.Features.Trainer.Controllers;
+using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
+using LgymApi.Application.Mapping.Core;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
@@ -72,23 +74,24 @@ public sealed class NutritionControllerAdapterArchitectureTests
     [Test]
     public void Nutrition_Controllers_Should_Depend_Only_On_Focused_Use_Cases_And_Mapper()
     {
-        var dependencies = Controllers.SelectMany(specification => specification.Controller.GetConstructors().Single().GetParameters()
-            .Select(parameter => (Controller: specification.Controller.FullName!, Dependency: parameter.ParameterType.FullName!)))
-            .ToArray();
-
-        Assert.Multiple(() =>
+        var expectedPorts = new Dictionary<Type, Type>
         {
-            Assert.That(dependencies, Has.Length.EqualTo(22));
-            Assert.That(dependencies.Select(dependency => dependency.Dependency), Has.Exactly(4).EqualTo("LgymApi.Application.Mapping.Core.IMapper"));
+            [typeof(TrainerDietPlansController)] = typeof(IDietPlanAccountCompatibilityAdapter),
+            [typeof(TraineeDietPlanController)] = typeof(IDietPlanAccountCompatibilityAdapter),
+            [typeof(TrainerSupplementationController)] = typeof(ISupplementationAccountCompatibilityAdapter),
+            [typeof(TraineeSupplementationController)] = typeof(ISupplementationAccountCompatibilityAdapter)
+        };
+
+        foreach (var specification in Controllers)
+        {
+            var dependencies = specification.Controller.GetConstructors().Single().GetParameters()
+                .Select(parameter => parameter.ParameterType);
+
             Assert.That(
-                dependencies.Where(dependency => dependency.Dependency != "LgymApi.Application.Mapping.Core.IMapper")
-                    .Select(dependency => dependency.Dependency),
-                Has.All.StartsWith("LgymApi.Application.Nutrition."));
-            Assert.That(
-                dependencies.Where(dependency => dependency.Dependency != "LgymApi.Application.Mapping.Core.IMapper")
-                    .Select(dependency => dependency.Dependency),
-                Is.Unique);
-        });
+                dependencies,
+                Is.EqualTo(new[] { expectedPorts[specification.Controller], typeof(IMapper) }),
+                $"{specification.Controller.Name} must depend only on its Task 7 compatibility port and IMapper.");
+        }
     }
 
     private sealed record ControllerSpec(Type Controller, IReadOnlyList<ActionExpectation> Actions);

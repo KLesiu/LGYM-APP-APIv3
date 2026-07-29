@@ -66,15 +66,13 @@ public sealed class InfrastructureServiceRegistrationGuardTests
     }
 
     [Test]
-    public void InfrastructureServiceRegistration_Factory_Interface_Registration_Should_Not_Cause_False_Positive()
+    public void NotificationsEmailRegistration_Factory_Interface_Registration_Should_Not_Cause_False_Positive()
     {
         var parseOptions = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
-        var infrastructureFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Infrastructure");
-        var serviceExtensionFiles = infrastructureFiles
-            .Where(path => Path.GetFileName(path).EndsWith("ServiceCollectionExtensions.cs", StringComparison.Ordinal))
+        var serviceExtensionFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Notifications")
+            .Where(path => Path.GetFileName(path).Equals("EmailServiceCollectionExtensions.cs", StringComparison.Ordinal))
             .ToList();
 
-        var concreteServices = CollectConcreteInfrastructureServices(infrastructureFiles, parseOptions);
         var registrations = CollectRegistrations(serviceExtensionFiles, parseOptions);
 
         var registrationCandidates = CollectRegistrationCandidates(serviceExtensionFiles, parseOptions).ToList();
@@ -83,10 +81,9 @@ public sealed class InfrastructureServiceRegistrationGuardTests
                 candidate.CandidateTypeName.Equals("IEmailSender", StringComparison.Ordinal) &&
                 candidate.ArgumentCount == 1),
             Is.True,
-            "Fixture assumption failed: expected AddScoped<IEmailSender>(sp => ...) factory registration in module-owned Infrastructure ServiceCollectionExtensions files.");
+            "Fixture assumption failed: expected AddScoped<IEmailSender>(sp => ...) factory registration in the Notifications email service collection extension.");
 
         var concreteRegistrations = registrations
-            .Where(registration => concreteServices.Contains(SimplifyTypeName(registration.Implementation)))
             .Select(registration => SimplifyTypeName(registration.Implementation))
             .ToHashSet(StringComparer.Ordinal);
 

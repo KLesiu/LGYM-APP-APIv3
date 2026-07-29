@@ -2,10 +2,7 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Coaching.Invitations.Accept;
-using LgymApi.Application.Coaching.Invitations.Reject;
-using LgymApi.Application.Coaching.ManagedPlans.GetActive;
-using LgymApi.Application.Coaching.Relationships.DetachFromTrainer;
+using LgymApi.Application.Coaching.Compatibility;
 using LgymApi.Application.Coaching.Relationships.GetCurrentTrainer;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Coaching.Errors;
@@ -25,26 +22,14 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 [Authorize]
 public sealed class TraineeRelationshipController : ControllerBase
 {
-    private readonly IAcceptInvitationUseCase _acceptInvitation;
-    private readonly IRejectInvitationUseCase _rejectInvitation;
-    private readonly IDetachFromTrainerUseCase _detachFromTrainer;
-    private readonly IGetCurrentTrainerUseCase _getCurrentTrainer;
-    private readonly IGetActiveManagedPlanUseCase _getActiveManagedPlan;
+    private readonly ITraineeRelationshipApiPort _relationship;
     private readonly IMapper _mapper;
 
     public TraineeRelationshipController(
-        IAcceptInvitationUseCase acceptInvitation,
-        IRejectInvitationUseCase rejectInvitation,
-        IDetachFromTrainerUseCase detachFromTrainer,
-        IGetCurrentTrainerUseCase getCurrentTrainer,
-        IGetActiveManagedPlanUseCase getActiveManagedPlan,
+        ITraineeRelationshipApiPort relationship,
         IMapper mapper)
     {
-        _acceptInvitation = acceptInvitation;
-        _rejectInvitation = rejectInvitation;
-        _detachFromTrainer = detachFromTrainer;
-        _getCurrentTrainer = getCurrentTrainer;
-        _getActiveManagedPlan = getActiveManagedPlan;
+        _relationship = relationship;
         _mapper = mapper;
     }
 
@@ -57,10 +42,7 @@ public sealed class TraineeRelationshipController : ControllerBase
             return Result<Unit, AppError>.Failure(new InvalidTrainerRelationshipError(Messages.FieldRequired)).ToActionResult();
         }
 
-        var trainee = HttpContext.GetCurrentUser();
-        var result = await _acceptInvitation.ExecuteAsync(
-            new AcceptInvitationCommand(trainee!.Id, parsedInvitationId),
-            cancellationToken);
+        var result = await _relationship.AcceptInvitationAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedInvitationId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -78,10 +60,7 @@ public sealed class TraineeRelationshipController : ControllerBase
             return Result<Unit, AppError>.Failure(new InvalidTrainerRelationshipError(Messages.FieldRequired)).ToActionResult();
         }
 
-        var trainee = HttpContext.GetCurrentUser();
-        var result = await _rejectInvitation.ExecuteAsync(
-            new RejectInvitationCommand(trainee!.Id, parsedInvitationId),
-            cancellationToken);
+        var result = await _relationship.RejectInvitationAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedInvitationId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -94,8 +73,7 @@ public sealed class TraineeRelationshipController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> DetachFromTrainer(CancellationToken cancellationToken = default)
     {
-        var trainee = HttpContext.GetCurrentUser();
-        var result = await _detachFromTrainer.ExecuteAsync(new DetachFromTrainerCommand(trainee!.Id), cancellationToken);
+        var result = await _relationship.DetachAsync(HttpContext.GetAuthenticatedAccountContext()!, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -108,8 +86,7 @@ public sealed class TraineeRelationshipController : ControllerBase
     [ProducesResponseType(typeof(TraineeTrainerProfileDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCurrentTrainer(CancellationToken cancellationToken = default)
     {
-        var trainee = HttpContext.GetCurrentUser();
-        var result = await _getCurrentTrainer.ExecuteAsync(new GetCurrentTrainerQuery(trainee!.Id), cancellationToken);
+        var result = await _relationship.GetCurrentTrainerAsync(HttpContext.GetAuthenticatedAccountContext()!, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -122,8 +99,7 @@ public sealed class TraineeRelationshipController : ControllerBase
     [ProducesResponseType(typeof(TrainerManagedPlanDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetActiveAssignedPlan(CancellationToken cancellationToken = default)
     {
-        var trainee = HttpContext.GetCurrentUser();
-        var result = await _getActiveManagedPlan.ExecuteAsync(new GetActiveManagedPlanQuery(trainee!.Id), cancellationToken);
+        var result = await _relationship.GetActivePlanAsync(HttpContext.GetAuthenticatedAccountContext()!, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();

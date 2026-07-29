@@ -8,6 +8,7 @@ using LgymApi.Application.Repositories;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Platform.Contracts;
 using AppConfigEntity = LgymApi.Domain.Entities.AppConfig;
 
 namespace LgymApi.UnitTests;
@@ -58,7 +59,7 @@ public sealed class AppConfigServiceTests
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<AppConfigForbiddenError>();
-        port.Calls.Should().ContainSingle().Which.Should().Be(userId);
+        port.Calls.Should().ContainSingle().Which.Should().Be(userId.Rebind<ActorReference>());
         repository.Added.Should().BeEmpty();
         unitOfWork.SaveChangesCount.Should().Be(0);
     }
@@ -79,7 +80,7 @@ public sealed class AppConfigServiceTests
 
         await InvokeAsync(operation, service, userId, config.Id);
 
-        port.Calls.Should().ContainSingle().Which.Should().Be(userId);
+        port.Calls.Should().ContainSingle().Which.Should().Be(userId.Rebind<ActorReference>());
     }
 
     [TestCase(ProtectedOperation.Create)]
@@ -335,11 +336,11 @@ public sealed class AppConfigServiceTests
 
     private sealed class RecordingAppConfigAuthorizationPort(bool canManage, Exception? exception = null) : IAppConfigAuthorizationPort
     {
-        public List<Id<User>> Calls { get; } = [];
+        public List<Id<ActorReference>> Calls { get; } = [];
 
-        public Task<bool> CanManageAppConfigAsync(Id<User> userId, CancellationToken cancellationToken = default)
+        public Task<bool> CanManageAppConfigAsync(Id<ActorReference> actorId, CancellationToken cancellationToken = default)
         {
-            Calls.Add(userId);
+            Calls.Add(actorId);
             return exception is null ? Task.FromResult(canManage) : Task.FromException<bool>(exception);
         }
     }

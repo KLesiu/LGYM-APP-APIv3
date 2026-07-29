@@ -19,9 +19,11 @@ public sealed class IdentityWorkoutProgressCommandContractTests
     {
         AssertCommandContract<UserRegisteredCommand>(
             "LgymApi.Application.Identity.Contracts.BackgroundCommands",
+            "LgymApi.Identity",
             ("UserId", typeof(Id<User>)));
         AssertCommandContract<TrainingCompletedCommand>(
             "LgymApi.Application.WorkoutProgress.Contracts.BackgroundCommands",
+            "LgymApi.Application",
             ("UserId", typeof(Id<User>)),
             ("TrainingId", typeof(Id<Training>)));
 
@@ -57,6 +59,7 @@ public sealed class IdentityWorkoutProgressCommandContractTests
 
     private static void AssertCommandContract<TCommand>(
         string expectedNamespace,
+        string expectedAssembly,
         params (string Name, Type Type)[] expectedProperties)
     {
         var commandType = typeof(TCommand);
@@ -67,7 +70,7 @@ public sealed class IdentityWorkoutProgressCommandContractTests
 
         Assert.Multiple(() =>
         {
-            commandType.Assembly.GetName().Name.Should().Be("LgymApi.Application");
+            commandType.Assembly.GetName().Name.Should().Be(expectedAssembly);
             commandType.Namespace.Should().Be(expectedNamespace);
             commandType.IsPublic.Should().BeTrue();
             commandType.IsSealed.Should().BeTrue();

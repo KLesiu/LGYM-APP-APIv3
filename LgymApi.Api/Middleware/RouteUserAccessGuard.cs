@@ -1,26 +1,26 @@
-using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using LgymApi.Resources;
 
 namespace LgymApi.Api.Middleware;
 
 public static class RouteUserAccessGuard
 {
-    public static Id<User> ParseRouteUserIdForCurrentUser(this HttpContext context, string routeUserId)
+    public static Id<AccountReference> ParseRouteAccountIdForCurrentAccount(this HttpContext context, string routeUserId)
     {
-        var currentUser = context.GetCurrentUser();
-        if (currentUser == null || currentUser.Id.IsEmpty)
+        var currentAccountId = context.GetCurrentAccountId();
+        if (currentAccountId.IsEmpty)
         {
             throw new UnauthorizedAccessException(Messages.Forbidden);
         }
 
 
-        if (!Id<User>.TryParse(routeUserId, out var parsedRouteUserId))
+        if (!Id<AccountReference>.TryParse(routeUserId, out var parsedRouteUserId))
         {
             throw new UnauthorizedAccessException(Messages.Forbidden);
         }
 
-        if (parsedRouteUserId != currentUser.Id)
+        if (parsedRouteUserId != currentAccountId)
         {
             throw new UnauthorizedAccessException(Messages.Forbidden);
         }
@@ -28,20 +28,20 @@ public static class RouteUserAccessGuard
         return parsedRouteUserId;
     }
 
-    public static Id<User> ParseRouteUserIdForCurrentAdmin(this HttpContext context, string routeUserId)
+    public static Id<AccountReference> ParseRouteAccountIdForCurrentAdmin(this HttpContext context, string routeUserId)
     {
-        var currentUser = context.GetCurrentUser();
-        if (currentUser == null || currentUser.Id.IsEmpty)
+        var currentAccountId = context.GetCurrentAccountId();
+        if (currentAccountId.IsEmpty)
         {
             throw new UnauthorizedAccessException(Messages.Forbidden);
         }
 
-        if (!Id<User>.TryParse(routeUserId, out var parsedRouteUserId))
+        if (!Id<AccountReference>.TryParse(routeUserId, out var parsedRouteUserId))
         {
             throw new UnauthorizedAccessException(Messages.Forbidden);
         }
 
-        if (parsedRouteUserId != currentUser.Id)
+        if (parsedRouteUserId != currentAccountId)
         {
             throw new UnauthorizedAccessException(Messages.Forbidden);
         }

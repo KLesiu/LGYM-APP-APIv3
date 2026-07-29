@@ -10,6 +10,10 @@ public sealed class UnitOfWorkCommitGuardTests
     private static readonly string[] AllowedSegments =
     {
         "/LgymApi.Application/",
+        "/LgymApi.Identity/",
+        "/LgymApi.Notifications/",
+        "/LgymApi.Platform/ReferenceData/",
+        "/LgymApi.TrainingPlanning/",
         "/LgymApi.BackgroundWorker/",  // Orchestration service owns command envelope lifecycle
         "/LgymApi.Infrastructure/UnitOfWork/",
         "/LgymApi.Infrastructure/Data/",
@@ -71,6 +75,16 @@ public sealed class UnitOfWorkCommitGuardTests
             Is.Empty,
             "IUnitOfWork SaveChanges/transactions must be invoked only from application services. Violations: " + violations.Count + Environment.NewLine +
             string.Join(Environment.NewLine, violations.Select(v => v.ToString())));
+    }
+
+    [Test]
+    public void Extracted_Module_Service_Layers_Should_Be_Allowed()
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(IsAllowedPath("C:/repo/LgymApi.TrainingPlanning/Plan/CreatePlan/CreatePlanUseCase.cs"), Is.True);
+            Assert.That(IsAllowedPath("C:/repo/LgymApi.Notifications/PushNotificationService.cs"), Is.True);
+        });
     }
 
     private static bool IsUowMethod(InvocationExpressionSyntax invocation)

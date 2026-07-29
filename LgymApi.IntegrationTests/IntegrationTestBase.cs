@@ -544,7 +544,7 @@ public abstract class IntegrationTestBase : IDisposable
             {
                 try
                 {
-                    await orchestrator.OrchestrateAsync(envelopeId, CancellationToken.None);
+                    await orchestrator.OrchestrateAsync(envelopeId.ToString(), CancellationToken.None);
                 }
                 catch
                 {

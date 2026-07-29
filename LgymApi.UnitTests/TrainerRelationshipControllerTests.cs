@@ -2,11 +2,13 @@ using FluentAssertions;
 using LgymApi.Api;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Features.Trainer.Controllers;
+using LgymApi.Api.Middleware;
 using LgymApi.Application.Coaching.Invitations.Create;
 using LgymApi.Application.Coaching.Invitations.CreateByEmail;
 using LgymApi.Application.Coaching.Invitations.ListPaginated;
 using LgymApi.Application.Coaching.Invitations.Models;
 using LgymApi.Application.Coaching.Invitations.Revoke;
+using LgymApi.Application.Coaching.Compatibility;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping;
@@ -14,6 +16,8 @@ using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -69,24 +73,17 @@ public sealed class TrainerRelationshipControllerTests
     private static TrainerInvitationController CreateController(ICreateInvitationUseCase? createInvitation = null, Id<User>? trainerId = null)
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
         var controller = new TrainerInvitationController(
-            createInvitation ?? Substitute.For<ICreateInvitationUseCase>(),
-            Substitute.For<ICreateInvitationByEmailUseCase>(),
-            Substitute.For<IListPaginatedInvitationsUseCase>(),
-            Substitute.For<IRevokeInvitationUseCase>(),
+            new TrainerInvitationApiAdapter(createInvitation ?? Substitute.For<ICreateInvitationUseCase>(), Substitute.For<ICreateInvitationByEmailUseCase>(), Substitute.For<IListPaginatedInvitationsUseCase>(), Substitute.For<IRevokeInvitationUseCase>(), mapper),
             mapper)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
-        controller.HttpContext.Items["User"] = new User
-        {
-            Id = trainerId ?? Id<User>.New(),
-            Name = "Trainer",
-            Email = "trainer@example.com"
-        };
+        controller.HttpContext.Features.Set<IAuthenticatedAccountContextFeature>(new AuthenticatedAccountContextFeature(
+            new AuthenticatedAccountContext((trainerId ?? Id<User>.New()).Rebind<AccountReference>(), null, [], [], false, false)));
         return controller;
     }
 }

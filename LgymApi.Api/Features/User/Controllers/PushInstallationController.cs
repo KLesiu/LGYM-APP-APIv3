@@ -3,14 +3,10 @@ using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.User.Contracts;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.BuildingBlocks.Results;
+using LgymApi.Application.Identity.ApiCompatibility;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Notifications;
 using LgymApi.Application.Notifications.Models;
-using LgymApi.Domain.Security;
-using LgymApi.Domain.ValueObjects;
 using Microsoft.AspNetCore.Mvc;
-using UserEntity = LgymApi.Domain.Entities.User;
-using UserSessionEntity = LgymApi.Domain.Entities.UserSession;
 
 namespace LgymApi.Api.Features.User.Controllers;
 
@@ -18,12 +14,12 @@ namespace LgymApi.Api.Features.User.Controllers;
 [Route("api/push/installations")]
 public sealed class PushInstallationController : ControllerBase
 {
-    private readonly IPushInstallationLifecycleService _pushInstallationLifecycleService;
+    private readonly IAccountPushInstallationApiAdapter _accountPushInstallationApiAdapter;
     private readonly IMapper _mapper;
 
-    public PushInstallationController(IPushInstallationLifecycleService pushInstallationLifecycleService, IMapper mapper)
+    public PushInstallationController(IAccountPushInstallationApiAdapter accountPushInstallationApiAdapter, IMapper mapper)
     {
-        _pushInstallationLifecycleService = pushInstallationLifecycleService;
+        _accountPushInstallationApiAdapter = accountPushInstallationApiAdapter;
         _mapper = mapper;
     }
 
@@ -39,9 +35,10 @@ public sealed class PushInstallationController : ControllerBase
             request.Environment,
             request.PermissionStatus);
 
-        var result = await _pushInstallationLifecycleService.RegisterAsync(
-            HttpContext.GetCurrentUser()?.Id,
-            ParseCurrentSessionId(),
+        var accountContext = HttpContext.GetAuthenticatedAccountContext();
+        var result = await _accountPushInstallationApiAdapter.RegisterAsync(
+            accountContext?.Id,
+            accountContext?.SessionId,
             input,
             cancellationToken);
         if (result.IsFailure)
@@ -56,9 +53,10 @@ public sealed class PushInstallationController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Unregister([FromBody] PushInstallationActionRequest request, CancellationToken cancellationToken = default)
     {
-        var result = await _pushInstallationLifecycleService.UnregisterAsync(
-            HttpContext.GetCurrentUser()?.Id,
-            ParseCurrentSessionId(),
+        var accountContext = HttpContext.GetAuthenticatedAccountContext();
+        var result = await _accountPushInstallationApiAdapter.UnregisterAsync(
+            accountContext?.Id,
+            accountContext?.SessionId,
             new PushInstallationActionInput(request.InstallationId),
             cancellationToken);
         if (result.IsFailure)
@@ -73,9 +71,10 @@ public sealed class PushInstallationController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Disassociate([FromBody] PushInstallationActionRequest request, CancellationToken cancellationToken = default)
     {
-        var result = await _pushInstallationLifecycleService.DisassociateAsync(
-            HttpContext.GetCurrentUser()?.Id,
-            ParseCurrentSessionId(),
+        var accountContext = HttpContext.GetAuthenticatedAccountContext();
+        var result = await _accountPushInstallationApiAdapter.DisassociateAsync(
+            accountContext?.Id,
+            accountContext?.SessionId,
             new PushInstallationActionInput(request.InstallationId),
             cancellationToken);
         if (result.IsFailure)
@@ -84,18 +83,5 @@ public sealed class PushInstallationController : ControllerBase
         }
 
         return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Updated));
-    }
-
-    private Id<UserSessionEntity>? ParseCurrentSessionId()
-    {
-        var rawSessionId = HttpContext.User.FindFirst(AuthConstants.ClaimNames.SessionId)?.Value;
-        if (string.IsNullOrWhiteSpace(rawSessionId))
-        {
-            return null;
-        }
-
-        return Id<UserSessionEntity>.TryParse(rawSessionId, out var parsedSessionId)
-            ? parsedSessionId
-            : null;
     }
 }

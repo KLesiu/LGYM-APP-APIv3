@@ -10,12 +10,12 @@ namespace LgymApi.Application.Coaching.ManagedPlans.List;
 
 internal sealed class ListManagedPlansUseCase : IListManagedPlansUseCase
 {
-    private readonly ICoachingRelationshipAccessService _relationshipAccess;
+    private readonly IMarkerCoachingRelationshipAccessService _relationshipAccess;
     private readonly OwnerListUseCase _owner;
     private readonly IMapper _mapper;
 
     public ListManagedPlansUseCase(
-        ICoachingRelationshipAccessService relationshipAccess,
+        IMarkerCoachingRelationshipAccessService relationshipAccess,
         OwnerListUseCase owner,
         IMapper mapper)
     {

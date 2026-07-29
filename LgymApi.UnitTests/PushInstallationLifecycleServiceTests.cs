@@ -7,22 +7,24 @@ using LgymApi.Application.Notifications.Repositories;
 using LgymApi.Application.Repositories;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using LgymApi.Resources;
 using NSubstitute;
+using LgymApi.UnitTests.Fakes;
 
 namespace LgymApi.UnitTests;
 
 [TestFixture]
 public sealed class PushInstallationLifecycleServiceTests
 {
-    private IPushInstallationRepository _pushInstallationRepository = null!;
+    private ConfigurablePushInstallationRepository _pushInstallationRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private PushInstallationLifecycleService _service = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _pushInstallationRepository = Substitute.For<IPushInstallationRepository>();
+        _pushInstallationRepository = new ConfigurablePushInstallationRepository();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _service = new PushInstallationLifecycleService(_pushInstallationRepository, _unitOfWork);
     }
@@ -41,9 +43,11 @@ public sealed class PushInstallationLifecycleServiceTests
         var afterRegistration = DateTimeOffset.UtcNow;
 
         result.IsSuccess.Should().BeTrue();
-        await _pushInstallationRepository.Received(1).UpsertForUserSessionAsync(
-            Arg.Is<PushInstallationRegistration>(registration =>
-                registration.InstallationId == "device-1"
+        _pushInstallationRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IPushInstallationRepository.UpsertForUserSessionAsync)
+                && call.Argument is PushInstallationRegistration registration
+                && registration.InstallationId == "device-1"
                 && registration.Platform == "ios"
                 && registration.FcmToken == "token-1"
                 && registration.AppVersion == "2.0.0"
@@ -53,8 +57,9 @@ public sealed class PushInstallationLifecycleServiceTests
                 && registration.SessionId == sessionId
                 && registration.LastSeenAt.Offset == TimeSpan.Zero
                 && registration.LastSeenAt >= beforeRegistration
-                && registration.LastSeenAt <= afterRegistration),
-            Arg.Any<CancellationToken>());
+                && registration.LastSeenAt <= afterRegistration)
+            .Should()
+            .ContainSingle();
         await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -71,11 +76,14 @@ public sealed class PushInstallationLifecycleServiceTests
             new RegisterPushInstallationInput("device-1", "android", "token-1", appVersion, "development", permissionStatus));
 
         result.IsSuccess.Should().BeTrue();
-        await _pushInstallationRepository.Received(1).UpsertForUserSessionAsync(
-            Arg.Is<PushInstallationRegistration>(registration =>
-                registration.AppVersion == null
-                && registration.PermissionStatus == null),
-            Arg.Any<CancellationToken>());
+        _pushInstallationRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IPushInstallationRepository.UpsertForUserSessionAsync)
+                && call.Argument is PushInstallationRegistration registration
+                && registration.AppVersion == null
+                && registration.PermissionStatus == null)
+            .Should()
+            .ContainSingle();
         await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -89,9 +97,7 @@ public sealed class PushInstallationLifecycleServiceTests
 
         result.Error.Should().BeOfType<UserUnauthorizedError>();
         result.Error.Message.Should().Be(Messages.Unauthorized);
-        await _pushInstallationRepository.DidNotReceive().UpsertForUserSessionAsync(
-            Arg.Any<PushInstallationRegistration>(),
-            Arg.Any<CancellationToken>());
+        _pushInstallationRepository.Calls.Should().NotContain(call => call.Method == nameof(IPushInstallationRepository.UpsertForUserSessionAsync));
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -105,9 +111,7 @@ public sealed class PushInstallationLifecycleServiceTests
 
         result.Error.Should().BeOfType<UserUnauthorizedError>();
         result.Error.Message.Should().Be(Messages.Unauthorized);
-        await _pushInstallationRepository.DidNotReceive().UpsertForUserSessionAsync(
-            Arg.Any<PushInstallationRegistration>(),
-            Arg.Any<CancellationToken>());
+        _pushInstallationRepository.Calls.Should().NotContain(call => call.Method == nameof(IPushInstallationRepository.UpsertForUserSessionAsync));
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -136,9 +140,7 @@ public sealed class PushInstallationLifecycleServiceTests
 
         result.Error.Should().BeOfType<InvalidUserError>();
         result.Error.Message.Should().Be(Messages.FieldRequired);
-        await _pushInstallationRepository.DidNotReceive().UpsertForUserSessionAsync(
-            Arg.Any<PushInstallationRegistration>(),
-            Arg.Any<CancellationToken>());
+        _pushInstallationRepository.Calls.Should().NotContain(call => call.Method == nameof(IPushInstallationRepository.UpsertForUserSessionAsync));
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -153,16 +155,19 @@ public sealed class PushInstallationLifecycleServiceTests
         var afterUnregister = DateTimeOffset.UtcNow;
 
         result.IsSuccess.Should().BeTrue();
-        await _pushInstallationRepository.Received(1).DisableBoundForUserOrSessionAsync(
-            "device-1",
-            userId,
-            sessionId,
-            Arg.Is<DateTimeOffset>(disabledAt =>
-                disabledAt.Offset == TimeSpan.Zero
-                && disabledAt >= beforeUnregister
-                && disabledAt <= afterUnregister),
-            "Unregistered",
-            Arg.Any<CancellationToken>());
+        _pushInstallationRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IPushInstallationRepository.DisableBoundForUserOrSessionAsync)
+                && call.Argument is ValueTuple<string, Id<User>, Id<UserSession>, DateTimeOffset, string> arguments
+                && arguments.Item1 == "device-1"
+                && arguments.Item2 == userId
+                && arguments.Item3 == sessionId
+                && arguments.Item4.Offset == TimeSpan.Zero
+                && arguments.Item4 >= beforeUnregister
+                && arguments.Item4 <= afterUnregister
+                && arguments.Item5 == "Unregistered")
+            .Should()
+            .ContainSingle();
         await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -177,15 +182,18 @@ public sealed class PushInstallationLifecycleServiceTests
         var afterDisassociate = DateTimeOffset.UtcNow;
 
         result.IsSuccess.Should().BeTrue();
-        await _pushInstallationRepository.Received(1).DisassociateBoundForUserOrSessionAsync(
-            "device-1",
-            userId,
-            sessionId,
-            Arg.Is<DateTimeOffset>(lastSeenAt =>
-                lastSeenAt.Offset == TimeSpan.Zero
-                && lastSeenAt >= beforeDisassociate
-                && lastSeenAt <= afterDisassociate),
-            Arg.Any<CancellationToken>());
+        _pushInstallationRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IPushInstallationRepository.DisassociateBoundForUserOrSessionAsync)
+                && call.Argument is ValueTuple<string, Id<User>, Id<UserSession>, DateTimeOffset> arguments
+                && arguments.Item1 == "device-1"
+                && arguments.Item2 == userId
+                && arguments.Item3 == sessionId
+                && arguments.Item4.Offset == TimeSpan.Zero
+                && arguments.Item4 >= beforeDisassociate
+                && arguments.Item4 <= afterDisassociate)
+            .Should()
+            .ContainSingle();
         await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -204,19 +212,8 @@ public sealed class PushInstallationLifecycleServiceTests
         unregisterResult.Error.Message.Should().Be(Messages.FieldRequired);
         disassociateResult.Error.Should().BeOfType<InvalidUserError>();
         disassociateResult.Error.Message.Should().Be(Messages.FieldRequired);
-        await _pushInstallationRepository.DidNotReceive().DisableBoundForUserOrSessionAsync(
-            Arg.Any<string>(),
-            Arg.Any<Id<User>>(),
-            Arg.Any<Id<UserSession>>(),
-            Arg.Any<DateTimeOffset>(),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>());
-        await _pushInstallationRepository.DidNotReceive().DisassociateBoundForUserOrSessionAsync(
-            Arg.Any<string>(),
-            Arg.Any<Id<User>>(),
-            Arg.Any<Id<UserSession>>(),
-            Arg.Any<DateTimeOffset>(),
-            Arg.Any<CancellationToken>());
+        _pushInstallationRepository.Calls.Should().NotContain(call => call.Method == nameof(IPushInstallationRepository.DisableBoundForUserOrSessionAsync));
+        _pushInstallationRepository.Calls.Should().NotContain(call => call.Method == nameof(IPushInstallationRepository.DisassociateBoundForUserOrSessionAsync));
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -232,19 +229,8 @@ public sealed class PushInstallationLifecycleServiceTests
         unregisterResult.Error.Message.Should().Be(Messages.Unauthorized);
         disassociateResult.Error.Should().BeOfType<UserUnauthorizedError>();
         disassociateResult.Error.Message.Should().Be(Messages.Unauthorized);
-        await _pushInstallationRepository.DidNotReceive().DisableBoundForUserOrSessionAsync(
-            Arg.Any<string>(),
-            Arg.Any<Id<User>>(),
-            Arg.Any<Id<UserSession>>(),
-            Arg.Any<DateTimeOffset>(),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>());
-        await _pushInstallationRepository.DidNotReceive().DisassociateBoundForUserOrSessionAsync(
-            Arg.Any<string>(),
-            Arg.Any<Id<User>>(),
-            Arg.Any<Id<UserSession>>(),
-            Arg.Any<DateTimeOffset>(),
-            Arg.Any<CancellationToken>());
+        _pushInstallationRepository.Calls.Should().NotContain(call => call.Method == nameof(IPushInstallationRepository.DisableBoundForUserOrSessionAsync));
+        _pushInstallationRepository.Calls.Should().NotContain(call => call.Method == nameof(IPushInstallationRepository.DisassociateBoundForUserOrSessionAsync));
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -260,19 +246,8 @@ public sealed class PushInstallationLifecycleServiceTests
         unregisterResult.Error.Message.Should().Be(Messages.Unauthorized);
         disassociateResult.Error.Should().BeOfType<UserUnauthorizedError>();
         disassociateResult.Error.Message.Should().Be(Messages.Unauthorized);
-        await _pushInstallationRepository.DidNotReceive().DisableBoundForUserOrSessionAsync(
-            Arg.Any<string>(),
-            Arg.Any<Id<User>>(),
-            Arg.Any<Id<UserSession>>(),
-            Arg.Any<DateTimeOffset>(),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>());
-        await _pushInstallationRepository.DidNotReceive().DisassociateBoundForUserOrSessionAsync(
-            Arg.Any<string>(),
-            Arg.Any<Id<User>>(),
-            Arg.Any<Id<UserSession>>(),
-            Arg.Any<DateTimeOffset>(),
-            Arg.Any<CancellationToken>());
+        _pushInstallationRepository.Calls.Should().NotContain(call => call.Method == nameof(IPushInstallationRepository.DisableBoundForUserOrSessionAsync));
+        _pushInstallationRepository.Calls.Should().NotContain(call => call.Method == nameof(IPushInstallationRepository.DisassociateBoundForUserOrSessionAsync));
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -281,59 +256,58 @@ public sealed class PushInstallationLifecycleServiceTests
     {
         var userId = CreateUserId();
         var sessionId = Id<UserSession>.New();
-        _pushInstallationRepository.DisableBoundForUserOrSessionAsync(
-                Arg.Any<string>(),
-                Arg.Any<Id<User>>(),
-                Arg.Any<Id<UserSession>>(),
-                Arg.Any<DateTimeOffset>(),
-                Arg.Any<string>(),
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(false));
-        _pushInstallationRepository.DisassociateBoundForUserOrSessionAsync(
-                Arg.Any<string>(),
-                Arg.Any<Id<User>>(),
-                Arg.Any<Id<UserSession>>(),
-                Arg.Any<DateTimeOffset>(),
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(false));
+        _pushInstallationRepository.DisableBoundForUserOrSession = (_, _, _, _, _, _) => Task.FromResult(false);
+        _pushInstallationRepository.DisassociateBoundForUserOrSession = (_, _, _, _, _) => Task.FromResult(false);
 
         var unregisterResult = await _service.UnregisterAsync(userId, sessionId, new PushInstallationActionInput("device-1"));
         var disassociateResult = await _service.DisassociateAsync(userId, sessionId, new PushInstallationActionInput("device-1"));
 
         unregisterResult.IsSuccess.Should().BeTrue();
         disassociateResult.IsSuccess.Should().BeTrue();
-        await _pushInstallationRepository.Received(1).DisableBoundForUserOrSessionAsync(
-            "device-1",
-            userId,
-            sessionId,
-            Arg.Any<DateTimeOffset>(),
-            "Unregistered",
-            Arg.Any<CancellationToken>());
-        await _pushInstallationRepository.Received(1).DisassociateBoundForUserOrSessionAsync(
-            "device-1",
-            userId,
-            sessionId,
-            Arg.Any<DateTimeOffset>(),
-            Arg.Any<CancellationToken>());
+        _pushInstallationRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IPushInstallationRepository.DisableBoundForUserOrSessionAsync)
+                && call.Argument is ValueTuple<string, Id<User>, Id<UserSession>, DateTimeOffset, string> disableArguments
+                && disableArguments.Item1 == "device-1"
+                && disableArguments.Item2 == userId
+                && disableArguments.Item3 == sessionId
+                && disableArguments.Item5 == "Unregistered")
+            .Should()
+            .ContainSingle();
+        _pushInstallationRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IPushInstallationRepository.DisassociateBoundForUserOrSessionAsync)
+                && call.Argument is ValueTuple<string, Id<User>, Id<UserSession>, DateTimeOffset> disassociateArguments
+                && disassociateArguments.Item1 == "device-1"
+                && disassociateArguments.Item2 == userId
+                && disassociateArguments.Item3 == sessionId)
+            .Should()
+            .ContainSingle();
         await _unitOfWork.Received(2).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     [Test]
     public async Task StageDisassociateForSessionAsync_StagesWithoutCommitting()
     {
-        var sessionId = Id<UserSession>.New();
+        var sessionId = Id<AccountSessionReference>.New();
         var beforeDisassociate = DateTimeOffset.UtcNow;
+        using var cancellationSource = new CancellationTokenSource();
+        var cancellationToken = cancellationSource.Token;
 
-        await _service.StageDisassociateForSessionAsync(sessionId);
+        await _service.StageDisassociateForSessionAsync(sessionId, cancellationToken);
         var afterDisassociate = DateTimeOffset.UtcNow;
 
-        await _pushInstallationRepository.Received(1).DisassociateForSessionAsync(
-            sessionId,
-            Arg.Is<DateTimeOffset>(lastSeenAt =>
-                lastSeenAt.Offset == TimeSpan.Zero
-                && lastSeenAt >= beforeDisassociate
-                && lastSeenAt <= afterDisassociate),
-            Arg.Any<CancellationToken>());
+        _pushInstallationRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IPushInstallationRepository.DisassociateForSessionAsync)
+                && call.Argument is ValueTuple<Id<AccountSessionReference>, DateTimeOffset> arguments
+                && arguments.Item1 == sessionId
+                && arguments.Item2.Offset == TimeSpan.Zero
+                && arguments.Item2 >= beforeDisassociate
+                && arguments.Item2 <= afterDisassociate
+                && call.CancellationToken == cancellationToken)
+            .Should()
+            .ContainSingle();
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 

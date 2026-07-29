@@ -2,7 +2,7 @@ using FluentAssertions;
 using LgymApi.Application.Notifications.Contracts.Events;
 using LgymApi.BackgroundWorker.Common.Notifications;
 using LgymApi.BackgroundWorker.Common.Notifications.Models;
-using LgymApi.BackgroundWorker.Notifications;
+using LgymApi.Notifications;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Notifications;
 using LgymApi.Domain.ValueObjects;

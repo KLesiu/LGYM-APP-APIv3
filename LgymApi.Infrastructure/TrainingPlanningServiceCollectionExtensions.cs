@@ -1,5 +1,4 @@
-using LgymApi.Application.Repositories;
-using LgymApi.Application.TrainingPlanning.Plan.ActivePlanPointer;
+using LgymApi.Application.TrainingPlanning.PlanDay.Persistence;
 using LgymApi.Infrastructure.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -9,10 +8,7 @@ public static partial class ServiceCollectionExtensions
 {
     public static IServiceCollection AddTrainingPlanningInfrastructure(this IServiceCollection services)
     {
-        services.AddScoped<IPlanRepository, PlanRepository>();
-        services.AddScoped<IPlanDayRepository, PlanDayRepository>();
-        services.AddScoped<IPlanDayExerciseRepository, PlanDayExerciseRepository>();
-        services.AddScoped<IActivePlanPointerStore, ActivePlanPointerStore>();
+        services.AddScoped<IPlanDayPersistence, PlanDayPersistence>();
 
         return services;
     }

@@ -22,11 +22,11 @@ public sealed class WorkoutProgressDashboardReadService : IWorkoutProgressDashbo
         _progress = progress;
     }
 
-    public Task<Result<List<DateTime>, AppError>> GetTrainingDatesAsync(Id<LgymApi.Domain.Entities.User> traineeId, CancellationToken cancellationToken = default)
+    public Task<Result<List<DateTime>, AppError>> GetTrainingDatesAsync(Id<LgymApi.Identity.Contracts.AccountReference> traineeId, CancellationToken cancellationToken = default)
         => _trainingHistory.GetTrainingDatesAsync(traineeId, cancellationToken);
 
     public async Task<Result<List<WorkoutProgressDashboardTrainingReadModel>, AppError>> GetTrainingByDateAsync(
-        Id<LgymApi.Domain.Entities.User> traineeId,
+        Id<LgymApi.Identity.Contracts.AccountReference> traineeId,
         DateTime createdAt,
         CancellationToken cancellationToken = default)
     {
@@ -37,7 +37,7 @@ public sealed class WorkoutProgressDashboardReadService : IWorkoutProgressDashbo
     }
 
     public Task<Result<List<ExerciseScoreChartPoint>, AppError>> GetExerciseScoreChartAsync(
-        Id<LgymApi.Domain.Entities.User> traineeId,
+        Id<LgymApi.Identity.Contracts.AccountReference> traineeId,
         string exerciseId,
         CancellationToken cancellationToken = default)
     {
@@ -45,13 +45,13 @@ public sealed class WorkoutProgressDashboardReadService : IWorkoutProgressDashbo
         return _progress.GetExerciseScoreChartAsync(traineeId, parsedExerciseId, cancellationToken);
     }
 
-    public Task<Result<List<EloChartPoint>, AppError>> GetEloChartAsync(Id<LgymApi.Domain.Entities.User> traineeId, CancellationToken cancellationToken = default)
+    public Task<Result<List<EloChartPoint>, AppError>> GetEloChartAsync(Id<LgymApi.Identity.Contracts.AccountReference> traineeId, CancellationToken cancellationToken = default)
         => _progress.GetEloChartAsync(traineeId, cancellationToken);
 
-    public Task<Result<List<MainRecordReadModel>, AppError>> GetMainRecordHistoryAsync(Id<LgymApi.Domain.Entities.User> traineeId, CancellationToken cancellationToken = default)
+    public Task<Result<List<MainRecordReadModel>, AppError>> GetMainRecordHistoryAsync(Id<LgymApi.Identity.Contracts.AccountReference> traineeId, CancellationToken cancellationToken = default)
         => _progress.GetMainRecordHistoryAsync(traineeId, cancellationToken);
 
-    public Task<Result<List<MainRecordBestReadModel>, AppError>> GetBestMainRecordsAsync(Id<LgymApi.Domain.Entities.User> traineeId, CancellationToken cancellationToken = default)
+    public Task<Result<List<MainRecordBestReadModel>, AppError>> GetBestMainRecordsAsync(Id<LgymApi.Identity.Contracts.AccountReference> traineeId, CancellationToken cancellationToken = default)
         => _progress.GetBestMainRecordsAsync(traineeId, cancellationToken);
 
     private static WorkoutProgressDashboardTrainingReadModel MapTraining(TrainingByDateDetails training)
@@ -60,7 +60,7 @@ public sealed class WorkoutProgressDashboardReadService : IWorkoutProgressDashbo
             training.Id.ToString(),
             training.TypePlanDayId.ToString(),
             training.CreatedAt,
-            training.PlanDay == null ? null : new WorkoutProgressDashboardPlanDayReadModel(training.PlanDay.Id, training.PlanDay.Name),
+            training.PlanDay == null ? null : new WorkoutProgressDashboardPlanDayReadModel(training.PlanDay.PlanDayId.ToString(), training.PlanDay.Name),
             training.Gym,
             training.Exercises.Select(MapExercise).ToList());
     }
@@ -80,8 +80,8 @@ public sealed class WorkoutProgressDashboardReadService : IWorkoutProgressDashbo
             exercise.ScoresDetails.Select(score => new WorkoutProgressDashboardExerciseScoreReadModel(
                 score.Id.ToString(),
                 score.ExerciseId.ToString(),
-                score.Weight.Value,
-                score.Weight.Unit,
+                score.Weight,
+                score.Unit,
                 score.Reps,
                 score.Series)).ToList());
     }

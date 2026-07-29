@@ -8,7 +8,7 @@ using LgymApi.Resources;
 using Microsoft.AspNetCore.Mvc;
 using PhotoEntity = LgymApi.Domain.Entities.Photo;
 using ReportRequestEntity = LgymApi.Domain.Entities.ReportRequest;
-using UserEntity = LgymApi.Domain.Entities.User;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.Api.Features.Trainer.Controllers;
 
@@ -24,9 +24,8 @@ public sealed partial class TrainerReportingController
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var currentUser = HttpContext.GetCurrentUser();
-        var result = await _reportingService.InitiatePhotoUploadAsync(
-            currentUser!,
+        var result = await _photos.InitiateAsync(
+            HttpContext.GetAuthenticatedAccountContext()!,
             new InitiatePhotoUploadCommand
             {
                 ReportRequestId = parsedRequestId,
@@ -59,8 +58,7 @@ public sealed partial class TrainerReportingController
             return BadRequest(_mapper.Map<string, ResponseMessageDto>("Invalid photo ID format"));
         }
 
-        var currentUser = HttpContext.GetCurrentUser();
-        var result = await _reportingService.GetSignedReadUrlAsync(currentUser!, parsedPhotoId, cancellationToken);
+        var result = await _photos.GetSignedReadUrlAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedPhotoId, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -80,9 +78,8 @@ public sealed partial class TrainerReportingController
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var currentUser = HttpContext.GetCurrentUser();
-        var result = await _reportingService.CompletePhotoUploadAsync(
-            currentUser!,
+        var result = await _photos.CompleteAsync(
+            HttpContext.GetAuthenticatedAccountContext()!,
             new CompletePhotoUploadCommand
             {
                 StorageKey = request.StorageKey,
@@ -107,10 +104,10 @@ public sealed partial class TrainerReportingController
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetPhotoHistory([FromQuery] string? traineeId, [FromQuery] string? requestId, CancellationToken cancellationToken = default)
     {
-        Id<UserEntity>? parsedTraineeId = null;
+        Id<AccountReference>? parsedTraineeId = null;
         if (!string.IsNullOrWhiteSpace(traineeId))
         {
-            if (!Id<UserEntity>.TryParse(traineeId, out var tempId))
+            if (!Id<AccountReference>.TryParse(traineeId, out var tempId))
             {
                 return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
             }
@@ -129,15 +126,7 @@ public sealed partial class TrainerReportingController
             parsedRequestId = tempId;
         }
 
-        var currentUser = HttpContext.GetCurrentUser();
-        var result = await _reportingService.GetPhotoHistoryAsync(
-            currentUser!,
-            new GetPhotoHistoryCommand
-            {
-                TraineeId = parsedTraineeId,
-                RequestId = parsedRequestId
-            },
-            cancellationToken);
+        var result = await _photos.GetHistoryAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTraineeId, parsedRequestId, cancellationToken);
 
         if (result.IsFailure)
         {

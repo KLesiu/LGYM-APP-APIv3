@@ -4,11 +4,10 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
-using LgymApi.Application.Options;
 using LgymApi.Application.Repositories;
 using LgymApi.BackgroundWorker.Common.Notifications;
 using LgymApi.BackgroundWorker.Common.Notifications.Models;
-using LgymApi.BackgroundWorker.Notifications;
+using LgymApi.Application.Notifications.Email;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.Notifications;
@@ -16,6 +15,7 @@ using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Jobs;
 using LgymApi.Infrastructure.Repositories;
+using LgymApi.Notifications.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -32,7 +32,7 @@ public sealed class InvitationEmailJobTests
         var handler = new FakeEmailJobHandler();
         var job = new InvitationEmailJob(handler);
 
-        await job.ExecuteAsync(notificationId);
+        await job.ExecuteAsync(notificationId.ToString());
 
         handler.Calls.Should().Be(1);
         handler.LastNotificationId.Should().Be(notificationId);
@@ -98,7 +98,7 @@ public sealed class InvitationEmailJobTests
         var message = CreateMessage(EmailNotificationStatus.Sending, staleLease);
         db.NotificationMessages.Add(message);
         await db.SaveChangesAsync();
-        var repository = new EmailNotificationLogRepository(db, new BackgroundCommandOptions { EmailSendLeaseSeconds = 30 });
+        var repository = new EmailNotificationLogRepository(db, new EmailNotificationLeaseSettings(30));
 
         var claimed = await repository.TryTransitionToSendingAsync(message.Id);
 
@@ -186,7 +186,7 @@ public sealed class InvitationEmailJobTests
             new NoopEmailMetrics(),
             NullLogger<EmailJobHandlerService>.Instance);
 
-        await Task.WhenAll(handler.ProcessAsync(notification.Id), handler.ProcessAsync(notification.Id));
+        await Task.WhenAll(handler.ProcessAsync(notification.Id.ToString()), handler.ProcessAsync(notification.Id.ToString()));
 
         sender.SendCalls.Should().Be(1);
     }
@@ -213,10 +213,15 @@ public sealed class InvitationEmailJobTests
         public int Calls { get; private set; }
         public Id<NotificationMessage> LastNotificationId { get; private set; }
 
-        public Task ProcessAsync(Id<NotificationMessage> notificationId, CancellationToken cancellationToken = default)
+        public Task ProcessAsync(string notificationId, CancellationToken cancellationToken = default)
         {
             Calls += 1;
-            LastNotificationId = notificationId;
+            if (!Id<NotificationMessage>.TryParse(notificationId, out var parsedNotificationId))
+            {
+                throw new FormatException("Notification ID must be a valid ID.");
+            }
+
+            LastNotificationId = parsedNotificationId;
             return Task.CompletedTask;
         }
     }

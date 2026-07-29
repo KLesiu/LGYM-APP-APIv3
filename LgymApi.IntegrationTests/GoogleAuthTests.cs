@@ -10,14 +10,13 @@ using LgymApi.TestUtils;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using NSubstitute;
 
 namespace LgymApi.IntegrationTests;
 
 [TestFixture]
 public sealed class GoogleAuthTests : IntegrationTestBase
 {
-    private IGoogleTokenValidator _googleTokenValidator = null!;
+    private ConfigurableGoogleTokenValidator _googleTokenValidator = null!;
     private CustomWebApplicationFactory _baseFactory = null!;
     private HttpClient _client = null!;
     private Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> _factory = null!;
@@ -25,7 +24,7 @@ public sealed class GoogleAuthTests : IntegrationTestBase
     [SetUp]
     public void SetUpGoogleAuthHost()
     {
-        _googleTokenValidator = Substitute.For<IGoogleTokenValidator>();
+        _googleTokenValidator = new ConfigurableGoogleTokenValidator();
 
         _baseFactory = new CustomWebApplicationFactory();
         _factory = _baseFactory.WithWebHostBuilder(builder =>
@@ -33,7 +32,7 @@ public sealed class GoogleAuthTests : IntegrationTestBase
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IGoogleTokenValidator>();
-                services.AddSingleton(_googleTokenValidator);
+                services.AddSingleton<IGoogleTokenValidator>(_googleTokenValidator);
             });
         });
 
@@ -54,8 +53,7 @@ public sealed class GoogleAuthTests : IntegrationTestBase
         const string email = "google-new@example.com";
         const string subject = "google-sub-new";
 
-        _googleTokenValidator.ValidateAsync("valid-token", Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GoogleTokenPayload(subject, email, true, "Google New", null));
+        _googleTokenValidator.ReturnFor("valid-token", new GoogleTokenPayload(subject, email, true, "Google New", null));
 
         var response = await _client.PostAsJsonAsync("/api/auth/google", new { idToken = "valid-token" });
 
@@ -85,8 +83,7 @@ public sealed class GoogleAuthTests : IntegrationTestBase
         var user = await SeedUserAsync(name: "linkeduser", email: email);
         await SeedGoogleExternalLoginAsync(user.Id, subject, email);
 
-        _googleTokenValidator.ValidateAsync("valid-token", Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GoogleTokenPayload(subject, email, true, "Google Linked", null));
+        _googleTokenValidator.ReturnFor("valid-token", new GoogleTokenPayload(subject, email, true, "Google Linked", null));
 
         var response = await _client.PostAsJsonAsync("/api/auth/google", new { idToken = "valid-token" });
 
@@ -109,8 +106,7 @@ public sealed class GoogleAuthTests : IntegrationTestBase
 
         await SeedUserAsync(name: "localuser", email: email);
 
-        _googleTokenValidator.ValidateAsync("valid-token", Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GoogleTokenPayload("google-sub-collision", email, true, "Google Collision", null));
+        _googleTokenValidator.ReturnFor("valid-token", new GoogleTokenPayload("google-sub-collision", email, true, "Google Collision", null));
 
         var response = await _client.PostAsJsonAsync("/api/auth/google", new { idToken = "valid-token" });
 
@@ -120,8 +116,7 @@ public sealed class GoogleAuthTests : IntegrationTestBase
     [Test]
     public async Task POST_AuthGoogle_InvalidToken_Returns401()
     {
-        _googleTokenValidator.ValidateAsync("invalid-token", Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns((GoogleTokenPayload?)null);
+        _googleTokenValidator.ReturnFor("invalid-token", null);
 
         var response = await _client.PostAsJsonAsync("/api/auth/google", new { idToken = "invalid-token" });
 
@@ -131,8 +126,7 @@ public sealed class GoogleAuthTests : IntegrationTestBase
     [Test]
     public async Task POST_AuthGoogle_UnverifiedEmail_Returns401()
     {
-        _googleTokenValidator.ValidateAsync("valid-token", Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GoogleTokenPayload("google-sub-unverified", "unverified@example.com", false, "Google Unverified", null));
+        _googleTokenValidator.ReturnFor("valid-token", new GoogleTokenPayload("google-sub-unverified", "unverified@example.com", false, "Google Unverified", null));
 
         var response = await _client.PostAsJsonAsync("/api/auth/google", new { idToken = "valid-token" });
 
@@ -156,8 +150,7 @@ public sealed class GoogleAuthTests : IntegrationTestBase
         var user = await SeedUserAsync(name: "linkuser", email: email);
         SetAuthorizationHeader(user.Id);
 
-        _googleTokenValidator.ValidateAsync("valid-token", Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GoogleTokenPayload(subject, email, true, "Google Link", null));
+        _googleTokenValidator.ReturnFor("valid-token", new GoogleTokenPayload(subject, email, true, "Google Link", null));
 
         var response = await _client.PostAsJsonAsync("/api/account/link-google", new { idToken = "valid-token" });
 
@@ -174,8 +167,7 @@ public sealed class GoogleAuthTests : IntegrationTestBase
     [Test]
     public async Task POST_LinkGoogle_Unauthenticated_Returns401()
     {
-        _googleTokenValidator.ValidateAsync("valid-token", Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GoogleTokenPayload("google-sub-unauth", "unauth@example.com", true, "Google Unauth", null));
+        _googleTokenValidator.ReturnFor("valid-token", new GoogleTokenPayload("google-sub-unauth", "unauth@example.com", true, "Google Unauth", null));
 
         var response = await _client.PostAsJsonAsync("/api/account/link-google", new { idToken = "valid-token" });
 
@@ -194,8 +186,7 @@ public sealed class GoogleAuthTests : IntegrationTestBase
         var currentUser = await SeedUserAsync(name: "currentuser", email: "current@example.com");
         SetAuthorizationHeader(currentUser.Id);
 
-        _googleTokenValidator.ValidateAsync("valid-token", Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GoogleTokenPayload(subject, "current@example.com", true, "Google Conflict", null));
+        _googleTokenValidator.ReturnFor("valid-token", new GoogleTokenPayload(subject, "current@example.com", true, "Google Conflict", null));
 
         var response = await _client.PostAsJsonAsync("/api/account/link-google", new { idToken = "valid-token" });
 
@@ -276,8 +267,7 @@ public sealed class GoogleAuthTests : IntegrationTestBase
         var unlinkResponse = await _client.PostAsync("/api/account/unlink-google", content: null);
         unlinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        _googleTokenValidator.ValidateAsync("valid-token", Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new GoogleTokenPayload(subject, email, true, "Google Relink", null));
+        _googleTokenValidator.ReturnFor("valid-token", new GoogleTokenPayload(subject, email, true, "Google Relink", null));
 
         var response = await _client.PostAsJsonAsync("/api/account/link-google", new { idToken = "valid-token" });
 
@@ -436,6 +426,21 @@ public sealed class GoogleAuthTests : IntegrationTestBase
             signingCredentials: credentials);
 
         return new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private sealed class ConfigurableGoogleTokenValidator : IGoogleTokenValidator
+    {
+        private readonly Dictionary<string, GoogleTokenPayload?> _results = [];
+
+        public void ReturnFor(string idToken, GoogleTokenPayload? payload)
+        {
+            _results[idToken] = payload;
+        }
+
+        public Task<GoogleTokenPayload?> ValidateAsync(string idToken, string? accessToken, CancellationToken ct)
+        {
+            return Task.FromResult(_results.GetValueOrDefault(idToken));
+        }
     }
 
     private sealed class LoginResponseDto

@@ -81,7 +81,7 @@ public sealed class PasswordRecoveryContractGuardTests
     [Test]
     public void PasswordRecoveryContracts_DoNotExposeForbiddenDependencies()
     {
-        var (_, compilation, syntaxTrees) = ArchitectureTestHelpers.PrepareCompilation("LgymApi.Application");
+        var (_, compilation, syntaxTrees) = ArchitectureTestHelpers.PrepareCompilation("LgymApi.Identity");
         var contractTrees = syntaxTrees
             .Where(tree => ArchitectureTestHelpers.NormalizePath(tree.FilePath)
                 .Contains("/Features/PasswordReset/Contracts/", StringComparison.Ordinal))
@@ -119,8 +119,8 @@ public sealed class PasswordRecoveryContractGuardTests
 
     private static Type GetApplicationType(string metadataName)
     {
-        var type = typeof(LgymApi.Application.ServiceCollectionExtensions).Assembly.GetType(metadataName);
-        type.Should().NotBeNull($"{metadataName} must be defined by the Application assembly");
+        var type = typeof(LgymApi.Identity.IdentityModule).Assembly.GetType(metadataName);
+        type.Should().NotBeNull($"{metadataName} must be defined by the Identity assembly");
         return type!;
     }
 }

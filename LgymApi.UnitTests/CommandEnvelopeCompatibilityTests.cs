@@ -28,8 +28,7 @@ public sealed class CommandEnvelopeCompatibilityTests
     public void NewWriter_ToOldCompatibleFixture_WritesCanonicalIdAndGoldenPayload(LegacyCommandContract contract)
     {
         var registry = CommandContractRegistry.CreateDefault();
-        var runtimeType = typeof(LgymApi.Application.Platform.Contracts.BackgroundCommands.IActionCommand)
-            .Assembly.GetType(contract.FutureClrNameReadAlias)!;
+        var runtimeType = contract.CommandType;
         var command = JsonSerializer.Deserialize(
             contract.PayloadJson,
             runtimeType,
@@ -64,8 +63,7 @@ public sealed class CommandEnvelopeCompatibilityTests
 
         oldReader.Should().Throw<InvalidOperationException>();
         var registry = CommandContractRegistry.CreateDefault();
-        var runtimeType = typeof(LgymApi.Application.Platform.Contracts.BackgroundCommands.IActionCommand)
-            .Assembly.GetType(contract.FutureClrNameReadAlias)!;
+        var runtimeType = contract.CommandType;
 
         registry.Contracts.Select(row => row.CanonicalId)
             .Should().NotContain(contract.FutureClrNameReadAlias);

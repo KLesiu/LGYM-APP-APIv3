@@ -11,14 +11,14 @@ namespace LgymApi.UnitTests;
 public sealed class SharedSerializationOptionsCompatibilityTests
 {
     [Test]
-    public void Current_Is_Owned_By_Application_Platform()
+public void Current_Is_Owned_By_Platform()
     {
         var owner = typeof(SharedSerializationOptions);
 
         Assert.Multiple(() =>
         {
             owner.Namespace.Should().Be("LgymApi.Application.Platform.Contracts.Serialization");
-            owner.Assembly.GetName().Name.Should().Be("LgymApi.Application");
+owner.Assembly.GetName().Name.Should().Be("LgymApi.Platform");
         });
     }
 

@@ -5,6 +5,7 @@ using LgymApi.Application.Identity.Ranking;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Services;
 using LgymApi.Domain.Entities;
+using LgymApi.UnitTests.Fakes;
 using NSubstitute;
 
 namespace LgymApi.UnitTests;
@@ -15,9 +16,9 @@ public sealed class UserRankingServiceTests
     [Test]
     public async Task ChangeVisibilityInRankingAsync_UpdatesIdentityAccountAndCommits()
     {
-        var repository = Substitute.For<IUserRepository>();
+        var repository = new ConfigurableUserRepository();
         var unitOfWork = Substitute.For<IUnitOfWork>();
-        repository.UpdateAsync(Arg.Any<User>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        repository.Update = (_, _) => Task.CompletedTask;
         unitOfWork.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(1);
         var user = new User { IsVisibleInRanking = true };
         var service = new UserRankingService(repository, unitOfWork);
@@ -26,7 +27,9 @@ public sealed class UserRankingServiceTests
 
         result.IsSuccess.Should().BeTrue();
         user.IsVisibleInRanking.Should().BeFalse();
-        await repository.Received(1).UpdateAsync(user, Arg.Any<CancellationToken>());
+        repository.Calls.Should().ContainSingle(call =>
+            call.Method == nameof(IUserRepository.UpdateAsync)
+            && call.Argument == user);
         await unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -34,7 +37,7 @@ public sealed class UserRankingServiceTests
     public async Task ChangeVisibilityInRankingAsync_ReturnsInvalidUserErrorWithoutCommit_WhenCurrentUserIsMissing()
     {
         var unitOfWork = Substitute.For<IUnitOfWork>();
-        var service = new UserRankingService(Substitute.For<IUserRepository>(), unitOfWork);
+        var service = new UserRankingService(new ConfigurableUserRepository(), unitOfWork);
 
         var result = await service.ChangeVisibilityInRankingAsync(null, true);
 

@@ -7,7 +7,7 @@ using LgymApi.Application.Features.Training.Models;
 using LgymApi.Application.Features.User.Models;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.WorkoutProgress.Dashboard.Models;
-using LgymApi.Domain.Entities;
+using LgymApi.Application.WorkoutProgress.ProgressData.Models;
 using LgymApi.Domain.Enums;
 
 namespace LgymApi.Api.Mapping.Profiles;
@@ -52,8 +52,10 @@ public sealed class TrainingProfile : IMappingProfile
         configuration.CreateMap<EnrichedExercise, EnrichedExerciseDto>((source, context) => new EnrichedExerciseDto
         {
             ExerciseScoreId = source.ExerciseScoreId.ToString(),
-            ExerciseDetails = context!.Map<Exercise, ExerciseResponseDto>(source.ExerciseDetails),
-            ScoresDetails = context!.MapList<ExerciseScore, ExerciseScoreResponseDto>(source.ScoresDetails)
+            ExerciseDetails = source.ExerciseDetails == null
+                ? new ExerciseResponseDto()
+                : context!.Map<ProgressExerciseReadModel, ExerciseResponseDto>(source.ExerciseDetails),
+            ScoresDetails = context!.MapList<WorkoutExerciseScoreReadModel, ExerciseScoreResponseDto>(source.ScoresDetails)
         });
 
         configuration.CreateMap<TrainingByDateDetails, TrainingByDateDetailsDto>((source, context) => new TrainingByDateDetailsDto
@@ -63,7 +65,7 @@ public sealed class TrainingProfile : IMappingProfile
             CreatedAt = source.CreatedAt,
             PlanDay = source.PlanDay == null
                 ? new PlanDayChooseDto()
-                : new PlanDayChooseDto { Id = source.PlanDay.Id, Name = source.PlanDay.Name },
+                : new PlanDayChooseDto { Id = source.PlanDay.PlanDayId.ToString(), Name = source.PlanDay.Name },
             Gym = source.Gym,
             Exercises = context!.MapList<EnrichedExercise, EnrichedExerciseDto>(source.Exercises)
         });
@@ -104,14 +106,14 @@ public sealed class TrainingProfile : IMappingProfile
             }).ToList()
         });
 
-        configuration.CreateMap<Training, LastTrainingInfoDto>((source, context) => new LastTrainingInfoDto
+        configuration.CreateMap<WorkoutTrainingReadModel, LastTrainingInfoDto>((source, _) => new LastTrainingInfoDto
         {
             Id = source.Id.ToString(),
             TypePlanDayId = source.TypePlanDayId.ToString(),
             CreatedAt = source.CreatedAt.UtcDateTime,
             PlanDay = source.PlanDay == null
                 ? new PlanDayChooseDto()
-                : context!.Map<PlanDay, PlanDayChooseDto>(source.PlanDay)
+                : new PlanDayChooseDto { Id = source.PlanDay.PlanDayId.ToString(), Name = source.PlanDay.Name }
         });
 
     }

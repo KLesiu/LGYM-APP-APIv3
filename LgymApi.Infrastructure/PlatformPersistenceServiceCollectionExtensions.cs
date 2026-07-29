@@ -5,6 +5,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using IIdentityPersistenceContext = LgymApi.Identity.Persistence.IIdentityPersistenceContext;
+using INotificationsPersistenceContext = LgymApi.Notifications.Persistence.INotificationsPersistenceContext;
+using IPlatformPersistenceContext = LgymApi.Platform.Persistence.IPlatformPersistenceContext;
+using ICommandEnvelopeDuplicateFailureClassifier = LgymApi.Platform.Persistence.ICommandEnvelopeDuplicateFailureClassifier;
+using ITrainingPlanningPersistenceContext = LgymApi.TrainingPlanning.Persistence.ITrainingPlanningPersistenceContext;
 
 namespace LgymApi.Infrastructure;
 
@@ -30,10 +35,15 @@ public static partial class ServiceCollectionExtensions
                     .EnableDetailedErrors();
             }
         });
+        services.AddScoped<IPlatformPersistenceContext>(static provider => provider.GetRequiredService<AppDbContext>());
+        services.AddScoped<IIdentityPersistenceContext>(static provider => provider.GetRequiredService<AppDbContext>());
+        services.AddScoped<ITrainingPlanningPersistenceContext>(static provider => provider.GetRequiredService<AppDbContext>());
+        services.AddScoped<INotificationsPersistenceContext>(static provider => provider.GetRequiredService<AppDbContext>());
     }
 
     private static void AddPlatformUnitOfWork(IServiceCollection services)
     {
+        services.AddScoped<ICommandEnvelopeDuplicateFailureClassifier, CommandRuntime.NpgsqlCommandEnvelopeDuplicateFailureClassifier>();
         services.AddScoped<IUnitOfWork, EfUnitOfWork>();
     }
 }

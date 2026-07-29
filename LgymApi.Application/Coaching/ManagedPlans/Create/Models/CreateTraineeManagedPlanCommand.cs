@@ -1,9 +1,9 @@
 using LgymApi.Domain.ValueObjects;
-using UserEntity = LgymApi.Domain.Entities.User;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.Application.Coaching.ManagedPlans.Create;
 
 public sealed record CreateTraineeManagedPlanCommand(
-    Id<UserEntity> TrainerId,
-    Id<UserEntity> TraineeId,
+    Id<AccountReference> TrainerId,
+    Id<AccountReference> TraineeId,
     string Name);

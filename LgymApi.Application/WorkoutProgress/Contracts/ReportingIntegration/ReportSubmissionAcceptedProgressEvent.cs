@@ -1,6 +1,6 @@
-using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.Application.WorkoutProgress.Contracts.ReportingIntegration;
 
@@ -10,7 +10,7 @@ public sealed record ReportSubmissionAcceptedProgressEvent(
     string ReportSubmissionId,
     string CorrelationId,
     string CausationId,
-    Id<User> TraineeId,
+    Id<AccountReference> TraineeId,
     DateTimeOffset ObservedAt,
     DateTimeOffset AcceptedAt,
     IReadOnlyList<ReportSubmissionAcceptedMeasurement> Measurements)

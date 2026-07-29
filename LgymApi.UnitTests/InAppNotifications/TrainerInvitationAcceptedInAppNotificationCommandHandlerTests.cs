@@ -1,7 +1,9 @@
+using System.Text.Json;
 using FluentAssertions;
 using LgymApi.Application.Coaching.Contracts.BackgroundCommands;
-using LgymApi.Application.BuildingBlocks.Errors;
-using LgymApi.Application.Notifications.Contracts.Events;
+using LgymApi.Application.Coaching.Contracts.Notifications;
+using LgymApi.Application.Notifications.Contracts.InApp;
+using LgymApi.Application.Platform.Contracts.Serialization;
 using LgymApi.BackgroundWorker.Actions;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
@@ -15,56 +17,25 @@ namespace LgymApi.UnitTests.InAppNotifications;
 public sealed class TrainerInvitationAcceptedInAppNotificationCommandHandlerTests
 {
     [Test]
-    public async Task ExecuteAsync_SubmitsTheExactInAppIntent()
+    public async Task ExecuteAsync_SerializesCanonicalCommandAndForwardsScalarPreparation()
     {
         var command = new TrainerInvitationAcceptedInAppNotificationCommand
         {
-            InvitationId = Id<TrainerInvitation>.New(),
-            TrainerId = Id<User>.New(),
-            TraineeId = Id<User>.New(),
+            InvitationId = Id<TrainerInvitation>.New(), TrainerId = Id<User>.New(), TraineeId = Id<User>.New()
         };
-        var intents = Substitute.For<ICoachingNotificationIntentService>();
-        CoachingNotificationIntent? submittedIntent = null;
-        intents.SubmitAsync(Arg.Any<CoachingNotificationIntent>(), Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                submittedIntent = call.Arg<CoachingNotificationIntent>();
-                return Task.FromResult(new CoachingNotificationIntentResult(null, null));
-            });
-        var handler = new TrainerInvitationAcceptedInAppNotificationCommandHandler(
-            intents,
+        var preparationPort = Substitute.For<ITrainerInvitationAcceptedInAppPreparationPort>();
+        var deliveryPort = Substitute.For<ITrainerInvitationAcceptedInAppDeliveryPort>();
+        preparationPort.PrepareAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new TrainerInvitationAcceptedInAppPreparation(
+            command.InvitationId.ToString(), command.TrainerId.ToString(), command.TraineeId.ToString()));
+        var handler = new TrainerInvitationAcceptedInAppNotificationCommandHandler(preparationPort, deliveryPort,
             Substitute.For<ILogger<TrainerInvitationAcceptedInAppNotificationCommandHandler>>());
 
         await handler.ExecuteAsync(command);
 
-        submittedIntent.Should().BeEquivalentTo(new InvitationAcceptedCoachingNotificationIntent(
-            CoachingNotificationLegacyChannel.InApp,
-            command.InvitationId,
-            command.TrainerId,
-            command.TraineeId,
-            null,
-            null));
+        var payload = await preparationPort.Received(1).PrepareAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        var serialized = JsonSerializer.Serialize(command, SharedSerializationOptions.Current);
+        await preparationPort.Received(1).PrepareAsync(serialized, Arg.Any<CancellationToken>());
+        await deliveryPort.Received(1).DeliverAsync(new TrainerInvitationAcceptedInAppDeliveryRequest(
+            command.InvitationId.ToString(), command.TrainerId.ToString(), command.TraineeId.ToString()), Arg.Any<CancellationToken>());
     }
-
-    [Test]
-    public async Task ExecuteAsync_WhenInAppDeliveryFails_LogsAnError()
-    {
-        var intents = Substitute.For<ICoachingNotificationIntentService>();
-        var logger = Substitute.For<ILogger<TrainerInvitationAcceptedInAppNotificationCommandHandler>>();
-        intents.SubmitAsync(Arg.Any<CoachingNotificationIntent>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new CoachingNotificationIntentResult(null, new BadRequestError("boom"))));
-        var handler = new TrainerInvitationAcceptedInAppNotificationCommandHandler(intents, logger);
-
-        await handler.ExecuteAsync(new TrainerInvitationAcceptedInAppNotificationCommand
-        {
-            InvitationId = Id<TrainerInvitation>.New(),
-            TrainerId = Id<User>.New(),
-            TraineeId = Id<User>.New(),
-        });
-
-        ErrorLogCount(logger).Should().Be(1);
-    }
-
-    private static int ErrorLogCount<THandler>(ILogger<THandler> logger)
-        => logger.ReceivedCalls().Count(call => call.GetArguments()[0] is LogLevel.Error);
 }

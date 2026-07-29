@@ -9,12 +9,12 @@ namespace LgymApi.Application.Coaching.ManagedPlans.Unassign;
 
 internal sealed class UnassignTraineeManagedPlanUseCase : IUnassignTraineeManagedPlanUseCase
 {
-    private readonly ICoachingRelationshipAccessService _relationshipAccess;
+    private readonly IMarkerCoachingRelationshipAccessService _relationshipAccess;
     private readonly OwnerUnassignUseCase _owner;
     private readonly IMapper _mapper;
 
     public UnassignTraineeManagedPlanUseCase(
-        ICoachingRelationshipAccessService relationshipAccess,
+        IMarkerCoachingRelationshipAccessService relationshipAccess,
         OwnerUnassignUseCase owner,
         IMapper mapper)
     {

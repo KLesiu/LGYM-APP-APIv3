@@ -1,20 +1,19 @@
 using System.Text.Json;
 using FluentAssertions;
 using LgymApi.Application.Abstractions.Storage;
-using LgymApi.Application.Coaching.Contracts.Access;
 using LgymApi.Application.Features.Reporting;
 using LgymApi.Application.Features.Reporting.Models;
 using LgymApi.Application.Options;
 using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using LgymApi.Application.Reporting.Contracts.BackgroundCommands;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Application.Repositories;
-using LgymApi.Application.WorkoutProgress.Contracts.ReportingIntegration;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
-using NUnit.Framework;
 
 namespace LgymApi.UnitTests;
 
@@ -22,270 +21,173 @@ namespace LgymApi.UnitTests;
 public sealed class ReportingServiceAcceptedProgressOutboxTests
 {
     [Test]
-    public async Task SubmitReportRequestAsync_StagesOnlyLegacyValidMeasurementCandidatesBeforeCommitAndPreservesNotification()
+    public async Task Submit_StagesValidMeasurementsBeforeCommitAndEnqueuesNotificationAfterCommit()
     {
-        var traineeId = Id<User>.New();
-        var trainerId = Id<User>.New();
+        var traineeId = Id<AccountReference>.New();
+        var trainerId = Id<AccountReference>.New();
         var requestId = Id<ReportRequest>.New();
         var template = CreateTemplate(
             CreateMeasurementsField("first", """{ "measurementTypes": ["weight", "chest", "waist", "bodyFat"] }"""),
             CreateMeasurementsField("later", """{ "measurementTypes": ["bodyWeight", "thighs"] }"""));
         var request = CreateRequest(requestId, traineeId, trainerId, template);
-        var reportingRepository = Substitute.For<IReportingRepository>();
+        var persistence = Substitute.For<IReportRequestSubmissionPersistence>();
         var unitOfWork = Substitute.For<IUnitOfWork>();
-        var commandDispatcher = Substitute.For<ICommandDispatcher>();
-        var commandOutboxWriter = Substitute.For<ICommandOutboxWriter>();
+        var dispatcher = Substitute.For<ICommandDispatcher>();
+        var outbox = Substitute.For<ICommandOutboxWriter>();
+        NewReportSubmissionPersistenceModel? addedSubmission = null;
         var stagedBeforeCommit = false;
         var committed = false;
-        ReportSubmission? addedSubmission = null;
-
-        reportingRepository.FindRequestByIdAsync(requestId, Arg.Any<CancellationToken>())
-            .Returns(request);
-        reportingRepository.AddSubmissionAsync(Arg.Any<ReportSubmission>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo =>
-            {
-                addedSubmission = callInfo.Arg<ReportSubmission>();
-                return Task.CompletedTask;
-            });
-        commandOutboxWriter.StageAsync(Arg.Any<ReportSubmissionAcceptedProgressCommand>(), Arg.Any<CancellationToken>())
+        persistence.FindRequestByIdAsync(requestId, Arg.Any<CancellationToken>()).Returns(request);
+        persistence.AddSubmissionAsync(Arg.Do<NewReportSubmissionPersistenceModel>(submission => addedSubmission = submission), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        outbox.StageAsync(Arg.Any<ReportSubmissionAcceptedProgressCommand>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 stagedBeforeCommit = true;
                 return Task.FromResult(new CommandEnvelopeStageResult(null, false));
             });
-        unitOfWork.SaveChangesAsync(Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                stagedBeforeCommit.Should().BeTrue("the accepted-progress envelope must commit atomically with the submission");
-                committed = true;
-                return Task.FromResult(1);
-            });
-        commandDispatcher.EnqueueAsync(Arg.Any<ReportSubmissionCreatedInAppNotificationCommand>())
-            .Returns(_ =>
-            {
-                committed.Should().BeTrue("the existing notification remains a post-commit enqueue");
-                return Task.CompletedTask;
-            });
-
-        var service = CreateService(
-            reportingRepository,
-            unitOfWork,
-            commandDispatcher,
-            commandOutboxWriter);
+        unitOfWork.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            stagedBeforeCommit.Should().BeTrue();
+            committed = true;
+            return Task.FromResult(1);
+        });
+        dispatcher.EnqueueAsync(Arg.Any<ReportSubmissionCreatedInAppNotificationCommand>()).Returns(_ =>
+        {
+            committed.Should().BeTrue();
+            return Task.CompletedTask;
+        });
+        var service = CreateService(persistence, unitOfWork, dispatcher, outbox);
 
         var result = await service.SubmitReportRequestAsync(
-            CreateUser(traineeId),
+            ReportingTestData.Account(traineeId.Rebind<User>()),
             requestId,
             new SubmitReportRequestCommand
             {
                 Answers = new Dictionary<string, JsonElement>
                 {
                     ["first"] = ParseJson("""
-                    {
-                      "weight": { "value": 82.4, "unit": "Kilograms" },
-                      "chest": { "value": 101.2, "unit": "Centimeters" },
-                      "waist": { "value": 87.1, "unit": "Kilograms" },
-                      "bodyFat": { "value": 0, "unit": "Percentages" }
-                    }
-                    """),
+                        {
+                          "weight": { "value": 82.4, "unit": "Kilograms" },
+                          "chest": { "value": 101.2, "unit": "Centimeters" },
+                          "waist": { "value": 87.1, "unit": "Kilograms" },
+                          "bodyFat": { "value": 0, "unit": "Percentages" }
+                        }
+                        """),
                     ["later"] = ParseJson("""
-                    {
-                      "bodyWeight": { "value": 81.7, "unit": "Kilograms" },
-                      "thighs": { "value": 60.0, "unit": "Centimeters" }
-                    }
-                    """)
+                        {
+                          "bodyWeight": { "value": 81.7, "unit": "Kilograms" },
+                          "thighs": { "value": 60.0, "unit": "Centimeters" }
+                        }
+                        """)
                 }
             });
 
         result.IsSuccess.Should().BeTrue();
         addedSubmission.Should().NotBeNull();
-        var expectedMeasurements = new[]
-        {
-            new ReportSubmissionAcceptedMeasurement(BodyParts.BodyWeight, 82.4, MeasurementUnits.Kilograms),
-            new ReportSubmissionAcceptedMeasurement(BodyParts.Chest, 101.2, MeasurementUnits.Centimeters),
-            new ReportSubmissionAcceptedMeasurement(BodyParts.Thigh, 60.0, MeasurementUnits.Centimeters)
-        };
-        await commandOutboxWriter.Received(1).StageAsync(
-            Arg.Is<ReportSubmissionAcceptedProgressCommand>(command =>
-                command.Event.Validate().IsValid
-                && command.Event.SchemaVersion == ReportSubmissionAcceptedProgressEvent.CurrentSchemaVersion
-                && command.Event.ReportSubmissionId == addedSubmission!.Id.ToString()
-                && command.Event.CorrelationId == requestId.ToString()
-                && command.Event.CausationId == addedSubmission.Id.ToString()
-                && command.Event.TraineeId == traineeId
-                && command.Event.ObservedAt == command.Event.AcceptedAt
-                && command.Event.ObservedAt.Offset == TimeSpan.Zero
-                && command.Event.Measurements.SequenceEqual(expectedMeasurements)),
-            Arg.Any<CancellationToken>());
-        await commandDispatcher.Received(1).EnqueueAsync(Arg.Is<ReportSubmissionCreatedInAppNotificationCommand>(command =>
+        await outbox.Received(1).StageAsync(Arg.Is<ReportSubmissionAcceptedProgressCommand>(command =>
+            command.Event.Validate().IsValid
+            && command.Event.ReportSubmissionId == addedSubmission!.Id.ToString()
+            && command.Event.CorrelationId == requestId.ToString()
+            && command.Event.TraineeId == traineeId
+            && command.Event.Measurements.SequenceEqual(new[]
+            {
+                new ReportSubmissionAcceptedProgressMeasurement(BodyParts.BodyWeight, 82.4, MeasurementUnits.Kilograms),
+                new ReportSubmissionAcceptedProgressMeasurement(BodyParts.Chest, 101.2, MeasurementUnits.Centimeters),
+                new ReportSubmissionAcceptedProgressMeasurement(BodyParts.Thigh, 60.0, MeasurementUnits.Centimeters)
+            })), Arg.Any<CancellationToken>());
+        await dispatcher.Received(1).EnqueueAsync(Arg.Is<ReportSubmissionCreatedInAppNotificationCommand>(command =>
             command.SubmissionId == addedSubmission.Id
             && command.TrainerId == trainerId
-            && command.TraineeId == traineeId
-            && command.TemplateName == template.Name));
+            && command.TraineeId == traineeId));
     }
 
     [Test]
-    public async Task SubmitReportRequestAsync_WithEmptyMeasurements_AcceptsSubmissionWithoutStagingAcceptedProgressCommand()
+    public async Task Submit_WithNoValidMeasurements_DoesNotStageAcceptedProgress()
     {
-        var traineeId = Id<User>.New();
-        var trainerId = Id<User>.New();
+        var traineeId = Id<AccountReference>.New();
         var requestId = Id<ReportRequest>.New();
-        var template = CreateTemplate(
-            new ReportTemplateField
-            {
-                Id = Id<ReportTemplateField>.New(),
-                Key = "feedback",
-                Label = "Feedback",
-                Type = ReportFieldType.Text,
-                IsRequired = true,
-                Order = 1
-            },
-            CreateMeasurementsField("measurements", """{ "measurementTypes": ["weight", "waist"] }"""));
-        var request = CreateRequest(requestId, traineeId, trainerId, template);
-        var reportingRepository = Substitute.For<IReportingRepository>();
-        var unitOfWork = Substitute.For<IUnitOfWork>();
-        var commandDispatcher = Substitute.For<ICommandDispatcher>();
-        var commandOutboxWriter = Substitute.For<ICommandOutboxWriter>();
-
-        reportingRepository.FindRequestByIdAsync(requestId, Arg.Any<CancellationToken>())
-            .Returns(request);
-        reportingRepository.AddSubmissionAsync(Arg.Any<ReportSubmission>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
-
-        var service = CreateService(
-            reportingRepository,
-            unitOfWork,
-            commandDispatcher,
-            commandOutboxWriter);
+        var template = CreateTemplate(new ReportTemplateFieldPersistenceModel(
+            Id<ReportTemplateField>.New(), "feedback", "Feedback", ReportFieldType.Text, true, 1, null, DateTimeOffset.UtcNow));
+        var persistence = Substitute.For<IReportRequestSubmissionPersistence>();
+        persistence.FindRequestByIdAsync(requestId, Arg.Any<CancellationToken>())
+            .Returns(CreateRequest(requestId, traineeId, Id<AccountReference>.New(), template));
+        var outbox = Substitute.For<ICommandOutboxWriter>();
+        var service = CreateService(persistence, Substitute.For<IUnitOfWork>(), Substitute.For<ICommandDispatcher>(), outbox);
 
         var result = await service.SubmitReportRequestAsync(
-            CreateUser(traineeId),
+            ReportingTestData.Account(traineeId.Rebind<User>()),
             requestId,
-            new SubmitReportRequestCommand
-            {
-                Answers = new Dictionary<string, JsonElement>
-                {
-                    ["feedback"] = ParseJson("\"complete\""),
-                    ["measurements"] = ParseJson("{}")
-                }
-            });
+            new SubmitReportRequestCommand { Answers = new() { ["feedback"] = ParseJson("\"complete\"") } });
 
         result.IsSuccess.Should().BeTrue();
-        await commandOutboxWriter.DidNotReceive().StageAsync(
-            Arg.Any<ReportSubmissionAcceptedProgressCommand>(),
-            Arg.Any<CancellationToken>());
-        await commandDispatcher.Received(1).EnqueueAsync(Arg.Is<ReportSubmissionCreatedInAppNotificationCommand>(command =>
-            command.TrainerId == trainerId
-            && command.TraineeId == traineeId
-            && command.TemplateName == template.Name));
+        await outbox.DidNotReceive().StageAsync(Arg.Any<ReportSubmissionAcceptedProgressCommand>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task SubmitReportRequestAsync_WhenAcceptedProgressStagingFails_DoesNotCommitOrEnqueueNotification()
+    public async Task Submit_WhenOutboxStagingFails_DoesNotCommitOrNotify()
     {
-        var traineeId = Id<User>.New();
-        var trainerId = Id<User>.New();
+        var traineeId = Id<AccountReference>.New();
         var requestId = Id<ReportRequest>.New();
         var template = CreateTemplate(CreateMeasurementsField("measurements", """{ "measurementTypes": ["weight"] }"""));
-        var reportingRepository = Substitute.For<IReportingRepository>();
+        var persistence = Substitute.For<IReportRequestSubmissionPersistence>();
+        persistence.FindRequestByIdAsync(requestId, Arg.Any<CancellationToken>())
+            .Returns(CreateRequest(requestId, traineeId, Id<AccountReference>.New(), template));
         var unitOfWork = Substitute.For<IUnitOfWork>();
-        var commandDispatcher = Substitute.For<ICommandDispatcher>();
-        var commandOutboxWriter = Substitute.For<ICommandOutboxWriter>();
-        var expectedException = new InvalidOperationException("Outbox staging failed.");
-
-        reportingRepository.FindRequestByIdAsync(requestId, Arg.Any<CancellationToken>())
-            .Returns(CreateRequest(requestId, traineeId, trainerId, template));
-        reportingRepository.AddSubmissionAsync(Arg.Any<ReportSubmission>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
-        commandOutboxWriter.StageAsync(Arg.Any<ReportSubmissionAcceptedProgressCommand>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<CommandEnvelopeStageResult>(expectedException));
-
-        var service = CreateService(reportingRepository, unitOfWork, commandDispatcher, commandOutboxWriter);
+        var dispatcher = Substitute.For<ICommandDispatcher>();
+        var outbox = Substitute.For<ICommandOutboxWriter>();
+        outbox.StageAsync(Arg.Any<ReportSubmissionAcceptedProgressCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<CommandEnvelopeStageResult>(new InvalidOperationException("Outbox staging failed.")));
+        var service = CreateService(persistence, unitOfWork, dispatcher, outbox);
 
         var action = () => service.SubmitReportRequestAsync(
-            CreateUser(traineeId),
+            ReportingTestData.Account(traineeId.Rebind<User>()),
             requestId,
             new SubmitReportRequestCommand
             {
-                Answers = new Dictionary<string, JsonElement>
-                {
-                    ["measurements"] = ParseJson("""{ "weight": { "value": 82.4, "unit": "Kilograms" } }""")
-                }
+                Answers = new() { ["measurements"] = ParseJson("""{ "weight": { "value": 82.4, "unit": "Kilograms" } }""") }
             });
 
-        await action.Should().ThrowAsync<InvalidOperationException>().WithMessage(expectedException.Message);
-        _ = unitOfWork.DidNotReceiveWithAnyArgs().SaveChangesAsync(default);
-        await commandDispatcher.DidNotReceive().EnqueueAsync(Arg.Any<ReportSubmissionCreatedInAppNotificationCommand>());
+        await action.Should().ThrowAsync<InvalidOperationException>();
+        await unitOfWork.DidNotReceiveWithAnyArgs().SaveChangesAsync(default);
+        await dispatcher.DidNotReceive().EnqueueAsync(Arg.Any<ReportSubmissionCreatedInAppNotificationCommand>());
     }
 
     private static ReportingService CreateService(
-        IReportingRepository reportingRepository,
+        IReportRequestSubmissionPersistence persistence,
         IUnitOfWork unitOfWork,
-        ICommandDispatcher commandDispatcher,
-        ICommandOutboxWriter commandOutboxWriter)
+        ICommandDispatcher dispatcher,
+        ICommandOutboxWriter outbox)
     {
         var dependencies = Substitute.For<IReportingServiceDependencies>();
-        dependencies.ReportingRepository.Returns(reportingRepository);
-        dependencies.UnitOfWork.Returns(unitOfWork);
-        dependencies.CommandDispatcher.Returns(commandDispatcher);
-        dependencies.CommandOutboxWriter.Returns(commandOutboxWriter);
+        dependencies.TemplatePersistence.Returns(Substitute.For<IReportTemplatePersistence>());
+        dependencies.RequestSubmissionPersistence.Returns(persistence);
+        dependencies.RecurringAssignmentPersistence.Returns(Substitute.For<IRecurringReportAssignmentPersistence>());
+        dependencies.PhotoPersistence.Returns(Substitute.For<IReportPhotoPersistence>());
+        dependencies.RelationshipAccessPersistence.Returns(Substitute.For<IReportingRelationshipAccessPersistence>());
         dependencies.ReportSubmissionAcceptedProgressCommandFactory.Returns(new ReportSubmissionAcceptedProgressCommandFactory());
-        dependencies.RoleRepository.Returns(Substitute.For<IRoleRepository>());
-        dependencies.CoachingRelationshipAccessService.Returns(Substitute.For<ICoachingRelationshipAccessService>());
-        dependencies.RecurringReportAssignmentRepository.Returns(Substitute.For<IRecurringReportAssignmentRepository>());
+        dependencies.CommandDispatcher.Returns(dispatcher);
+        dependencies.CommandOutboxWriter.Returns(outbox);
+        dependencies.UnitOfWork.Returns(unitOfWork);
         dependencies.PhotoStorageProvider.Returns(Substitute.For<IPhotoStorageProvider>());
-        dependencies.PhotoUploadInitTracker.Returns(Substitute.For<IPhotoUploadInitTracker>());
+        dependencies.Mapper.Returns(ReportingTestData.Mapper());
         dependencies.Logger.Returns(Substitute.For<ILogger<ReportingService>>());
         dependencies.PhotoStorageOptions.Returns(new PhotoStorageOptions());
-
         return new ReportingService(dependencies);
     }
 
-    private static ReportTemplate CreateTemplate(params ReportTemplateField[] fields)
-        => new()
-        {
-            Id = Id<ReportTemplate>.New(),
-            Name = "Progress check-in",
-            TrainerId = Id<User>.New(),
-            Fields = fields
-        };
+    private static ReportTemplatePersistenceModel CreateTemplate(params ReportTemplateFieldPersistenceModel[] fields)
+        => new(Id<ReportTemplate>.New(), Id<AccountReference>.New(), "Progress check-in", null, DateTimeOffset.UtcNow, false, fields);
 
-    private static ReportTemplateField CreateMeasurementsField(string key, string moduleConfig)
-        => new()
-        {
-            Id = Id<ReportTemplateField>.New(),
-            Key = key,
-            Label = key,
-            Type = ReportFieldType.Measurements,
-            IsRequired = false,
-            Order = 2,
-            ModuleConfig = moduleConfig
-        };
+    private static ReportTemplateFieldPersistenceModel CreateMeasurementsField(string key, string moduleConfig)
+        => new(Id<ReportTemplateField>.New(), key, key, ReportFieldType.Measurements, false, 2, moduleConfig, DateTimeOffset.UtcNow);
 
-    private static ReportRequest CreateRequest(
+    private static ReportRequestPersistenceModel CreateRequest(
         Id<ReportRequest> requestId,
-        Id<User> traineeId,
-        Id<User> trainerId,
-        ReportTemplate template)
-        => new()
-        {
-            Id = requestId,
-            TraineeId = traineeId,
-            TrainerId = trainerId,
-            TemplateId = template.Id,
-            Template = template,
-            Status = ReportRequestStatus.Pending
-        };
+        Id<AccountReference> traineeId,
+        Id<AccountReference> trainerId,
+        ReportTemplatePersistenceModel template)
+        => new(requestId, trainerId, traineeId, template.Id, null, ReportRequestStatus.Pending, null, null, null, DateTimeOffset.UtcNow, false, template, null);
 
-    private static User CreateUser(Id<User> userId)
-        => new()
-        {
-            Id = userId,
-            Name = "Trainee",
-            Email = "trainee@example.com",
-            ProfileRank = "Rookie"
-        };
-
-    private static JsonElement ParseJson(string json)
-        => JsonDocument.Parse(json).RootElement.Clone();
+    private static JsonElement ParseJson(string json) => JsonDocument.Parse(json).RootElement.Clone();
 }

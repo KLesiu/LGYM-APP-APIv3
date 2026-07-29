@@ -2,8 +2,7 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Nutrition.DietPlans.GetCurrentDietPlan;
-using LgymApi.Application.Nutrition.DietPlans.GetCurrentDietPlans;
+using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
 using LgymApi.Application.Nutrition.DietPlans.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -15,17 +14,14 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 [Authorize]
 public sealed class TraineeDietPlanController : ControllerBase
 {
-    private readonly IGetCurrentDietPlansUseCase _getCurrentDietPlans;
-    private readonly IGetCurrentDietPlanUseCase _getCurrentDietPlan;
+    private readonly IDietPlanAccountCompatibilityAdapter _dietPlans;
     private readonly IMapper _mapper;
 
     public TraineeDietPlanController(
-        IGetCurrentDietPlansUseCase getCurrentDietPlans,
-        IGetCurrentDietPlanUseCase getCurrentDietPlan,
+        IDietPlanAccountCompatibilityAdapter dietPlans,
         IMapper mapper)
     {
-        _getCurrentDietPlans = getCurrentDietPlans;
-        _getCurrentDietPlan = getCurrentDietPlan;
+        _dietPlans = dietPlans;
         _mapper = mapper;
     }
 
@@ -33,8 +29,8 @@ public sealed class TraineeDietPlanController : ControllerBase
     [ProducesResponseType(typeof(List<DietPlanDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCurrentPlans(CancellationToken cancellationToken = default)
     {
-        var result = await _getCurrentDietPlans.ExecuteAsync(
-            new GetCurrentDietPlansQuery(HttpContext.GetCurrentUserId()),
+        var result = await _dietPlans.GetCurrentPlansAsync(
+            new DietPlanCurrentAccountQuery(HttpContext.GetAuthenticatedAccountContext()!.Id),
             cancellationToken);
         return result.IsFailure
             ? result.ToActionResult()
@@ -45,8 +41,8 @@ public sealed class TraineeDietPlanController : ControllerBase
     [ProducesResponseType(typeof(DietPlanDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCurrentPlan(CancellationToken cancellationToken = default)
     {
-        var result = await _getCurrentDietPlan.ExecuteAsync(
-            new GetCurrentDietPlanQuery(HttpContext.GetCurrentUserId()),
+        var result = await _dietPlans.GetCurrentPlanAsync(
+            new DietPlanCurrentAccountQuery(HttpContext.GetAuthenticatedAccountContext()!.Id),
             cancellationToken);
         return result.IsFailure
             ? result.ToActionResult()

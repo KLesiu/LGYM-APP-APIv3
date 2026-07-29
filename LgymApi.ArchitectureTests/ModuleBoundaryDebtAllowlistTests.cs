@@ -4,19 +4,102 @@ namespace LgymApi.ArchitectureTests;
 public sealed class ModuleBoundaryDebtAllowlistTests
 {
     private const string GuardId = "ModuleDependencyGuardTests";
+    private const string CrossModuleGuardId = "CrossModuleEntityLeakage";
+
+    private static readonly IReadOnlyList<ModuleBoundaryObservedViolation> RetiredTrainingPlanningDebtBaseline =
+    [
+        RetiredPlanningViolation(GuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "LgymApi.Application.Features.PlanDay.IPlanDayServiceDependencies @ LgymApi.Application/PlanDay/IPlanDayServiceDependencies.cs", "LgymApi.Application.Repositories.IExerciseRepository @ LgymApi.Application/Repositories/IExerciseRepository.cs"),
+        RetiredPlanningViolation(GuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "LgymApi.Application.Features.PlanDay.IPlanDayServiceDependencies @ LgymApi.Application/PlanDay/IPlanDayServiceDependencies.cs", "LgymApi.Application.Repositories.ITrainingRepository @ LgymApi.Application/Repositories/ITrainingRepository.cs"),
+        RetiredPlanningViolation(GuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "LgymApi.Application.Features.PlanDay.PlanDayService @ LgymApi.Application/PlanDay/PlanDayService.cs", "LgymApi.Application.Repositories.IExerciseRepository @ LgymApi.Application/Repositories/IExerciseRepository.cs"),
+        RetiredPlanningViolation(GuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "LgymApi.Application.Features.PlanDay.PlanDayService @ LgymApi.Application/PlanDay/PlanDayService.cs", "LgymApi.Application.Repositories.ITrainingRepository @ LgymApi.Application/Repositories/ITrainingRepository.cs"),
+        RetiredPlanningViolation(GuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "LgymApi.Application.Features.PlanDay.PlanDayServiceDependencies @ LgymApi.Application/PlanDay/IPlanDayServiceDependencies.cs", "LgymApi.Application.Repositories.IExerciseRepository @ LgymApi.Application/Repositories/IExerciseRepository.cs"),
+        RetiredPlanningViolation(GuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "LgymApi.Application.Features.PlanDay.PlanDayServiceDependencies @ LgymApi.Application/PlanDay/IPlanDayServiceDependencies.cs", "LgymApi.Application.Repositories.ITrainingRepository @ LgymApi.Application/Repositories/ITrainingRepository.cs"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.IdentityModuleName, "CanAccessPlanAsync", "LgymApi.Domain.Entities.User"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.IdentityModuleName, "CreatePlanDayAsync", "LgymApi.Domain.Entities.User"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.IdentityModuleName, "DeletePlanDayAsync", "LgymApi.Domain.Entities.User"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.IdentityModuleName, "GetPlanDayAsync", "LgymApi.Domain.Entities.User"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.IdentityModuleName, "GetPlanDaysAsync", "LgymApi.Domain.Entities.User"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.IdentityModuleName, "GetPlanDaysInfoAsync", "LgymApi.Domain.Entities.User"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.IdentityModuleName, "GetPlanDaysTypesAsync", "LgymApi.Domain.Entities.User"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.IdentityModuleName, "LgymApi.Application/PlanDay/IPlanDayService.cs", "LgymApi.Domain.Entities.User"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.IdentityModuleName, "LgymApi.Application/PlanDay/PlanDayService.Mutations.cs", "LgymApi.Domain.Entities.User"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.IdentityModuleName, "LgymApi.Application/PlanDay/PlanDayService.Queries.cs", "LgymApi.Domain.Entities.User"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.IdentityModuleName, "LgymApi.Application/PlanDay/PlanDayService.cs", "LgymApi.Domain.Entities.User"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.IdentityModuleName, "UpdatePlanDayAsync", "LgymApi.Domain.Entities.User"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "ExerciseMap", "LgymApi.Domain.Entities.Exercise"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "ExerciseRepository", "LgymApi.Application.Repositories.IExerciseRepository"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "GetPlanDayAsync", "LgymApi.Application.Repositories.IExerciseRepository"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "GetPlanDayAsync", "LgymApi.Domain.Entities.Exercise"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "GetPlanDaysAsync", "LgymApi.Application.Repositories.IExerciseRepository"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "GetPlanDaysAsync", "LgymApi.Domain.Entities.Exercise"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "GetPlanDaysInfoAsync", "LgymApi.Application.Repositories.ITrainingRepository"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "LgymApi.Application/PlanDay/Models/PlanDayDetailsContext.cs", "LgymApi.Domain.Entities.Exercise"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "LgymApi.Application/PlanDay/Models/PlanDaysContext.cs", "LgymApi.Domain.Entities.Exercise"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "PlanDayServiceDependencies", "LgymApi.Application.Repositories.IExerciseRepository"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "PlanDayServiceDependencies", "LgymApi.Application.Repositories.ITrainingRepository"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "PlanDayService", "LgymApi.Application.Repositories.IExerciseRepository"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "PlanDayService", "LgymApi.Application.Repositories.ITrainingRepository"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "TrainingRepository", "LgymApi.Application.Repositories.ITrainingRepository"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "_exerciseRepository", "LgymApi.Application.Repositories.IExerciseRepository"),
+        RetiredPlanningViolation(CrossModuleGuardId, ArchitectureTestHelpers.WorkoutProgressModuleName, "_trainingRepository", "LgymApi.Application.Repositories.ITrainingRepository")
+    ];
 
     [Test]
-    public void Allowlist_Registry_Remains_Centralized_And_Populated_With_Explicit_Current_Debt_Entries()
+    public void Allowlist_Registry_Remains_Centralized_And_Contains_No_Approved_Debt_Entries()
     {
         var entries = ModuleBoundaryDebtAllowlistRegistry.AllEntries;
 
         Assert.Multiple(() =>
         {
-            Assert.That(entries, Is.Not.Empty, "The shrink-only allowlist should contain the currently approved explicit debt entries.");
+            Assert.That(ModuleBoundaryDebtAllowlistRegistry.MaximumAllowedEntryCount, Is.Zero, "The approved debt maximum must remain a literal zero baseline.");
+            Assert.That(entries, Is.Empty, "All currently approved module-boundary debt must be retired.");
             Assert.That(entries, Has.Count.EqualTo(ModuleBoundaryDebtAllowlistRegistry.MaximumAllowedEntryCount), "The approved debt baseline must remain exact.");
-            Assert.That(entries.Select(entry => entry.Key.GuardId).Distinct(StringComparer.Ordinal).Count(), Is.GreaterThanOrEqualTo(1));
             Assert.That(entries.All(entry => !string.IsNullOrWhiteSpace(entry.Key.Rationale)), Is.True, "Every centralized debt entry must stay reviewable with a rationale.");
             Assert.That(entries.Select(entry => entry.IdentityKey).Distinct(StringComparer.Ordinal).Count(), Is.EqualTo(entries.Count), "Centralized debt entries must stay exact and non-duplicated.");
+        });
+    }
+
+    [Test]
+    public void Retired_TrainingPlanning_Baseline_Should_Account_For_Exactly_22_Workout_And_12_Identity_Entries()
+    {
+        var exactKeys = RetiredTrainingPlanningDebtBaseline
+            .Select(violation => ModuleBoundaryDebtKey.Create(
+                violation.GuardId,
+                violation.SourceModule,
+                violation.TargetModule,
+                violation.SourceSymbolOrPath,
+                violation.TargetSymbolOrPath,
+                "Task 20 retired baseline evidence"))
+            .ToArray();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(RetiredTrainingPlanningDebtBaseline, Has.Count.EqualTo(34));
+            Assert.That(exactKeys.Select(key => key.IdentityKey), Is.Unique);
+            Assert.That(RetiredTrainingPlanningDebtBaseline, Has.All.Matches<ModuleBoundaryObservedViolation>(violation =>
+                violation.SourceModule == ArchitectureTestHelpers.TrainingPlanningModuleName));
+            Assert.That(RetiredTrainingPlanningDebtBaseline.Count(violation => violation.TargetModule == ArchitectureTestHelpers.WorkoutProgressModuleName), Is.EqualTo(22));
+            Assert.That(RetiredTrainingPlanningDebtBaseline.Count(violation => violation.TargetModule == ArchitectureTestHelpers.IdentityModuleName), Is.EqualTo(12));
+            Assert.That(RetiredTrainingPlanningDebtBaseline.Count(violation => violation.GuardId == GuardId), Is.EqualTo(6));
+            Assert.That(RetiredTrainingPlanningDebtBaseline.Count(violation => violation.GuardId == CrossModuleGuardId && violation.TargetModule == ArchitectureTestHelpers.WorkoutProgressModuleName), Is.EqualTo(16));
+            Assert.That(RetiredTrainingPlanningDebtBaseline.Count(violation => violation.GuardId == CrossModuleGuardId && violation.TargetModule == ArchitectureTestHelpers.IdentityModuleName), Is.EqualTo(12));
+        });
+    }
+
+    [Test]
+    public void Every_Retired_TrainingPlanning_Baseline_Entry_Should_Remain_Unexpected_At_Zero_Debt()
+    {
+        var evaluations = RetiredTrainingPlanningDebtBaseline
+            .Select(violation => ModuleBoundaryDebtAllowlistEvaluator.Evaluate([], [violation], violation.GuardId))
+            .ToArray();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(evaluations, Has.All.Matches<ModuleBoundaryDebtAllowlistEvaluation>(evaluation => !evaluation.IsSuccess));
+            Assert.That(evaluations, Has.All.Matches<ModuleBoundaryDebtAllowlistEvaluation>(evaluation => evaluation.UnexpectedViolations.Count == 1));
+            Assert.That(
+                ModuleBoundaryDebtAllowlistRegistry.AllEntries.Where(entry => entry.Key.SourceModule == ArchitectureTestHelpers.TrainingPlanningModuleName),
+                Is.Empty);
         });
     }
 
@@ -39,7 +122,11 @@ public sealed class ModuleBoundaryDebtAllowlistTests
             "LgymApi.Application/Nutrition/Plans/PlanService.cs",
             "LgymApi.Application/User/IUserService.cs");
 
-        var evaluation = ModuleBoundaryDebtAllowlistEvaluator.Evaluate([entry], [observedViolation]);
+        var evaluation = ModuleBoundaryDebtAllowlistEvaluator.EvaluateForTesting(
+            [entry],
+            [observedViolation],
+            null,
+            maximumAllowedEntryCount: 1);
 
         Assert.That(evaluation.IsSuccess, Is.True, evaluation.BuildFailureMessage());
     }
@@ -118,7 +205,11 @@ public sealed class ModuleBoundaryDebtAllowlistTests
                 "LgymApi.Application/User/IUserService.cs",
                 "issue-379 debt"));
 
-        var evaluation = ModuleBoundaryDebtAllowlistEvaluator.Evaluate([entry], [], GuardId);
+        var evaluation = ModuleBoundaryDebtAllowlistEvaluator.EvaluateForTesting(
+            [entry],
+            [],
+            GuardId,
+            maximumAllowedEntryCount: 1);
 
         Assert.Multiple(() =>
         {
@@ -138,6 +229,17 @@ public sealed class ModuleBoundaryDebtAllowlistTests
             .Where(entry => entry.Key.SourceModule == "Coaching"
                 || entry.Key.TargetSymbolOrPath.Contains("ITrainerRelationshipRepository", StringComparison.Ordinal)
                 || entry.Key.TargetSymbolOrPath.Contains("ITraineeNoteRepository", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.That(retiredReferences, Is.Empty);
+    }
+
+    [Test]
+    public void Allowlist_Registry_Excludes_Retired_Reporting_To_Identity_Debt()
+    {
+        var retiredReferences = ModuleBoundaryDebtAllowlistRegistry.AllEntries
+            .Where(entry => entry.Key.SourceModule == ArchitectureTestHelpers.ReportingModuleName
+                && entry.Key.TargetModule == ArchitectureTestHelpers.IdentityModuleName)
             .ToArray();
 
         Assert.That(retiredReferences, Is.Empty);
@@ -164,7 +266,11 @@ public sealed class ModuleBoundaryDebtAllowlistTests
                 "LgymApi.Application/User/IUserService.cs",
                 "future debt"));
 
-        var act = () => ModuleBoundaryDebtAllowlistEvaluator.Evaluate([firstEntry, speculativeDuplicate], [], GuardId);
+        var act = () => ModuleBoundaryDebtAllowlistEvaluator.EvaluateForTesting(
+            [firstEntry, speculativeDuplicate],
+            [],
+            GuardId,
+            maximumAllowedEntryCount: 2);
 
         Assert.That(
             act,
@@ -184,7 +290,11 @@ public sealed class ModuleBoundaryDebtAllowlistTests
                 "LgymApi.Application/User/IUserService.cs",
                 "broad exemption"));
 
-        var act = () => ModuleBoundaryDebtAllowlistEvaluator.Evaluate([broadEntry], [], GuardId);
+        var act = () => ModuleBoundaryDebtAllowlistEvaluator.EvaluateForTesting(
+            [broadEntry],
+            [],
+            GuardId,
+            maximumAllowedEntryCount: 1);
 
         Assert.That(
             act,
@@ -224,7 +334,7 @@ public sealed class ModuleBoundaryDebtAllowlistTests
     }
 
     [Test]
-    public void Owner_Rekey_Changes_Only_Owner_Metadata_For_An_Exact_Current_Violation()
+    public void Owner_Rekey_Should_Remain_Stale_And_Unexpected_Even_When_Source_And_Target_Are_Unchanged()
     {
         var originalEntry = new ModuleBoundaryDebtEntry(
             ModuleBoundaryDebtKey.Create(
@@ -241,51 +351,18 @@ public sealed class ModuleBoundaryDebtAllowlistTests
             originalEntry.Key.SourceSymbolOrPath,
             originalEntry.Key.TargetSymbolOrPath);
 
-        var rekeyedEntry = ModuleBoundaryDebtOwnerRekey.FromCurrentViolation(originalEntry, currentViolation).ToEntry();
-        var evaluation = ModuleBoundaryDebtAllowlistEvaluator.Evaluate([rekeyedEntry], [currentViolation], GuardId);
+        var evaluation = ModuleBoundaryDebtAllowlistEvaluator.EvaluateForTesting(
+            [originalEntry],
+            [currentViolation],
+            GuardId,
+            maximumAllowedEntryCount: 1);
 
         Assert.Multiple(() =>
         {
-            Assert.That(rekeyedEntry.Key.GuardId, Is.EqualTo(originalEntry.Key.GuardId));
-            Assert.That(rekeyedEntry.Key.SourceModule, Is.EqualTo(currentViolation.SourceModule));
-            Assert.That(rekeyedEntry.Key.TargetModule, Is.EqualTo(currentViolation.TargetModule));
-            Assert.That(rekeyedEntry.Key.SourceSymbolOrPath, Is.EqualTo(originalEntry.Key.SourceSymbolOrPath));
-            Assert.That(rekeyedEntry.Key.TargetSymbolOrPath, Is.EqualTo(originalEntry.Key.TargetSymbolOrPath));
-            Assert.That(rekeyedEntry.Key.Rationale, Is.EqualTo(originalEntry.Key.Rationale));
-            Assert.That(evaluation.IsSuccess, Is.True, evaluation.BuildFailureMessage());
+            Assert.That(evaluation.IsSuccess, Is.False);
+            Assert.That(evaluation.StaleEntries, Is.EqualTo(new[] { originalEntry }));
+            Assert.That(evaluation.UnexpectedViolations, Is.EqualTo(new[] { currentViolation }));
         });
-    }
-
-    [TestCase(GuardId, "LgymApi.Application/Nutrition/Plans/ChangedPlanService.cs", "LgymApi.Application/User/IUserService.cs", "source symbol")]
-    [TestCase(GuardId, "LgymApi.Application/Nutrition/Plans/PlanService.cs", "LgymApi.Application/User/IChangedUserService.cs", "target symbol")]
-    [TestCase("ChangedGuard", "LgymApi.Application/Nutrition/Plans/PlanService.cs", "LgymApi.Application/User/IUserService.cs", "kind")]
-    public void Owner_Rekey_Fails_When_The_Current_Violation_Changes_A_Nonowner_Identity_Field(
-        string guardId,
-        string sourceSymbolOrPath,
-        string targetSymbolOrPath,
-        string changedField)
-    {
-        var originalEntry = new ModuleBoundaryDebtEntry(
-            ModuleBoundaryDebtKey.Create(
-                GuardId,
-                "Nutrition",
-                "User",
-                "LgymApi.Application/Nutrition/Plans/PlanService.cs",
-                "LgymApi.Application/User/IUserService.cs",
-                "approved debt"));
-        var changedViolation = new ModuleBoundaryObservedViolation(
-            guardId,
-            "Training Planning",
-            "Identity & Accounts",
-            sourceSymbolOrPath,
-            targetSymbolOrPath);
-
-        var act = () => ModuleBoundaryDebtOwnerRekey.FromCurrentViolation(originalEntry, changedViolation);
-
-        Assert.That(
-            act,
-            Throws.TypeOf<AssertionException>()
-                .With.Message.Contains(changedField));
     }
 
     [Test]
@@ -307,4 +384,16 @@ public sealed class ModuleBoundaryDebtAllowlistTests
             Throws.TypeOf<AssertionException>()
                 .With.Message.Contains("Module-boundary shrink-only debt allowlist failed"));
     }
+
+    private static ModuleBoundaryObservedViolation RetiredPlanningViolation(
+        string guardId,
+        string targetModule,
+        string sourceSymbolOrPath,
+        string targetSymbolOrPath)
+        => new(
+            guardId,
+            ArchitectureTestHelpers.TrainingPlanningModuleName,
+            targetModule,
+            sourceSymbolOrPath,
+            targetSymbolOrPath);
 }

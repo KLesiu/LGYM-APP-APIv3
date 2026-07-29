@@ -1,27 +1,28 @@
-using LgymApi.Application.Identity.Contracts.Access;
-using LgymApi.Application.Repositories;
 using LgymApi.Application.Platform.ReferenceData.Units;
+using LgymApi.Application.Repositories;
+using LgymApi.Application.WorkoutProgress.Persistence;
 using LgymApi.Domain.Enums;
+using LgymApi.Identity.Contracts.Accounts;
 
 namespace LgymApi.Application.WorkoutProgress.ProgressData;
 
 public sealed class WorkoutProgressReadWriteServiceDependencies(
-    IExerciseRepository exerciseRepository,
-    IExerciseScoreRepository exerciseScoreRepository,
-    IMeasurementRepository measurementRepository,
-    IMainRecordRepository mainRecordRepository,
-    IEloRegistryRepository eloRegistryRepository,
-    IUserAccessReadService userAccess,
+    IWorkoutExercisePersistence exerciseRepository,
+    IWorkoutExerciseScorePersistence exerciseScoreRepository,
+    IWorkoutMeasurementPersistence measurementRepository,
+    IWorkoutMainRecordPersistence mainRecordRepository,
+    IWorkoutEloPersistence eloRegistryRepository,
+    IAccountAccessReader accountAccess,
     IUnitConverter<HeightUnits> heightUnitConverter,
     IUnitConverter<WeightUnits> weightUnitConverter,
     IUnitOfWork unitOfWork)
 {
-    public IExerciseRepository ExerciseRepository { get; } = exerciseRepository;
-    public IExerciseScoreRepository ExerciseScoreRepository { get; } = exerciseScoreRepository;
-    public IMeasurementRepository MeasurementRepository { get; } = measurementRepository;
-    public IMainRecordRepository MainRecordRepository { get; } = mainRecordRepository;
-    public IEloRegistryRepository EloRegistryRepository { get; } = eloRegistryRepository;
-    public IUserAccessReadService UserAccess { get; } = userAccess;
+    public IWorkoutExercisePersistence ExerciseRepository { get; } = exerciseRepository;
+    public IWorkoutExerciseScorePersistence ExerciseScoreRepository { get; } = exerciseScoreRepository;
+    public IWorkoutMeasurementPersistence MeasurementRepository { get; } = measurementRepository;
+    public IWorkoutMainRecordPersistence MainRecordRepository { get; } = mainRecordRepository;
+    public IWorkoutEloPersistence EloRegistryRepository { get; } = eloRegistryRepository;
+    public IAccountAccessReader AccountAccess { get; } = accountAccess;
     public IUnitConverter<HeightUnits> HeightUnitConverter { get; } = heightUnitConverter;
     public IUnitConverter<WeightUnits> WeightUnitConverter { get; } = weightUnitConverter;
     public IUnitOfWork UnitOfWork { get; } = unitOfWork;

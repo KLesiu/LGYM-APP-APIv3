@@ -3,13 +3,14 @@ using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Training.Contracts;
 using LgymApi.Api.Idempotency;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Features.Training;
 using LgymApi.Application.Features.Training.Models;
 using LgymApi.Application.Mapping.Core;
+using LgymApi.Application.Task7ApiCompatibility.WorkoutProgress;
 using ExerciseEntity = LgymApi.Domain.Entities.Exercise;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.TrainingPlanning.Contracts;
 using Microsoft.AspNetCore.Mvc;
-using UserEntity = LgymApi.Domain.Entities.User;
 
 namespace LgymApi.Api.Features.Training.Controllers;
 
@@ -17,10 +18,10 @@ namespace LgymApi.Api.Features.Training.Controllers;
 [Route("api")]
 public sealed class TrainingController : ControllerBase
 {
-    private readonly ITrainingService _trainingService;
+    private readonly ITrainingApiCompatibilityService _trainingService;
     private readonly IMapper _mapper;
 
-    public TrainingController(ITrainingService trainingService, IMapper mapper)
+    public TrainingController(ITrainingApiCompatibilityService trainingService, IMapper mapper)
     {
         _trainingService = trainingService;
         _mapper = mapper;
@@ -34,9 +35,9 @@ public sealed class TrainingController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> AddTraining([FromRoute] string id, [FromBody] TrainingFormDto form, CancellationToken cancellationToken = default)
     {
-        var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
+        var accountId = ParseRouteAccountIdForCurrentAccount(id);
         var gymId = form.GymId.ToIdOrEmpty<LgymApi.Domain.Entities.Gym>();
-        var planDayId = form.TypePlanDayId.ToIdOrEmpty<LgymApi.Domain.Entities.PlanDay>();
+        var planDayId = form.TypePlanDayId.ToIdOrEmpty<PlanDayReference>();
         var exercises = form.Exercises.Select(exercise => new TrainingExerciseInput
         {
             ExerciseId = exercise.ExerciseId.ToIdOrEmpty<ExerciseEntity>(),
@@ -47,7 +48,7 @@ public sealed class TrainingController : ControllerBase
         }).ToList();
 
         var input = new AddTrainingInput(gymId, planDayId, form.CreatedAt, exercises);
-        var result = await _trainingService.AddTrainingAsync(userId, input, cancellationToken);
+        var result = await _trainingService.AddTrainingAsync(accountId, input, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -64,15 +65,15 @@ public sealed class TrainingController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetLastTraining([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
-        var result = await _trainingService.GetLastTrainingAsync(userId, cancellationToken);
+        var accountId = ParseRouteAccountIdForCurrentAccount(id);
+        var result = await _trainingService.GetLastTrainingAsync(accountId, cancellationToken);
 
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
 
-        return Ok(_mapper.Map<LgymApi.Domain.Entities.Training, LastTrainingInfoDto>(result.Value));
+        return Ok(_mapper.Map<LgymApi.Application.Features.Training.Models.WorkoutTrainingReadModel, LastTrainingInfoDto>(result.Value));
     }
 
     [HttpPost("{id}/getTrainingByDate")]
@@ -81,8 +82,8 @@ public sealed class TrainingController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetTrainingByDate([FromRoute] string id, [FromBody] TrainingByDateRequestDto request, CancellationToken cancellationToken = default)
     {
-        var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
-        var result = await _trainingService.GetTrainingByDateAsync(userId, request.CreatedAt, cancellationToken);
+        var accountId = ParseRouteAccountIdForCurrentAccount(id);
+        var result = await _trainingService.GetTrainingByDateAsync(accountId, request.CreatedAt, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -99,8 +100,8 @@ public sealed class TrainingController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetTrainingDates([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
-        var result = await _trainingService.GetTrainingDatesAsync(userId, cancellationToken);
+        var accountId = ParseRouteAccountIdForCurrentAccount(id);
+        var result = await _trainingService.GetTrainingDatesAsync(accountId, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -108,5 +109,18 @@ public sealed class TrainingController : ControllerBase
         }
 
         return Ok(result.Value);
+    }
+
+    private Id<AccountReference> ParseRouteAccountIdForCurrentAccount(string routeAccountId)
+    {
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
+        if (currentAccount is null || currentAccount.Id.IsEmpty ||
+            !Id<AccountReference>.TryParse(routeAccountId, out var parsedAccountId) ||
+            parsedAccountId != currentAccount.Id)
+        {
+            throw new UnauthorizedAccessException(Messages.Forbidden);
+        }
+
+        return parsedAccountId;
     }
 }

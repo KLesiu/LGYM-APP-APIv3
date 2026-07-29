@@ -1,12 +1,12 @@
 using LgymApi.Api.Hubs;
-using LgymApi.Application.Services;
-using LgymApi.Domain.Entities;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
-using LgymApi.TestUtils.Fakes;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using System.Security.Claims;
 using FluentAssertions;
 
@@ -16,15 +16,15 @@ namespace LgymApi.UnitTests.InAppNotifications;
 public sealed class NotificationHubTests
 {
     [Test]
-    public async Task OnConnectedAsync_ValidUser_AddsUserToGroup()
+    public async Task OnConnectedAsync_ActiveAccount_AddsAccountToGroup()
     {
-        var userId = Id<User>.New();
-        var sessionStore = new FakeUserSessionStore();
-        var session = await sessionStore.CreateSessionAsync(userId, DateTimeOffset.UtcNow.AddDays(30), CancellationToken.None);
-        var context = new TestHubCallerContext(userId.ToString(), session.Id.ToString());
+        var accountId = Id<AccountReference>.New();
+        var sessionId = Id<AccountSessionReference>.New();
+        var resolver = CreateResolver(accountId, sessionId, AuthenticatedAccountResolutionStatus.Active);
+        var context = new TestHubCallerContext(accountId.ToString(), sessionId.ToString());
         var groups = new FakeGroupManager();
 
-        var hub = new NotificationHub(sessionStore, NullLogger<NotificationHub>.Instance)
+        var hub = new NotificationHub(resolver, NullLogger<NotificationHub>.Instance)
         {
             Context = context,
             Groups = groups
@@ -34,17 +34,18 @@ public sealed class NotificationHubTests
 
         context.AbortCalled.Should().BeFalse();
         groups.AddCalls.Should().Be(1);
-        groups.LastGroupName.Should().Be($"user-{userId}");
+        groups.LastGroupName.Should().Be($"user-{accountId}");
+        await resolver.Received(1).ResolveAsync(accountId, sessionId, CancellationToken.None);
     }
 
     [Test]
     public async Task OnConnectedAsync_MissingSessionId_AbortsConnection()
     {
-        var context = new TestHubCallerContext(Id<User>.New().ToString(), null);
-        var sessionStore = new FakeUserSessionStore();
+        var resolver = Substitute.For<IAuthenticatedAccountContextResolver>();
+        var context = new TestHubCallerContext(Id<AccountReference>.New().ToString(), null);
         var groups = new FakeGroupManager();
 
-        var hub = new NotificationHub(sessionStore, NullLogger<NotificationHub>.Instance)
+        var hub = new NotificationHub(resolver, NullLogger<NotificationHub>.Instance)
         {
             Context = context,
             Groups = groups
@@ -54,18 +55,19 @@ public sealed class NotificationHubTests
 
         context.AbortCalled.Should().BeTrue();
         groups.AddCalls.Should().Be(0);
+        await resolver.DidNotReceiveWithAnyArgs().ResolveAsync(default, default, default);
     }
 
     [Test]
     public async Task OnConnectedAsync_InvalidSession_AbortsConnection()
     {
-        var userId = Id<User>.New();
-        var invalidSessionId = Id<UserSession>.New();
-        var context = new TestHubCallerContext(userId.ToString(), invalidSessionId.ToString());
-        var sessionStore = new FakeUserSessionStore();
+        var accountId = Id<AccountReference>.New();
+        var invalidSessionId = Id<AccountSessionReference>.New();
+        var resolver = CreateResolver(accountId, invalidSessionId, AuthenticatedAccountResolutionStatus.SessionInvalid);
+        var context = new TestHubCallerContext(accountId.ToString(), invalidSessionId.ToString());
         var groups = new FakeGroupManager();
 
-        var hub = new NotificationHub(sessionStore, NullLogger<NotificationHub>.Instance)
+        var hub = new NotificationHub(resolver, NullLogger<NotificationHub>.Instance)
         {
             Context = context,
             Groups = groups
@@ -75,6 +77,21 @@ public sealed class NotificationHubTests
 
         context.AbortCalled.Should().BeTrue();
         groups.AddCalls.Should().Be(0);
+        await resolver.Received(1).ResolveAsync(accountId, invalidSessionId, CancellationToken.None);
+    }
+
+    private static IAuthenticatedAccountContextResolver CreateResolver(
+        Id<AccountReference> accountId,
+        Id<AccountSessionReference> sessionId,
+        AuthenticatedAccountResolutionStatus status)
+    {
+        var resolver = Substitute.For<IAuthenticatedAccountContextResolver>();
+        var context = status == AuthenticatedAccountResolutionStatus.Active
+            ? new AuthenticatedAccountContext(accountId, sessionId, [], [], false, false)
+            : null;
+        resolver.ResolveAsync(accountId, sessionId, CancellationToken.None)
+            .Returns(Task.FromResult(new AuthenticatedAccountResolution(status, context)));
+        return resolver;
     }
 
     private sealed class FakeGroupManager : IGroupManager

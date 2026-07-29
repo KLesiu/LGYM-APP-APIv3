@@ -7,9 +7,12 @@ using LgymApi.Application.WorkoutProgress.Dashboard;
 using LgymApi.Application.WorkoutProgress.ProgressData;
 using LgymApi.Application.WorkoutProgress.ProgressData.Models;
 using LgymApi.Application.WorkoutProgress.TrainingExecution;
+using LgymApi.Application.TrainingPlanning.Contracts.PlanDay;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.TrainingPlanning.Contracts;
 using NSubstitute;
 
 namespace LgymApi.UnitTests;
@@ -22,25 +25,17 @@ public sealed class WorkoutProgressDashboardReadServiceTests
     {
         var trainingHistory = Substitute.For<ITrainingHistoryReadService>();
         var progress = Substitute.For<IWorkoutProgressReadWriteService>();
-        var traineeId = Id<User>.New();
+        var traineeId = Id<AccountReference>.New();
         var createdAt = DateTime.UtcNow;
-        var planDayId = Id<PlanDay>.New();
-        var exercise = new Exercise { Id = Id<Exercise>.New(), Name = "Bench", BodyPart = BodyParts.Chest };
-        var score = new ExerciseScore
-        {
-            Id = Id<ExerciseScore>.New(),
-            ExerciseId = exercise.Id,
-            Reps = 8,
-            Series = 1,
-            Weight = 80,
-            Unit = WeightUnits.Kilograms
-        };
+        var planDayId = Id<PlanDayReference>.New();
+        var exercise = new ProgressExerciseReadModel(Id<Exercise>.New(), "Bench", null, BodyParts.Chest, null, null, null);
+        var score = new WorkoutExerciseScoreReadModel(Id<ExerciseScore>.New(), exercise.Id, 80, WeightUnits.Kilograms, 8, 1, null);
         var training = new TrainingByDateDetails
         {
             Id = Id<Training>.New(),
             TypePlanDayId = planDayId,
             CreatedAt = createdAt,
-            PlanDay = new TrainingPlanDayReadModel(planDayId.ToString(), "Push"),
+            PlanDay = new PlanDayReferenceReadModel(planDayId, Id<PlanReference>.New(), "Push", true, false),
             Gym = "Gym",
             Exercises =
             [
@@ -71,7 +66,7 @@ public sealed class WorkoutProgressDashboardReadServiceTests
     {
         var trainingHistory = Substitute.For<ITrainingHistoryReadService>();
         var progress = Substitute.For<IWorkoutProgressReadWriteService>();
-        var traineeId = Id<User>.New();
+        var traineeId = Id<AccountReference>.New();
         var exerciseId = Id<Exercise>.New();
         trainingHistory.GetTrainingDatesAsync(traineeId, Arg.Any<CancellationToken>()).Returns(Result<List<DateTime>, AppError>.Success([]));
         progress.GetExerciseScoreChartAsync(traineeId, exerciseId, Arg.Any<CancellationToken>()).Returns(Result<List<ExerciseScoreChartPoint>, AppError>.Success([]));
@@ -98,7 +93,7 @@ public sealed class WorkoutProgressDashboardReadServiceTests
     {
         var trainingHistory = Substitute.For<ITrainingHistoryReadService>();
         var progress = Substitute.For<IWorkoutProgressReadWriteService>();
-        var traineeId = Id<User>.New();
+        var traineeId = Id<AccountReference>.New();
         var error = new TrainingNotFoundError("missing");
         trainingHistory.GetTrainingByDateAsync(traineeId, Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(Result<List<TrainingByDateDetails>, AppError>.Failure(error));

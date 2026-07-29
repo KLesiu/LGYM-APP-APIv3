@@ -3,19 +3,20 @@ using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Reporting.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Reporting.Models;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.Extensions.Logging;
-using UserEntity = LgymApi.Domain.Entities.User;
 
 namespace LgymApi.Application.Features.Reporting;
 
 public sealed partial class ReportingService
 {
     public async Task<Result<InitiatePhotoUploadResult, AppError>> InitiatePhotoUploadAsync(
-        UserEntity currentUser,
+        AuthenticatedAccountContext currentUser,
         InitiatePhotoUploadCommand command,
         CancellationToken cancellationToken = default)
     {
@@ -25,7 +26,7 @@ public sealed partial class ReportingService
                 new InvalidReportingError(Messages.FieldRequired));
         }
 
-        var request = await _reportingRepository.FindRequestByIdAsync(command.ReportRequestId, cancellationToken);
+        var request = await _requestSubmissionPersistence.FindRequestByIdAsync(command.ReportRequestId, cancellationToken);
         if (request == null || request.IsDeleted)
         {
             return Result<InitiatePhotoUploadResult, AppError>.Failure(
@@ -92,20 +93,21 @@ public sealed partial class ReportingService
 
         var expiresAt = DateTimeOffset.UtcNow.Add(GetSignedUploadExpiration());
 
-        await _photoUploadInitTracker.RecordUploadInitAsync(new PendingPhotoUpload
-        {
-            Id = Id<PhotoUploadSession>.New(),
-            StorageKey = storageKey,
-            InitiatedByUserId = currentUser.Id,
-            OwnerUserId = request.TraineeId,
-            ReportRequestId = command.ReportRequestId,
-            ViewType = parsedViewType,
-            DeclaredContentType = command.MimeType,
-            DeclaredSizeBytes = command.SizeBytes,
-            CreatedAtUtc = DateTimeOffset.UtcNow,
-            ExpiresAtUtc = expiresAt,
-            Status = PhotoUploadSessionStatus.Pending
-        }, cancellationToken);
+        await _photoPersistence.RecordUploadInitAsync(new PendingPhotoUpload(
+            Id<PhotoUploadSession>.New(),
+            storageKey,
+            currentUser.Id,
+            request.TraineeId,
+            command.ReportRequestId,
+            parsedViewType,
+            command.MimeType,
+            command.SizeBytes,
+            DateTimeOffset.UtcNow,
+            expiresAt,
+            null,
+            null,
+            PhotoUploadSessionStatus.Pending,
+            null), cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -131,7 +133,7 @@ public sealed partial class ReportingService
     }
 
     public async Task<Result<CompletePhotoUploadResult, AppError>> CompletePhotoUploadAsync(
-        UserEntity currentUser,
+        AuthenticatedAccountContext currentUser,
         CompletePhotoUploadCommand command,
         CancellationToken cancellationToken = default)
     {
@@ -199,7 +201,7 @@ public sealed partial class ReportingService
             return Result<CompletePhotoUploadResult, AppError>.Failure(metadataValidation.Error);
         }
 
-        var existingPhoto = await _reportingRepository.FindActivePhotoByRequestAndViewAsync(
+        var existingPhoto = await _photoPersistence.FindActiveByRequestAndViewAsync(
             command.ReportRequestId,
             parsedViewType,
             cancellationToken);

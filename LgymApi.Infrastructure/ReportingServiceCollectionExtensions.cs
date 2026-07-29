@@ -1,10 +1,12 @@
 using System.Globalization;
 using LgymApi.Application.Abstractions.Storage;
 using LgymApi.Application.Features.Reporting;
-using LgymApi.Application.Repositories;
 using LgymApi.Application.Options;
+using LgymApi.Application.Reporting.Persistence;
+using LgymApi.Application.WorkoutProgress.ReportingIntegration;
 using LgymApi.Infrastructure.Options;
 using LgymApi.Infrastructure.Repositories;
+using LgymApi.Infrastructure.Repositories.Reporting;
 using LgymApi.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,11 +24,13 @@ public static partial class ServiceCollectionExtensions
 
         services.AddSingleton(photoStorageOptions);
         services.AddSingleton<LocalPhotoDevelopmentStore>();
-        services.AddSingleton<InMemoryPhotoUploadInitTracker>();
-        services.AddScoped<IPhotoUploadInitTracker, DbPhotoUploadInitTracker>();
         RegisterPhotoStorageProvider(services, photoStorageOptions, isDevelopmentOrTesting);
-        services.AddScoped<IReportingRepository, ReportingRepository>();
-        services.AddScoped<IRecurringReportAssignmentRepository, RecurringReportAssignmentRepository>();
+        services.AddScoped<IReportTemplatePersistence, ReportTemplatePersistenceRepository>();
+        services.AddScoped<IReportRequestSubmissionPersistence, ReportRequestSubmissionPersistenceRepository>();
+        services.AddScoped<IRecurringReportAssignmentPersistence, RecurringReportAssignmentPersistenceRepository>();
+        services.AddScoped<IReportPhotoPersistence, ReportPhotoPersistenceRepository>();
+        services.AddScoped<IReportingRelationshipAccessPersistence, ReportingRelationshipAccessPersistenceRepository>();
+        services.AddScoped<IReportSubmissionAcceptedProgressPersistence, ReportSubmissionAcceptedProgressPersistenceRepository>();
 
         return services;
     }

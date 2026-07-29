@@ -2,18 +2,22 @@ using FluentAssertions;
 using LgymApi.Api;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Features.Trainer.Controllers;
+using LgymApi.Api.Middleware;
 using LgymApi.Application.Coaching.TraineeNotes.Create;
 using LgymApi.Application.Coaching.TraineeNotes.Delete;
 using LgymApi.Application.Coaching.TraineeNotes.History;
 using LgymApi.Application.Coaching.TraineeNotes.Models;
 using LgymApi.Application.Coaching.TraineeNotes.TrainerList;
 using LgymApi.Application.Coaching.TraineeNotes.Update;
+using LgymApi.Application.Coaching.Compatibility;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -152,20 +156,17 @@ public sealed class TrainerTraineeNotesControllerTests
         IGetTraineeNoteHistoryUseCase? history = null)
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
         var controller = new TrainerTraineeNotesController(
-            listNotes ?? Substitute.For<IListTrainerNotesUseCase>(),
-            createNote ?? Substitute.For<ICreateTraineeNoteUseCase>(),
-            updateNote ?? Substitute.For<IUpdateTraineeNoteUseCase>(),
-            deleteNote ?? Substitute.For<IDeleteTraineeNoteUseCase>(),
-            history ?? Substitute.For<IGetTraineeNoteHistoryUseCase>(),
+            new TrainerTraineeNotesApiAdapter(listNotes ?? Substitute.For<IListTrainerNotesUseCase>(), createNote ?? Substitute.For<ICreateTraineeNoteUseCase>(), updateNote ?? Substitute.For<IUpdateTraineeNoteUseCase>(), deleteNote ?? Substitute.For<IDeleteTraineeNoteUseCase>(), history ?? Substitute.For<IGetTraineeNoteHistoryUseCase>(), mapper),
             mapper)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
-        controller.HttpContext.Items["User"] = new User { Id = Id<User>.New(), Name = "Trainer", Email = "trainer@notes.test", ProfileRank = "Rookie" };
+        controller.HttpContext.Features.Set<IAuthenticatedAccountContextFeature>(new AuthenticatedAccountContextFeature(
+            new AuthenticatedAccountContext(Id<AccountReference>.New(), null, [], [], false, false)));
         return controller;
     }
 

@@ -4,6 +4,7 @@ using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
+using System.Text.RegularExpressions;
 
 namespace LgymApi.UnitTests;
 
@@ -33,6 +34,7 @@ public sealed class NutritionSchemaTests
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
         var registrar = File.ReadAllText(Path.Combine(root, "LgymApi.Infrastructure/Data/Configurations/AppDbContextEntityTypeConfigurationRegistrar.cs"));
+        var nutritionRegistrarEntries = GetNutritionRegistrarEntries(registrar);
         var rosterViolations = ValidateRoster(ExpectedRoster);
 
         Assert.Multiple(() =>
@@ -43,7 +45,8 @@ public sealed class NutritionSchemaTests
                 .Where(property => ExpectedRoster.Select(entry => entry.EntityType).Contains(property.PropertyType.GenericTypeArguments[0]))
                 .Select(property => property.Name).Should().BeEquivalentTo(ExpectedRoster.Select(entry => entry.DbSetName));
             configurationFiles.Should().BeEquivalentTo(ExpectedRoster.Select(entry => $"{entry.ConfigurationName}.cs").Append("NutritionConfigurationFilters.cs"));
-            ExpectedRoster.Should().OnlyContain(entry => registrar.Contains($"Register(new {entry.ConfigurationName}())", StringComparison.Ordinal));
+            nutritionRegistrarEntries.Should().HaveCount(6);
+            nutritionRegistrarEntries.Should().BeEquivalentTo(ExpectedRoster.Select(entry => entry.ConfigurationName));
         });
     }
 
@@ -76,6 +79,17 @@ public sealed class NutritionSchemaTests
         }
 
         return [$"Nutrition roster must contain exactly six entities; found {entries.Length} including {entries.Last().EntityType.Name}."];
+    }
+
+    private static IReadOnlyList<string> GetNutritionRegistrarEntries(string registrar)
+    {
+        var start = registrar.IndexOf("private static void ApplyNutrition", StringComparison.Ordinal);
+        var end = registrar.IndexOf("private static void ApplyReporting", StringComparison.Ordinal);
+        var nutritionSection = registrar[start..end];
+
+        return Regex.Matches(nutritionSection, @"Register\(modelBuilder,\s*new\s+(?<name>\w+)\(\)\);")
+            .Select(match => match.Groups["name"].Value)
+            .ToArray();
     }
 
     private static void AssertTables(IEnumerable<IEntityType> entities)

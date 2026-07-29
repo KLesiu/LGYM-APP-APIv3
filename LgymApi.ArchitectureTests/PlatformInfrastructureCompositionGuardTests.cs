@@ -10,11 +10,9 @@ public sealed class PlatformInfrastructureCompositionGuardTests
     [
         "AddPlatformPersistence",
         "AddPlatformBackgroundRuntime",
-        "AddPlatformPagination",
+        "AddPlatformMapperRegistry",
         "AddPlatformReliabilityDispatcher",
-        "AddPlatformUnitOfWork",
-        "AddReferenceDataInfrastructure",
-        "AddPlatformReliabilityRepositories"
+        "AddPlatformUnitOfWork"
     ];
 
     [Test]
@@ -52,11 +50,11 @@ public sealed class PlatformInfrastructureCompositionGuardTests
     [Test]
     public void PrivateHelperComposition_Fixture_Should_Reject_An_Omitted_Helper()
     {
-        var omitted = ExpectedPrivateHelpers.Where(name => name != "AddPlatformPagination").ToArray();
+        var omitted = ExpectedPrivateHelpers.Where(name => name != "AddPlatformMapperRegistry").ToArray();
 
         Assert.That(
             () => AssertExactPrivateHelperComposition(omitted),
-            Throws.InvalidOperationException.With.Message.Contains("AddPlatformPagination"));
+            Throws.InvalidOperationException.With.Message.Contains("AddPlatformMapperRegistry"));
     }
 
     [Test]
@@ -65,20 +63,16 @@ public sealed class PlatformInfrastructureCompositionGuardTests
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var configurationPath = Path.Combine(
             repoRoot,
-            "LgymApi.Infrastructure",
-            "Data",
+            "LgymApi.Platform",
+            "Persistence",
             "Configurations",
             "ReferenceData",
             "AppConfigEntityTypeConfiguration.cs");
-        var registrarPath = Path.Combine(
-            repoRoot,
-            "LgymApi.Infrastructure",
-            "Data",
-            "Configurations",
-            "AppDbContextEntityTypeConfigurationRegistrar.cs");
+        var topology = PersistenceTopologyGuardTestHelpers.Analyze(
+            PersistenceTopologyGuardTestHelpers.LoadProductionSources(repoRoot));
 
         Assert.That(File.Exists(configurationPath), Is.True);
-        AssertAppConfigRegistrarPlacement(ExtractRegistrarEntries(ParseFile(registrarPath)));
+        AssertAppConfigRegistrarPlacement(topology.RegistrarEntries.Select(entry => entry.ConfigurationType).ToList());
     }
 
     [Test]
@@ -86,11 +80,11 @@ public sealed class PlatformInfrastructureCompositionGuardTests
     {
         var entries = PersistenceIdentityContract.RegistrarConfigurationTypes.ToList();
         entries.Remove("AppConfigEntityTypeConfiguration");
-        entries.Insert(20, "AppConfigEntityTypeConfiguration");
+        entries.Insert(23, "AppConfigEntityTypeConfiguration");
 
         Assert.That(
             () => AssertAppConfigRegistrarPlacement(entries),
-            Throws.InvalidOperationException.With.Message.Contains("ordinal 19"));
+            Throws.InvalidOperationException.With.Message.Contains("ordinal 22"));
     }
 
     private static void AssertExactPrivateHelperComposition(IReadOnlyList<string> actual)
@@ -105,13 +99,13 @@ public sealed class PlatformInfrastructureCompositionGuardTests
 
     private static void AssertAppConfigRegistrarPlacement(IReadOnlyList<string> entries)
     {
-        const int appConfigOrdinal = 19;
+        const int appConfigOrdinal = 22;
         if (entries.Count != 48 ||
             entries.ElementAtOrDefault(appConfigOrdinal) != "AppConfigEntityTypeConfiguration" ||
             entries.ElementAtOrDefault(appConfigOrdinal - 1) != "EloRegistryEntityTypeConfiguration" ||
             entries.ElementAtOrDefault(appConfigOrdinal + 1) != "TrainerInvitationEntityTypeConfiguration")
         {
-            throw new InvalidOperationException("AppConfigEntityTypeConfiguration must remain at registrar ordinal 19.");
+            throw new InvalidOperationException("AppConfigEntityTypeConfiguration must remain at registrar ordinal 22.");
         }
     }
 
@@ -132,23 +126,13 @@ public sealed class PlatformInfrastructureCompositionGuardTests
         return names;
     }
 
-    private static IReadOnlyList<string> ExtractRegistrarEntries(CompilationUnitSyntax root)
-    {
-        return root.DescendantNodes().OfType<ObjectCreationExpressionSyntax>()
-            .Select(creation => creation.Type.ToString())
-            .Where(name => name.EndsWith("EntityTypeConfiguration", StringComparison.Ordinal))
-            .ToList();
-    }
-
     private static IEnumerable<(string FileName, string HelperName)> RequiredPrivateHelperLocations()
     {
         yield return ("PlatformPersistenceServiceCollectionExtensions.cs", "AddPlatformPersistence");
         yield return ("PlatformPersistenceServiceCollectionExtensions.cs", "AddPlatformUnitOfWork");
         yield return ("PlatformBackgroundRuntimeServiceCollectionExtensions.cs", "AddPlatformBackgroundRuntime");
-        yield return ("PlatformPaginationServiceCollectionExtensions.cs", "AddPlatformPagination");
+        yield return ("PlatformPaginationServiceCollectionExtensions.cs", "AddPlatformMapperRegistry");
         yield return ("PlatformReliabilityServiceCollectionExtensions.cs", "AddPlatformReliabilityDispatcher");
-        yield return ("PlatformReliabilityServiceCollectionExtensions.cs", "AddPlatformReliabilityRepositories");
-        yield return ("ReferenceDataServiceCollectionExtensions.cs", "AddReferenceDataInfrastructure");
     }
 
     private static CompilationUnitSyntax ParseFile(string path)

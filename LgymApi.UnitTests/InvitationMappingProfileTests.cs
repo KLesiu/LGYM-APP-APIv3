@@ -29,7 +29,7 @@ public sealed class InvitationMappingProfileTests
             createdAt.AddDays(7),
             createdAt);
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
@@ -60,7 +60,7 @@ public sealed class InvitationMappingProfileTests
             TrainerInvitationStatus.Accepted,
             respondedAt);
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
@@ -82,7 +82,7 @@ public sealed class InvitationMappingProfileTests
         var traineeId = Id<User>.New();
         var source = new InvitationActiveLinkSource(linkId, trainerId, traineeId);
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();

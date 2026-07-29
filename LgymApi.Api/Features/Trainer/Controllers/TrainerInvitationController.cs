@@ -3,11 +3,8 @@ using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Idempotency;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Coaching.Invitations.Create;
-using LgymApi.Application.Coaching.Invitations.CreateByEmail;
-using LgymApi.Application.Coaching.Invitations.ListPaginated;
+using LgymApi.Application.Coaching.Compatibility;
 using LgymApi.Application.Coaching.Invitations.Models;
-using LgymApi.Application.Coaching.Invitations.Revoke;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Coaching.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
@@ -19,7 +16,7 @@ using LgymApi.Resources;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TrainerInvitationEntity = LgymApi.Domain.Entities.TrainerInvitation;
-using UserEntity = LgymApi.Domain.Entities.User;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.Api.Features.Trainer.Controllers;
 
@@ -28,23 +25,14 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 [Authorize(Policy = AuthConstants.Policies.TrainerAccess)]
 public sealed class TrainerInvitationController : ControllerBase
 {
-    private readonly ICreateInvitationUseCase _createInvitation;
-    private readonly ICreateInvitationByEmailUseCase _createInvitationByEmail;
-    private readonly IListPaginatedInvitationsUseCase _listPaginatedInvitations;
-    private readonly IRevokeInvitationUseCase _revokeInvitation;
+    private readonly ITrainerInvitationApiPort _invitations;
     private readonly IMapper _mapper;
 
     public TrainerInvitationController(
-        ICreateInvitationUseCase createInvitation,
-        ICreateInvitationByEmailUseCase createInvitationByEmail,
-        IListPaginatedInvitationsUseCase listPaginatedInvitations,
-        IRevokeInvitationUseCase revokeInvitation,
+        ITrainerInvitationApiPort invitations,
         IMapper mapper)
     {
-        _createInvitation = createInvitation;
-        _createInvitationByEmail = createInvitationByEmail;
-        _listPaginatedInvitations = listPaginatedInvitations;
-        _revokeInvitation = revokeInvitation;
+        _invitations = invitations;
         _mapper = mapper;
     }
 
@@ -53,18 +41,12 @@ public sealed class TrainerInvitationController : ControllerBase
     [ProducesResponseType(typeof(TrainerInvitationDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> CreateInvitation([FromBody] CreateTrainerInvitationRequest request, CancellationToken cancellationToken = default)
     {
-        if (!Id<UserEntity>.TryParse(request.TraineeId, out var traineeId))
+        if (!Id<AccountReference>.TryParse(request.TraineeId, out var traineeId))
         {
             return Result<InvitationReadModel, AppError>.Failure(new InvalidTrainerRelationshipError(Messages.UserIdRequired)).ToActionResult();
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var command = _mapper.Map<CreateTrainerInvitationRequest, CreateInvitationCommand>(request) with
-        {
-            TrainerId = trainer!.Id,
-            TraineeId = traineeId
-        };
-        var result = await _createInvitation.ExecuteAsync(command, cancellationToken);
+        var result = await _invitations.CreateAsync(HttpContext.GetAuthenticatedAccountContext()!, traineeId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -77,11 +59,7 @@ public sealed class TrainerInvitationController : ControllerBase
     [ProducesResponseType(typeof(PaginatedTrainerInvitationResult), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetInvitationsPaginated([FromBody] PaginatedTrainerInvitationRequest request, CancellationToken cancellationToken = default)
     {
-        var trainer = HttpContext.GetCurrentUser();
-        var query = new ListPaginatedInvitationsQuery(
-            trainer!.Id,
-            _mapper.Map<PaginatedTrainerInvitationRequest, FilterInput>(request));
-        var result = await _listPaginatedInvitations.ExecuteAsync(query, cancellationToken);
+        var result = await _invitations.GetPaginatedAsync(HttpContext.GetAuthenticatedAccountContext()!, _mapper.Map<PaginatedTrainerInvitationRequest, FilterInput>(request), cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -105,9 +83,7 @@ public sealed class TrainerInvitationController : ControllerBase
     [ProducesResponseType(typeof(TrainerInvitationDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> CreateInvitationByEmail([FromBody] CreateTrainerInvitationByEmailRequest request, CancellationToken cancellationToken = default)
     {
-        var trainer = HttpContext.GetCurrentUser();
-        var command = _mapper.Map<CreateTrainerInvitationByEmailRequest, CreateInvitationByEmailCommand>(request) with { TrainerId = trainer!.Id };
-        var result = await _createInvitationByEmail.ExecuteAsync(command, cancellationToken);
+        var result = await _invitations.CreateByEmailAsync(HttpContext.GetAuthenticatedAccountContext()!, request.Email, request.PreferredLanguage, request.PreferredTimeZone, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -125,8 +101,7 @@ public sealed class TrainerInvitationController : ControllerBase
             return Result<Unit, AppError>.Failure(new InvalidTrainerRelationshipError(Messages.FieldRequired)).ToActionResult();
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _revokeInvitation.ExecuteAsync(new RevokeInvitationCommand(trainer!.Id, parsedInvitationId), cancellationToken);
+        var result = await _invitations.RevokeAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedInvitationId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();

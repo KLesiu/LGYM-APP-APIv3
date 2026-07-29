@@ -1,23 +1,23 @@
-using LgymApi.Application.Coaching.Contracts.Access;
+using LgymApi.Application.Coaching.Persistence;
 using LgymApi.Application.WorkoutProgress.Contracts.Measurements;
 using LgymApi.Domain.ValueObjects;
-using UserEntity = LgymApi.Domain.Entities.User;
+using LgymApi.Domain.Security;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 
 namespace LgymApi.Application.Coaching.Adapters;
 
 internal sealed class MeasurementsRelationshipAccessAdapter(
-    ICoachingRelationshipAccessService relationshipAccessService) : IMeasurementsRelationshipAccessPort
+    IAccountAccessReader accountAccess,
+    ICoachingActiveLinkPersistence activeLinks) : IMeasurementsRelationshipAccessPort
 {
     public async Task<bool> HasActiveRelationshipAsync(
-        Id<UserEntity> trainerId,
-        Id<UserEntity> traineeId,
+        Id<AccountReference> trainerId,
+        Id<AccountReference> traineeId,
         CancellationToken cancellationToken = default)
     {
-        var decision = await relationshipAccessService.GetAccessDecisionAsync(
-            trainerId,
-            traineeId,
-            cancellationToken);
-
-        return decision.HasActiveRelationship;
+        var trainer = await accountAccess.GetByIdAsync(trainerId, cancellationToken);
+        return trainer?.Roles.Contains(AuthConstants.Roles.Trainer, StringComparer.Ordinal) == true
+            && await activeLinks.HasActiveRelationshipAsync(trainerId, traineeId, cancellationToken);
     }
 }

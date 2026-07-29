@@ -16,7 +16,7 @@ public sealed class ExerciseScoresService : IExerciseScoresService
         _progress = progress;
     }
 
-    public async Task<Result<List<ExerciseScoresChartData>, AppError>> GetExerciseScoresChartDataAsync(Id<LgymApi.Domain.Entities.User> userId, Id<LgymApi.Domain.Entities.Exercise> exerciseId, CancellationToken cancellationToken = default)
+    public async Task<Result<List<ExerciseScoresChartData>, AppError>> GetExerciseScoresChartDataAsync(Id<LgymApi.Identity.Contracts.AccountReference> userId, Id<LgymApi.Domain.Entities.Exercise> exerciseId, CancellationToken cancellationToken = default)
     {
         var result = await _progress.GetExerciseScoreChartAsync(userId, exerciseId, cancellationToken);
         return result.IsFailure

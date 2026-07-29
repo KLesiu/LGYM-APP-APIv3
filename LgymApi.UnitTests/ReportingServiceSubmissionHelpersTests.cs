@@ -205,11 +205,11 @@ public sealed class ReportingServiceSubmissionHelpersTests
     private static object InvokeValidateAnswersAgainstTemplate(ReportTemplate template, Dictionary<string, JsonElement> answers)
     {
         var method = typeof(ReportingService).GetMethod("ValidateAnswersAgainstTemplate", BindingFlags.Static | BindingFlags.NonPublic)!;
-        return method.Invoke(null, [template, answers])!;
+        return method.Invoke(null, [ReportingTestData.Template(template), answers])!;
     }
 
     private static object InvokeResult(MethodInfo method, ReportTemplate template, Dictionary<string, string> comments)
-        => method.Invoke(null, [template, comments])!;
+        => method.Invoke(null, [ReportingTestData.Template(template), comments])!;
 
     private static bool GetBoolProperty(object instance, string propertyName)
         => (bool)instance.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!.GetValue(instance)!;

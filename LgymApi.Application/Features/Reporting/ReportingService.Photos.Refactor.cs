@@ -3,21 +3,23 @@ using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Reporting.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Reporting.Models;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.Extensions.Logging;
-using UserEntity = LgymApi.Domain.Entities.User;
 
 namespace LgymApi.Application.Features.Reporting;
 
 public sealed partial class ReportingService
 {
-    private sealed record CompletePhotoUploadValidationContext(ReportRequest Request, string ParsedViewType);
+    private sealed record CompletePhotoUploadValidationContext(ReportRequestPersistenceModel Request, string ParsedViewType);
 
     private async Task<Result<CompletePhotoUploadValidationContext, AppError>> ValidateCompletePhotoUploadRequestAsync(
-        UserEntity currentUser,
+        AuthenticatedAccountContext currentUser,
         CompletePhotoUploadCommand command,
         CancellationToken cancellationToken)
     {
@@ -27,7 +29,7 @@ public sealed partial class ReportingService
                 new InvalidReportingError(Messages.FieldRequired));
         }
 
-        var request = await _reportingRepository.FindRequestByIdAsync(command.ReportRequestId, cancellationToken);
+        var request = await _requestSubmissionPersistence.FindRequestByIdAsync(command.ReportRequestId, cancellationToken);
         if (request == null || request.IsDeleted)
         {
             return Result<CompletePhotoUploadValidationContext, AppError>.Failure(
@@ -77,7 +79,7 @@ public sealed partial class ReportingService
         string storageKey,
         CancellationToken cancellationToken)
     {
-        var uploadSession = await _photoUploadInitTracker.GetUploadSessionAsync(storageKey, cancellationToken);
+        var uploadSession = await _photoPersistence.FindUploadSessionAsync(storageKey, cancellationToken);
         if (uploadSession == null)
         {
             _logger.LogWarning(
@@ -112,7 +114,7 @@ public sealed partial class ReportingService
             return null;
         }
 
-        var completedPhoto = await _reportingRepository.FindPhotoByIdAsync(uploadSession.CompletedPhotoId.Value, cancellationToken);
+        var completedPhoto = await _photoPersistence.FindByIdAsync(uploadSession.CompletedPhotoId.Value, cancellationToken);
         if (completedPhoto == null)
         {
             return null;
@@ -153,36 +155,49 @@ public sealed partial class ReportingService
         CancellationToken cancellationToken)
     {
         await CleanupInvalidUploadedObjectAsync(storageKey, cancellationToken);
-        await _photoUploadInitTracker.MarkFailedAsync(storageKey, failureReason, cancellationToken);
+        await _photoPersistence.MarkUploadFailedAsync(storageKey, failureReason, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task<Photo> CreateAndPersistPhotoAsync(
-        UserEntity currentUser,
+    private async Task<ReportPhotoPersistenceModel> CreateAndPersistPhotoAsync(
+        AuthenticatedAccountContext currentUser,
         CompletePhotoUploadCommand command,
         PhotoMetadata metadata,
         string parsedViewType,
-        Id<UserEntity> ownerUserId,
+        Id<AccountReference> ownerUserId,
         CancellationToken cancellationToken)
     {
-        var photo = new Photo
-        {
-            Id = Id<Photo>.New(),
-            StorageKey = command.StorageKey,
-            MimeType = metadata.ContentType,
-            SizeBytes = metadata.SizeBytes,
-            Checksum = ResolveStoredChecksum(command.Checksum, metadata.ETag),
-            ViewType = parsedViewType,
-            ReportRequestId = command.ReportRequestId,
-            UploaderUserId = currentUser.Id,
-            OwnerUserId = ownerUserId
-        };
+        var createdAt = DateTimeOffset.UtcNow;
+        var photo = new NewReportPhotoPersistenceModel(
+            Id<Photo>.New(),
+            command.StorageKey,
+            metadata.ContentType,
+            metadata.SizeBytes,
+            ResolveStoredChecksum(command.Checksum, metadata.ETag),
+            null,
+            parsedViewType,
+            command.ReportRequestId,
+            currentUser.Id,
+            ownerUserId,
+            createdAt);
 
-        await _reportingRepository.SavePhotoAsync(photo, cancellationToken);
-        await _photoUploadInitTracker.MarkCompletedAsync(command.StorageKey, photo.Id, photo.CreatedAt, cancellationToken);
+        await _photoPersistence.SaveAsync(photo, cancellationToken);
+        await _photoPersistence.MarkUploadCompletedAsync(command.StorageKey, photo.Id, photo.CreatedAt, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return photo;
+        return new ReportPhotoPersistenceModel(
+            photo.Id,
+            photo.StorageKey,
+            photo.MimeType,
+            photo.SizeBytes,
+            photo.Checksum,
+            photo.ThumbnailStorageKey,
+            photo.ViewType,
+            photo.ReportRequestId,
+            photo.UploaderAccountId,
+            photo.OwnerAccountId,
+            photo.CreatedAt,
+            false);
     }
 
     private async Task TryDeleteReplacedObjectAsync(string storageKey, CancellationToken cancellationToken)

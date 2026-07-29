@@ -159,7 +159,7 @@ public sealed class GetTraineeDietPlansUseCaseTests
         private static IMapper CreateMapper()
         {
             var services = new ServiceCollection();
-            services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+            services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
             using var provider = services.BuildServiceProvider();
             return provider.GetRequiredService<IMapper>();

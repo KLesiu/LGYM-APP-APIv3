@@ -11,6 +11,7 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.Notifications;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.UnitTests.Fakes;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -37,8 +38,15 @@ public sealed class CoachingNotificationIntentEmailTests
             CoachingEmailSchedulingKind.InvitationCreated, EmailNotificationTypes.TrainerInvitation, invitationId,
             invitationId.Rebind<CorrelationScope>(), "trainee@example.com", "pl-PL", "Europe/Madrid", "Coach", null, "ABC123", expiresAt));
         await harness.InAppNotificationService.DidNotReceive().CreateAsync(Arg.Any<CreateInAppNotificationInput>(), Arg.Any<CancellationToken>());
-        await harness.EmailNotificationLogRepository.Received(1).FindByCorrelationAsync(
-            EmailNotificationTypes.TrainerInvitation, invitationId.Rebind<CorrelationScope>(), "trainee@example.com", Arg.Any<CancellationToken>());
+        harness.EmailNotificationLogRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IEmailNotificationLogRepository.FindByCorrelationAsync)
+                && call.Argument is ValueTuple<EmailNotificationType, Id<CorrelationScope>, string> arguments
+                && arguments.Item1 == EmailNotificationTypes.TrainerInvitation
+                && arguments.Item2 == invitationId.Rebind<CorrelationScope>()
+                && arguments.Item3 == "trainee@example.com")
+            .Should()
+            .ContainSingle();
     }
 
     [Test]
@@ -83,16 +91,11 @@ public sealed class CoachingNotificationIntentEmailTests
         var invitationId = Id<TrainerInvitation>.New();
         var trainerId = Id<User>.New();
         var traineeId = Id<User>.New();
-        harness.EmailNotificationLogRepository.FindByCorrelationAsync(
-                EmailNotificationTypes.TrainerInvitationAccepted,
-                invitationId.Rebind<CorrelationScope>(),
-                "coach@example.com",
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<NotificationMessage?>(new NotificationMessage
+        harness.EmailNotificationLogRepository.FindByCorrelation = (_, _, _, _) => Task.FromResult<NotificationMessage?>(new NotificationMessage
             {
                 Status = EmailNotificationStatus.Sent,
                 Attempts = 0
-            }));
+            });
 
         var missingAccount = await harness.Service.SubmitAsync(new InvitationCreatedCoachingNotificationIntent(
             CoachingNotificationLegacyChannel.Email, invitationId, trainerId, traineeId, "invitee@example.com", "code", DateTimeOffset.UtcNow,
@@ -128,22 +131,13 @@ public sealed class CoachingNotificationIntentEmailTests
         var featureDisabled = await harness.Service.SubmitAsync(intent);
 
         featureDisabled.EmailSchedulingRequest.Should().BeNull();
-        await harness.EmailNotificationLogRepository.DidNotReceive().FindByCorrelationAsync(
-            Arg.Any<EmailNotificationType>(),
-            Arg.Any<Id<CorrelationScope>>(),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>());
+        harness.EmailNotificationLogRepository.Calls.Should().NotContain(call => call.Method == nameof(IEmailNotificationLogRepository.FindByCorrelationAsync));
         harness.EmailNotificationFeature.Enabled.Returns(true);
-        harness.EmailNotificationLogRepository.FindByCorrelationAsync(
-                EmailNotificationTypes.TrainerInvitation,
-                invitationId.Rebind<CorrelationScope>(),
-                "trainee@example.com",
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<NotificationMessage?>(new NotificationMessage
+        harness.EmailNotificationLogRepository.FindByCorrelation = (_, _, _, _) => Task.FromResult<NotificationMessage?>(new NotificationMessage
             {
                 Status = EmailNotificationStatus.Failed,
                 Attempts = 5
-            }));
+            });
 
         var retryLimitReached = await harness.Service.SubmitAsync(intent);
 
@@ -197,8 +191,6 @@ public sealed class CoachingNotificationIntentEmailTests
     {
         public TestHarness()
         {
-            EmailNotificationLogRepository.FindByCorrelationAsync(Arg.Any<EmailNotificationType>(), Arg.Any<Id<CorrelationScope>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-                .Returns(Task.FromResult<NotificationMessage?>(null));
             InAppNotificationService.CreateAsync(Arg.Any<CreateInAppNotificationInput>(), Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult(Result<InAppNotificationResult, AppError>.Success(new InAppNotificationResult(
                     Id<InAppNotification>.New(), Id<User>.New(), "message", null, false, InAppNotificationTypes.InvitationSent, false, null, DateTimeOffset.UtcNow))));
@@ -211,7 +203,7 @@ public sealed class CoachingNotificationIntentEmailTests
         }
 
         public IInAppNotificationService InAppNotificationService { get; } = Substitute.For<IInAppNotificationService>();
-        public IEmailNotificationLogRepository EmailNotificationLogRepository { get; } = Substitute.For<IEmailNotificationLogRepository>();
+        public ConfigurableEmailNotificationLogRepository EmailNotificationLogRepository { get; } = new();
         public ICoachingEmailNotificationFeature EmailNotificationFeature { get; } = Substitute.For<ICoachingEmailNotificationFeature>();
         public CoachingNotificationIntentService Service { get; }
     }

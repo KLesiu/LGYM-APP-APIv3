@@ -10,6 +10,8 @@ using LgymApi.Application.Coaching.ManagedPlans.Unassign;
 using LgymApi.Application.Coaching.ManagedPlans.Update;
 using LgymApi.Application.Repositories;
 using LgymApi.Domain.Entities;
+using LgymApi.Identity.Contracts;
+using LgymApi.TrainingPlanning.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LgymApi.ArchitectureTests;
@@ -89,8 +91,7 @@ public sealed class CoachingManagedPlanSliceArchitectureTests
                     .SelectMany(method => method.GetParameters().Select(parameter => parameter.ParameterType))))
             .ToArray();
 
-        exposedTypes.Should().NotContain(typeof(IPlanRepository));
-        exposedTypes.Should().NotContain(typeof(IUserRepository));
+        exposedTypes.Select(type => type.FullName).Should().NotContain("LgymApi.Application.Repositories.IUserRepository");
         exposedTypes.Should().NotContain(typeof(Plan));
         exposedTypes.Should().NotContain(typeof(User));
 
@@ -99,8 +100,13 @@ public sealed class CoachingManagedPlanSliceArchitectureTests
         var source = Directory.GetFiles(directory, "*.cs", SearchOption.AllDirectories)
             .Select(File.ReadAllText)
             .ToArray();
+        source.Should().NotContain(text => text.Contains("LgymApi.Application.Repositories", StringComparison.Ordinal));
         source.Should().NotContain(text => text.Contains("IPlanRepository", StringComparison.Ordinal));
+        source.Should().NotContain(text => text.Contains("IPlanDayRepository", StringComparison.Ordinal));
         source.Should().NotContain(text => text.Contains("IUserRepository", StringComparison.Ordinal));
+        source.Should().NotContain(text => text.Contains("LgymApi.Domain.Entities.Plan", StringComparison.Ordinal));
+        source.Should().NotContain(text => text.Contains("LgymApi.Domain.Entities.User", StringComparison.Ordinal));
+        source.Should().NotContain(text => text.Contains("LgymApi.Application.TrainingPlanning.ManagedPlans", StringComparison.Ordinal));
         source.Should().NotContain(text => text.Contains("TrainerRelationshipService", StringComparison.Ordinal));
         source.Should().NotContain(text => text.Contains("LgymApi.Infrastructure", StringComparison.Ordinal));
         source.Should().NotContain(text => text.Contains("SaveChangesAsync", StringComparison.Ordinal));
@@ -160,6 +166,6 @@ public sealed class CoachingManagedPlanSliceArchitectureTests
         }
 
         return type.GetGenericArguments().Single() is var argument
-            && (argument == typeof(User) || argument == typeof(Plan));
+            && (argument == typeof(AccountReference) || argument == typeof(PlanReference));
     }
 }

@@ -1,5 +1,5 @@
 using LgymApi.Domain.Entities;
-using LgymApi.Infrastructure.Data.Configurations.TrainingPlanning;
+using LgymApi.TrainingPlanning.Persistence.Configurations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 

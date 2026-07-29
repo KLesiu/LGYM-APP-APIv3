@@ -1,28 +1,25 @@
-using LgymApi.Application.Repositories;
-using LgymApi.Application.Identity.Contracts.Access;
+using LgymApi.Application.WorkoutProgress.Persistence;
+using LgymApi.Application.TrainingPlanning.Contracts.PlanDay;
+using LgymApi.Identity.Contracts.Accounts;
 
 namespace LgymApi.Application.WorkoutProgress.TrainingExecution;
 
 public interface ITrainingHistoryReadServiceDependencies
 {
-    IUserAccessReadService UserAccess { get; }
-    ITrainingRepository TrainingRepository { get; }
-    IExerciseScoreRepository ExerciseScoreRepository { get; }
-    ITrainingExerciseScoreRepository TrainingExerciseScoreRepository { get; }
+    IAccountAccessReader AccountAccess { get; }
+    IWorkoutTrainingPersistence TrainingRepository { get; }
+    IWorkoutExerciseScorePersistence ExerciseScoreRepository { get; }
+    IPlanDayReferenceReadService PlanDayReferences { get; }
 }
 
-internal sealed class TrainingHistoryReadServiceDependencies : ITrainingHistoryReadServiceDependencies
+internal sealed class TrainingHistoryReadServiceDependencies(
+    IAccountAccessReader accountAccess,
+    IWorkoutTrainingPersistence trainingRepository,
+    IWorkoutExerciseScorePersistence exerciseScoreRepository,
+    IPlanDayReferenceReadService planDayReferences) : ITrainingHistoryReadServiceDependencies
 {
-    public TrainingHistoryReadServiceDependencies(IUserAccessReadService userAccess, ITrainingRepository trainingRepository, IExerciseScoreRepository exerciseScoreRepository, ITrainingExerciseScoreRepository trainingExerciseScoreRepository)
-    {
-        UserAccess = userAccess;
-        TrainingRepository = trainingRepository;
-        ExerciseScoreRepository = exerciseScoreRepository;
-        TrainingExerciseScoreRepository = trainingExerciseScoreRepository;
-    }
-
-    public IUserAccessReadService UserAccess { get; }
-    public ITrainingRepository TrainingRepository { get; }
-    public IExerciseScoreRepository ExerciseScoreRepository { get; }
-    public ITrainingExerciseScoreRepository TrainingExerciseScoreRepository { get; }
+    public IAccountAccessReader AccountAccess { get; } = accountAccess;
+    public IWorkoutTrainingPersistence TrainingRepository { get; } = trainingRepository;
+    public IWorkoutExerciseScorePersistence ExerciseScoreRepository { get; } = exerciseScoreRepository;
+    public IPlanDayReferenceReadService PlanDayReferences { get; } = planDayReferences;
 }

@@ -11,6 +11,7 @@ using LgymApi.Application.Platform.Contracts.Serialization;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using NUnit.Framework;
 using System.Text.Json;
 
@@ -63,8 +64,7 @@ public sealed class CommandContractManifestTests
     public void LegacyCommand_UsesItsFixedCanonicalId(LegacyCommandContract contract)
     {
         // Given
-        var commandType = typeof(LgymApi.Application.Platform.Contracts.BackgroundCommands.IActionCommand)
-            .Assembly.GetType(contract.FutureClrNameReadAlias)!;
+        var commandType = contract.CommandType;
 
         // When
         var persistedId = CommandContractRegistry.CreateDefault()
@@ -126,14 +126,44 @@ public sealed class CommandContractManifestTests
             .SetName("Duplicate_canonical_id_is_rejected");
 
         yield return new TestCaseData(
+                ReplaceLast(manifest, manifest[^1] with { CanonicalId = "Unexpected.Canonical.Command" }),
+                "Canonical command IDs must exactly match the fixed 15-command membership.")
+            .SetName("Altered_canonical_id_is_rejected");
+
+        yield return new TestCaseData(
+                ReplaceLast(manifest, manifest[^1] with { CanonicalId = manifest[^1].FutureClrNameReadAlias }),
+                "Canonical command IDs and future read aliases must not overlap.")
+            .SetName("Alias_write_id_is_rejected");
+
+        yield return new TestCaseData(
                 ReplaceLast(manifest, manifest[^1] with { FutureClrNameReadAlias = manifest[0].FutureClrNameReadAlias }),
                 "Future CLR-name read aliases must be unique.")
             .SetName("Duplicate_future_alias_is_rejected");
 
         yield return new TestCaseData(
+                ReplaceLast(manifest, manifest[^1] with { FutureClrNameReadAlias = string.Empty }),
+                "Future CLR-name read aliases must exactly match the fixed 15-command membership.")
+            .SetName("Missing_future_alias_is_rejected");
+
+        yield return new TestCaseData(
                 ReplaceLast(manifest, manifest[^1] with { CommandType = manifest[0].CommandType }),
                 "Runtime command types must be unique.")
             .SetName("Duplicate_runtime_type_is_rejected");
+
+        yield return new TestCaseData(
+                ReplaceLast(manifest, manifest[^1] with
+                {
+                    CommandType = typeof(UnexpectedCommand),
+                    Command = new UnexpectedCommand(),
+                    FutureClrNameReadAlias = typeof(UnexpectedCommand).FullName!
+                }),
+                "Runtime command types must exactly match the fixed 15-command membership.")
+            .SetName("Altered_runtime_type_is_rejected");
+
+        yield return new TestCaseData(
+                ReplaceLast(manifest, manifest[^1] with { PayloadJson = "{\"unexpectedSchemaField\":true}" }),
+                "Every command fixture must serialize to its fixed golden payload.")
+            .SetName("Altered_payload_schema_is_rejected");
 
         yield return new TestCaseData(
                 ReplaceLast(manifest, manifest[^1] with { HandlerTypeFullNames = [] }),
@@ -150,10 +180,31 @@ public sealed class CommandContractManifestTests
         IReadOnlyList<LegacyCommandContract> manifest,
         LegacyCommandContract replacement) =>
         manifest.Take(manifest.Count - 1).Append(replacement).ToArray();
+
+    private sealed class UnexpectedCommand : IActionCommand;
 }
 
 public static class LegacyCommandContractManifest
 {
+    public static IReadOnlyList<string> ExpectedCanonicalIds { get; } =
+    [
+        "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
+        "LgymApi.BackgroundWorker.Common.Commands.TrainingCompletedCommand",
+        "LgymApi.BackgroundWorker.Common.Commands.InvitationCreatedCommand",
+        "LgymApi.BackgroundWorker.Common.Commands.InvitationAcceptedCommand",
+        "LgymApi.BackgroundWorker.Common.Commands.InvitationRevokedCommand",
+        "LgymApi.BackgroundWorker.Common.Commands.DietPlanUpdatedInAppNotificationCommand",
+        "LgymApi.BackgroundWorker.Common.Commands.TraineeNoteUpdatedInAppNotificationCommand",
+        "LgymApi.BackgroundWorker.Common.Commands.ReportSubmissionCreatedInAppNotificationCommand",
+        "LgymApi.BackgroundWorker.Common.Commands.ReportSubmissionAcceptedProgressCommand",
+        "LgymApi.BackgroundWorker.Common.Commands.ReportRequestCreatedInAppNotificationCommand",
+        "LgymApi.BackgroundWorker.Common.Commands.ReportFeedbackAddedInAppNotificationCommand",
+        "LgymApi.BackgroundWorker.Common.Commands.TrainerInvitationAcceptedInAppNotificationCommand",
+        "LgymApi.BackgroundWorker.Common.Commands.TrainerInvitationCreatedInAppNotificationCommand",
+        "LgymApi.BackgroundWorker.Common.Commands.TrainerInvitationRejectedInAppNotificationCommand",
+        "LgymApi.BackgroundWorker.Common.Commands.TrainerRelationshipEndedInAppNotificationCommand"
+    ];
+
     public static IReadOnlyList<Type> ExpectedRuntimeTypes { get; } =
     [
         typeof(UserRegisteredCommand),
@@ -315,8 +366,8 @@ public static class LegacyCommandContractManifest
             new ReportSubmissionCreatedInAppNotificationCommand
             {
                 SubmissionId = ParseId<ReportSubmission>("00000000-0000-0000-0000-000000000013"),
-                TrainerId = ParseId<User>("00000000-0000-0000-0000-000000000014"),
-                TraineeId = ParseId<User>("00000000-0000-0000-0000-000000000015"),
+                TrainerId = ParseId<AccountReference>("00000000-0000-0000-0000-000000000014"),
+                TraineeId = ParseId<AccountReference>("00000000-0000-0000-0000-000000000015"),
                 TemplateName = "Progress review"
             },
             "LgymApi.BackgroundWorker.Common.Commands.ReportSubmissionCreatedInAppNotificationCommand",
@@ -330,16 +381,16 @@ public static class LegacyCommandContractManifest
             typeof(ReportSubmissionAcceptedProgressCommand),
             new ReportSubmissionAcceptedProgressCommand
             {
-                Event = new ReportSubmissionAcceptedProgressEvent(
+                Event = new ReportSubmissionAcceptedProgressPayload(
                     1,
                     "00000000-0000-0000-0000-000000000033",
                     "00000000-0000-0000-0000-000000000034",
                     "00000000-0000-0000-0000-000000000035",
                     "00000000-0000-0000-0000-000000000036",
-                    ParseId<User>("00000000-0000-0000-0000-000000000037"),
+                    ParseId<AccountReference>("00000000-0000-0000-0000-000000000037"),
                     new DateTimeOffset(2026, 7, 20, 8, 30, 0, TimeSpan.Zero),
                     new DateTimeOffset(2026, 7, 20, 8, 31, 0, TimeSpan.Zero),
-                    [new ReportSubmissionAcceptedMeasurement(BodyParts.Chest, 101.5, MeasurementUnits.Centimeters)])
+                    [new ReportSubmissionAcceptedProgressMeasurement(BodyParts.Chest, 101.5, MeasurementUnits.Centimeters)])
             },
             "LgymApi.BackgroundWorker.Common.Commands.ReportSubmissionAcceptedProgressCommand",
             "LgymApi.Application.Reporting.Contracts.BackgroundCommands.ReportSubmissionAcceptedProgressCommand",
@@ -353,8 +404,8 @@ public static class LegacyCommandContractManifest
             new ReportRequestCreatedInAppNotificationCommand
             {
                 RequestId = ParseId<ReportRequest>("00000000-0000-0000-0000-000000000016"),
-                TraineeId = ParseId<User>("00000000-0000-0000-0000-000000000017"),
-                TrainerId = ParseId<User>("00000000-0000-0000-0000-000000000018"),
+                TraineeId = ParseId<AccountReference>("00000000-0000-0000-0000-000000000017"),
+                TrainerId = ParseId<AccountReference>("00000000-0000-0000-0000-000000000018"),
                 TemplateName = "Weekly check-in"
             },
             "LgymApi.BackgroundWorker.Common.Commands.ReportRequestCreatedInAppNotificationCommand",
@@ -369,8 +420,8 @@ public static class LegacyCommandContractManifest
             new ReportFeedbackAddedInAppNotificationCommand
             {
                 SubmissionId = ParseId<ReportSubmission>("00000000-0000-0000-0000-000000000019"),
-                TraineeId = ParseId<User>("00000000-0000-0000-0000-000000000020"),
-                TrainerId = ParseId<User>("00000000-0000-0000-0000-000000000021"),
+                TraineeId = ParseId<AccountReference>("00000000-0000-0000-0000-000000000020"),
+                TrainerId = ParseId<AccountReference>("00000000-0000-0000-0000-000000000021"),
                 TemplateName = "Review notes",
                 TriggeredAt = new DateTimeOffset(2026, 7, 18, 12, 34, 58, TimeSpan.Zero)
             },
@@ -470,6 +521,12 @@ public static class LegacyCommandContractManifest
             throw new InvalidOperationException("Canonical command IDs and future read aliases must not overlap.");
         }
 
+        if (!manifest.Select(contract => contract.CanonicalId)
+            .SequenceEqual(ExpectedCanonicalIds, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException("Canonical command IDs must exactly match the fixed 15-command membership.");
+        }
+
         if (manifest.Select(contract => contract.CommandType).Distinct().Count() != manifest.Count)
         {
             throw new InvalidOperationException("Runtime command types must be unique.");
@@ -490,6 +547,14 @@ public static class LegacyCommandContractManifest
         if (manifest.Any(contract => contract.Command.GetType() != contract.CommandType))
         {
             throw new InvalidOperationException("Every command fixture must match its declared runtime type.");
+        }
+
+        if (manifest.Any(contract => !string.Equals(
+                JsonSerializer.Serialize(contract.Command, contract.CommandType, SharedSerializationOptions.Current),
+                contract.PayloadJson,
+                StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("Every command fixture must serialize to its fixed golden payload.");
         }
 
         if (manifest.Any(contract =>

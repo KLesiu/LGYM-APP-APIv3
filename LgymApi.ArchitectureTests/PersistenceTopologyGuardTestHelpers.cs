@@ -14,6 +14,7 @@ internal static class PersistenceTopologyGuardTestHelpers
     private const string MigrationMetadataName = "Microsoft.EntityFrameworkCore.Migrations.Migration";
     private const string ModelSnapshotMetadataName = "Microsoft.EntityFrameworkCore.Infrastructure.ModelSnapshot";
     private const string DbContextAttributeMetadataName = "Microsoft.EntityFrameworkCore.Infrastructure.DbContextAttribute";
+    private const string DesignTimeFactoryMetadataName = "Microsoft.EntityFrameworkCore.Design.IDesignTimeDbContextFactory<TContext>";
 
     public static IReadOnlyList<TopologySource> LoadProductionSources(string repoRoot)
     {
@@ -44,6 +45,7 @@ internal static class PersistenceTopologyGuardTestHelpers
         var compilation = ArchitectureTestHelpers.CreateCompilation(trees);
         GC.KeepAlive(semanticReferenceAssemblies);
         var dbContexts = new List<DbContextTopologyDeclaration>();
+        var designTimeFactories = new List<DesignTimeFactoryTopologyDeclaration>();
         var dbSets = new List<DbSetTopologyDeclaration>();
         var configurations = new List<EntityTypeConfigurationTopologyDeclaration>();
         var registrations = new List<RegistrarTopologyDeclaration>();
@@ -70,6 +72,12 @@ internal static class PersistenceTopologyGuardTestHelpers
                     dbContexts.Add(new DbContextTopologyDeclaration(symbol.Name, sourcePath));
                 }
 
+                var designTimeContext = GetDesignTimeFactoryContext(symbol) ?? GetDesignTimeFactoryContext(declaration);
+                if (designTimeContext is not null)
+                {
+                    designTimeFactories.Add(new DesignTimeFactoryTopologyDeclaration(symbol.Name, designTimeContext, sourcePath));
+                }
+
                 var configuredEntity = GetConfiguredEntity(symbol) ?? GetConfiguredEntity(declaration);
                 if (configuredEntity != null)
                 {
@@ -92,6 +100,11 @@ internal static class PersistenceTopologyGuardTestHelpers
 
             foreach (var property in root.DescendantNodes().OfType<PropertyDeclarationSyntax>())
             {
+                if (property.ExplicitInterfaceSpecifier is not null)
+                {
+                    continue;
+                }
+
                 var entityType = GetDbSetEntity(model, property);
                 if (entityType == null || property.Parent is not ClassDeclarationSyntax containingDeclaration ||
                     model.GetDeclaredSymbol(containingDeclaration) is not INamedTypeSymbol containingType ||
@@ -150,12 +163,53 @@ internal static class PersistenceTopologyGuardTestHelpers
         var configurationEntities = configurations
             .GroupBy(configuration => configuration.ConfigurationType, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Single().EntityType, StringComparer.Ordinal);
+        var identityRegistrar = trees.SingleOrDefault(tree =>
+            Path.GetFileName(tree.FilePath).Equals("IdentityModelConfigurationRegistrar.cs", StringComparison.Ordinal));
+        var trainingPlanningRegistrar = trees.SingleOrDefault(tree =>
+            Path.GetFileName(tree.FilePath).Equals("TrainingPlanningModelConfigurationRegistrar.cs", StringComparison.Ordinal));
+        var notificationsRegistrar = trees.SingleOrDefault(tree =>
+            Path.GetFileName(tree.FilePath).Equals("NotificationsModelConfigurationRegistrar.cs", StringComparison.Ordinal));
         foreach (var tree in trees.Where(tree => Path.GetFileName(tree.FilePath).Equals("AppDbContextEntityTypeConfigurationRegistrar.cs", StringComparison.Ordinal)))
         {
             var root = tree.GetCompilationUnitRoot();
+            if (identityRegistrar != null && root.ToFullString().Contains("IdentityModelConfigurationRegistrar.Apply", StringComparison.Ordinal))
+            {
+                foreach (var creation in identityRegistrar.GetCompilationUnitRoot().DescendantNodes().OfType<ObjectCreationExpressionSyntax>())
+                {
+                    var configurationType = GetSimpleName(creation.Type);
+                    if (configurationEntities.TryGetValue(configurationType, out var entityType))
+                    {
+                        registrations.Add(new RegistrarTopologyDeclaration(entityType, configurationType, ArchitectureTestHelpers.NormalizePath(tree.FilePath)));
+                    }
+                }
+            }
+            if (trainingPlanningRegistrar != null && root.ToFullString().Contains("TrainingPlanningModelConfigurationRegistrar.Apply", StringComparison.Ordinal))
+            {
+                foreach (var creation in trainingPlanningRegistrar.GetCompilationUnitRoot().DescendantNodes().OfType<ObjectCreationExpressionSyntax>())
+                {
+                    var configurationType = GetSimpleName(creation.Type);
+                    if (configurationEntities.TryGetValue(configurationType, out var entityType))
+                    {
+                        registrations.Add(new RegistrarTopologyDeclaration(entityType, configurationType, ArchitectureTestHelpers.NormalizePath(tree.FilePath)));
+                    }
+                }
+            }
             foreach (var creation in root.DescendantNodes().OfType<ObjectCreationExpressionSyntax>())
             {
                 var configurationType = GetSimpleName(creation.Type);
+                if (configurationType == "ApiIdempotencyRecordEntityTypeConfiguration" &&
+                    notificationsRegistrar != null &&
+                    root.ToFullString().Contains("NotificationsModelConfigurationRegistrar.Apply", StringComparison.Ordinal))
+                {
+                    foreach (var notificationCreation in notificationsRegistrar.GetCompilationUnitRoot().DescendantNodes().OfType<ObjectCreationExpressionSyntax>())
+                    {
+                        var notificationConfigurationType = GetSimpleName(notificationCreation.Type);
+                        if (configurationEntities.TryGetValue(notificationConfigurationType, out var notificationEntityType))
+                        {
+                            registrations.Add(new RegistrarTopologyDeclaration(notificationEntityType, notificationConfigurationType, ArchitectureTestHelpers.NormalizePath(tree.FilePath)));
+                        }
+                    }
+                }
                 if (configurationEntities.TryGetValue(configurationType, out var entityType))
                 {
                     registrations.Add(new RegistrarTopologyDeclaration(entityType, configurationType, ArchitectureTestHelpers.NormalizePath(tree.FilePath)));
@@ -184,7 +238,7 @@ internal static class PersistenceTopologyGuardTestHelpers
             .OrderBy(stream => stream.Root, StringComparer.Ordinal)
             .ToList();
 
-        return new PersistenceTopologyAnalysis(dbContexts, dbSets, configurations, registrations, migrationStreams, ensureCreated, schemaSplits);
+        return new PersistenceTopologyAnalysis(dbContexts, designTimeFactories, dbSets, configurations, registrations, migrationStreams, ensureCreated, schemaSplits);
     }
 
     public static void EnsureNoPendingModelChanges(bool hasPendingModelChanges)
@@ -234,6 +288,23 @@ internal static class PersistenceTopologyGuardTestHelpers
             throw new InvalidOperationException(
                 $"Expected one production DbContext '{expectedTypeName}' at '{expectedSourcePath}'. Actual: " +
                 string.Join(", ", topology.DbContexts));
+        }
+    }
+
+    public static void EnsureSingleDesignTimeFactory(
+        PersistenceTopologyAnalysis topology,
+        string expectedTypeName,
+        string expectedSourcePath,
+        string expectedContextTypeName)
+    {
+        if (topology.DesignTimeFactories.Count != 1 ||
+            topology.DesignTimeFactories[0].TypeName != expectedTypeName ||
+            topology.DesignTimeFactories[0].SourcePath != expectedSourcePath ||
+            topology.DesignTimeFactories[0].ContextTypeName != expectedContextTypeName)
+        {
+            throw new InvalidOperationException(
+                $"Expected one production design-time DbContext factory '{expectedTypeName}' at '{expectedSourcePath}' " +
+                $"for '{expectedContextTypeName}'. Actual: {string.Join(", ", topology.DesignTimeFactories)}");
         }
     }
 
@@ -325,6 +396,20 @@ internal static class PersistenceTopologyGuardTestHelpers
     {
         var configuration = type.AllInterfaces.SingleOrDefault(@interface => IsNamed(@interface, ConfigurationMetadataName));
         return configuration == null ? null : GetTypeName(configuration.TypeArguments[0]);
+    }
+
+    private static string? GetDesignTimeFactoryContext(INamedTypeSymbol type)
+    {
+        var factory = type.AllInterfaces.SingleOrDefault(@interface => IsNamed(@interface, DesignTimeFactoryMetadataName));
+        return factory == null ? null : factory.TypeArguments[0].Name;
+    }
+
+    private static string? GetDesignTimeFactoryContext(ClassDeclarationSyntax declaration)
+    {
+        return declaration.BaseList?.Types.Select(baseType => baseType.Type).OfType<GenericNameSyntax>()
+            .Where(type => type.Identifier.ValueText == "IDesignTimeDbContextFactory")
+            .Select(type => GetSimpleName(type.TypeArgumentList.Arguments[0]))
+            .SingleOrDefault();
     }
 
     private static string? GetConfiguredEntity(ClassDeclarationSyntax declaration)
@@ -441,6 +526,7 @@ internal sealed record PersistedDbSetIdentity(string PropertyName, string Entity
 
 internal sealed record PersistenceTopologyAnalysis(
     IReadOnlyList<DbContextTopologyDeclaration> DbContexts,
+    IReadOnlyList<DesignTimeFactoryTopologyDeclaration> DesignTimeFactories,
     IReadOnlyList<DbSetTopologyDeclaration> DbSets,
     IReadOnlyList<EntityTypeConfigurationTopologyDeclaration> Configurations,
     IReadOnlyList<RegistrarTopologyDeclaration> RegistrarEntries,
@@ -449,6 +535,7 @@ internal sealed record PersistenceTopologyAnalysis(
     IReadOnlyList<SchemaSplitTopologyViolation> SchemaSplitViolations);
 
 internal sealed record DbContextTopologyDeclaration(string TypeName, string SourcePath);
+internal sealed record DesignTimeFactoryTopologyDeclaration(string TypeName, string ContextTypeName, string SourcePath);
 internal sealed record DbSetTopologyDeclaration(string ContextType, string PropertyName, string EntityType, bool IsPublic, string SourcePath);
 internal sealed record EntityTypeConfigurationTopologyDeclaration(string EntityType, string ConfigurationType, string SourcePath);
 internal sealed record RegistrarTopologyDeclaration(string EntityType, string ConfigurationType, string SourcePath);

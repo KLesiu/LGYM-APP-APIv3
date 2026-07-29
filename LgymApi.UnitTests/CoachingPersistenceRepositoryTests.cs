@@ -141,7 +141,7 @@ public sealed class CoachingPersistenceRepositoryTests
     {
         var services = new ServiceCollection();
         services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase($"coaching-persistence-di-{Id<CoachingPersistenceRepositoryTests>.New().ToString().Replace("-", string.Empty, StringComparison.Ordinal)}"));
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         services.AddCoachingInfrastructure();
         var contracts = new[]
         {
@@ -195,7 +195,7 @@ public sealed class CoachingPersistenceRepositoryTests
     private static IMapper CreateMapper()
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         return services.BuildServiceProvider().GetRequiredService<IMapper>();
     }
 

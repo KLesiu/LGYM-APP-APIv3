@@ -6,21 +6,13 @@ using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.TrainingPlanning.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.TrainingPlanning.Plan.CheckIsUserHavePlan;
-using LgymApi.Application.TrainingPlanning.Plan.CopyPlan;
-using LgymApi.Application.TrainingPlanning.Plan.CreatePlan;
-using LgymApi.Application.TrainingPlanning.Plan.DeletePlan;
-using LgymApi.Application.TrainingPlanning.Plan.GenerateShareCode;
-using LgymApi.Application.TrainingPlanning.Plan.GetPlanConfig;
-using LgymApi.Application.TrainingPlanning.Plan.GetPlansList;
+using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
 using LgymApi.Application.TrainingPlanning.Plan.Models;
-using LgymApi.Application.TrainingPlanning.Plan.SetActivePlan;
-using LgymApi.Application.TrainingPlanning.Plan.UpdatePlan;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using LgymApi.Resources;
 using Microsoft.AspNetCore.Mvc;
 using PlanEntity = LgymApi.Domain.Entities.Plan;
-using UserEntity = LgymApi.Domain.Entities.User;
 
 namespace LgymApi.Api.Features.Plan.Controllers;
 
@@ -28,38 +20,14 @@ namespace LgymApi.Api.Features.Plan.Controllers;
 [Route("api")]
 public sealed class PlanController : ControllerBase
 {
-    private readonly ICreatePlanUseCase _createPlanUseCase;
-    private readonly IUpdatePlanUseCase _updatePlanUseCase;
-    private readonly IDeletePlanUseCase _deletePlanUseCase;
-    private readonly IGetPlanConfigUseCase _getPlanConfigUseCase;
-    private readonly IGetPlansListUseCase _getPlansListUseCase;
-    private readonly ISetActivePlanUseCase _setActivePlanUseCase;
-    private readonly ICopyPlanUseCase _copyPlanUseCase;
-    private readonly IGenerateShareCodeUseCase _generateShareCodeUseCase;
-    private readonly ICheckIsUserHavePlanUseCase _checkIsUserHavePlanUseCase;
+    private readonly IPlanAccountCompatibilityAdapter _plans;
     private readonly IMapper _mapper;
 
     public PlanController(
-        ICreatePlanUseCase createPlanUseCase,
-        IUpdatePlanUseCase updatePlanUseCase,
-        IDeletePlanUseCase deletePlanUseCase,
-        IGetPlanConfigUseCase getPlanConfigUseCase,
-        IGetPlansListUseCase getPlansListUseCase,
-        ISetActivePlanUseCase setActivePlanUseCase,
-        ICopyPlanUseCase copyPlanUseCase,
-        IGenerateShareCodeUseCase generateShareCodeUseCase,
-        ICheckIsUserHavePlanUseCase checkIsUserHavePlanUseCase,
+        IPlanAccountCompatibilityAdapter plans,
         IMapper mapper)
     {
-        _createPlanUseCase = createPlanUseCase;
-        _updatePlanUseCase = updatePlanUseCase;
-        _deletePlanUseCase = deletePlanUseCase;
-        _getPlanConfigUseCase = getPlanConfigUseCase;
-        _getPlansListUseCase = getPlansListUseCase;
-        _setActivePlanUseCase = setActivePlanUseCase;
-        _copyPlanUseCase = copyPlanUseCase;
-        _generateShareCodeUseCase = generateShareCodeUseCase;
-        _checkIsUserHavePlanUseCase = checkIsUserHavePlanUseCase;
+        _plans = plans;
         _mapper = mapper;
     }
 
@@ -69,14 +37,14 @@ public sealed class PlanController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> CreatePlan([FromRoute] string id, [FromBody] PlanFormDto form, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
-        if (!Id<UserEntity>.TryParse(id, out var routeUserId))
+        var accountId = HttpContext.GetAuthenticatedAccountContext()?.Id ?? Id<AccountReference>.Empty;
+        if (!Id<AccountReference>.TryParse(id, out var routeAccountId))
         {
             return Result<Unit, AppError>.Failure(new PlanNotFoundError(Messages.DidntFind)).ToActionResult();
         }
 
-        var result = await _createPlanUseCase.ExecuteAsync(
-            new CreatePlanCommand(user?.Id ?? Id<UserEntity>.Empty, routeUserId, form.Name),
+        var result = await _plans.CreateAsync(
+            new PlanCreateAccountCommand(accountId, routeAccountId, form.Name),
             cancellationToken);
         if (result.IsFailure)
         {
@@ -93,8 +61,8 @@ public sealed class PlanController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdatePlan([FromRoute] string id, [FromBody] PlanFormDto form, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
-        if (!Id<UserEntity>.TryParse(id, out var routeUserId))
+        var accountId = HttpContext.GetAuthenticatedAccountContext()?.Id ?? Id<AccountReference>.Empty;
+        if (!Id<AccountReference>.TryParse(id, out var routeAccountId))
         {
             return Result<Unit, AppError>.Failure(new PlanNotFoundError(Messages.DidntFind)).ToActionResult();
         }
@@ -104,8 +72,8 @@ public sealed class PlanController : ControllerBase
             return Result<Unit, AppError>.Failure(new PlanNotFoundError(Messages.DidntFind)).ToActionResult();
         }
 
-        var result = await _updatePlanUseCase.ExecuteAsync(
-            new UpdatePlanCommand(user?.Id ?? Id<UserEntity>.Empty, routeUserId, planId, form.Name),
+        var result = await _plans.UpdateAsync(
+            new PlanUpdateAccountCommand(accountId, routeAccountId, planId, form.Name),
             cancellationToken);
         if (result.IsFailure)
         {
@@ -121,14 +89,14 @@ public sealed class PlanController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetPlanConfig([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
-        if (!Id<UserEntity>.TryParse(id, out var routeUserId))
+        var accountId = HttpContext.GetAuthenticatedAccountContext()?.Id ?? Id<AccountReference>.Empty;
+        if (!Id<AccountReference>.TryParse(id, out var routeAccountId))
         {
             return Result<PlanReadModel, AppError>.Failure(new PlanNotFoundError(Messages.DidntFind)).ToActionResult();
         }
 
-        var result = await _getPlanConfigUseCase.ExecuteAsync(
-            new GetPlanConfigQuery(user?.Id ?? Id<UserEntity>.Empty, routeUserId),
+        var result = await _plans.GetConfigAsync(
+            new PlanGetConfigAccountQuery(accountId, routeAccountId),
             cancellationToken);
         if (result.IsFailure)
         {
@@ -144,10 +112,10 @@ public sealed class PlanController : ControllerBase
     [ProducesResponseType(typeof(bool), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> CheckIsUserHavePlan([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
-        var routeUserId = Id<UserEntity>.TryParse(id, out var parsedUserId) ? parsedUserId : Id<UserEntity>.Empty;
-        var result = await _checkIsUserHavePlanUseCase.ExecuteAsync(
-            new CheckIsUserHavePlanQuery(user?.Id ?? Id<UserEntity>.Empty, routeUserId),
+        var accountId = HttpContext.GetAuthenticatedAccountContext()?.Id ?? Id<AccountReference>.Empty;
+        var routeAccountId = Id<AccountReference>.TryParse(id, out var parsedAccountId) ? parsedAccountId : Id<AccountReference>.Empty;
+        var result = await _plans.HasPlanAsync(
+            new PlanHasAccountQuery(accountId, routeAccountId),
             cancellationToken);
         if (result.IsFailure)
         {
@@ -163,14 +131,14 @@ public sealed class PlanController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetPlansList([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
-        if (!Id<UserEntity>.TryParse(id, out var routeUserId))
+        var accountId = HttpContext.GetAuthenticatedAccountContext()?.Id ?? Id<AccountReference>.Empty;
+        if (!Id<AccountReference>.TryParse(id, out var routeAccountId))
         {
             return Result<List<PlanReadModel>, AppError>.Failure(new PlanNotFoundError(Messages.DidntFind)).ToActionResult();
         }
 
-        var result = await _getPlansListUseCase.ExecuteAsync(
-            new GetPlansListQuery(user?.Id ?? Id<UserEntity>.Empty, routeUserId),
+        var result = await _plans.GetListAsync(
+            new PlanGetListAccountQuery(accountId, routeAccountId),
             cancellationToken);
         if (result.IsFailure)
         {
@@ -187,8 +155,8 @@ public sealed class PlanController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> SetNewActivePlan([FromRoute] string id, [FromBody] SetActivePlanDto form, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
-        if (!Id<UserEntity>.TryParse(id, out var routeUserId))
+        var accountId = HttpContext.GetAuthenticatedAccountContext()?.Id ?? Id<AccountReference>.Empty;
+        if (!Id<AccountReference>.TryParse(id, out var routeAccountId))
         {
             return Result<Unit, AppError>.Failure(new PlanNotFoundError(Messages.DidntFind)).ToActionResult();
         }
@@ -198,8 +166,8 @@ public sealed class PlanController : ControllerBase
             return Result<Unit, AppError>.Failure(new PlanNotFoundError(Messages.DidntFind)).ToActionResult();
         }
 
-        var result = await _setActivePlanUseCase.ExecuteAsync(
-            new SetActivePlanCommand(user?.Id ?? Id<UserEntity>.Empty, routeUserId, planId),
+        var result = await _plans.SetActiveAsync(
+            new PlanSetActiveAccountCommand(accountId, routeAccountId, planId),
             cancellationToken);
         if (result.IsFailure)
         {
@@ -215,9 +183,9 @@ public sealed class PlanController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> CopyPlan([FromBody] CopyPlanDto dto, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
-        var result = await _copyPlanUseCase.ExecuteAsync(
-            new CopyPlanCommand(user?.Id ?? Id<UserEntity>.Empty, dto.ShareCode),
+        var accountId = HttpContext.GetAuthenticatedAccountContext()?.Id ?? Id<AccountReference>.Empty;
+        var result = await _plans.CopyAsync(
+            new PlanCopyAccountCommand(accountId, dto.ShareCode),
             cancellationToken);
         if (result.IsFailure)
         {
@@ -234,14 +202,14 @@ public sealed class PlanController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GenerateShareCode([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
+        var accountId = HttpContext.GetAuthenticatedAccountContext()?.Id ?? Id<AccountReference>.Empty;
         if (!Id<PlanEntity>.TryParse(id, out var planId))
         {
             return Result<string, AppError>.Failure(new PlanNotFoundError(Messages.DidntFind)).ToActionResult();
         }
 
-        var result = await _generateShareCodeUseCase.ExecuteAsync(
-            new GenerateShareCodeCommand(user?.Id ?? Id<UserEntity>.Empty, planId),
+        var result = await _plans.GenerateShareCodeAsync(
+            new PlanGenerateShareCodeAccountCommand(accountId, planId),
             cancellationToken);
         if (result.IsFailure)
         {
@@ -257,14 +225,14 @@ public sealed class PlanController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeletePlan([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
+        var accountId = HttpContext.GetAuthenticatedAccountContext()?.Id ?? Id<AccountReference>.Empty;
         if (!Id<PlanEntity>.TryParse(id, out var planId))
         {
             return Result<Unit, AppError>.Failure(new PlanNotFoundError(Messages.DidntFind)).ToActionResult();
         }
 
-        var result = await _deletePlanUseCase.ExecuteAsync(
-            new DeletePlanCommand(user?.Id ?? Id<UserEntity>.Empty, planId),
+        var result = await _plans.DeleteAsync(
+            new PlanDeleteAccountCommand(accountId, planId),
             cancellationToken);
         if (result.IsFailure)
         {

@@ -5,9 +5,10 @@ This document explains how the backend is structured and how to add a new module
 ## 1. Solution Structure
 
 - `LgymApi.Api` - HTTP layer (controllers, DTO contracts, validators, middleware, API mapping profiles).
-- `LgymApi.Application` - use-case and business orchestration layer (services, repository interfaces, mapping core).
+- `LgymApi.Application` - remaining Reporting, Workout & Progress, Coaching, and Nutrition use-case orchestration.
+- `LgymApi.Platform`, `LgymApi.Identity`, `LgymApi.TrainingPlanning`, and `LgymApi.Notifications` - stable module assemblies with public facades, explicit contracts, and internal implementations.
 - `LgymApi.Domain` - core domain types (entities, enums, domain-only helpers).
-- `LgymApi.Infrastructure` - persistence and technical implementations (EF Core `DbContext`, repository implementations, UoW, migrations).
+- `LgymApi.Infrastructure` - shared persistence and technical runtime (EF Core `AppDbContext`, UoW, migrations, Hangfire persistence, and module context bridges).
 - `LgymApi.UnitTests` - focused unit tests and architecture guard tests.
 - `LgymApi.IntegrationTests` - end-to-end API tests with `WebApplicationFactory` and in-memory database.
 - `LgymApi.Resources` and `LgymApi.Resources.Generator` - localized resources and source generators for strongly-typed message access.
@@ -38,19 +39,21 @@ If you add a repository method that mutates data, make it stage-only and ensure 
 
 ### Persistence ownership and identifier contract
 
-The production system has one `AppDbContext`, one database, and one migration stream. Each of the 48 persisted entities still has exactly one module owner. This is logical write ownership only; it does not introduce a physical database, `DbContext`, schema, or migration-stream split. `LgymApi.ArchitectureTests/PersistedEntityOwnershipCatalog.cs` is the executable ownership source of truth, and `docs/modular-monolith/issue-376-ownership-map.md` is its tested documentation view.
+The production system has one `AppDbContext`, one design-time `AppDbContextFactory`, one `AppDbContextModelSnapshot`, one database, and one migration stream rooted in Infrastructure. The factory constructs the same Npgsql model without API/runtime DI. Each of the 48 persisted entities still has exactly one module owner. This is logical write ownership only; it does not introduce a physical database, `DbContext`, schema, or migration-stream split. `LgymApi.ArchitectureTests/PersistedEntityOwnershipCatalog.cs` is the executable ownership source of truth, and `docs/modular-monolith/issue-376-ownership-map.md` is its tested documentation view.
 
 Workout execution and completed-training history belong to `Workout & Progress`. `Training.TypePlanDayId` may reference the `Training Planning` definition used to perform a workout, but that reference does not give Training Planning write ownership over the completed `Training` row.
 
 Nutrition owns six persisted entities and 18 focused actions: Diet D1 through D9 and Supplementation S1 through S9. Its four existing controller adapters preserve legacy routes and payloads. Nutrition consumes Coaching only through `ICoachingRelationshipAccessService`, uses module-local stage-only persistence ports, and retains the canonical Diet command ID and payload for D3, D4, and D5 after a successful active-plan save. This is logical ownership only, with the same one `AppDbContext`, database, and migration stream.
 
-Workout & Progress exposes its cross-module surface through `ProgressData`, dashboard, ranking, training execution/history, and accepted-progress contracts with explicit read/write models. Foreign modules must not consume its entities, repositories, or implementation classes directly. Existing legacy routes and payloads remain unchanged. For #386, Reporting stages a Reporting-owned accepted-progress command in the existing `CommandEnvelope` outbox, and Workout & Progress owns delivery-side measurement persistence.
+Workout & Progress exposes its cross-module surface through `ProgressData`, dashboard, ranking, training execution/history, and accepted-progress contracts with explicit read/write models. Its seven focused persistence ports use `Id<AccountReference>` and immutable persistence models; only Infrastructure adapters convert those IDs to persisted `Id<User>` foreign keys through `WorkoutPersistenceAccountIds`. Foreign modules must not consume its entities, repositories, or implementation classes directly. Existing legacy routes and payloads remain unchanged. For #386, Reporting stages a Reporting-owned accepted-progress command in the existing `CommandEnvelope` outbox, and Workout & Progress owns delivery-side measurement persistence.
 
-Known internal entity references use `Id<T>`. EF Core stores their provider values in PostgreSQL `uuid` columns, while HTTP and JSON UUID values remain strings. The only polymorphic string ID exceptions are `PushNotificationMessage.EntityId` and `PushEventPayload.EntityId`.
+Reporting uses exactly five focused persistence ports for templates, requests/submissions, recurring assignments, photos/upload sessions, and relationship access. Their Infrastructure adapters are stage-only and no-tracking for reads; Reporting services retain authorization, transaction, and UoW commit ownership. The separate Workout & Progress accepted-progress persistence port is not a sixth Reporting port.
 
-Architecture debt is no-growth. An allowlist entry may be re-keyed only for an owner change with the same source and target identities. New entries, wildcard exemptions, and source or target changes are not permitted. Remove stale entries.
+Known internal entity references use `Id<T>`. Reporting and Workout & Progress Application persistence contracts use `Id<AccountReference>` for account identity; only their Infrastructure adapters rebind those values to persisted `Id<User>` foreign keys. EF Core stores provider values in PostgreSQL `uuid` columns, while HTTP and JSON UUID values remain strings. The only polymorphic string ID exceptions are `PushNotificationMessage.EntityId` and `PushEventPayload.EntityId`.
 
-Training Planning's PlanDay service authorizes non-owner access through its consumer-owned `IPlanDayRelationshipAccessPort`. Workout & Progress Measurements authorizes trainer access through its consumer-owned `IMeasurementsRelationshipAccessPort`. Coaching implements and registers both boolean adapters from `ICoachingRelationshipAccessService`, preserving acyclic dependency direction without exposing Coaching repositories or contracts to either consumer.
+Architecture debt has an exact zero-row registry and zero approved maximum. Re-keying, new entries, wildcard exemptions, source or target changes, and scanner path or classifier exclusions are not permitted. The dependency, direct entity/repository, and public-surface guards independently compile every production source in Application, Domain, Platform, Identity, TrainingPlanning, and Notifications, require a nonzero source-tree count for each assembly, and assert zero observed violations rather than treating an empty registry as success. Internal persisted foreign keys remain entity-typed, while cross-module contracts use marker IDs.
+
+Training Planning's PlanDay service accepts marker-only commands and read models, authorizing non-owner access through its consumer-owned account-ID `IPlanDayRelationshipAccessPort`. Workout & Progress Measurements authorizes trainer access through its consumer-owned `IMeasurementsRelationshipAccessPort`. Coaching implements and registers both boolean adapters from `ICoachingRelationshipAccessService`, preserving acyclic dependency direction without exposing Coaching repositories or contracts to either consumer.
 
 Coaching owns 31 focused actions, 30 HTTP-backed and the application-only `GetTrainerInvitationsAsync`. Its invitation and dashboard reads enrich complete Coaching facts with active Identity accounts before search, filtering, sorting, totals, and paging. An expired pending email invitation records `Expired` and `RespondedAt`, remains unbound, creates no link, and queues no notification command. The cutover changed neither the single `AppDbContext`, PostgreSQL database, nor migration stream.
 
@@ -60,9 +63,9 @@ Application services own the transaction proof: a staged write becomes visible o
 
 The solution uses a custom mapping system (not AutoMapper):
 
-- Core contracts live in `LgymApi.Application/Mapping/Core`.
+- Core contracts compile from `LgymApi.Platform/Mapping/Core` while retaining their established `LgymApi.Application.Mapping.Core` namespaces.
 - API mapping profiles implement `IMappingProfile` and are placed under `LgymApi.Api/Mapping/Profiles`.
-- Profiles are auto-registered via `AddApplicationMapping(...)` in `Program.cs`.
+- Profiles are registered via `AddApplicationMapping(...)` with the exact API, Application, Platform, Identity, TrainingPlanning, and Notifications assembly markers in `Program.cs`; missing or duplicate markers fail fast.
 - `MappingContext` with typed `ContextKey<T>` is used for contextual mapping inputs (e.g., translation dictionaries).
 
 When adding new responses, prefer profile-based mapping and keep controllers thin.
@@ -97,8 +100,8 @@ When reviewing mapper changes:
 
 - Use `AppException` for controlled domain/application errors (`BadRequest`, `Forbidden`, `NotFound`, etc.).
 - `ExceptionHandlingMiddleware` maps `AppException` and fallback exceptions to HTTP payloads.
-- `UserContextMiddleware` resolves current user from JWT claim (`userId`) and places user object into `HttpContext.Items`.
-- Controllers read current user via `HttpContext.GetCurrentUser()`.
+- `UserContextMiddleware` validates JWT `userId` and `sid` through the Identity marker-contract resolver and places immutable `AuthenticatedAccountContext` into `HttpContext.Items`.
+- New API adapters read marker IDs and facts via `HttpContext.GetAuthenticatedAccountContext()` / `GetCurrentAccountId()`. Middleware and controllers do not materialize a domain user or use a legacy user item.
 
 ## 6. How to Add a New Module
 
@@ -109,7 +112,7 @@ Use this checklist for a new feature module (for example: `Achievements`, `Notif
 
 2. **Infrastructure Data Model**
    - Add `DbSet<T>` in `AppDbContext` when the module introduces a new aggregate root that must be queried directly from the context.
-   - Add relation/config mapping in a module-owned `Data/Configurations/<Module>/*EntityTypeConfiguration.cs` class.
+    - Add relation/config mapping in the owner's explicit persistence-configuration area and preserve its module registrar phase.
    - Register the new configuration explicitly in `Data/Configurations/AppDbContextEntityTypeConfigurationRegistrar` and preserve the existing fixed order; do not use assembly scanning.
    - Create and verify EF migration.
 
@@ -139,7 +142,7 @@ Use this checklist for a new feature module (for example: `Achievements`, `Notif
 
 8. **Dependency Injection**
    - Register service in `LgymApi.Application/ServiceCollectionExtensions.cs`.
-   - Register repository and infra dependencies in `LgymApi.Infrastructure/ServiceCollectionExtensions.cs`.
+    - Register concrete dependencies in the owning module helper; Infrastructure retains only technical composition and persistence bridges.
 
 9. **Tests**
    - Add unit tests for service behavior and commit boundaries.
@@ -215,16 +218,16 @@ The boundary is handled at the mapping layer:
 
 The solution uses module-owned registration helpers composed by the host, enforced by architecture guards in unit tests.
 
-- **Application services**: register in module-owned helpers under `LgymApi.Application`.
-- **Infrastructure dependencies**: register in module-owned helpers under `LgymApi.Infrastructure`.
+- **Application services**: `AddApplication` composes Reporting, Workout & Progress, Coaching, Nutrition, and the internal Platform command-envelope runtime helper; extracted modules keep their own public facades.
+- **Infrastructure dependencies**: `AddInfrastructure` composes shared persistence/Hangfire/post-commit roots and remaining persistence adapters, but no extracted implementation service or provider.
 - **Shared platform roots**: keep cross-cutting services in `AddPlatformServices(...)`.
-- **Host composition**: `Program.cs` composes module and platform helpers only, plus host-only wiring.
+- **Host composition**: `Program.cs` composes Platform, Identity, Training Planning, Notifications, remaining Application, Infrastructure, API adapters, and Worker in that exact order. Narrow Infrastructure helpers are not host entrypoints.
 
 ### Registration Ownership
 
 1. **Application Layer**: owns its interfaces, implementation classes, and module-specific business-service helpers.
 2. **Infrastructure Layer**: owns repository implementations, external client adapters, and module-specific technical helpers.
-3. **Platform carve-out**: shared roots that multiple modules consume stay in `AddPlatformServices(...)` instead of being forced into one feature module. AppConfig, enum lookup, and unit conversion live in the non-canonical `Application/Platform/ReferenceData` sub-boundary; its internal registration helper is composed only by public `AddPlatformModule`.
+3. **Platform carve-out**: shared roots that multiple modules consume stay in `PlatformModule.AddPlatformModule` instead of being forced into one feature module. AppConfig, enum lookup, and unit conversion live in Platform's non-canonical `ReferenceData` sub-boundary.
 
 Neutral application primitives are public only through `BuildingBlocks/Results` and `BuildingBlocks/Errors`; feature-specific services, repositories, DTOs, errors, and provider details do not belong in that shared surface.
 
@@ -232,31 +235,33 @@ Neutral application primitives are public only through `BuildingBlocks/Results` 
 
 `Platform / Reference Data` remains one canonical module. It contains three internal sub-boundaries, none of which is a module or a project:
 
-- `LgymApi.Application/BuildingBlocks/` contains only the neutral public manifest: `Result<T, TError>`, `Result`, `Unit`, `AppError`, `NotFoundError`, `BadRequestError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `UnprocessableEntityError`, and `InternalServerError`.
-- `LgymApi.Application/Platform/Contracts/` is Technical Platform. It owns the established background-command and serialization contracts, pagination contracts, the Unit of Work and reliability ports, and the public `AddPlatformModule` facade.
-- `LgymApi.Application/Platform/ReferenceData/` owns AppConfig, enum lookup, and unit conversion. `IAppConfigRepository` retains its legacy `Application/Repositories` path for source compatibility but is classified as an AppConfig-specific Reference Data port. Its internal `AddReferenceDataServices` helper is composed only by `AddPlatformModule`.
+- `LgymApi.Platform/BuildingBlocks/` contains only the neutral public manifest: `Result<T, TError>`, `Result`, `Unit`, `AppError`, `NotFoundError`, `BadRequestError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `UnprocessableEntityError`, and `InternalServerError`. Their established `LgymApi.Application.BuildingBlocks.*` namespaces remain unchanged.
+- `LgymApi.Platform/Contracts/`, `Mapping/`, `Pagination/`, and `Repositories/` are Technical Platform. They own the established background-command and serialization contracts, mapping core/registration, pagination contracts, and the Unit of Work and reliability ports while retaining their established `LgymApi.Application.*` namespaces. The public `AddPlatformModule` facade remains in Application until the Reference Data extraction.
+- `LgymApi.Platform/ReferenceData/` owns AppConfig, enum lookup, and unit conversion. `IAppConfigRepository` retains its legacy `Application/Repositories` namespace for source compatibility but is classified as an AppConfig-specific Reference Data port. Its internal `AddReferenceDataServices` helper is composed only by `PlatformModule.AddPlatformModule`.
 
-Reference Data may depend on its approved Technical Platform contracts, BuildingBlocks, and Domain types. BuildingBlocks may depend only on the BCL. Technical Platform and Reference Data do not gain feature-workflow ownership through those roots.
+Reference Data may depend on its approved Technical Platform contracts, BuildingBlocks, and Domain types. BuildingBlocks may depend only on the BCL. Technical Platform and Reference Data do not gain feature-workflow ownership through those roots. Platform-owned repositories use only `IPlatformPersistenceContext`; Infrastructure retains `AppDbContext`, the UoW implementation, migrations, Hangfire, and typed-ID conventions.
 
 AppConfig owns `IAppConfigAuthorizationPort` and calls it once for protected operations. Identity implements the scoped adapter with its own user and role repositories, preserving the ID-only boundary. AppConfig no longer consumes Identity repositories directly; its unauthenticated latest-by-platform lookup remains outside that authorization flow.
 
 Enum lookup is owned by Reference Data. `EnumLookupMappingProfile` registers the six concrete enum mappings, and `EnumService` keeps raw member `id`, translated `name` and `displayName`, hidden-value filtering, and case-insensitive type lookup. API mapping composes those Application lookup models rather than formatting enum values in controllers or feature profiles.
 
-Notification delivery follows the same ownership rule: Notifications owns its provider-neutral intent policy, including the six typed Coaching intents. Application owns password plus provider-neutral push event/result/scheduling contracts, delivery claims, state transitions, retry policy, and UoW commits. Worker owns command runtime plus environment-selected password, push, and Coaching email scheduling adapters. Infrastructure owns the private FCM implementation and raw tokens, and `Program.cs` composes module-owned helpers in module-before-Worker order without direct adapter bindings.
+Notification delivery follows the same ownership rule: Notifications owns its provider-neutral intent policy, including the six typed Coaching intents, push event/result/scheduling contracts, delivery claims, state transitions, retry policy, UoW commits, private FCM implementation/configuration, and five stage-only repositories/mappings behind `INotificationsPersistenceContext`. The implementation compiles from `LgymApi.Notifications` while retaining compatible application namespaces. Application owns the internal command-envelope lifecycle runtime; Worker owns the closed command-handler registry, raw/string dispatch boundary, and Hangfire-facing host behavior. Password-recovery, push, and Coaching email scheduling adapters are selected by their owner modules, while Worker retains generic Common scheduler forwarding and no-op versus Hangfire host scheduling. Infrastructure retains the one-context bridge, global phase coordinator, migrations, and Hangfire persistence/server registration; the final Worker facade delegates enabled server hosting to that Infrastructure-owned helper.
+
+The composition facades are closed and ordered. `AddNotificationsModule(configuration)` owns Notifications policy, repositories, email, and FCM; `AddApplication` owns the four remaining Application modules plus the internal command-envelope runtime helper; `AddInfrastructure` owns shared technical roots, stage-only persistence, and the internal Npgsql duplicate-recovery classifier; Application and Notifications API-adapter facades follow Infrastructure; and `AddBackgroundWorkerServices` is last so Testing resolves no-op schedulers while non-testing resolves Hangfire schedulers.
 
 Infrastructure registration ownership is explicit: Notifications owns email registration and selection of Dummy or SMTP senders; Reporting owns its photo-storage registration and Local or Cloudflare R2 selection; Identity owns Google-token validation registration; Notifications owns the FCM provider registration; and API logging owns the optional Elasticsearch sink. Provider SDKs, credentials, and raw provider responses do not belong in Application or BuildingBlocks.
 
 ### Background Contract Ownership
 
-Application owns the Platform dispatcher and stage-only outbox ports at `LgymApi.Application/Platform/Contracts/BackgroundCommands/`, persisted-payload serialization at `LgymApi.Application/Platform/Contracts/Serialization/`, module commands at `LgymApi.Application/Identity/Contracts/BackgroundCommands/`, `LgymApi.Application/WorkoutProgress/Contracts/BackgroundCommands/`, `LgymApi.Application/Coaching/Contracts/BackgroundCommands/`, `LgymApi.Application/Reporting/Contracts/BackgroundCommands/`, and `LgymApi.Application/Nutrition/Contracts/BackgroundCommands/`, Notifications push contracts at `LgymApi.Application/Notifications/Contracts/Push/`, and the Identity password-recovery port at `LgymApi.Application/Features/PasswordReset/Contracts/`.
+Platform owns the dispatcher and stage-only outbox ports at `LgymApi.Platform/Contracts/BackgroundCommands/` and persisted-payload serialization at `LgymApi.Platform/Contracts/Serialization/`; their established `LgymApi.Application.Platform.Contracts.*` namespaces remain unchanged. Application retains module commands at `LgymApi.Application/Identity/Contracts/BackgroundCommands/`, `LgymApi.Application/WorkoutProgress/Contracts/BackgroundCommands/`, `LgymApi.Application/Coaching/Contracts/BackgroundCommands/`, `LgymApi.Application/Reporting/Contracts/BackgroundCommands/`, and `LgymApi.Application/Nutrition/Contracts/BackgroundCommands/`, Notifications push contracts at `LgymApi.Application/Notifications/Contracts/Push/`, and the Identity password-recovery port at `LgymApi.Application/Features/PasswordReset/Contracts/`.
 
-`LgymApi.BackgroundWorker/Runtime/` owns the closed registry of 15 commands and 16 handlers, with `TrainingCompletedCommand` as the sole two-handler command. Coaching contributes eight commands: three email-only invitation lifecycle commands and five in-app commands, mapped to six Notifications intents. `LgymApi.BackgroundWorker/Notifications/PasswordRecoveryEmailSchedulerAdapter.cs` maps the Identity request to the retained Common email wire payload. `LgymApi.BackgroundWorker.Common/Jobs/` and `LgymApi.BackgroundWorker.Common/Notifications/` are the bounded persisted job and email wire seam only. Common must not regain commands, serialization, push contracts, or Application-facing ports.
+`LgymApi.BackgroundWorker/Runtime/` owns the closed registry of 15 commands and 16 handlers, with `TrainingCompletedCommand` as the sole two-handler command. Coaching contributes eight commands: three email-only invitation lifecycle commands and five in-app commands, mapped to six Notifications intents. Notifications-owned password-recovery and Coaching email adapters map owner requests to retained Common email wire payloads; Worker retains generic scheduler forwarding. `LgymApi.BackgroundWorker.Common/Jobs/` and `LgymApi.BackgroundWorker.Common/Notifications/` are the bounded persisted job and email wire seam only. Common must not regain commands, serialization, push contracts, or Application-facing ports.
 
 Application must not reference either `LgymApi.BackgroundWorker` project or any `LgymApi.BackgroundWorker*` namespace. Canonical persisted command IDs retain their legacy `LgymApi.BackgroundWorker.Common.Commands.*` strings, while Application CLR names are read aliases only. The Worker writes the legacy IDs and owns Hangfire-facing runtime behavior.
 
 ### Accepted report progress flow
 
-Reporting accepts a submission, derives valid measurement triples, and stages a Reporting-owned `ReportSubmissionAcceptedProgressCommand` in `CommandEnvelope` before the submission unit of work commits. The envelope is the same-database outbox and is not dispatched by Reporting directly. After the committed intent is dispatched through the existing ActionMessage infrastructure, the Worker handler invokes the Workout & Progress consumer. That consumer validates the event, deduplicates by trainee, body part, and `ObservedAt` UTC day, and owns the measurement rows. Invalid, unsupported-schema, or poison deliveries are sanitized and bounded for the existing retry/dead-letter path; unexpected persistence exceptions remain retryable.
+Reporting accepts a submission, derives and validates its versioned measurement payload, and stages a Reporting-owned `ReportSubmissionAcceptedProgressCommand` in `CommandEnvelope` before the submission unit of work commits. The envelope is the same-database outbox and is not dispatched by Reporting directly. After the committed intent is dispatched through the existing ActionMessage infrastructure, the Worker handler forwards shared raw JSON to the Workout & Progress owner. Workout's raw parser validates and maps that wire representation into its consumer event. The consumer deduplicates by trainee, body part, and `ObservedAt` UTC day, and owns the measurement rows. Invalid, unsupported-schema, or poison deliveries are sanitized and bounded for the existing retry/dead-letter path; unexpected persistence exceptions remain retryable.
 
 Operators can trace this flow with event ID, report submission ID, correlation ID, causation ID, schema version, outcome, retry or dead-letter state, and aggregate counts. Logs and operational records must not contain raw answer JSON, photos, device tokens, or payload dumps.
 
@@ -300,7 +305,7 @@ Then register service/repository in both service collection extension files and 
 - `#311` is the constraint authority for the modular-monolith direction.
 - `#375` is the historical baseline and inventory source.
 - `#380` is the current background-contract ownership and project-reference source.
-- `#381` defines the Notifications write-ownership boundary and provider-neutral public contract surface; it does not move projects, entities, or runtime behavior.
+- `#381` defines the Notifications write-ownership boundary and provider-neutral public contract surface. Its original non-relocation scope is historical; #387 later moved the approved Notifications implementation, persistence, and provider sources into `LgymApi.Notifications` without changing runtime contracts.
 - `#391` codifies Workout & Progress logical ownership and path classification without changing the shared persistence topology or legacy API contracts.
 - `#390` codifies Nutrition's six-entity, 18-action logical boundary and compatibility adapters without changing the shared persistence topology, command identity, or legacy API contracts.
 - `#393` defines the executable concern-owner matrix for Platform and Reference Data.
@@ -318,6 +323,6 @@ Then register service/repository in both service collection extension files and 
 - `docs/modular-monolith/issue-392-reporting-boundary.md`
 - `docs/modular-monolith/issue-393-platform-reference-data-boundary.md`
 
-The project-reference manifest fixes the current solution at 14 projects and 32 edges. Its sole approved delta is removal of `LgymApi.Domain -> LgymApi.Resources`; Domain no longer depends on Resources. The current layered runtime stays in place until a later change explicitly alters it.
+The project-reference manifest fixes the current solution at 18 projects and 90 unique, justified direct edges: 89 have Roslyn-resolved source/import evidence and one is the Resources analyzer edge. The import guard rejects unused edges, missing direct imports, transitive reliance, forbidden edges, duplicates, cycles, and topological-order drift. The graph document also fixes the dependency-first order and 216-edge forbidden complement.
 The production topology remains one `AppDbContext`, one PostgreSQL database, and one migration stream. The eight owner totals remain Identity & Accounts 9, Notifications 5, Reporting 7, Training Planning 3, Workout & Progress 10, Coaching 4, Nutrition 6, and Platform / Reference Data 4, for 48 persisted entities.
 The compatibility, persistence, and Unit of Work guidance elsewhere in this guide continues to apply and is not restated here.

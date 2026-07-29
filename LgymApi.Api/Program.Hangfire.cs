@@ -1,6 +1,6 @@
 using Hangfire;
-using LgymApi.BackgroundWorker.Common.Jobs;
 using LgymApi.Api.Configuration;
+using LgymApi.BackgroundWorker;
 
 namespace LgymApi.Api;
 
@@ -18,9 +18,6 @@ internal static class ProgramHangfire
             Authorization = new[] { new HangfireDashboardAuthorizationFilter() }
         });
 
-        RecurringJob.AddOrUpdate<ICommittedIntentDispatchJob>("reliability-committed-intent-dispatch", job => job.ExecuteAsync(CancellationToken.None), Cron.Minutely);
-        RecurringJob.AddOrUpdate<IExpiredPhotoUploadCleanupJob>("reporting-expired-photo-upload-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Minutely);
-        RecurringJob.AddOrUpdate<IRecurringReportAssignmentProcessingJob>("reporting-recurring-report-assignments", job => job.ExecuteAsync(CancellationToken.None), Cron.Minutely);
-        RecurringJob.AddOrUpdate<IStalePushInstallationCleanupJob>("push-stale-installation-cleanup", job => job.ExecuteAsync(CancellationToken.None), Cron.Daily(3));
+        BackgroundWorkerRecurringJobs.Configure();
     }
 }

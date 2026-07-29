@@ -1,10 +1,7 @@
 using System.Globalization;
-using LgymApi.Application.Notifications;
-using LgymApi.Application.Notifications.Models;
 using LgymApi.Application.Options;
-using LgymApi.Application.Repositories;
-using LgymApi.Domain.Notifications;
-using LgymApi.Domain.ValueObjects;
+using LgymApi.Application.WorkerRuntime;
+using LgymApi.Application.Notifications;
 using Microsoft.Extensions.Logging;
 
 namespace LgymApi.BackgroundWorker.Actions;
@@ -12,52 +9,37 @@ namespace LgymApi.BackgroundWorker.Actions;
 internal static class LocalizedReportNotificationDispatcher
 {
     public static async Task DispatchAsync(
-        IInAppNotificationService notificationService,
-        IUserRepository userRepository,
+        IInAppNotificationWireWriter notificationWriter,
         AppDefaultsOptions appDefaultsOptions,
         ILogger logger,
-        Id<LgymApi.Domain.Entities.User> traineeId,
-        Id<LgymApi.Domain.Entities.User> trainerId,
+        string traineeId,
+        string trainerId,
         string? templateName,
         string deliveryKey,
         string redirectUrl,
-        InAppNotificationType type,
+        string notificationType,
         Func<string> localizedMessageTemplateFactory,
         string logCategory,
         CancellationToken cancellationToken)
     {
-        var trainer = await userRepository.FindByIdAsync(trainerId, cancellationToken);
-        var trainee = await userRepository.FindByIdAsync(traineeId, cancellationToken);
         var previousUiCulture = CultureInfo.CurrentUICulture;
 
         try
         {
-            CultureInfo.CurrentUICulture = ResolveCulture(trainee?.PreferredLanguage, appDefaultsOptions.PreferredLanguage);
-            var resolvedTrainerName = string.IsNullOrWhiteSpace(trainer?.Name)
-                ? global::LgymApi.Resources.Messages.GenericTrainerDisplayName
-                : trainer.Name;
+            CultureInfo.CurrentUICulture = ResolveCulture(null, appDefaultsOptions.PreferredLanguage);
+            var resolvedTrainerName = WorkerNotificationLocalization.GenericTrainerDisplayName;
             var resolvedTemplateName = string.IsNullOrWhiteSpace(templateName)
-                ? global::LgymApi.Resources.Messages.GenericReportDisplayName
+                ? WorkerNotificationLocalization.GenericReportDisplayName
                 : templateName.Trim();
 
-            var input = new CreateInAppNotificationInput(
-                traineeId,
-                trainerId,
+            await notificationWriter.CreateAsync(
+                traineeId.ToString(),
+                trainerId.ToString(),
                 deliveryKey,
-                false,
                 string.Format(localizedMessageTemplateFactory(), resolvedTrainerName, resolvedTemplateName),
                 redirectUrl,
-                type);
-
-            var result = await notificationService.CreateAsync(input, cancellationToken);
-            if (result.IsFailure)
-            {
-                logger.LogError(
-                    "Failed to create {LogCategory} notification for trainee {TraineeId}: {Error}",
-                    logCategory,
-                    traineeId,
-                    result.Error);
-            }
+                notificationType,
+                cancellationToken);
         }
         finally
         {

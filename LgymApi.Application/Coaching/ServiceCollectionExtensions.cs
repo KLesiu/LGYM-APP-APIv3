@@ -45,7 +45,16 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddCoachingModule(this IServiceCollection services)
     {
         services.AddScoped<ICoachingRelationshipAccessService, CoachingRelationshipAccessService>();
+        services.AddScoped<IMarkerCoachingRelationshipAccessService, CoachingRelationshipAccessService>();
         services.AddScoped<ICoachingNotificationReadService, CoachingNotificationReadService>();
+        services.AddScoped<IInvitationCreatedEmailPreparationPort, InvitationCreatedEmailPreparationPort>();
+        services.AddScoped<ITrainerInvitationCreatedInAppPreparationPort, TrainerInvitationCreatedInAppPreparationPort>();
+        services.AddScoped<ITraineeNoteUpdatedInAppPreparationPort, TraineeNoteUpdatedInAppPreparationPort>();
+        services.AddScoped<IRelationshipEndedPreparationPort, RelationshipEndedPreparationPort>();
+        services.AddScoped<ITrainerInvitationAcceptedInAppPreparationPort, TrainerInvitationAcceptedInAppPreparationPort>();
+        services.AddScoped<ITrainerInvitationRejectedInAppPreparationPort, TrainerInvitationRejectedInAppPreparationPort>();
+        services.AddScoped<IInvitationAcceptedEmailPreparationPort, InvitationAcceptedEmailPreparationPort>();
+        services.AddScoped<IInvitationRevokedEmailPreparationPort, InvitationRevokedEmailPreparationPort>();
         services.AddScoped<ICreateInvitationUseCase, CreateInvitationUseCase>();
         services.AddScoped<ICreateInvitationByEmailUseCase, CreateInvitationByEmailUseCase>();
         services.AddScoped<IListInvitationsUseCase, ListInvitationsUseCase>();

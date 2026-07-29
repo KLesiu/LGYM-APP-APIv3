@@ -4,6 +4,7 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Repositories;
+using LgymApi.Platform.Persistence;
 using Microsoft.EntityFrameworkCore;
 using NUnit.Framework;
 
@@ -25,7 +26,7 @@ public sealed class BackgroundActionMessageRepositoryTests
             .Options;
 
         await using var dbContext = new AppDbContext(options);
-        var repository = new CommandEnvelopeRepository(dbContext);
+        var repository = new CommandEnvelopeRepository(dbContext, new NonDuplicateFailureClassifier());
 
         var envelope = new CommandEnvelope
         {
@@ -57,7 +58,7 @@ public sealed class BackgroundActionMessageRepositoryTests
             .Options;
 
         await using var dbContext = new AppDbContext(options);
-        var repository = new CommandEnvelopeRepository(dbContext);
+        var repository = new CommandEnvelopeRepository(dbContext, new NonDuplicateFailureClassifier());
 
         var envelope = new CommandEnvelope
         {
@@ -89,7 +90,7 @@ public sealed class BackgroundActionMessageRepositoryTests
             .Options;
 
         await using var dbContext = new AppDbContext(options);
-        var repository = new CommandEnvelopeRepository(dbContext);
+        var repository = new CommandEnvelopeRepository(dbContext, new NonDuplicateFailureClassifier());
 
         // Act
         var found = await repository.FindByIdAsync(Id<CommandEnvelope>.New());
@@ -107,7 +108,7 @@ public sealed class BackgroundActionMessageRepositoryTests
             .Options;
 
         await using var dbContext = new AppDbContext(options);
-        var repository = new CommandEnvelopeRepository(dbContext);
+        var repository = new CommandEnvelopeRepository(dbContext, new NonDuplicateFailureClassifier());
 
         var correlationId = Id<CorrelationScope>.New();
         var envelope = new CommandEnvelope
@@ -140,7 +141,7 @@ public sealed class BackgroundActionMessageRepositoryTests
             .Options;
 
         await using var dbContext = new AppDbContext(options);
-        var repository = new CommandEnvelopeRepository(dbContext);
+        var repository = new CommandEnvelopeRepository(dbContext, new NonDuplicateFailureClassifier());
 
         // Act
         var found = await repository.FindByCorrelationIdAsync(Id<CorrelationScope>.New());
@@ -158,7 +159,7 @@ public sealed class BackgroundActionMessageRepositoryTests
             .Options;
 
         await using var dbContext = new AppDbContext(options);
-        var repository = new CommandEnvelopeRepository(dbContext);
+        var repository = new CommandEnvelopeRepository(dbContext, new NonDuplicateFailureClassifier());
 
         var readyForRetry = new CommandEnvelope
         {
@@ -218,7 +219,7 @@ public sealed class BackgroundActionMessageRepositoryTests
             .Options;
 
         await using var dbContext = new AppDbContext(options);
-        var repository = new CommandEnvelopeRepository(dbContext);
+        var repository = new CommandEnvelopeRepository(dbContext, new NonDuplicateFailureClassifier());
 
         var envelope = new CommandEnvelope
         {
@@ -248,4 +249,9 @@ public sealed class BackgroundActionMessageRepositoryTests
         updated.CompletedAt.Should().NotBeNull();
     }
 
+}
+
+internal sealed class NonDuplicateFailureClassifier : ICommandEnvelopeDuplicateFailureClassifier
+{
+    public bool IsDuplicateCorrelationFailure(Exception commitFailure) => false;
 }

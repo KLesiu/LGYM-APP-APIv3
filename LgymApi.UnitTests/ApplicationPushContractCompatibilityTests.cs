@@ -42,8 +42,8 @@ public sealed class ApplicationPushContractCompatibilityTests
     [Test]
     public void ApplicationPushContracts_ExposeOnlyTheExactNotificationsOwnedTypes()
     {
-        var applicationAssembly = typeof(LgymApi.Application.ServiceCollectionExtensions).Assembly;
-        var contractTypes = applicationAssembly
+        var notificationsAssembly = typeof(ApplicationPushEventPayload).Assembly;
+        var contractTypes = notificationsAssembly
             .GetExportedTypes()
             .Where(type => type.Namespace == PushContractsNamespace)
             .OrderBy(type => type.Name, StringComparer.Ordinal)
@@ -56,7 +56,7 @@ public sealed class ApplicationPushContractCompatibilityTests
             $"{PushContractsNamespace}.PushEventPayload",
             $"{PushContractsNamespace}.PushSendAttemptResult",
             $"{PushContractsNamespace}.PushSendOutcome");
-        contractTypes.Should().OnlyContain(type => type.Assembly == applicationAssembly && type.IsPublic);
+        contractTypes.Should().OnlyContain(type => type.Assembly == notificationsAssembly && type.IsPublic);
     }
 
     [Test]
@@ -72,12 +72,12 @@ public sealed class ApplicationPushContractCompatibilityTests
             schedulerMethods[0],
             "Enqueue",
             typeof(string),
-            ("notificationId", typeof(Id<PushNotificationMessage>), false));
+            ("notificationId", typeof(string), false));
         AssertMethod(
             schedulerMethods[1],
             "ScheduleRetry",
             typeof(string),
-            ("notificationId", typeof(Id<PushNotificationMessage>), false),
+            ("notificationId", typeof(string), false),
             ("delay", typeof(TimeSpan), false));
 
         var nullability = new NullabilityInfoContext();

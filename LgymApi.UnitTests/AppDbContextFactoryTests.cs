@@ -1,6 +1,8 @@
 using FluentAssertions;
 using LgymApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using NUnit.Framework;
 
 namespace LgymApi.UnitTests;
@@ -46,5 +48,23 @@ public sealed class AppDbContextFactoryTests
         using var context = factory.CreateDbContext([]);
 
         context.Database.GetConnectionString().Should().Be(connectionString);
+    }
+
+    [Test]
+    public void CreateDbContext_BuildsCanonicalNpgsqlModelAndMigrationStream()
+    {
+        const string connectionString = "Host=127.0.0.1;Port=1;Database=design_time_guard;Username=guard;Password=guard";
+        Environment.SetEnvironmentVariable(EnvironmentVariableName, connectionString);
+        var factory = new AppDbContextFactory();
+
+        using var context = factory.CreateDbContext([]);
+        var migrationsAssembly = context.GetService<IMigrationsAssembly>();
+
+        context.Database.ProviderName.Should().Be("Npgsql.EntityFrameworkCore.PostgreSQL");
+        context.Model.GetEntityTypes().Should().HaveCount(48);
+        context.Database.HasPendingModelChanges().Should().BeFalse();
+        migrationsAssembly.Assembly.Should().BeSameAs(typeof(AppDbContext).Assembly);
+        migrationsAssembly.ModelSnapshot.Should().NotBeNull();
+        migrationsAssembly.ModelSnapshot!.GetType().Name.Should().Be("AppDbContextModelSnapshot");
     }
 }

@@ -2,12 +2,7 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Coaching.ManagedPlans.Assign;
-using LgymApi.Application.Coaching.ManagedPlans.Create;
-using LgymApi.Application.Coaching.ManagedPlans.Delete;
-using LgymApi.Application.Coaching.ManagedPlans.List;
-using LgymApi.Application.Coaching.ManagedPlans.Unassign;
-using LgymApi.Application.Coaching.ManagedPlans.Update;
+using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Coaching.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
@@ -15,11 +10,11 @@ using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.TrainingPlanning.Contracts.ManagedPlans;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using LgymApi.Resources;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PlanEntity = LgymApi.Domain.Entities.Plan;
-using UserEntity = LgymApi.Domain.Entities.User;
 
 namespace LgymApi.Api.Features.Trainer.Controllers;
 
@@ -28,29 +23,14 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 [Authorize(Policy = AuthConstants.Policies.TrainerAccess)]
 public sealed class TrainerManagedPlansController : ControllerBase
 {
-    private readonly IListManagedPlansUseCase _listPlans;
-    private readonly ICreateTraineeManagedPlanUseCase _createPlan;
-    private readonly IUpdateTraineeManagedPlanUseCase _updatePlan;
-    private readonly IDeleteTraineeManagedPlanUseCase _deletePlan;
-    private readonly IAssignTraineeManagedPlanUseCase _assignPlan;
-    private readonly IUnassignTraineeManagedPlanUseCase _unassignPlan;
+    private readonly IManagedPlanAccountCompatibilityAdapter _plans;
     private readonly IMapper _mapper;
 
     public TrainerManagedPlansController(
-        IListManagedPlansUseCase listPlans,
-        ICreateTraineeManagedPlanUseCase createPlan,
-        IUpdateTraineeManagedPlanUseCase updatePlan,
-        IDeleteTraineeManagedPlanUseCase deletePlan,
-        IAssignTraineeManagedPlanUseCase assignPlan,
-        IUnassignTraineeManagedPlanUseCase unassignPlan,
+        IManagedPlanAccountCompatibilityAdapter plans,
         IMapper mapper)
     {
-        _listPlans = listPlans;
-        _createPlan = createPlan;
-        _updatePlan = updatePlan;
-        _deletePlan = deletePlan;
-        _assignPlan = assignPlan;
-        _unassignPlan = unassignPlan;
+        _plans = plans;
         _mapper = mapper;
     }
 
@@ -58,13 +38,13 @@ public sealed class TrainerManagedPlansController : ControllerBase
     [ProducesResponseType(typeof(List<TrainerManagedPlanDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetTraineePlans([FromRoute] string traineeId, CancellationToken cancellationToken = default)
     {
-        if (!Id<UserEntity>.TryParse(traineeId, out var parsedTraineeId))
+        if (!Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId))
         {
             return Result<List<ManagedPlanReadModel>, AppError>.Failure(new InvalidTrainerRelationshipError(Messages.UserIdRequired)).ToActionResult();
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _listPlans.ExecuteAsync(new ListManagedPlansQuery(trainer!.Id, parsedTraineeId), cancellationToken);
+        var trainerId = HttpContext.GetAuthenticatedAccountContext()!.Id;
+        var result = await _plans.ListAsync(new ManagedPlanListAccountQuery(trainerId, parsedTraineeId), cancellationToken);
         return result.IsFailure ? result.ToActionResult() : Ok(_mapper.MapList<ManagedPlanReadModel, TrainerManagedPlanDto>(result.Value));
     }
 
@@ -72,14 +52,13 @@ public sealed class TrainerManagedPlansController : ControllerBase
     [ProducesResponseType(typeof(TrainerManagedPlanDto), StatusCodes.Status201Created)]
     public async Task<IActionResult> CreateTraineePlan([FromRoute] string traineeId, [FromBody] TrainerPlanFormRequest request, CancellationToken cancellationToken = default)
     {
-        if (!Id<UserEntity>.TryParse(traineeId, out var parsedTraineeId))
+        if (!Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId))
         {
             return Result<ManagedPlanReadModel, AppError>.Failure(new InvalidTrainerRelationshipError(Messages.UserIdRequired)).ToActionResult();
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var command = _mapper.Map<TrainerPlanFormRequest, CreateTraineeManagedPlanCommand>(request) with { TrainerId = trainer!.Id, TraineeId = parsedTraineeId };
-        var result = await _createPlan.ExecuteAsync(command, cancellationToken);
+        var trainerId = HttpContext.GetAuthenticatedAccountContext()!.Id;
+        var result = await _plans.CreateAsync(new ManagedPlanCreateAccountCommand(trainerId, parsedTraineeId, request.Name), cancellationToken);
         return result.IsFailure
             ? result.ToActionResult()
             : StatusCode(StatusCodes.Status201Created, _mapper.Map<ManagedPlanReadModel, TrainerManagedPlanDto>(result.Value));
@@ -89,7 +68,7 @@ public sealed class TrainerManagedPlansController : ControllerBase
     [ProducesResponseType(typeof(TrainerManagedPlanDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateTraineePlan([FromRoute] string traineeId, [FromRoute] string planId, [FromBody] TrainerPlanFormRequest request, CancellationToken cancellationToken = default)
     {
-        if (!Id<UserEntity>.TryParse(traineeId, out var parsedTraineeId))
+        if (!Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId))
         {
             return Result<ManagedPlanReadModel, AppError>.Failure(new InvalidTrainerRelationshipError(Messages.UserIdRequired)).ToActionResult();
         }
@@ -99,14 +78,8 @@ public sealed class TrainerManagedPlansController : ControllerBase
             return Result<ManagedPlanReadModel, AppError>.Failure(new InvalidTrainerRelationshipError(Messages.FieldRequired)).ToActionResult();
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var command = _mapper.Map<TrainerPlanFormRequest, UpdateTraineeManagedPlanCommand>(request) with
-        {
-            TrainerId = trainer!.Id,
-            TraineeId = parsedTraineeId,
-            PlanId = parsedPlanId
-        };
-        var result = await _updatePlan.ExecuteAsync(command, cancellationToken);
+        var trainerId = HttpContext.GetAuthenticatedAccountContext()!.Id;
+        var result = await _plans.UpdateAsync(new ManagedPlanUpdateAccountCommand(trainerId, parsedTraineeId, parsedPlanId, request.Name), cancellationToken);
         return result.IsFailure ? result.ToActionResult() : Ok(_mapper.Map<ManagedPlanReadModel, TrainerManagedPlanDto>(result.Value));
     }
 
@@ -114,7 +87,7 @@ public sealed class TrainerManagedPlansController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> DeleteTraineePlan([FromRoute] string traineeId, [FromRoute] string planId, CancellationToken cancellationToken = default)
     {
-        if (!Id<UserEntity>.TryParse(traineeId, out var parsedTraineeId))
+        if (!Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId))
         {
             return Result<Unit, AppError>.Failure(new InvalidTrainerRelationshipError(Messages.UserIdRequired)).ToActionResult();
         }
@@ -124,8 +97,8 @@ public sealed class TrainerManagedPlansController : ControllerBase
             return Result<Unit, AppError>.Failure(new InvalidTrainerRelationshipError(Messages.FieldRequired)).ToActionResult();
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _deletePlan.ExecuteAsync(new DeleteTraineeManagedPlanCommand(trainer!.Id, parsedTraineeId, parsedPlanId), cancellationToken);
+        var trainerId = HttpContext.GetAuthenticatedAccountContext()!.Id;
+        var result = await _plans.DeleteAsync(new ManagedPlanDeleteAccountCommand(trainerId, parsedTraineeId, parsedPlanId), cancellationToken);
         return result.IsFailure ? result.ToActionResult() : Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Deleted));
     }
 
@@ -133,7 +106,7 @@ public sealed class TrainerManagedPlansController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> AssignTraineePlan([FromRoute] string traineeId, [FromRoute] string planId, CancellationToken cancellationToken = default)
     {
-        if (!Id<UserEntity>.TryParse(traineeId, out var parsedTraineeId))
+        if (!Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId))
         {
             return Result<Unit, AppError>.Failure(new InvalidTrainerRelationshipError(Messages.UserIdRequired)).ToActionResult();
         }
@@ -143,8 +116,8 @@ public sealed class TrainerManagedPlansController : ControllerBase
             return Result<Unit, AppError>.Failure(new InvalidTrainerRelationshipError(Messages.FieldRequired)).ToActionResult();
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _assignPlan.ExecuteAsync(new AssignTraineeManagedPlanCommand(trainer!.Id, parsedTraineeId, parsedPlanId), cancellationToken);
+        var trainerId = HttpContext.GetAuthenticatedAccountContext()!.Id;
+        var result = await _plans.AssignAsync(new ManagedPlanAssignAccountCommand(trainerId, parsedTraineeId, parsedPlanId), cancellationToken);
         return result.IsFailure ? result.ToActionResult() : Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Updated));
     }
 
@@ -152,13 +125,13 @@ public sealed class TrainerManagedPlansController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> UnassignTraineePlan([FromRoute] string traineeId, CancellationToken cancellationToken = default)
     {
-        if (!Id<UserEntity>.TryParse(traineeId, out var parsedTraineeId))
+        if (!Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId))
         {
             return Result<Unit, AppError>.Failure(new InvalidTrainerRelationshipError(Messages.UserIdRequired)).ToActionResult();
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _unassignPlan.ExecuteAsync(new UnassignTraineeManagedPlanCommand(trainer!.Id, parsedTraineeId), cancellationToken);
+        var trainerId = HttpContext.GetAuthenticatedAccountContext()!.Id;
+        var result = await _plans.UnassignAsync(new ManagedPlanUnassignAccountCommand(trainerId, parsedTraineeId), cancellationToken);
         return result.IsFailure ? result.ToActionResult() : Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Updated));
     }
 }

@@ -24,12 +24,12 @@ public sealed class ModuleBoundaryArchitectureTestHelpersTests
         },
         new object[]
         {
-            Path.Combine("LgymApi.Application", "Platform", "ServiceCollectionExtensions.cs"),
+            Path.Combine("LgymApi.Platform", "PlatformModule.cs"),
             PlatformSubBoundary.TechnicalPlatform
         },
         new object[]
         {
-            Path.Combine("LgymApi.Application", "Repositories", "IAppConfigRepository.cs"),
+            Path.Combine("LgymApi.Platform", "Repositories", "IAppConfigRepository.cs"),
             PlatformSubBoundary.ReferenceData
         },
         new object[]
@@ -107,11 +107,6 @@ public sealed class ModuleBoundaryArchitectureTestHelpersTests
         {
             Path.Combine("LgymApi.UnitTests", "Users", "UsersServiceTests.cs"),
             ModuleBoundaryExclusionKind.TestProject
-        },
-        new object[]
-        {
-            Path.Combine("LgymApi.Application", "Users", "Helpers", "UsersModuleHelper.cs"),
-            ModuleBoundaryExclusionKind.Helper
         },
         new object[]
         {

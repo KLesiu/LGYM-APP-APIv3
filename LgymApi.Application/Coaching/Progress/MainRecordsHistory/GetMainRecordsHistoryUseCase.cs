@@ -9,11 +9,11 @@ namespace LgymApi.Application.Coaching.Progress.MainRecordsHistory;
 
 internal sealed class GetMainRecordsHistoryUseCase : IGetMainRecordsHistoryUseCase
 {
-    private readonly ICoachingRelationshipAccessService _relationshipAccess;
+    private readonly IMarkerCoachingRelationshipAccessService _relationshipAccess;
     private readonly IWorkoutProgressDashboardReadService _progress;
 
     public GetMainRecordsHistoryUseCase(
-        ICoachingRelationshipAccessService relationshipAccess,
+        IMarkerCoachingRelationshipAccessService relationshipAccess,
         IWorkoutProgressDashboardReadService progress)
     {
         _relationshipAccess = relationshipAccess;

@@ -219,12 +219,17 @@ public sealed class PushNotificationContractCompatibilityTests
     {
         public List<Id<PushNotificationMessage>> EnqueuedNotificationIds { get; } = [];
 
-        public string? Enqueue(Id<PushNotificationMessage> notificationId)
+        public string? Enqueue(string notificationId)
         {
-            EnqueuedNotificationIds.Add(notificationId);
+            if (!Id<PushNotificationMessage>.TryParse(notificationId, out var parsedNotificationId))
+            {
+                throw new FormatException("Notification ID must be a valid ID.");
+            }
+
+            EnqueuedNotificationIds.Add(parsedNotificationId);
             return "push-contract-job";
         }
 
-        public string? ScheduleRetry(Id<PushNotificationMessage> notificationId, TimeSpan delay) => "push-contract-retry-job";
+        public string? ScheduleRetry(string notificationId, TimeSpan delay) => "push-contract-retry-job";
     }
 }

@@ -288,7 +288,7 @@ public sealed class PasswordRecoveryTests : IntegrationTestBase
         using (var handlerScope = Factory.Services.CreateScope())
         {
             var emailHandler = handlerScope.ServiceProvider.GetRequiredService<IEmailJobHandler>();
-            await emailHandler.ProcessAsync(notificationId);
+            await emailHandler.ProcessAsync(notificationId.ToString());
         }
 
         Factory.EmailSender.SentMessages.Should().ContainSingle();

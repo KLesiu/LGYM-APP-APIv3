@@ -15,6 +15,7 @@ using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using LgymApi.Application.Repositories;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
@@ -259,12 +260,13 @@ public sealed class CoachingRelationshipLifecycleSliceTests
         var commandDispatcher = commands;
         var workUnit = unitOfWork;
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         services.AddScoped(_ => userAccessService);
         services.AddScoped(_ => accountReadService);
         services.AddScoped(_ => activeLinkPersistence);
         services.AddScoped(_ => commandDispatcher);
         services.AddScoped(_ => workUnit);
+        services.AddScoped(_ => Substitute.For<IAccountAccessReader>());
         services.AddCoachingModule();
         return services;
     }

@@ -1,4 +1,6 @@
 using FluentAssertions;
+using System.Security.Cryptography;
+using System.Text;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Platform.Contracts.BackgroundCommands;
@@ -35,6 +37,7 @@ public sealed class BackgroundActionDispatcherTests
     {
         _repository = new FakeCommandEnvelopeRepository();
         _unitOfWork = new FakeUnitOfWork();
+        _repository.UnitOfWork = _unitOfWork;
         _commandContractRegistry = CommandContractRegistry.CreateForTesting(
         [
             new CommandContract(
@@ -208,7 +211,6 @@ public sealed class BackgroundActionDispatcherTests
             new BackgroundActionResolver(_serviceProvider.GetRequiredService<IServiceScopeFactory>()),
             collisionRegistry,
             _repository,
-            _unitOfWork,
             _serviceProvider.GetRequiredService<ILogger<CommandDispatcher>>());
 
         var action = () => dispatcher.EnqueueAsync(new CanonicalNameCollisionCommand());
@@ -261,14 +263,14 @@ public sealed class BackgroundActionDispatcherTests
             new BackgroundActionResolver(_serviceProvider.GetRequiredService<IServiceScopeFactory>()),
             _commandContractRegistry,
             _repository,
-            _unitOfWork,
             _serviceProvider.GetRequiredService<ILogger<CommandDispatcher>>());
     }
 
     // Test doubles
-    private sealed class FakeCommandEnvelopeRepository : ICommandEnvelopeRepository
+    private sealed class FakeCommandEnvelopeRepository : ICommandEnvelopeRepository, ICommandEnvelopeRuntime
     {
         public List<CommandEnvelope> Envelopes { get; } = new();
+        public FakeUnitOfWork UnitOfWork { private get; set; } = null!;
 
         public void AddEnvelope(CommandEnvelope envelope) => Envelopes.Add(envelope);
 
@@ -313,6 +315,48 @@ public sealed class BackgroundActionDispatcherTests
 
             Envelopes.Add(envelope);
             return Task.FromResult(envelope);
+        }
+
+        public async Task<CommandEnvelopeReceipt> PersistAsync(CommandEnvelopeRequest request, CancellationToken cancellationToken = default)
+        {
+            var envelope = CreateEnvelope(request);
+            var winner = await AddOrGetExistingAsync(envelope, cancellationToken);
+            if (!ReferenceEquals(winner, envelope))
+            {
+                return new CommandEnvelopeReceipt(winner.Id.ToString(), true);
+            }
+
+            await UnitOfWork.SaveChangesAsync(cancellationToken);
+            return new CommandEnvelopeReceipt(envelope.Id.ToString(), false);
+        }
+
+        public async Task<CommandEnvelopeReceipt> StageAsync(CommandEnvelopeRequest request, CancellationToken cancellationToken = default)
+        {
+            var envelope = CreateEnvelope(request);
+            var winner = await AddOrGetExistingAsync(envelope, cancellationToken);
+            return new CommandEnvelopeReceipt(winner.Id.ToString(), !ReferenceEquals(winner, envelope));
+        }
+
+        public Task<CommandEnvelopeStart> BeginAsync(string envelopeId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<CommandEnvelopeFinalization> FinalizeAsync(string envelopeId, int attemptNumber, IReadOnlyList<CommandHandlerResult> results, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task RecordFaultAsync(string envelopeId, string reason, string errorMessage, string errorDetails, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task RecordCancellationAsync(string envelopeId) => throw new NotSupportedException();
+
+        private static CommandEnvelope CreateEnvelope(CommandEnvelopeRequest request)
+        {
+            var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{request.CommandId}|{request.PayloadJson}"));
+            return new CommandEnvelope
+            {
+                Id = Id<CommandEnvelope>.New(),
+                CorrelationId = Id<CorrelationScope>.FromBytes(hash[..16]),
+                CommandTypeFullName = request.CommandId,
+                PayloadJson = request.PayloadJson,
+                Status = ActionExecutionStatus.Pending,
+                NextAttemptAt = DateTimeOffset.UtcNow
+            };
         }
 
         public Task<List<CommandEnvelope>> GetPendingUndispatchedAsync(CancellationToken cancellationToken = default)

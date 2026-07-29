@@ -9,12 +9,12 @@ namespace LgymApi.Application.Coaching.ManagedPlans.Delete;
 
 internal sealed class DeleteTraineeManagedPlanUseCase : IDeleteTraineeManagedPlanUseCase
 {
-    private readonly ICoachingRelationshipAccessService _relationshipAccess;
+    private readonly IMarkerCoachingRelationshipAccessService _relationshipAccess;
     private readonly OwnerDeleteUseCase _owner;
     private readonly IMapper _mapper;
 
     public DeleteTraineeManagedPlanUseCase(
-        ICoachingRelationshipAccessService relationshipAccess,
+        IMarkerCoachingRelationshipAccessService relationshipAccess,
         OwnerDeleteUseCase owner,
         IMapper mapper)
     {

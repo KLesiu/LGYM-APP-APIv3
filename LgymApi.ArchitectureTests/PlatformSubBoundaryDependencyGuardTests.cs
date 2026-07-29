@@ -52,8 +52,10 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
         "LgymApi.Application.Mapping.Core.Mapper",
         "LgymApi.Application.Repositories.IUnitOfWork",
         "LgymApi.Application.Repositories.IUnitOfWorkTransaction",
+        "LgymApi.Application.Repositories.ICommittedIntentDispatcher",
         "LgymApi.Application.Repositories.ICommandEnvelopeRepository",
-        "LgymApi.Application.Repositories.IApiIdempotencyRecordRepository");
+        "LgymApi.Application.Repositories.IApiIdempotencyRecordRepository",
+        "LgymApi.Platform.Contracts.ActorReference");
 
     private static readonly IReadOnlySet<string> ReferenceDataContractManifest = CreateManifest(
         "LgymApi.Application.Platform.ReferenceData.AppConfig.Contracts.IAppConfigAuthorizationPort",
@@ -77,6 +79,7 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
         "LgymApi.Application.Platform.ReferenceData.Units.LinearUnitConverter`1",
         "LgymApi.Application.Platform.ReferenceData.Units.WeightLinearUnitStrategy",
         "LgymApi.Application.Platform.ReferenceData.Units.HeightLinearUnitStrategy",
+        "LgymApi.Application.Repositories.IAppConfigRepository",
         "LgymApi.Domain.Enums.WeightUnits",
         "LgymApi.Domain.Enums.HeightUnits");
 
@@ -97,7 +100,7 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
                     "LgymApi.Application/Platform/ReferenceData/AppConfig/AppConfigService.cs",
                     "namespace Fixture.ReferenceData; public sealed class AppConfigService { }"),
                 Source(
-                    "LgymApi.Application/Platform/Contracts/Runtime/TechnicalService.cs",
+                    "LgymApi.Platform/Contracts/Runtime/TechnicalService.cs",
                     "using Fixture.ReferenceData; namespace Fixture.Technical; public sealed class TechnicalService { private AppConfigService? _service; }")
             },
             "Technical Platform -> Reference Data");
@@ -109,7 +112,7 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
                     "LgymApi.Application/Identity/Profile/UserProfile.cs",
                     "namespace Fixture.Identity; public sealed class UserProfile { }"),
                 Source(
-                    "LgymApi.Application/BuildingBlocks/Results/OperationResult.cs",
+                    "LgymApi.Platform/BuildingBlocks/Results/OperationResult.cs",
                     "using Fixture.Identity; namespace Fixture.BuildingBlocks; public sealed class OperationResult { private UserProfile? _profile; }")
             },
             "BuildingBlocks -> Identity & Accounts");
@@ -121,7 +124,7 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
                     "LgymApi.Application/Platform/ReferenceData/AppConfig/Contracts/IAppConfigReader.cs",
                     "namespace Fixture.ReferenceData; public interface IAppConfigReader { }"),
                 Source(
-                    "LgymApi.Application/Platform/Contracts/Runtime/TechnicalService.cs",
+                    "LgymApi.Platform/Contracts/Runtime/TechnicalService.cs",
                     "using Fixture.ReferenceData; namespace Fixture.Technical; public sealed class TechnicalService { private IAppConfigReader? _reader; }")
             },
             "Technical Platform -> Reference Data");
@@ -130,7 +133,7 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
             new[]
             {
                 Source(
-                    "LgymApi.Application/Platform/Contracts/Runtime/TechnicalRuntime.cs",
+                    "LgymApi.Platform/Contracts/Runtime/TechnicalRuntime.cs",
                     "namespace Fixture.Technical; internal sealed class TechnicalRuntime { }"),
                 Source(
                     "LgymApi.Application/Platform/ReferenceData/AppConfig/AppConfigService.cs",
@@ -157,7 +160,7 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
         var sources = new[]
         {
             Source(
-                "LgymApi.Application/Common/Results/Unit.cs",
+                "LgymApi.Platform/BuildingBlocks/Results/Unit.cs",
                 "namespace LgymApi.Application.BuildingBlocks.Results; public readonly struct Unit { }"),
             Source(
                 "LgymApi.Domain/ValueObjects/Id.cs",
@@ -169,7 +172,7 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
                 "LgymApi.Domain/Entities/User.cs",
                 "namespace LgymApi.Domain.Entities; public sealed class User { }"),
             Source(
-                "LgymApi.Application/Platform/Contracts/BackgroundCommands/ICommandDispatcher.cs",
+                "LgymApi.Platform/Contracts/BackgroundCommands/ICommandDispatcher.cs",
                 "using LgymApi.Application.BuildingBlocks.Results; using LgymApi.Domain.ValueObjects; namespace LgymApi.Application.Platform.Contracts.BackgroundCommands; public interface ICommandDispatcher { Unit Read(Id<object> id); }"),
             Source(
                 "LgymApi.Application/Platform/ReferenceData/AppConfig/IAppConfigService.cs",
@@ -205,10 +208,10 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
         var allowedSources = new[]
         {
             Source(
-                "LgymApi.Application/Platform/ReferenceData/ServiceCollectionExtensions.cs",
+                "LgymApi.Platform/ReferenceData/ServiceCollectionExtensions.cs",
                 "namespace Fixture.ReferenceData; internal static class ReferenceDataRegistration { internal static void AddReferenceDataServices() { } }"),
             Source(
-                "LgymApi.Application/Platform/ServiceCollectionExtensions.cs",
+                "LgymApi.Platform/PlatformModule.cs",
                 "using Fixture.ReferenceData; namespace Fixture.Technical; public static class ServiceCollectionExtensions { public static void AddPlatformModule() => ReferenceDataRegistration.AddReferenceDataServices(); }")
         };
         var forbiddenSources = allowedSources
@@ -237,7 +240,7 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
         var sources = new[]
         {
             Source(
-                "LgymApi.Application/BuildingBlocks/Results/OperationResult.cs",
+                "LgymApi.Platform/BuildingBlocks/Results/OperationResult.cs",
                 "using Microsoft.CodeAnalysis; namespace Fixture.BuildingBlocks; public sealed class OperationResult { private SyntaxTree? _syntaxTree; }")
         };
 
@@ -252,7 +255,7 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
         var sources = new[]
         {
             Source(
-                "LgymApi.Application/Platform/Contracts/Fake/IUnexpectedTechnicalContract.cs",
+                "LgymApi.Platform/Contracts/Fake/IUnexpectedTechnicalContract.cs",
                 "namespace Fixture.Technical; public interface IUnexpectedTechnicalContract { }"),
             Source(
                 "LgymApi.Application/Identity/Profile/ProfileService.cs",
@@ -326,6 +329,7 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
     {
         var (_, compilation, syntaxTrees) = ArchitectureTestHelpers.PrepareCompilation(
             "LgymApi.Application",
+            "LgymApi.Platform",
             "LgymApi.Domain");
 
         return AnalyzeCompilation(compilation, syntaxTrees);
@@ -580,8 +584,8 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
             .OfType<MethodDeclarationSyntax>()
             .FirstOrDefault();
         if (source.SubBoundary != PlatformSubBoundary.TechnicalPlatform
-            || !IsExactApplicationPath(source.RelativePath, "Platform/ServiceCollectionExtensions.cs")
-            || containingMethod?.Identifier.ValueText != "AddPlatformModule")
+            || !IsExactPlatformPath(source.RelativePath, "PlatformModule.cs")
+            || containingMethod is null)
         {
             return false;
         }
@@ -592,7 +596,7 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
         }
 
         return targetType.Owner.SubBoundary == PlatformSubBoundary.ReferenceData
-            && IsExactApplicationPath(targetType.Owner.RelativePath, "Platform/ReferenceData/ServiceCollectionExtensions.cs")
+            && IsExactPlatformPath(targetType.Owner.RelativePath, "ReferenceData/ServiceCollectionExtensions.cs")
             && targetType.Symbol.DeclaredAccessibility == Accessibility.Internal;
     }
 
@@ -607,9 +611,9 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
             .FirstOrDefault();
 
         return source.SubBoundary == PlatformSubBoundary.TechnicalPlatform
-            && IsExactApplicationPath(source.RelativePath, "Platform/ServiceCollectionExtensions.cs")
-            && containingMethod?.Identifier.ValueText == "AddPlatformModule"
-            && IsExactApplicationPath(targetType.Owner.RelativePath, "Platform/ReferenceData/ServiceCollectionExtensions.cs")
+            && IsExactPlatformPath(source.RelativePath, "PlatformModule.cs")
+            && containingMethod is not null
+            && IsExactPlatformPath(targetType.Owner.RelativePath, "ReferenceData/ServiceCollectionExtensions.cs")
             && targetType.Symbol.DeclaredAccessibility == Accessibility.Internal
             && (targetMethod == null || targetMethod.DeclaredAccessibility == Accessibility.Internal);
     }
@@ -688,6 +692,11 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
         return relativePath.Equals($"LgymApi.Application/{expectedPath}", StringComparison.Ordinal);
     }
 
+    private static bool IsExactPlatformPath(string relativePath, string expectedPath)
+    {
+        return relativePath.Equals($"LgymApi.Platform/{expectedPath}", StringComparison.Ordinal);
+    }
+
     private static string GetRelativeSourcePath(string path)
     {
         var normalizedPath = ArchitectureTestHelpers.NormalizePath(path);
@@ -698,7 +707,13 @@ public sealed class PlatformSubBoundaryDependencyGuardTests
         }
 
         var domainIndex = normalizedPath.IndexOf("/LgymApi.Domain/", StringComparison.Ordinal);
-        return domainIndex >= 0 ? normalizedPath[(domainIndex + 1)..] : normalizedPath;
+        if (domainIndex >= 0)
+        {
+            return normalizedPath[(domainIndex + 1)..];
+        }
+
+        var platformIndex = normalizedPath.IndexOf("/LgymApi.Platform/", StringComparison.Ordinal);
+        return platformIndex >= 0 ? normalizedPath[(platformIndex + 1)..] : normalizedPath;
     }
 
     private static string GetTypeIdentity(INamedTypeSymbol type)

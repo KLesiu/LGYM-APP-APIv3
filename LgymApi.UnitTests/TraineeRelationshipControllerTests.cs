@@ -3,11 +3,13 @@ using LgymApi.Api;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Features.Trainer.Controllers;
+using LgymApi.Api.Middleware;
 using LgymApi.Application.Coaching.Invitations.Accept;
 using LgymApi.Application.Coaching.Invitations.Reject;
 using LgymApi.Application.Coaching.ManagedPlans.GetActive;
 using LgymApi.Application.Coaching.Relationships.DetachFromTrainer;
 using LgymApi.Application.Coaching.Relationships.GetCurrentTrainer;
+using LgymApi.Application.Coaching.Compatibility;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping;
@@ -15,6 +17,8 @@ using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.TrainingPlanning.Contracts.ManagedPlans;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -91,25 +95,17 @@ public sealed class TraineeRelationshipControllerTests
         Id<User>? traineeId = null)
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
         var controller = new TraineeRelationshipController(
-            acceptInvitation ?? Substitute.For<IAcceptInvitationUseCase>(),
-            rejectInvitation ?? Substitute.For<IRejectInvitationUseCase>(),
-            detachFromTrainer ?? Substitute.For<IDetachFromTrainerUseCase>(),
-            currentTrainer ?? Substitute.For<IGetCurrentTrainerUseCase>(),
-            activePlan ?? Substitute.For<IGetActiveManagedPlanUseCase>(),
+            new TraineeRelationshipApiAdapter(acceptInvitation ?? Substitute.For<IAcceptInvitationUseCase>(), rejectInvitation ?? Substitute.For<IRejectInvitationUseCase>(), detachFromTrainer ?? Substitute.For<IDetachFromTrainerUseCase>(), currentTrainer ?? Substitute.For<IGetCurrentTrainerUseCase>(), activePlan ?? Substitute.For<IGetActiveManagedPlanUseCase>(), mapper),
             mapper)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
-        controller.HttpContext.Items["User"] = new User
-        {
-            Id = traineeId ?? Id<User>.New(),
-            Name = "Trainee",
-            Email = "trainee@example.test"
-        };
+        controller.HttpContext.Features.Set<IAuthenticatedAccountContextFeature>(new AuthenticatedAccountContextFeature(
+            new AuthenticatedAccountContext((traineeId ?? Id<User>.New()).Rebind<AccountReference>(), null, [], [], false, false)));
         return controller;
     }
 }

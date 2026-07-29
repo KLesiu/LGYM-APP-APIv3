@@ -6,24 +6,47 @@ namespace LgymApi.ArchitectureTests;
 [TestFixture]
 public sealed class CompositionRootRegistrationGuardTests
 {
-    private static readonly string[] RequiredCompositionMethods =
+    private static readonly string[] RequiredFacadeOrder =
     {
+        "AddPlatformModule",
         "AddIdentityModule",
         "AddTrainingPlanningModule",
+        "AddNotificationsModule",
+        "AddApplication",
+        "AddInfrastructure",
+        "AddTask7ApiCompatibility",
+        "AddNotificationsApiAdapters",
+        "AddBackgroundWorkerServices"
+    };
+
+    private static readonly string[] RequiredCompositionMethods =
+    {
+        "AddPlatformModule",
+        "AddIdentityModule",
+        "AddTrainingPlanningModule",
+        "AddNotificationsModule",
+        "AddApplication",
+        "AddInfrastructure",
+        "AddTask7ApiCompatibility",
+        "AddNotificationsApiAdapters",
+        "AddBackgroundWorkerServices",
+        "AddApplicationMapping"
+    };
+
+    private static readonly string[] InternalCompositionMethods =
+    {
+        "AddApplicationServices",
+        "AddPlatformServices",
         "AddWorkoutAndProgressModule",
         "AddCoachingModule",
         "AddNutritionModule",
         "AddReportingModule",
-        "AddPlatformServices",
-        "AddIdentityInfrastructure",
         "AddTrainingPlanningInfrastructure",
         "AddWorkoutProgressInfrastructure",
         "AddCoachingInfrastructure",
         "AddNutritionInfrastructure",
         "AddReportingInfrastructure",
-        "AddNotificationsModule",
-        "AddBackgroundWorkerServices",
-        "AddApplicationMapping"
+        "AddNotificationsInfrastructure"
     };
 
     private static readonly string[] RequiredHostRegistrationHelpers =
@@ -44,12 +67,6 @@ public sealed class CompositionRootRegistrationGuardTests
         "AddAuthorization",
         "AddAuthorizationBuilder",
         "AddPolicy"
-    };
-
-    private static readonly string[] LegacyCompositionMethods =
-    {
-        "AddApplicationServices",
-        "AddInfrastructure"
     };
 
     [Test]
@@ -77,10 +94,12 @@ public sealed class CompositionRootRegistrationGuardTests
             .Where(method => !invocations.Contains(method))
             .ToList();
 
-        var legacyCalls = LegacyCompositionMethods
+        var internalCalls = InternalCompositionMethods
             .Where(method => invocations.Contains(method))
             .ToList();
         var hostRegistrationViolations = FindHostRegistrationViolations(root);
+        var facadeViolations = FindFacadeCompositionViolations(root);
+        var apiBindingViolations = FindApiInternalBindingViolations(root);
 
         Assert.Multiple(() =>
         {
@@ -91,13 +110,53 @@ public sealed class CompositionRootRegistrationGuardTests
                 $"Missing: {string.Join(", ", missing)}");
 
             Assert.That(
-                legacyCalls,
+                internalCalls,
                 Is.Empty,
-                $"Program.cs must not call the removed composition shims: {string.Join(", ", LegacyCompositionMethods)}. " +
-                $"Found: {string.Join(", ", legacyCalls)}");
+                $"Program.cs must not call internal composition helpers: {string.Join(", ", InternalCompositionMethods)}. " +
+                $"Found: {string.Join(", ", internalCalls)}");
 
+            Assert.That(facadeViolations, Is.Empty, string.Join(Environment.NewLine, facadeViolations));
+            Assert.That(apiBindingViolations, Is.Empty, string.Join(Environment.NewLine, apiBindingViolations));
             Assert.That(hostRegistrationViolations, Is.Empty, string.Join(Environment.NewLine, hostRegistrationViolations));
         });
+    }
+
+    [Test]
+    public void ReversedWorkerCompositionFixture_IsRejected()
+    {
+        var calls = RequiredFacadeOrder.Where(method => method != "AddBackgroundWorkerServices").ToList();
+        calls.Insert(Array.IndexOf(RequiredFacadeOrder, "AddInfrastructure"), "AddBackgroundWorkerServices");
+        var root = ParseFacadeCompositionFixture(calls);
+
+        var violations = FindFacadeCompositionViolations(root);
+
+        Assert.That(violations, Has.Count.EqualTo(1));
+        Assert.That(violations[0], Does.Contain("ordered").And.Contain("AddBackgroundWorkerServices"));
+    }
+
+    [Test]
+    public void DuplicateFacadeCompositionFixture_IsRejected()
+    {
+        var calls = RequiredFacadeOrder.Append("AddApplication");
+        var root = ParseFacadeCompositionFixture(calls);
+
+        var violations = FindFacadeCompositionViolations(root);
+
+        Assert.That(violations, Has.Count.EqualTo(1));
+        Assert.That(violations[0], Does.Contain("AddApplication").And.Contain("exactly once"));
+    }
+
+    [Test]
+    public void ApiInternalBindingFixture_IsRejected()
+    {
+        var root = CSharpSyntaxTree.ParseText(
+            "builder.Services.AddScoped<IPlanRepository, LgymApi.TrainingPlanning.Persistence.PlanRepository>();")
+            .GetCompilationUnitRoot();
+
+        var violations = FindApiInternalBindingViolations(root);
+
+        Assert.That(violations, Has.Count.EqualTo(1));
+        Assert.That(violations[0], Does.Contain("PlanRepository").And.Contain("module facade"));
     }
 
     [Test]
@@ -145,10 +204,10 @@ public sealed class CompositionRootRegistrationGuardTests
     }
 
     [Test]
-    public void InfrastructureNotifications_Should_RegisterFcmOnlyAndHaveNoEnvironmentSchedulerSelection()
+    public void Notifications_Should_RegisterFcmOnlyAndHaveNoEnvironmentSchedulerSelection()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var sourcePath = Path.Combine(repoRoot, "LgymApi.Infrastructure", "NotificationsServiceCollectionExtensions.cs");
+        var sourcePath = Path.Combine(repoRoot, "LgymApi.Notifications", "ServiceCollectionExtensions.cs");
         var sourceContent = File.ReadAllText(sourcePath);
         var root = CSharpSyntaxTree.ParseText(sourceContent).GetCompilationUnitRoot();
         var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToArray();
@@ -166,7 +225,7 @@ public sealed class CompositionRootRegistrationGuardTests
                 && invocation.ToString().Contains("FcmPushSender", StringComparison.Ordinal))
             .ToArray();
         var environmentParameters = methods
-            .Where(method => method.Identifier.ValueText is "AddNotificationsModule" or "AddNotificationsInfrastructure")
+            .Where(method => method.Identifier.ValueText == "AddNotificationsModule")
             .SelectMany(method => method.ParameterList.Parameters)
             .Where(parameter => parameter.Type?.ToString() == "bool")
             .Select(parameter => parameter.Identifier.ValueText)
@@ -178,6 +237,24 @@ public sealed class CompositionRootRegistrationGuardTests
             Assert.That(fcmRegistrations, Has.Length.EqualTo(1));
             Assert.That(environmentParameters, Is.Empty);
         });
+    }
+
+    [Test]
+    public void InfrastructureNotifications_Should_NotRegisterFcmOrSelectPushSchedulers()
+    {
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var sourcePath = Path.Combine(repoRoot, "LgymApi.Infrastructure", "NotificationsServiceCollectionExtensions.cs");
+        var sourceContent = File.ReadAllText(sourcePath);
+        var root = CSharpSyntaxTree.ParseText(sourceContent).GetCompilationUnitRoot();
+
+        AssertNoFcmProviderRegistrations(root);
+        var pushSchedulerRegistrations = root
+            .DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Where(invocation => invocation.ToString().Contains("IPushBackgroundScheduler", StringComparison.Ordinal))
+            .Select(invocation => invocation.ToString())
+            .ToArray();
+        Assert.That(pushSchedulerRegistrations, Is.Empty);
     }
 
     [Test]
@@ -248,6 +325,73 @@ public sealed class CompositionRootRegistrationGuardTests
         return violations;
     }
 
+    private static IReadOnlyList<string> FindFacadeCompositionViolations(CompilationUnitSyntax root)
+    {
+        var facadeInvocations = root.DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Select(invocation => new
+            {
+                MethodName = ExtractMethodName(invocation),
+                SpanEnd = invocation.Span.End
+            })
+            .Where(invocation => invocation.MethodName != null
+                && RequiredFacadeOrder.Contains(invocation.MethodName, StringComparer.Ordinal))
+            .ToArray();
+        var violations = new List<string>();
+
+        foreach (var facade in RequiredFacadeOrder)
+        {
+            var count = facadeInvocations.Count(invocation => invocation.MethodName == facade);
+            if (count != 1)
+            {
+                violations.Add($"Program.cs must call {facade} exactly once; found {count} calls.");
+            }
+        }
+
+        if (violations.Count > 0)
+        {
+            return violations;
+        }
+
+        var actualOrder = facadeInvocations
+            .OrderBy(invocation => invocation.SpanEnd)
+            .Select(invocation => invocation.MethodName!)
+            .ToArray();
+        if (!actualOrder.SequenceEqual(RequiredFacadeOrder))
+        {
+            violations.Add(
+                $"Program.cs facades must be ordered [{string.Join(", ", RequiredFacadeOrder)}]; " +
+                $"actual [{string.Join(", ", actualOrder)}].");
+        }
+
+        return violations;
+    }
+
+    private static IReadOnlyList<string> FindApiInternalBindingViolations(CompilationUnitSyntax root)
+    {
+        var registrationMethods = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "AddScoped",
+            "AddSingleton",
+            "AddTransient"
+        };
+
+        return root.DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Where(invocation => invocation.Expression is MemberAccessExpressionSyntax
+            {
+                Name: GenericNameSyntax genericName
+            }
+                && registrationMethods.Contains(genericName.Identifier.ValueText)
+                && genericName.TypeArgumentList.Arguments.Count == 2
+                && !genericName.TypeArgumentList.Arguments[1].ToString()
+                    .StartsWith("LgymApi.Api.", StringComparison.Ordinal))
+            .Select(invocation =>
+                $"Program.cs must obtain internal implementations from their module facade instead of binding " +
+                $"'{invocation}' directly.")
+            .ToArray();
+    }
+
     private static void AssertNoFcmProviderRegistrations(CompilationUnitSyntax root)
     {
         var registrations = root.DescendantNodes()
@@ -285,6 +429,14 @@ public sealed class CompositionRootRegistrationGuardTests
             builder.Services.AddApiAuthorizationPolicies();
             {{additionalRegistration}}
             """).GetCompilationUnitRoot();
+    }
+
+    private static CompilationUnitSyntax ParseFacadeCompositionFixture(IEnumerable<string> methodNames)
+    {
+        var source = string.Join(
+            Environment.NewLine,
+            methodNames.Select(methodName => $"builder.Services.{methodName}();"));
+        return CSharpSyntaxTree.ParseText(source).GetCompilationUnitRoot();
     }
 
     private static string? ExtractMethodName(InvocationExpressionSyntax invocation)

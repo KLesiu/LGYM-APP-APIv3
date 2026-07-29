@@ -14,9 +14,9 @@ public sealed class PlatformReferenceDataBoundaryDocumentationTests
         new("resources-localization", "Platform / Reference Data", "API host helpers"),
         new("logging", "Platform / Reference Data", "API host helpers"),
         new("provider-photo", "Reporting", "Infrastructure Reporting"),
-        new("provider-email", "Notifications", "Infrastructure Notifications"),
-        new("provider-fcm", "Notifications", "Infrastructure Notifications"),
-        new("provider-google", "Identity & Accounts", "Infrastructure Identity"),
+        new("provider-email", "Notifications", "Notifications"),
+        new("provider-fcm", "Notifications", "Notifications"),
+        new("provider-google", "Identity & Accounts", "Identity"),
         new("provider-elasticsearch", "Platform / Reference Data", "API logging"),
         new("pagination", "Platform / Reference Data", "Technical Platform"),
         new("clock", "Platform / Reference Data", "Technical Platform"),
@@ -88,7 +88,7 @@ public sealed class PlatformReferenceDataBoundaryDocumentationTests
         var rows = ReadRows();
         var fcm = rows.Single(row => row.Id == "issue393.concern.provider-fcm");
         var fixture = rows.Where(row => row != fcm)
-            .Append(fcm with { Fields = Replace(fcm.Fields, "Implementation / host", "LgymApi.Application/BuildingBlocks/FcmPushSender.cs#FcmPushSender") });
+            .Append(fcm with { Fields = Replace(fcm.Fields, "Implementation / host", "LgymApi.Platform/BuildingBlocks/FcmPushSender.cs#FcmPushSender") });
 
         Assert.That(() => AssertConcerns(PlatformReferenceDataBoundaryDocumentationTestHelpers.RequireExactIds(
                 fixture, ConcernPrefix, Concerns.Select(concern => ConcernPrefix + concern.Id))),
@@ -165,8 +165,8 @@ public sealed class PlatformReferenceDataBoundaryDocumentationTests
         var edges = projects.Select(line => line.Split('"')[5])
             .Select(path => Path.Combine(root, path))
             .SelectMany(ArchitectureTestHelpers.ParseProjectReferences).ToList();
-        Assert.That(projects, Has.Count.EqualTo(14));
-        Assert.That(edges, Has.Count.EqualTo(32));
+        Assert.That(projects, Has.Count.EqualTo(18));
+        Assert.That(edges, Has.Count.EqualTo(90));
         Assert.That(PersistenceIdentityContract.DbContextSourcePath, Is.EqualTo("LgymApi.Infrastructure/Data/AppDbContext.cs"));
         Assert.That(PersistenceIdentityContract.DbSets, Has.Count.EqualTo(48));
     }
@@ -176,9 +176,10 @@ public sealed class PlatformReferenceDataBoundaryDocumentationTests
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
         AssertInvocation(root, "LgymApi.Api/Configuration/ApiAuthenticationExtensions.cs", "AddApiAuthentication", "AddAuthentication");
         AssertInvocation(root, "LgymApi.Api/Configuration/ApiAuthorizationExtensions.cs", "AddApiAuthorizationPolicies", "AddAuthorizationBuilder");
-        AssertInvocation(root, "LgymApi.Application/Platform/ReferenceData/ServiceCollectionExtensions.cs", "AddReferenceDataServices", "AddScoped");
-        AssertInvocation(root, "LgymApi.Infrastructure/NotificationsServiceCollectionExtensions.cs", "AddNotificationsInfrastructure", "AddEmailInfrastructure");
-        AssertInvocation(root, "LgymApi.Infrastructure/PlatformPaginationServiceCollectionExtensions.cs", "AddPlatformPagination", "AddScoped");
+        AssertInvocation(root, "LgymApi.Platform/ReferenceData/ServiceCollectionExtensions.cs", "AddReferenceDataServices", "AddScoped");
+        AssertInvocation(root, "LgymApi.Infrastructure/NotificationsServiceCollectionExtensions.cs", "AddNotificationsInfrastructure", "AddScoped");
+        AssertInvocation(root, "LgymApi.Notifications/ServiceCollectionExtensions.cs", "AddNotificationsModule", "AddEmailServices");
+        AssertInvocation(root, "LgymApi.Platform/PlatformModule.cs", "AddPlatformModule", "AddPlatformPaginationServices");
     }
 
     private static void AssertInvocation(string root, string relativePath, string method, string invocation)

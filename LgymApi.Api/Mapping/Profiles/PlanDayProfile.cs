@@ -1,86 +1,66 @@
-using LgymApi.Api.Features.Enum;
+using LgymApi.Api.Features.Common.Contracts;
+using LgymApi.Api.Features.Enum.Contracts;
 using LgymApi.Api.Features.Exercise.Contracts;
 using LgymApi.Api.Features.PlanDay.Contracts;
+using LgymApi.Api.Extensions;
+using LgymApi.Api.Middleware;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Domain.Entities;
-using LgymApi.Domain.ValueObjects;
+using LgymApi.Application.TrainingPlanning.Contracts.PlanDay;
+using LgymApi.Domain.Enums;
+using LgymApi.TrainingPlanning.Contracts;
 
 namespace LgymApi.Api.Mapping.Profiles;
 
 public sealed class PlanDayProfile : IMappingProfile
 {
-    internal static class Keys
-    {
-        internal static readonly ContextKey<IReadOnlyDictionary<Id<Exercise>, Exercise>> ExerciseMap = new("PlanDay.ExerciseMap");
-        internal static readonly ContextKey<IReadOnlyList<PlanDayExercise>> PlanDayExercises = new("PlanDay.Exercises");
-        internal static readonly ContextKey<IReadOnlyDictionary<Id<PlanDay>, DateTime?>> PlanDayLastTrainings = new("PlanDay.LastTrainings");
-    }
-
     public void Configure(MappingConfiguration configuration)
     {
-        configuration.AllowContextKey(Keys.ExerciseMap);
-        configuration.AllowContextKey(Keys.PlanDayExercises);
-        configuration.AllowContextKey(Keys.PlanDayLastTrainings);
+        configuration.CreateMap<PlanDayExerciseInputDto, PlanDayExerciseWriteModel>((source, _) =>
+            new PlanDayExerciseWriteModel(source.ExerciseId.ToIdOrEmpty<PlanExerciseReference>(), source.Series, source.Reps));
 
-        configuration.CreateMap<PlanDay, PlanDayChooseDto>((source, _) => new PlanDayChooseDto
+        configuration.CreateMap<PlanDayFormDto, PlanDayWriteModel>((source, context) =>
+            new PlanDayWriteModel(source.Name, context!.MapList<PlanDayExerciseInputDto, PlanDayExerciseWriteModel>(source.Exercises)));
+
+        configuration.CreateMap<PlanDayChoiceReadModel, PlanDayChooseDto>((source, _) => new PlanDayChooseDto
         {
             Id = source.Id.ToString(),
             Name = source.Name
         });
 
-        configuration.CreateMap<PlanDay, PlanDayVmDto>((source, context) =>
+        configuration.CreateMap<PlanExerciseReadModel, ExerciseResponseDto>((source, context) => new ExerciseResponseDto
         {
-            var exercises = context?.Get(Keys.PlanDayExercises) ?? Array.Empty<PlanDayExercise>();
-            var exerciseMap = context?.Get(Keys.ExerciseMap);
-
-            var vmExercises = exercises
-                .Where(e => e.PlanDayId == source.Id)
-                .OrderBy(e => e.Order)
-                .ThenBy(e => e.Id)
-                .Select(exercise => new PlanDayExerciseVmDto
-                {
-                    Series = exercise.Series,
-                    Reps = exercise.Reps,
-                    Exercise = ResolveExerciseDto(exercise, exerciseMap, context)
-                })
-                .ToList();
-
-            return new PlanDayVmDto
-            {
-                Id = source.Id.ToString(),
-                Name = source.Name,
-                Exercises = vmExercises
-            };
+            Id = source.Id.ToString(),
+            Name = source.Name,
+            BodyPart = context!.Map<BodyParts, EnumLookupDto>(source.BodyPart),
+            EloFormula = context.Map<EnumLookupDto, LookupItemVm>(context.Map<ExerciseEloFormula, EnumLookupDto>(source.EloFormula)),
+            Description = source.Description,
+            Image = source.Image,
+            UserId = source.OwnerId?.ToString()
         });
 
-        configuration.CreateMap<PlanDay, PlanDayBaseInfoDto>((source, context) =>
+        configuration.CreateMap<PlanDayExerciseReadModel, PlanDayExerciseVmDto>((source, context) => new PlanDayExerciseVmDto
         {
-            var exercises = context?.Get(Keys.PlanDayExercises) ?? Array.Empty<PlanDayExercise>();
-            var lastTrainingMap = context?.Get(Keys.PlanDayLastTrainings);
-
-            var filteredExercises = exercises.Where(e => e.PlanDayId == source.Id).ToList();
-            var lastTrainingDate = lastTrainingMap != null && lastTrainingMap.TryGetValue(source.Id, out var date)
-                ? date
-                : null;
-
-            return new PlanDayBaseInfoDto
-            {
-                Id = source.Id.ToString(),
-                Name = source.Name,
-                LastTrainingDate = lastTrainingDate,
-                TotalNumberOfSeries = filteredExercises.Sum(e => e.Series),
-                TotalNumberOfExercises = filteredExercises.Count
-            };
+            Series = source.Series,
+            Reps = source.Reps,
+            Exercise = source.Exercise is null
+                ? new ExerciseResponseDto()
+                : context!.Map<PlanExerciseReadModel, ExerciseResponseDto>(source.Exercise)
         });
-    }
 
-    private static ExerciseResponseDto ResolveExerciseDto(PlanDayExercise exercise, IReadOnlyDictionary<Id<Exercise>, Exercise>? exerciseMap, MappingContext? context)
-    {
-        if (exerciseMap != null && exerciseMap.TryGetValue(exercise.ExerciseId, out var entity))
+        configuration.CreateMap<PlanDayReadModel, PlanDayVmDto>((source, context) => new PlanDayVmDto
         {
-            return context!.Map<Exercise, ExerciseResponseDto>(entity);
-        }
+            Id = source.Id.ToString(),
+            Name = source.Name,
+            Exercises = context!.MapList<PlanDayExerciseReadModel, PlanDayExerciseVmDto>(source.Exercises)
+        });
 
-        return new ExerciseResponseDto();
+        configuration.CreateMap<PlanDayInfoReadModel, PlanDayBaseInfoDto>((source, _) => new PlanDayBaseInfoDto
+        {
+            Id = source.Id.ToString(),
+            Name = source.Name,
+            LastTrainingDate = source.LastTrainingDate,
+            TotalNumberOfSeries = source.TotalNumberOfSeries,
+            TotalNumberOfExercises = source.TotalNumberOfExercises
+        });
     }
 }

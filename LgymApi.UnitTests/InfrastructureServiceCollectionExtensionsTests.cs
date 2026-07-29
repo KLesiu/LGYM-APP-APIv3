@@ -3,7 +3,7 @@ using Hangfire;
 using LgymApi.Application.Coaching;
 using LgymApi.Application.Coaching.Contracts.BackgroundCommands;
 using LgymApi.Application.Features.Reporting;
-using LgymApi.Application.Identity;
+using LgymApi.Identity;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.BackgroundWorker.Common.Notifications;
@@ -15,19 +15,25 @@ using LgymApi.Application.Notifications;
 using LgymApi.Application.Notifications.Contracts.Events;
 using LgymApi.Application.Notifications.Contracts.Push;
 using LgymApi.Application.Notifications.Models;
+using LgymApi.Application.Notifications.Providers.Fcm;
 using LgymApi.Application.Notifications.Repositories;
 using LgymApi.Application.Repositories;
+using LgymApi.Application.Reporting.Persistence;
+using LgymApi.Application.WorkoutProgress.ReportingIntegration;
 using LgymApi.Application.Services;
 using LgymApi.Infrastructure;
+using LgymApi.Platform;
 using LgymApi.Infrastructure.Options;
 using LgymApi.Infrastructure.Pagination;
 using LgymApi.Infrastructure.Repositories;
+using LgymApi.Infrastructure.Repositories.Reporting;
 using LgymApi.Infrastructure.Repositories.ReferenceData;
 using LgymApi.Infrastructure.Services;
 using LgymApi.Infrastructure.UnitOfWork;
 using LgymApi.BackgroundWorker.Actions;
 using LgymApi.BackgroundWorker.Actions.Contracts;
 using LgymApi.BackgroundWorker.Notifications;
+using LgymApi.Notifications;
 using LgymApi.Application.Abstractions.Storage;
 using LgymApi.TestUtils;
 using Microsoft.Extensions.Configuration;
@@ -56,16 +62,14 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
             ["PhotoStorage:SecretAccessKey"] = "test-secret-key"
         });
 
-        using var provider = TestServiceProviderFactory.CreateInfrastructureProvider(
-            configuration,
-            isTesting: true,
-            includeBackgroundWorker: true);
+        using var provider = TestServiceProviderFactory.CreateServiceProvider(
+            CompositionRootTestHost.CreateFactoryComposition(configuration));
         var scheduler = provider.GetRequiredService<IEmailBackgroundScheduler>();
         scheduler.Should().BeOfType<NoOpEmailBackgroundScheduler>();
     }
 
     [Test]
-    public void AddInfrastructure_UsesSmtpDeliveryModeByDefault()
+    public void AddNotificationsModule_UsesSmtpDeliveryModeByDefault()
     {
         var values = TestConfigurationBuilder.ToDictionary(TestConfigurationBuilder.BuildEnabledEmailConfiguration());
         values.Remove("Email:DeliveryMode");
@@ -73,7 +77,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddInfrastructure(configuration, enableSensitiveLogging: false, isTesting: true);
+        services.AddNotificationsModule(configuration);
 
         AssertFactoryDescriptor<IEmailSender>(services, ServiceLifetime.Scoped);
         AssertTypeDescriptor<SmtpEmailSender, SmtpEmailSender>(services, ServiceLifetime.Scoped);
@@ -85,7 +89,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
     }
 
     [Test]
-    public void AddInfrastructure_UsesDummyEmailSender_WhenModeIsDummy()
+    public void AddNotificationsModule_UsesDummyEmailSender_WhenModeIsDummy()
     {
         var services = new ServiceCollection();
         var values = TestConfigurationBuilder.ToDictionary(TestConfigurationBuilder.BuildEnabledEmailConfiguration());
@@ -94,7 +98,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         values["Email:SmtpHost"] = string.Empty;
         var configuration = TestConfigurationBuilder.BuildConfiguration(values);
 
-        services.AddInfrastructure(configuration, enableSensitiveLogging: false, isTesting: true);
+        services.AddNotificationsModule(configuration);
 
         AssertFactoryDescriptor<IEmailSender>(services, ServiceLifetime.Scoped);
         AssertTypeDescriptor<SmtpEmailSender, SmtpEmailSender>(services, ServiceLifetime.Scoped);
@@ -117,7 +121,10 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
 
         services.AddSingleton<IConfiguration>(configuration);
         services.AddLogging();
+        services.AddPlatformModule();
+        services.AddIdentityModule();
         services.AddInfrastructure(configuration, enableSensitiveLogging: false, isTesting);
+        services.AddNotificationsModule(configuration);
 
         AssertTypeDescriptor<IAppConfigRepository, AppConfigRepository>(services, ServiceLifetime.Scoped);
         AssertTypeDescriptor<ICommittedIntentDispatcher, CommittedIntentDispatcher>(services, ServiceLifetime.Scoped);
@@ -133,8 +140,12 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         AssertInstanceDescriptor<EmailOptions>(services, ServiceLifetime.Singleton);
         AssertInstanceDescriptor<PhotoStorageOptions>(services, ServiceLifetime.Singleton);
         AssertTypeDescriptor<LocalPhotoDevelopmentStore, LocalPhotoDevelopmentStore>(services, ServiceLifetime.Singleton);
-        AssertTypeDescriptor<InMemoryPhotoUploadInitTracker, InMemoryPhotoUploadInitTracker>(services, ServiceLifetime.Singleton);
-        AssertTypeDescriptor<IPhotoUploadInitTracker, DbPhotoUploadInitTracker>(services, ServiceLifetime.Scoped);
+        AssertTypeDescriptor<IReportTemplatePersistence, ReportTemplatePersistenceRepository>(services, ServiceLifetime.Scoped);
+        AssertTypeDescriptor<IReportRequestSubmissionPersistence, ReportRequestSubmissionPersistenceRepository>(services, ServiceLifetime.Scoped);
+        AssertTypeDescriptor<IRecurringReportAssignmentPersistence, RecurringReportAssignmentPersistenceRepository>(services, ServiceLifetime.Scoped);
+        AssertTypeDescriptor<IReportPhotoPersistence, ReportPhotoPersistenceRepository>(services, ServiceLifetime.Scoped);
+        AssertTypeDescriptor<IReportingRelationshipAccessPersistence, ReportingRelationshipAccessPersistenceRepository>(services, ServiceLifetime.Scoped);
+        AssertTypeDescriptor<IReportSubmissionAcceptedProgressPersistence, ReportSubmissionAcceptedProgressPersistenceRepository>(services, ServiceLifetime.Scoped);
         AssertTypeDescriptor(services, typeof(IPhotoStorageProvider), expectedPhotoStorageProviderType, ServiceLifetime.Scoped);
         AssertTypeDescriptor<IPushProviderSender, FcmPushSender>(services, ServiceLifetime.Scoped);
         AssertTypeDescriptor<ITokenService, TokenService>(services, ServiceLifetime.Scoped);
@@ -157,8 +168,11 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         provider.GetRequiredService<IMapperRegistry>().Should().BeOfType<MapperRegistry>();
         scopedServices.GetRequiredService<IQueryPaginationService>().Should().BeOfType<QueryPaginationFacade>();
         provider.GetRequiredService<LocalPhotoDevelopmentStore>().Should().NotBeNull();
-        provider.GetRequiredService<InMemoryPhotoUploadInitTracker>().Should().NotBeNull();
-        scopedServices.GetRequiredService<IPhotoUploadInitTracker>().Should().BeOfType<DbPhotoUploadInitTracker>();
+        scopedServices.GetRequiredService<IReportTemplatePersistence>().Should().BeOfType<ReportTemplatePersistenceRepository>();
+        scopedServices.GetRequiredService<IReportRequestSubmissionPersistence>().Should().BeOfType<ReportRequestSubmissionPersistenceRepository>();
+        scopedServices.GetRequiredService<IRecurringReportAssignmentPersistence>().Should().BeOfType<RecurringReportAssignmentPersistenceRepository>();
+        scopedServices.GetRequiredService<IReportPhotoPersistence>().Should().BeOfType<ReportPhotoPersistenceRepository>();
+        scopedServices.GetRequiredService<IReportingRelationshipAccessPersistence>().Should().BeOfType<ReportingRelationshipAccessPersistenceRepository>();
         scopedServices.GetRequiredService<IPhotoStorageProvider>().Should().BeOfType(expectedPhotoStorageProviderType);
         scopedServices.GetRequiredService<IPushProviderSender>().Should().BeOfType<FcmPushSender>();
         scopedServices.GetRequiredService<ITokenService>().Should().BeOfType<TokenService>();
@@ -168,14 +182,14 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
     }
 
     [Test]
-    public void AddInfrastructure_Throws_WhenDeliveryModeInvalid()
+    public void AddNotificationsModule_Throws_WhenDeliveryModeInvalid()
     {
         var services = new ServiceCollection();
         var values = TestConfigurationBuilder.ToDictionary(TestConfigurationBuilder.BuildEnabledEmailConfiguration());
         values["Email:DeliveryMode"] = "something-else";
 
         var action = () =>
-            services.AddInfrastructure(TestConfigurationBuilder.BuildConfiguration(values), enableSensitiveLogging: false, isTesting: true);
+            services.AddNotificationsModule(TestConfigurationBuilder.BuildConfiguration(values));
 
         action.Should()
             .Throw<InvalidOperationException>()
@@ -200,6 +214,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
             values["PhotoStorage:SecretAccessKey"] = "test-secret-key";
         }
 
+        services.AddPlatformModule();
         var action = () => services.AddInfrastructure(
             TestConfigurationBuilder.BuildConfiguration(values),
             enableSensitiveLogging: false,
@@ -212,7 +227,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
     }
 
     [Test]
-    public void AddInfrastructure_Throws_WhenDummyOutputDirectoryMissingInDummyMode()
+    public void AddNotificationsModule_Throws_WhenDummyOutputDirectoryMissingInDummyMode()
     {
         var services = new ServiceCollection();
         var values = TestConfigurationBuilder.ToDictionary(TestConfigurationBuilder.BuildEnabledEmailConfiguration());
@@ -220,7 +235,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         values["Email:DummyOutputDirectory"] = "   ";
 
         var action = () =>
-            services.AddInfrastructure(TestConfigurationBuilder.BuildConfiguration(values), enableSensitiveLogging: false, isTesting: true);
+            services.AddNotificationsModule(TestConfigurationBuilder.BuildConfiguration(values));
 
         action.Should()
             .Throw<InvalidOperationException>()
@@ -229,7 +244,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
 
     [TestCase(null, "Email:InvitationBaseUrl is required.")]
     [TestCase("not-an-url", "Email:InvitationBaseUrl must be a valid absolute URL.")]
-    public void AddInfrastructure_Throws_ForInvalidInvitationBaseUrl(string? invitationBaseUrl, string expectedMessage)
+    public void AddNotificationsModule_Throws_ForInvalidInvitationBaseUrl(string? invitationBaseUrl, string expectedMessage)
     {
         var services = new ServiceCollection();
         var configuration = TestConfigurationBuilder.BuildEnabledEmailConfiguration();
@@ -239,7 +254,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         };
 
         var action = () =>
-            services.AddInfrastructure(TestConfigurationBuilder.BuildConfiguration(values), enableSensitiveLogging: false, isTesting: true);
+            services.AddNotificationsModule(TestConfigurationBuilder.BuildConfiguration(values));
 
         action.Should()
             .Throw<InvalidOperationException>()
@@ -247,14 +262,14 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
     }
 
     [Test]
-    public void AddInfrastructure_Throws_WhenTemplateRootPathMissing()
+    public void AddNotificationsModule_Throws_WhenTemplateRootPathMissing()
     {
         var services = new ServiceCollection();
         var values = TestConfigurationBuilder.ToDictionary(TestConfigurationBuilder.BuildEnabledEmailConfiguration());
         values["Email:TemplateRootPath"] = "";
 
         var action = () =>
-            services.AddInfrastructure(TestConfigurationBuilder.BuildConfiguration(values), enableSensitiveLogging: false, isTesting: true);
+            services.AddNotificationsModule(TestConfigurationBuilder.BuildConfiguration(values));
 
         action.Should()
             .Throw<InvalidOperationException>()
@@ -262,14 +277,14 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
     }
 
     [Test]
-    public void AddInfrastructure_Throws_WhenFromAddressInvalid()
+    public void AddNotificationsModule_Throws_WhenFromAddressInvalid()
     {
         var services = new ServiceCollection();
         var values = TestConfigurationBuilder.ToDictionary(TestConfigurationBuilder.BuildEnabledEmailConfiguration());
         values["Email:FromAddress"] = "invalid-email";
 
         var action = () =>
-            services.AddInfrastructure(TestConfigurationBuilder.BuildConfiguration(values), enableSensitiveLogging: false, isTesting: true);
+            services.AddNotificationsModule(TestConfigurationBuilder.BuildConfiguration(values));
 
         action.Should()
             .Throw<InvalidOperationException>()
@@ -277,14 +292,14 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
     }
 
     [Test]
-    public void AddInfrastructure_Throws_WhenSmtpHostMissing()
+    public void AddNotificationsModule_Throws_WhenSmtpHostMissing()
     {
         var services = new ServiceCollection();
         var values = TestConfigurationBuilder.ToDictionary(TestConfigurationBuilder.BuildEnabledEmailConfiguration());
         values["Email:SmtpHost"] = "";
 
         var action = () =>
-            services.AddInfrastructure(TestConfigurationBuilder.BuildConfiguration(values), enableSensitiveLogging: false, isTesting: true);
+            services.AddNotificationsModule(TestConfigurationBuilder.BuildConfiguration(values));
 
         action.Should()
             .Throw<InvalidOperationException>()
@@ -292,14 +307,14 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
     }
 
     [Test]
-    public void AddInfrastructure_Throws_WhenSmtpPortNonPositive()
+    public void AddNotificationsModule_Throws_WhenSmtpPortNonPositive()
     {
         var services = new ServiceCollection();
         var values = TestConfigurationBuilder.ToDictionary(TestConfigurationBuilder.BuildEnabledEmailConfiguration());
         values["Email:SmtpPort"] = "0";
 
         var action = () =>
-            services.AddInfrastructure(TestConfigurationBuilder.BuildConfiguration(values), enableSensitiveLogging: false, isTesting: true);
+            services.AddNotificationsModule(TestConfigurationBuilder.BuildConfiguration(values));
 
         action.Should()
             .Throw<InvalidOperationException>()
@@ -319,10 +334,8 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
             ["PhotoStorage:SecretAccessKey"] = "test-secret-key"
         });
 
-        using var provider = TestServiceProviderFactory.CreateInfrastructureProvider(
-            configuration,
-            isTesting: true,
-            includeBackgroundWorker: true);
+        using var provider = TestServiceProviderFactory.CreateServiceProvider(
+            CompositionRootTestHost.CreateFactoryComposition(configuration));
         var dispatcher = provider.GetRequiredService<ApplicationCommandDispatcher>();
         dispatcher.Should().BeOfType<CommandDispatcher>();
     }
@@ -337,8 +350,8 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         });
 
         services.AddLogging();
-        services.AddInfrastructure(configuration, enableSensitiveLogging: false, isTesting: true);
         services.AddNotificationsModule(configuration);
+        services.AddInfrastructure(configuration, enableSensitiveLogging: false, isTesting: true);
         services.AddBackgroundWorkerServices(isTesting: true);
         services.AddScoped<IInAppNotificationPushPublisher, FakeInAppNotificationPushPublisher>();
 
@@ -364,6 +377,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         });
 
         services.AddLogging();
+        services.AddNotificationsModule(configuration);
         services.AddInfrastructure(configuration, enableSensitiveLogging: false, isTesting: true);
         services.AddBackgroundWorkerServices(isTesting: true);
         services.AddScoped<IInAppNotificationPushPublisher, FakeInAppNotificationPushPublisher>();
@@ -376,7 +390,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
     }
 
     [Test]
-    public void AddNotificationsModule_RegistersApplicationAndInfrastructureWithoutWorkerScheduler()
+    public void AddNotificationsModule_RegistersApplicationAndInfrastructureWithoutWorkerRuntimeDescriptors()
     {
         var services = new ServiceCollection();
         var configuration = TestConfigurationBuilder.BuildConfiguration(new Dictionary<string, string?>
@@ -389,6 +403,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
             ["PhotoStorage:SecretAccessKey"] = "test-secret-key"
         });
 
+        services.AddNotificationsInfrastructure();
         services.AddNotificationsModule(configuration);
 
         services.Count(descriptor => descriptor.ServiceType == typeof(IInAppNotificationService)).Should().Be(1);
@@ -396,7 +411,10 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         services.Count(descriptor => descriptor.ServiceType == typeof(IPushInstallationRepository)).Should().Be(1);
         services.Count(descriptor => descriptor.ServiceType == typeof(IPushNotificationMessageRepository)).Should().Be(1);
         services.Count(descriptor => descriptor.ServiceType == typeof(IInAppNotificationRepository)).Should().Be(1);
+        services.Count(descriptor => descriptor.ServiceType == typeof(IEmailBackgroundScheduler)).Should().Be(0);
+        services.Count(descriptor => descriptor.ServiceType == typeof(IActionMessageScheduler)).Should().Be(0);
         services.Count(descriptor => descriptor.ServiceType == typeof(IPushBackgroundScheduler)).Should().Be(0);
+        services.Count(descriptor => descriptor.ServiceType == typeof(JobStorage)).Should().Be(0);
     }
 
     [TestCase(true)]
@@ -409,6 +427,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
             ["ConnectionStrings:Postgres"] = "Host=localhost;Database=test;Username=test;Password=test"
         });
 
+        services.AddNotificationsInfrastructure();
         services.AddNotificationsModule(configuration);
         services.AddBackgroundWorkerServices(isTesting);
 
@@ -482,7 +501,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         providerDescriptor.Lifetime.Should().Be(ServiceLifetime.Scoped);
         providerDescriptor.ImplementationType.Should().Be(expectation.CurrentProviderImplementation);
         expectation.FutureSchedulerSelector.Should().Be("Worker");
-        expectation.FutureProviderImplementationOwner.Should().Be("Infrastructure");
+        expectation.FutureProviderImplementationOwner.Should().Be("Notifications");
     }
 
     [TestCase(
@@ -539,29 +558,50 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
     }
 
     [Test]
-    public void AddInfrastructure_Throws_WhenPushSendsEnabledWithoutProjectId()
+    public void AddNotificationsModule_Throws_WhenPushSendsEnabledWithoutProjectId()
     {
         var services = new ServiceCollection();
         var values = TestConfigurationBuilder.ToDictionary(TestConfigurationBuilder.BuildEnabledEmailConfiguration());
         values["PushNotifications:SendEnabled"] = "true";
         values["PushNotifications:Fcm:CredentialsJson"] = "{ }";
 
-        var action = () => services.AddInfrastructure(TestConfigurationBuilder.BuildConfiguration(values), enableSensitiveLogging: false, isTesting: true);
+        var action = () => services.AddNotificationsModule(TestConfigurationBuilder.BuildConfiguration(values));
 
         action.Should()
              .Throw<InvalidOperationException>()
-             .WithMessage("PushNotifications:Fcm:ProjectId is required when push notifications are enabled.");
+              .WithMessage("PushNotifications:Fcm:ProjectId is required when push notifications are enabled.");
+    }
+
+    [TestCase(
+        "PushNotifications:Fcm:CredentialsJson",
+        "PushNotifications:Fcm:CredentialsPath or PushNotifications:Fcm:CredentialsJson is required when push notifications are enabled.")]
+    [TestCase(
+        "PushNotifications:Fcm:BaseUrl",
+        "PushNotifications:Fcm:BaseUrl is required when push notifications are enabled.")]
+    public void AddNotificationsModule_RejectsMissingEnabledFcmConfiguration(string missingSetting, string expectedMessage)
+    {
+        var services = new ServiceCollection();
+        var values = TestConfigurationBuilder.ToDictionary(TestConfigurationBuilder.BuildEnabledEmailConfiguration());
+        values["PushNotifications:SendEnabled"] = "true";
+        values["PushNotifications:Fcm:ProjectId"] = "lgym-test";
+        values["PushNotifications:Fcm:CredentialsJson"] = "{ }";
+        values["PushNotifications:Fcm:BaseUrl"] = "https://fcm.example.test";
+        values[missingSetting] = string.Empty;
+
+        var action = () => services.AddNotificationsModule(TestConfigurationBuilder.BuildConfiguration(values));
+
+        action.Should().Throw<InvalidOperationException>().WithMessage(expectedMessage);
     }
 
     [Test]
-    public void AddInfrastructure_DoesNotRequireFcmCredentials_WhenPushSendsDisabled()
+    public void AddNotificationsModule_DoesNotRequireFcmCredentials_WhenPushSendsDisabled()
     {
         var services = new ServiceCollection();
         var values = TestConfigurationBuilder.ToDictionary(TestConfigurationBuilder.BuildEnabledEmailConfiguration());
         values["PushNotifications:SendEnabled"] = "false";
         values["PushNotifications:StaleTokenCleanupEnabled"] = "true";
 
-        var action = () => services.AddInfrastructure(TestConfigurationBuilder.BuildConfiguration(values), enableSensitiveLogging: false, isTesting: true);
+        var action = () => services.AddNotificationsModule(TestConfigurationBuilder.BuildConfiguration(values));
 
         action.Should().NotThrow();
     }
@@ -597,10 +637,8 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
             ["ConnectionStrings:Postgres"] = "Host=localhost;Database=test;Username=test;Password=test"
         });
 
-        using var provider = TestServiceProviderFactory.CreateInfrastructureProvider(
-            configuration,
-            isTesting: true,
-            includeBackgroundWorker: true);
+        using var provider = TestServiceProviderFactory.CreateServiceProvider(
+            CompositionRootTestHost.CreateFactoryComposition(configuration));
         var orchestrator = provider.GetRequiredService<BackgroundActionOrchestratorService>();
         orchestrator.Should().NotBeNull();
     }
@@ -618,10 +656,8 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
             ["PhotoStorage:SecretAccessKey"] = "test-secret-key"
         });
 
-        using var provider = TestServiceProviderFactory.CreateInfrastructureProvider(
-            configuration,
-            isTesting: true,
-            includeBackgroundWorker: true);
+        using var provider = TestServiceProviderFactory.CreateServiceProvider(
+            CompositionRootTestHost.CreateFactoryComposition(configuration));
 
         var job = provider.GetRequiredService<ICommittedIntentDispatchJob>();
         job.Should().BeOfType<LgymApi.BackgroundWorker.Jobs.CommittedIntentDispatchJob>();
@@ -642,7 +678,8 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         });
 
         services.AddLogging();
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
+        services.AddPlatformModule();
         services.AddIdentityModule();
         services.AddCoachingModule();
         services.AddInfrastructure(configuration, enableSensitiveLogging: false, isTesting: true);
@@ -804,13 +841,13 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
             typeof(LgymApi.BackgroundWorker.Services.NoOpPushBackgroundScheduler),
             typeof(FcmPushSender),
             "Worker",
-            "Infrastructure"));
+            "Notifications"));
         yield return new TestCaseData(new PushCompositionManifest(
             false,
             typeof(LgymApi.BackgroundWorker.Services.HangfirePushBackgroundScheduler),
             typeof(FcmPushSender),
             "Worker",
-            "Infrastructure"));
+            "Notifications"));
     }
 
     public sealed record PushCompositionManifest(
@@ -839,7 +876,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
     }
 
     [Test]
-    public void AddInfrastructure_UsesAppDefaultLanguage_WhenEmailDefaultCultureInvalid()
+    public void AddNotificationsModule_UsesAppDefaultLanguage_WhenEmailDefaultCultureInvalid()
     {
         var services = new ServiceCollection();
         var values = TestConfigurationBuilder.ToDictionary(TestConfigurationBuilder.BuildEnabledEmailConfiguration());
@@ -847,7 +884,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         values["Email:DefaultCulture"] = "@@invalid-culture@@";
         var configuration = TestConfigurationBuilder.BuildConfiguration(values);
 
-        services.AddInfrastructure(configuration, enableSensitiveLogging: false, isTesting: true);
+        services.AddNotificationsModule(configuration);
 
         using var provider = services.BuildServiceProvider();
         var emailOptions = provider.GetRequiredService<EmailOptions>();

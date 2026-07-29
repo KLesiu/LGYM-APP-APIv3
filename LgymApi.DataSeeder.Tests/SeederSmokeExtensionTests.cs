@@ -4,7 +4,7 @@ using LgymApi.Domain.Enums;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
-using LgymApi.Infrastructure.Data.SeedData;
+using LgymApi.Identity.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace LgymApi.DataSeeder.Tests;
@@ -44,7 +44,7 @@ public sealed class SeederSmokeExtensionTests
         await context.SaveChangesAsync();
 
         var adminClaims = await context.RoleClaims
-            .Where(claim => claim.RoleId == (Id<Role>)RoleSeedDataConfiguration.AdminRoleSeedId)
+            .Where(claim => claim.RoleId == ParseSeedId<Role>(IdentitySeedIds.AdminRole))
             .Select(claim => claim.ClaimValue)
             .ToListAsync();
 
@@ -188,5 +188,12 @@ public sealed class SeederSmokeExtensionTests
         var context = new AppDbContext(options);
         await context.Database.EnsureCreatedAsync();
         return context;
+    }
+
+    private static Id<TEntity> ParseSeedId<TEntity>(string value)
+    {
+        return Id<TEntity>.TryParse(value, out var id)
+            ? id
+            : throw new InvalidOperationException($"Invalid Identity seed ID '{value}'.");
     }
 }

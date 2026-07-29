@@ -1,10 +1,10 @@
 using LgymApi.Domain.ValueObjects;
-using PlanEntity = LgymApi.Domain.Entities.Plan;
-using UserEntity = LgymApi.Domain.Entities.User;
+using LgymApi.Identity.Contracts;
+using LgymApi.TrainingPlanning.Contracts;
 
 namespace LgymApi.Application.Coaching.ManagedPlans.Delete;
 
 public sealed record DeleteTraineeManagedPlanCommand(
-    Id<UserEntity> TrainerId,
-    Id<UserEntity> TraineeId,
-    Id<PlanEntity> PlanId);
+    Id<AccountReference> TrainerId,
+    Id<AccountReference> TraineeId,
+    Id<PlanReference> PlanId);

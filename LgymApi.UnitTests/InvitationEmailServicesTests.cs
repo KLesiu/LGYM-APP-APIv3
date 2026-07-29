@@ -2,7 +2,7 @@ using FluentAssertions;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.BackgroundWorker.Common.Notifications;
 using LgymApi.BackgroundWorker.Common.Notifications.Models;
-using LgymApi.BackgroundWorker.Notifications;
+using LgymApi.Application.Notifications.Email;
 using LgymApi.Application.Repositories;
 using LgymApi.BackgroundWorker.Common;
 using LgymApi.Domain.Entities;
@@ -193,7 +193,7 @@ public sealed class InvitationEmailServicesTests
             metrics,
             NullLogger<EmailJobHandlerService>.Instance);
 
-        await FluentActions.Invoking(() => handler.ProcessAsync(notification.Id)).Should().ThrowAsync<InvalidOperationException>();
+        await FluentActions.Invoking(() => handler.ProcessAsync(notification.Id.ToString())).Should().ThrowAsync<InvalidOperationException>();
         notification.Status.Should().Be(EmailNotificationStatus.Failed);
         notification.LastError.Should().StartWith("InvalidOperationException");
         unitOfWork.SaveChangesCalls.Should().Be(1);
@@ -226,7 +226,7 @@ public sealed class InvitationEmailServicesTests
             metrics,
             NullLogger<EmailJobHandlerService>.Instance);
 
-        await handler.ProcessAsync(notification.Id);
+        await handler.ProcessAsync(notification.Id.ToString());
 
         unitOfWork.SaveChangesCalls.Should().Be(0);
         sender.SendCalls.Should().Be(0);
@@ -262,7 +262,7 @@ public sealed class InvitationEmailServicesTests
             metrics,
             NullLogger<EmailJobHandlerService>.Instance);
 
-        await handler.ProcessAsync(notification.Id);
+        await handler.ProcessAsync(notification.Id.ToString());
 
         sender.SendCalls.Should().Be(1);
         unitOfWork.SaveChangesCalls.Should().Be(1);
@@ -300,7 +300,7 @@ public sealed class InvitationEmailServicesTests
             metrics,
             logger);
 
-        await handler.ProcessAsync(notification.Id);
+        await handler.ProcessAsync(notification.Id.ToString());
 
         logger.CriticalMessages.Should().ContainSingle();
         logger.CriticalMessages[0].Should().Contain("delivered successfully but persisting Sent status failed");
@@ -365,9 +365,14 @@ public sealed class InvitationEmailServicesTests
     {
         public List<Id<NotificationMessage>> EnqueuedNotificationIds { get; } = new();
 
-        public string? Enqueue(Id<NotificationMessage> notificationId)
+        public string? Enqueue(string notificationId)
         {
-            EnqueuedNotificationIds.Add(notificationId);
+            if (!Id<NotificationMessage>.TryParse(notificationId, out var parsedNotificationId))
+            {
+                throw new FormatException("Notification ID must be a valid ID.");
+            }
+
+            EnqueuedNotificationIds.Add(parsedNotificationId);
             return "test-email-job-id";
         }
     }
@@ -533,7 +538,7 @@ public sealed class InvitationEmailServicesTests
             metrics,
             logger);
 
-        await handler.ProcessAsync(notification.Id);
+        await handler.ProcessAsync(notification.Id.ToString());
 
         sender.SendCalls.Should().Be(1);
         metrics.Retried.Should().Be(1);
@@ -567,7 +572,7 @@ public sealed class InvitationEmailServicesTests
             metrics,
             NullLogger<EmailJobHandlerService>.Instance);
 
-        await handler.ProcessAsync(notification.Id);
+        await handler.ProcessAsync(notification.Id.ToString());
 
         notification.Status.Should().Be(EmailNotificationStatus.Failed);
         notification.LastError.Should().Be("Email sender is disabled.");
@@ -603,7 +608,7 @@ public sealed class InvitationEmailServicesTests
             metrics,
             logger);
 
-        await handler.ProcessAsync(notification.Id);
+        await handler.ProcessAsync(notification.Id.ToString());
 
         sender.SendCalls.Should().Be(1);
         metrics.Sent.Should().Be(1);
@@ -636,7 +641,7 @@ public sealed class InvitationEmailServicesTests
             metrics,
             NullLogger<EmailJobHandlerService>.Instance);
 
-        await FluentActions.Invoking(() => handler.ProcessAsync(notification.Id)).Should().ThrowAsync<InvalidOperationException>();
+        await FluentActions.Invoking(() => handler.ProcessAsync(notification.Id.ToString())).Should().ThrowAsync<InvalidOperationException>();
 
         notification.Status.Should().Be(EmailNotificationStatus.Failed);
         notification.LastError.Should().StartWith("InvalidOperationException");
@@ -668,7 +673,7 @@ public sealed class InvitationEmailServicesTests
             metrics,
             NullLogger<EmailJobHandlerService>.Instance);
 
-        await FluentActions.Invoking(() => handler.ProcessAsync(notification.Id)).Should().ThrowAsync<InvalidOperationException>();
+        await FluentActions.Invoking(() => handler.ProcessAsync(notification.Id.ToString())).Should().ThrowAsync<InvalidOperationException>();
 
         notification.Status.Should().Be(EmailNotificationStatus.Failed);
         notification.LastError.Should().NotContain("\r").And.NotContain("\n");

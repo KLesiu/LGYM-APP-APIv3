@@ -3,14 +3,17 @@ using System.Text.Json;
 using FluentAssertions;
 using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using LgymApi.Application.Platform.Contracts.Serialization;
+using LgymApi.Application.Reporting.Contracts.BackgroundCommands;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.WorkoutProgress.Contracts.ReportingIntegration;
+using LgymApi.Application.WorkoutProgress.Contracts.BackgroundActions;
 using LgymApi.BackgroundWorker;
 using LgymApi.BackgroundWorker.Actions.Contracts;
 using LgymApi.BackgroundWorker.Runtime;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
@@ -45,10 +48,10 @@ public sealed class AcceptedProgressCommandOutboxTests
     public void ICommandOutboxWriter_ExposesStageOnlyTypedContract()
     {
         var actionCommandType = typeof(IActionCommand);
-        var writerType = GetRequiredApplicationType(
+        var writerType = GetRequiredPlatformType(
             CommandOutboxWriterTypeName,
             "T5 must add the Application-owned ICommandOutboxWriter port.");
-        var resultType = GetRequiredApplicationType(
+        var resultType = GetRequiredPlatformType(
             CommandEnvelopeStageResultTypeName,
             "T5 must add CommandEnvelopeStageResult so callers can distinguish newly staged and existing envelopes.");
 
@@ -63,34 +66,38 @@ public sealed class AcceptedProgressCommandOutboxTests
         genericParameter.GenericParameterAttributes.Should().Be(GenericParameterAttributes.ReferenceTypeConstraint);
         genericParameter.GetGenericParameterConstraints().Should().Equal(actionCommandType);
         method.ReturnType.Should().Be(typeof(Task<>).MakeGenericType(resultType));
-        resultType.GetProperty("Envelope", BindingFlags.Public | BindingFlags.Instance).Should().NotBeNull();
+        resultType.GetProperty("EnvelopeId", BindingFlags.Public | BindingFlags.Instance).Should().NotBeNull();
+        resultType.GetProperty("Envelope", BindingFlags.Public | BindingFlags.Instance).Should().BeNull();
         resultType.GetProperty("WasExisting", BindingFlags.Public | BindingFlags.Instance).Should().NotBeNull();
     }
 
     [Test]
     public async Task StageAsync_StagesEnvelopeWithSharedSerializationAndNeverSavesOrSchedules()
     {
-        var repository = new FakeCommandEnvelopeRepository();
+        var runtime = new FakeCommandEnvelopeRuntime();
         var unitOfWork = new FakeUnitOfWork();
         var scheduler = new FakeActionMessageScheduler();
         var command = new TestStageCommand { Value = "stage-only" };
+        using var cancellationSource = new CancellationTokenSource();
         var writer = CreateWriter(
-            repository,
+            runtime,
             unitOfWork,
             scheduler,
             includeHandler: true);
 
-        var firstResult = await InvokeStageAsync(writer, command);
-        var firstEnvelope = GetStageEnvelope(firstResult);
-        var duplicateResult = await InvokeStageAsync(writer, command);
+        var firstResult = await InvokeStageAsync(writer, command, cancellationSource.Token);
+        var duplicateResult = await InvokeStageAsync(writer, command, cancellationSource.Token);
 
-        repository.Envelopes.Should().ContainSingle();
-        firstEnvelope.Status.Should().Be(ActionExecutionStatus.Pending);
-        firstEnvelope.CommandTypeFullName.Should().Be("Tests.AcceptedProgress.StageCommand");
-        firstEnvelope.PayloadJson.Should().Be(JsonSerializer.Serialize(command, SharedSerializationOptions.Current));
+        runtime.StageInvocations.Should().HaveCount(2);
+        runtime.StageInvocations.Should().OnlyContain(invocation =>
+            invocation.Request.CommandId == "Tests.AcceptedProgress.StageCommand"
+            && invocation.Request.PayloadJson == JsonSerializer.Serialize(command, SharedSerializationOptions.Current)
+            && invocation.CancellationToken == cancellationSource.Token);
+        runtime.PersistInvocations.Should().BeEmpty();
         unitOfWork.SaveCallCount.Should().Be(0, "StageAsync must leave commit timing to its caller");
         scheduler.Enqueued.Should().BeEmpty("committed-intent dispatch must not run before the caller commits its UoW");
-        GetStageEnvelope(duplicateResult).Should().BeSameAs(firstEnvelope);
+        GetEnvelopeId(firstResult).Should().Be("stage-envelope-id");
+        GetEnvelopeId(duplicateResult).Should().Be("stage-envelope-id");
         GetWasExisting(firstResult).Should().BeFalse();
         GetWasExisting(duplicateResult).Should().BeTrue();
     }
@@ -98,18 +105,20 @@ public sealed class AcceptedProgressCommandOutboxTests
     [Test]
     public async Task StageAsync_WhenNoExactHandlerExists_DoesNotStageSaveOrSchedule()
     {
-        var repository = new FakeCommandEnvelopeRepository();
+        var runtime = new FakeCommandEnvelopeRuntime();
         var unitOfWork = new FakeUnitOfWork();
         var scheduler = new FakeActionMessageScheduler();
+        using var cancellationSource = new CancellationTokenSource();
         var writer = CreateWriter(
-            repository,
+            runtime,
             unitOfWork,
             scheduler,
             includeHandler: false);
 
-        await InvokeStageAsync(writer, new TestStageCommand { Value = "no-handler" });
+        await InvokeStageAsync(writer, new TestStageCommand { Value = "no-handler" }, cancellationSource.Token);
 
-        repository.Envelopes.Should().BeEmpty("StageAsync must validate exact handler availability before staging");
+        runtime.StageInvocations.Should().BeEmpty("StageAsync must validate exact handler availability before staging");
+        runtime.PersistInvocations.Should().BeEmpty();
         unitOfWork.SaveCallCount.Should().Be(0);
         scheduler.Enqueued.Should().BeEmpty();
     }
@@ -119,62 +128,100 @@ public sealed class AcceptedProgressCommandOutboxTests
     public async Task AcceptedProgressCommandHandler_AppliedAndDuplicate_Complete(
         ReportSubmissionAcceptedProgressConsumeOutcome outcome)
     {
-        var consumer = Substitute.For<IReportSubmissionAcceptedProgressConsumer>();
-        consumer.ConsumeAsync(Arg.Any<ReportSubmissionAcceptedProgressEvent>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(CreateConsumeResult(outcome, "unused")));
-        var handler = CreateAcceptedProgressHandler(consumer);
+        var payload = CreateValidPayload();
+        var port = Substitute.For<IReportSubmissionAcceptedProgressActionExecutionPort>();
+        port.ExecuteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        var handler = CreateAcceptedProgressHandler(port);
 
-        await ExecuteAcceptedProgressHandlerAsync(handler, CreateValidEvent());
+        await ExecuteAcceptedProgressHandlerAsync(handler, payload);
 
-        await consumer.Received(1).ConsumeAsync(Arg.Any<ReportSubmissionAcceptedProgressEvent>(), Arg.Any<CancellationToken>());
+        await port.Received(1).ExecuteAsync(
+            JsonSerializer.Serialize(new ReportSubmissionAcceptedProgressCommand { Event = payload }, SharedSerializationOptions.Current),
+            Arg.Any<CancellationToken>());
     }
 
     [TestCase(ReportSubmissionAcceptedProgressConsumeOutcome.Invalid)]
     [TestCase(ReportSubmissionAcceptedProgressConsumeOutcome.UnsupportedSchema)]
     [TestCase(ReportSubmissionAcceptedProgressConsumeOutcome.Poison)]
-    public async Task AcceptedProgressCommandHandler_InvalidUnsupportedAndPoison_ThrowSanitizedBoundedFailure(
+    public async Task AcceptedProgressCommandHandler_BoundedOwnerFailure_IsPropagated(
         ReportSubmissionAcceptedProgressConsumeOutcome outcome)
     {
-        var privateDetail = $"payload-json:{new string('x', 512)}";
-        var consumer = Substitute.For<IReportSubmissionAcceptedProgressConsumer>();
-        consumer.ConsumeAsync(Arg.Any<ReportSubmissionAcceptedProgressEvent>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(CreateConsumeResult(outcome, privateDetail)));
-        var handler = CreateAcceptedProgressHandler(consumer);
+        var port = Substitute.For<IReportSubmissionAcceptedProgressActionExecutionPort>();
+        port.ExecuteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException(
+                $"Report submission accepted-progress command delivery failed with outcome {outcome}.")));
+        var handler = CreateAcceptedProgressHandler(port);
 
-        var action = () => ExecuteAcceptedProgressHandlerAsync(handler, CreateValidEvent());
+        var action = () => ExecuteAcceptedProgressHandlerAsync(handler, CreateValidPayload());
 
         var exception = await action.Should().ThrowAsync<InvalidOperationException>();
         exception.Which.Message.Should().Contain(outcome.ToString());
-        exception.Which.Message.Should().NotContain(privateDetail);
         exception.Which.Message.Length.Should().BeLessThanOrEqualTo(256);
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task AcceptedProgressCommandHandler_InvalidOrUnsupportedPayload_IsForwardedToOwner(
+        bool malformedMeasurement)
+    {
+        var payload = malformedMeasurement
+            ? CreateValidPayload() with
+            {
+                Measurements = [new ReportSubmissionAcceptedProgressMeasurement(
+                    BodyParts.Unknown,
+                    101.5,
+                    MeasurementUnits.Centimeters)]
+            }
+            : CreateValidPayload() with { SchemaVersion = 2 };
+        var port = Substitute.For<IReportSubmissionAcceptedProgressActionExecutionPort>();
+        var handler = CreateAcceptedProgressHandler(port);
+
+        await ExecuteAcceptedProgressHandlerAsync(handler, payload);
+
+        await port.Received(1).ExecuteAsync(
+            JsonSerializer.Serialize(new ReportSubmissionAcceptedProgressCommand { Event = payload }, SharedSerializationOptions.Current),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AcceptedProgressCommandHandler_MissingPayload_IsForwardedToOwner()
+    {
+        var port = Substitute.For<IReportSubmissionAcceptedProgressActionExecutionPort>();
+        var handler = CreateAcceptedProgressHandler(port);
+
+        await ExecuteAcceptedProgressHandlerAsync(handler, null);
+
+        await port.Received(1).ExecuteAsync(
+            "{}",
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
     public async Task AcceptedProgressCommandHandler_UnexpectedConsumerException_RemainsRetryable()
     {
-        var consumer = Substitute.For<IReportSubmissionAcceptedProgressConsumer>();
-        consumer.ConsumeAsync(Arg.Any<ReportSubmissionAcceptedProgressEvent>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<ReportSubmissionAcceptedProgressConsumeResult>(
+        var port = Substitute.For<IReportSubmissionAcceptedProgressActionExecutionPort>();
+        port.ExecuteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(
                 new TimeoutException("temporary consumer outage")));
-        var handler = CreateAcceptedProgressHandler(consumer);
+        var handler = CreateAcceptedProgressHandler(port);
 
-        var action = () => ExecuteAcceptedProgressHandlerAsync(handler, CreateValidEvent());
+        var action = () => ExecuteAcceptedProgressHandlerAsync(handler, CreateValidPayload());
 
         await action.Should().ThrowAsync<TimeoutException>().WithMessage("temporary consumer outage");
     }
 
     private object CreateWriter(
-        FakeCommandEnvelopeRepository repository,
+        FakeCommandEnvelopeRuntime runtime,
         FakeUnitOfWork unitOfWork,
         FakeActionMessageScheduler scheduler,
         bool includeHandler)
     {
-        var writerPort = GetRequiredApplicationType(
+        var writerPort = GetRequiredPlatformType(
             CommandOutboxWriterTypeName,
             "T5 must add ICommandOutboxWriter before staging can be tested.");
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<ICommandEnvelopeRepository>(repository);
+        services.AddSingleton<ICommandEnvelopeRuntime>(runtime);
         services.AddSingleton<IUnitOfWork>(unitOfWork);
         services.AddSingleton<IActionMessageScheduler>(scheduler);
         services.AddSingleton<CommandContractRegistry>(CommandContractRegistry.CreateForTesting(
@@ -202,7 +249,7 @@ public sealed class AcceptedProgressCommandOutboxTests
         return ActivatorUtilities.CreateInstance(_serviceProvider, implementationType);
     }
 
-    private object CreateAcceptedProgressHandler(IReportSubmissionAcceptedProgressConsumer consumer)
+    private object CreateAcceptedProgressHandler(IReportSubmissionAcceptedProgressActionExecutionPort port)
     {
         var handlerType = GetRequiredWorkerType(
             AcceptedProgressHandlerTypeName,
@@ -215,20 +262,23 @@ public sealed class AcceptedProgressCommandOutboxTests
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(consumer);
+        services.AddSingleton(port);
         _serviceProvider = services.BuildServiceProvider();
         return ActivatorUtilities.CreateInstance(_serviceProvider, handlerType);
     }
 
-    private static async Task<object> InvokeStageAsync(object writer, TestStageCommand command)
+    private static async Task<object> InvokeStageAsync(
+        object writer,
+        TestStageCommand command,
+        CancellationToken cancellationToken)
     {
-        var writerType = GetRequiredApplicationType(
+        var writerType = GetRequiredPlatformType(
             CommandOutboxWriterTypeName,
             "T5 must add ICommandOutboxWriter before StageAsync can be invoked.");
         var method = writerType.GetMethod("StageAsync", BindingFlags.Public | BindingFlags.Instance)
             ?? throw new AssertionException("ICommandOutboxWriter must expose StageAsync<TCommand>.");
         var task = method.MakeGenericMethod(typeof(TestStageCommand))
-            .Invoke(writer, [command, CancellationToken.None]) as Task;
+            .Invoke(writer, [command, cancellationToken]) as Task;
 
         task.Should().NotBeNull("StageAsync must return a Task<CommandEnvelopeStageResult>.");
         await task!;
@@ -237,12 +287,12 @@ public sealed class AcceptedProgressCommandOutboxTests
 
     private static async Task ExecuteAcceptedProgressHandlerAsync(
         object handler,
-        ReportSubmissionAcceptedProgressEvent @event)
+        ReportSubmissionAcceptedProgressPayload? payload)
     {
         var commandType = GetRequiredApplicationType(
             AcceptedProgressCommandTypeName,
             "T6 must add ReportSubmissionAcceptedProgressCommand before the Worker handler can execute it.");
-        var command = CreateAcceptedProgressCommand(commandType, @event);
+        var command = CreateAcceptedProgressCommand(commandType, payload);
         var actionInterface = typeof(IBackgroundAction<>).MakeGenericType(commandType);
         var executeMethod = actionInterface.GetMethod("ExecuteAsync")
             ?? throw new AssertionException("The accepted-progress handler must implement IBackgroundAction<TCommand>.");
@@ -252,30 +302,23 @@ public sealed class AcceptedProgressCommandOutboxTests
         await task!;
     }
 
-    private static object CreateAcceptedProgressCommand(Type commandType, ReportSubmissionAcceptedProgressEvent @event)
+    private static object CreateAcceptedProgressCommand(
+        Type commandType,
+        ReportSubmissionAcceptedProgressPayload? payload)
     {
-        var eventConstructor = commandType.GetConstructors()
-            .SingleOrDefault(constructor => constructor.GetParameters() is [{ ParameterType: var parameterType }]
-                && parameterType == typeof(ReportSubmissionAcceptedProgressEvent));
-        if (eventConstructor != null)
-        {
-            return eventConstructor.Invoke([@event]);
-        }
-
         var command = Activator.CreateInstance(commandType)
             ?? throw new AssertionException("ReportSubmissionAcceptedProgressCommand must be instantiable.");
         var eventProperty = commandType.GetProperty("Event", BindingFlags.Public | BindingFlags.Instance);
         eventProperty.Should().NotBeNull(
             "ReportSubmissionAcceptedProgressCommand must carry its nested accepted-progress Event.");
-        eventProperty!.SetValue(command, @event);
+        eventProperty!.PropertyType.Should().Be(typeof(ReportSubmissionAcceptedProgressPayload));
+        eventProperty.SetValue(command, payload);
         return command;
     }
 
-    private static CommandEnvelope GetStageEnvelope(object result)
+    private static string? GetEnvelopeId(object result)
     {
-        var envelope = result.GetType().GetProperty("Envelope", BindingFlags.Public | BindingFlags.Instance)?.GetValue(result);
-        envelope.Should().BeOfType<CommandEnvelope>();
-        return (CommandEnvelope)envelope!;
+        return result.GetType().GetProperty("EnvelopeId", BindingFlags.Public | BindingFlags.Instance)?.GetValue(result) as string;
     }
 
     private static bool GetWasExisting(object result)
@@ -292,6 +335,13 @@ public sealed class AcceptedProgressCommandOutboxTests
         return type!;
     }
 
+    private static Type GetRequiredPlatformType(string typeName, string because)
+    {
+        var type = typeof(IActionCommand).Assembly.GetType(typeName);
+        type.Should().NotBeNull(because);
+        return type!;
+    }
+
     private static Type GetRequiredWorkerType(string typeName, string because)
     {
         var type = typeof(CommandDispatcher).Assembly.GetType(typeName);
@@ -299,33 +349,18 @@ public sealed class AcceptedProgressCommandOutboxTests
         return type!;
     }
 
-    private static ReportSubmissionAcceptedProgressConsumeResult CreateConsumeResult(
-        ReportSubmissionAcceptedProgressConsumeOutcome outcome,
-        string detail)
+    private static ReportSubmissionAcceptedProgressPayload CreateValidPayload()
     {
-        return outcome switch
-        {
-            ReportSubmissionAcceptedProgressConsumeOutcome.Applied => ReportSubmissionAcceptedProgressConsumeResult.Applied(),
-            ReportSubmissionAcceptedProgressConsumeOutcome.Duplicate => ReportSubmissionAcceptedProgressConsumeResult.Duplicate(),
-            ReportSubmissionAcceptedProgressConsumeOutcome.Invalid => ReportSubmissionAcceptedProgressConsumeResult.Invalid(detail),
-            ReportSubmissionAcceptedProgressConsumeOutcome.UnsupportedSchema => ReportSubmissionAcceptedProgressConsumeResult.UnsupportedSchema(detail),
-            ReportSubmissionAcceptedProgressConsumeOutcome.Poison => ReportSubmissionAcceptedProgressConsumeResult.Poison(detail),
-            _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null)
-        };
-    }
-
-    private static ReportSubmissionAcceptedProgressEvent CreateValidEvent()
-    {
-        return new ReportSubmissionAcceptedProgressEvent(
+        return new ReportSubmissionAcceptedProgressPayload(
             1,
             "00000000-0000-0000-0000-000000000001",
             "00000000-0000-0000-0000-000000000002",
             "00000000-0000-0000-0000-000000000003",
             "00000000-0000-0000-0000-000000000004",
-            ParseId<User>("00000000-0000-0000-0000-000000000005"),
+            ParseId<AccountReference>("00000000-0000-0000-0000-000000000005"),
             new DateTimeOffset(2026, 7, 20, 8, 30, 0, TimeSpan.Zero),
             new DateTimeOffset(2026, 7, 20, 8, 31, 0, TimeSpan.Zero),
-            [new ReportSubmissionAcceptedMeasurement(BodyParts.Chest, 101.5, MeasurementUnits.Centimeters)]);
+            [new ReportSubmissionAcceptedProgressMeasurement(BodyParts.Chest, 101.5, MeasurementUnits.Centimeters)]);
     }
 
     private static Id<TEntity> ParseId<TEntity>(string value)
@@ -349,68 +384,63 @@ public sealed class AcceptedProgressCommandOutboxTests
     {
         public List<Id<CommandEnvelope>> Enqueued { get; } = [];
 
-        public string? Enqueue(Id<CommandEnvelope> actionMessageId)
+        public string? Enqueue(string actionMessageId)
         {
-            Enqueued.Add(actionMessageId);
+            if (!Id<CommandEnvelope>.TryParse(actionMessageId, out var parsedActionMessageId))
+            {
+                throw new FormatException("Action message ID must be a valid ID.");
+            }
+
+            Enqueued.Add(parsedActionMessageId);
             return "job-id";
         }
     }
 
-    private sealed class FakeCommandEnvelopeRepository : ICommandEnvelopeRepository
+    private sealed class FakeCommandEnvelopeRuntime : ICommandEnvelopeRuntime
     {
-        public List<CommandEnvelope> Envelopes { get; } = [];
+        public List<CommandEnvelopeRuntimeInvocation> StageInvocations { get; } = [];
+        public List<CommandEnvelopeRuntimeInvocation> PersistInvocations { get; } = [];
 
-        public Task AddAsync(CommandEnvelope envelope, CancellationToken cancellationToken = default)
-        {
-            Envelopes.Add(envelope);
-            return Task.CompletedTask;
-        }
-
-        public Task<CommandEnvelope?> FindByIdAsync(Id<CommandEnvelope> id, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Envelopes.FirstOrDefault(envelope => envelope.Id == id));
-
-        public Task<CommandEnvelope?> FindByCorrelationIdAsync(
-            Id<CorrelationScope> correlationId,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(Envelopes.FirstOrDefault(envelope => envelope.CorrelationId == correlationId));
-
-        public Task<List<CommandEnvelope>> GetPendingRetriesAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(Envelopes.Where(envelope => envelope.Status == ActionExecutionStatus.Failed).ToList());
-
-        public Task UpdateAsync(CommandEnvelope envelope, CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public void Detach(CommandEnvelope envelope)
-        {
-        }
-
-        public Task<CommandEnvelope> AddOrGetExistingAsync(
-            CommandEnvelope envelope,
+        public Task<CommandEnvelopeReceipt> PersistAsync(
+            CommandEnvelopeRequest request,
             CancellationToken cancellationToken = default)
         {
-            var existing = Envelopes.FirstOrDefault(candidate => candidate.CorrelationId == envelope.CorrelationId);
-            if (existing != null)
-            {
-                return Task.FromResult(existing);
-            }
-
-            Envelopes.Add(envelope);
-            return Task.FromResult(envelope);
+            PersistInvocations.Add(new CommandEnvelopeRuntimeInvocation(request, cancellationToken));
+            throw new AssertionException("Stage-only outbox writing must not persist a command envelope.");
         }
 
-        public Task<List<CommandEnvelope>> GetPendingUndispatchedAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(Envelopes.Where(envelope => envelope.Status == ActionExecutionStatus.Pending && envelope.DispatchedAt == null).ToList());
+        public Task<CommandEnvelopeReceipt> StageAsync(
+            CommandEnvelopeRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            StageInvocations.Add(new CommandEnvelopeRuntimeInvocation(request, cancellationToken));
+            return Task.FromResult(new CommandEnvelopeReceipt("stage-envelope-id", StageInvocations.Count > 1));
+        }
 
-        public Task<List<CommandEnvelope>> GetFailedAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(Envelopes.Where(envelope => envelope.Status == ActionExecutionStatus.Failed).ToList());
+        public Task<CommandEnvelopeStart> BeginAsync(string envelopeId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
-        public Task<List<CommandEnvelope>> GetDeadLetteredAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(Envelopes.Where(envelope => envelope.Status == ActionExecutionStatus.DeadLettered).ToList());
+        public Task<CommandEnvelopeFinalization> FinalizeAsync(
+            string envelopeId,
+            int attemptNumber,
+            IReadOnlyList<CommandHandlerResult> results,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
-        public Task<int> CountByStatusAsync(ActionExecutionStatus status, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Envelopes.Count(envelope => envelope.Status == status));
+        public Task RecordFaultAsync(
+            string envelopeId,
+            string reason,
+            string errorMessage,
+            string errorDetails,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
-        public Task<int> DeleteCompletedOlderThanAsync(DateTimeOffset cutoffDate, CancellationToken cancellationToken = default) => Task.FromResult(0);
+        public Task RecordCancellationAsync(string envelopeId) => throw new NotSupportedException();
     }
+
+    private sealed record CommandEnvelopeRuntimeInvocation(
+        CommandEnvelopeRequest Request,
+        CancellationToken CancellationToken);
 
     private sealed class FakeUnitOfWork : IUnitOfWork
     {

@@ -120,7 +120,7 @@ public sealed class PushNotificationPipelineIntegrationTests
         using (var scope = factory.Services.CreateScope())
         {
             var handler = scope.ServiceProvider.GetRequiredService<PushNotificationJobHandlerService>();
-            await handler.ProcessAsync(notificationId);
+            await handler.ProcessAsync(notificationId.ToString());
         }
 
         fakeSender.LastInstallationId.Should().Be(installationId);
@@ -216,8 +216,8 @@ public sealed class PushNotificationPipelineIntegrationTests
             var firstHandler = firstScope.ServiceProvider.GetRequiredService<PushNotificationJobHandlerService>();
             var secondHandler = secondScope.ServiceProvider.GetRequiredService<PushNotificationJobHandlerService>();
 
-            await firstHandler.ProcessAsync(messageId);
-            await secondHandler.ProcessAsync(messageId);
+            await firstHandler.ProcessAsync(messageId.ToString());
+            await secondHandler.ProcessAsync(messageId.ToString());
         }
 
         sender.SendCalls.Should().Be(1);

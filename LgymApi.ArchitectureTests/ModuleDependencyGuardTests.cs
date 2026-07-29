@@ -26,16 +26,149 @@ public sealed class ModuleDependencyGuardTests
     [Test]
     public void Module_Dependency_Graph_Should_Follow_Documented_Eight_Module_Matrix()
     {
-        var (repoRoot, compilation, syntaxTrees) = ArchitectureTestHelpers.PrepareCompilation("LgymApi.Application", "LgymApi.Infrastructure");
-        var treeModules = syntaxTrees
-            .Select(tree => new SyntaxTreeModule(tree, ResolveDependencyGuardModule(tree.FilePath, repoRoot)))
+        var scan = ModuleBoundaryProductionScan.Prepare();
+        var treeModules = scan.SyntaxTrees
+            .Select(tree => new SyntaxTreeModule(tree, ResolveDependencyGuardModule(tree, scan.RepoRoot)))
             .Where(entry => entry.ModuleName is not null)
             .ToList();
 
-        var ownedTypeMap = CollectOwnedTypeMap(compilation, treeModules);
-        var observedViolations = CollectObservedViolations(repoRoot, compilation, treeModules, ownedTypeMap);
+        var ownedTypeMap = CollectOwnedTypeMap(scan.Compilation, treeModules);
+        var observedViolations = CollectObservedViolations(scan.RepoRoot, scan.Compilation, treeModules, ownedTypeMap);
 
-        ArchitectureTestHelpers.AssertNoUnexpectedModuleBoundaryViolations(GuardId, observedViolations);
+        TestContext.Progress.WriteLine($"Module dependency scan: {scan.DescribeSourceTreeCounts()}; violations={observedViolations.Count}.");
+        Assert.Multiple(() =>
+        {
+            Assert.That(observedViolations, Is.Empty);
+            ArchitectureTestHelpers.AssertNoUnexpectedModuleBoundaryViolations(GuardId, observedViolations);
+        });
+    }
+
+    [Test]
+    public void TrainingPlanning_Relocated_And_Legacy_Source_Fixtures_Should_Be_Observed()
+    {
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var repositoriesTree = CSharpSyntaxTree.ParseText(
+            """
+            namespace Task20Fixture.Repositories;
+
+            public interface IExerciseRepository { }
+            public interface ITrainingRepository { }
+            """,
+            path: Path.Combine(repoRoot, "LgymApi.Application", "Repositories", "IExerciseRepository.cs"));
+        var relocatedTree = CSharpSyntaxTree.ParseText(
+            """
+            using Task20Fixture.Repositories;
+
+            namespace LgymApi.Application.TrainingPlanning.Relocated;
+
+            internal sealed class RelocatedPlanningService
+            {
+                private readonly IExerciseRepository _exercises = default!;
+            }
+            """,
+            path: Path.Combine(repoRoot, "LgymApi.TrainingPlanning", "Relocated", "RelocatedPlanningService.cs"));
+        var legacyTree = CSharpSyntaxTree.ParseText(
+            """
+            using Task20Fixture.Repositories;
+
+            namespace LgymApi.Application.Features.PlanDay;
+
+            internal sealed class LegacyPlanDayAdapter
+            {
+                private readonly ITrainingRepository _trainings = default!;
+            }
+            """,
+            path: Path.Combine(repoRoot, "LgymApi.Application", "LegacyPlanning", "LegacyPlanDayAdapter.cs"));
+        List<SyntaxTree> syntaxTrees = [repositoriesTree, relocatedTree, legacyTree];
+        var compilation = ArchitectureTestHelpers.CreateCompilation(syntaxTrees);
+        var treeModules = syntaxTrees
+            .Select(tree => new SyntaxTreeModule(tree, ResolveDependencyGuardModule(tree, repoRoot)))
+            .Where(entry => entry.ModuleName is not null)
+            .ToArray();
+
+        var violations = CollectObservedViolations(
+            repoRoot,
+            compilation,
+            treeModules,
+            CollectOwnedTypeMap(compilation, treeModules));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(violations, Has.Count.EqualTo(2));
+            Assert.That(violations, Has.All.Matches<ModuleBoundaryObservedViolation>(violation =>
+                violation.SourceModule == ArchitectureTestHelpers.TrainingPlanningModuleName
+                && violation.TargetModule == ArchitectureTestHelpers.WorkoutProgressModuleName));
+            Assert.That(violations.Select(violation => violation.TargetSymbolOrPath), Has.Some.Contains("IExerciseRepository"));
+            Assert.That(violations.Select(violation => violation.TargetSymbolOrPath), Has.Some.Contains("ITrainingRepository"));
+            Assert.That(violations.Select(violation => violation.SourceSymbolOrPath), Has.Some.Contains("LgymApi.TrainingPlanning/Relocated/RelocatedPlanningService.cs"));
+            Assert.That(violations.Select(violation => violation.SourceSymbolOrPath), Has.Some.Contains("LgymApi.Application/LegacyPlanning/LegacyPlanDayAdapter.cs"));
+        });
+    }
+
+    private static readonly object[] FormerDebtGroupFixtures =
+    {
+        new object[]
+        {
+            "LgymApi.Application/Relocated/FormerReportingWorkoutDebt.cs",
+            "LgymApi.Application.Features.Reporting.Relocated",
+            ArchitectureTestHelpers.ReportingModuleName,
+            "LgymApi.Application/WorkoutProgress/Contracts/ReportingIntegration/FormerWorkoutDependency.cs",
+            "LgymApi.Application.WorkoutProgress.Contracts.ReportingIntegration",
+            ArchitectureTestHelpers.WorkoutProgressModuleName
+        },
+        new object[]
+        {
+            "LgymApi.TrainingPlanning/FormerDebt/FormerPlanningWorkoutDebt.cs",
+            "LgymApi.Application.TrainingPlanning.FormerDebt",
+            ArchitectureTestHelpers.TrainingPlanningModuleName,
+            "LgymApi.Application/WorkoutProgress/Contracts/FormerWorkoutDependency.cs",
+            "LgymApi.Application.WorkoutProgress.Contracts",
+            ArchitectureTestHelpers.WorkoutProgressModuleName
+        }
+    };
+
+    [TestCaseSource(nameof(FormerDebtGroupFixtures))]
+    public void Every_Former_Debt_Group_Should_Produce_An_Observed_Violation(
+        string sourcePath,
+        string sourceNamespace,
+        string expectedSourceModule,
+        string targetPath,
+        string targetNamespace,
+        string expectedTargetModule)
+    {
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var targetTree = CSharpSyntaxTree.ParseText(
+            $"namespace {targetNamespace}; public sealed class FormerDebtDependency {{ }}",
+            path: Path.Combine(repoRoot, targetPath.Replace('/', Path.DirectorySeparatorChar)));
+        var sourceTree = CSharpSyntaxTree.ParseText(
+            $$"""
+            using {{targetNamespace}};
+            namespace {{sourceNamespace}};
+            internal sealed class FormerDebtConsumer
+            {
+                private readonly FormerDebtDependency _dependency = default!;
+            }
+            """,
+            path: Path.Combine(repoRoot, sourcePath.Replace('/', Path.DirectorySeparatorChar)));
+        List<SyntaxTree> syntaxTrees = [targetTree, sourceTree];
+        var compilation = ArchitectureTestHelpers.CreateCompilation(syntaxTrees);
+        var treeModules = syntaxTrees
+            .Select(tree => new SyntaxTreeModule(tree, ResolveDependencyGuardModule(tree, repoRoot)))
+            .Where(entry => entry.ModuleName is not null)
+            .ToArray();
+
+        var violations = CollectObservedViolations(
+            repoRoot,
+            compilation,
+            treeModules,
+            CollectOwnedTypeMap(compilation, treeModules));
+
+        Assert.That(
+            violations,
+            Has.Some.Matches<ModuleBoundaryObservedViolation>(violation =>
+                violation.SourceModule == expectedSourceModule
+                && violation.TargetModule == expectedTargetModule
+                && violation.TargetSymbolOrPath.Contains("FormerDebtDependency", StringComparison.Ordinal)));
     }
 
     [Test]
@@ -173,24 +306,19 @@ public sealed class ModuleDependencyGuardTests
         return new HashSet<string>(allowedTargets, StringComparer.Ordinal);
     }
 
-    private static bool ShouldIgnoreSourceFile(string filePath, string repoRoot)
-    {
-        var relativePath = ArchitectureTestHelpers.NormalizePath(Path.GetRelativePath(repoRoot, filePath));
-
-        return relativePath.Equals("LgymApi.Application/ServiceCollectionExtensions.cs", StringComparison.OrdinalIgnoreCase)
-            || relativePath.Equals("LgymApi.Infrastructure/ServiceCollectionExtensions.cs", StringComparison.OrdinalIgnoreCase)
-            || relativePath.Equals("LgymApi.Infrastructure/PlatformServiceCollectionExtensions.cs", StringComparison.OrdinalIgnoreCase)
-            || relativePath.Equals("LgymApi.Infrastructure/Data/Configurations/AppDbContextEntityTypeConfigurationRegistrar.cs", StringComparison.OrdinalIgnoreCase);
-    }
-
     private static string? ResolveDependencyGuardModule(string filePath, string repoRoot)
     {
-        if (ShouldIgnoreSourceFile(filePath, repoRoot))
+        if (ArchitectureTestHelpers.ClassifyModuleBoundaryFile(filePath, repoRoot).IsExcluded)
         {
             return null;
         }
 
         var relativePath = ArchitectureTestHelpers.NormalizePath(Path.GetRelativePath(repoRoot, filePath));
+
+        if (relativePath.StartsWith("LgymApi.TrainingPlanning/", StringComparison.OrdinalIgnoreCase))
+        {
+            return ArchitectureTestHelpers.TrainingPlanningModuleName;
+        }
 
         return relativePath switch
         {
@@ -200,12 +328,15 @@ public sealed class ModuleDependencyGuardTests
             "LgymApi.Application/Repositories/IRoleRepository.cs" or
             "LgymApi.Application/Repositories/ITutorialProgressRepository.cs"
                 => ArchitectureTestHelpers.IdentityModuleName,
-            "LgymApi.Application/Repositories/IInAppNotificationRepository.cs" or
-            "LgymApi.Application/Notifications/Repositories/IPushInstallationRepository.cs" or
-            "LgymApi.Application/Repositories/IPushNotificationMessageRepository.cs"
+            "LgymApi.Notifications/IInAppNotificationRepository.cs" or
+            "LgymApi.Notifications/Repositories/IPushInstallationRepository.cs" or
+            "LgymApi.Notifications/Repositories/IPushNotificationMessageRepository.cs"
                 => ArchitectureTestHelpers.NotificationsModuleName,
-            "LgymApi.Application/Repositories/IReportingRepository.cs" or
-            "LgymApi.Application/Repositories/IRecurringReportAssignmentRepository.cs" or
+            "LgymApi.Application/Reporting/Persistence/IReportTemplatePersistence.cs" or
+            "LgymApi.Application/Reporting/Persistence/IReportRequestSubmissionPersistence.cs" or
+            "LgymApi.Application/Reporting/Persistence/IRecurringReportAssignmentPersistence.cs" or
+            "LgymApi.Application/Reporting/Persistence/IReportPhotoPersistence.cs" or
+            "LgymApi.Application/Reporting/Persistence/IReportingRelationshipAccessPersistence.cs" or
             "LgymApi.Application/Abstractions/Storage/IPhotoStorageProvider.cs"
                 => ArchitectureTestHelpers.ReportingModuleName,
             "LgymApi.Application/Repositories/IPlanRepository.cs" or
@@ -226,6 +357,17 @@ public sealed class ModuleDependencyGuardTests
                 => ArchitectureTestHelpers.NutritionModuleName,
             _ => ArchitectureTestHelpers.GetCanonicalModuleNameFromPath(filePath)
         };
+    }
+
+    private static string? ResolveDependencyGuardModule(SyntaxTree tree, string repoRoot)
+    {
+        var pathModule = ResolveDependencyGuardModule(tree.FilePath, repoRoot);
+        if (pathModule != null)
+        {
+            return pathModule;
+        }
+
+        return ModuleBoundaryProductionScan.ResolveCanonicalModule(tree, repoRoot);
     }
 
     private sealed record SyntaxTreeModule(SyntaxTree Tree, string? ModuleName);

@@ -1,5 +1,6 @@
-using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.AspNetCore.Localization;
 using System.Globalization;
 
@@ -7,18 +8,11 @@ namespace LgymApi.Api.Middleware;
 
 public static class HttpContextExtensions
 {
-    public static User? GetCurrentUser(this HttpContext context)
-    {
-        if (context.Items.TryGetValue("User", out var user) && user is User typedUser)
-        {
-            return typedUser;
-        }
+    public static AuthenticatedAccountContext? GetAuthenticatedAccountContext(this HttpContext context)
+        => context.Features.Get<IAuthenticatedAccountContextFeature>()?.Context;
 
-        return null;
-    }
-
-    public static Id<User> GetCurrentUserId(this HttpContext context)
-        => context.GetCurrentUser()?.Id ?? Id<User>.Empty;
+    public static Id<AccountReference> GetCurrentAccountId(this HttpContext context)
+        => context.GetAuthenticatedAccountContext()?.Id ?? Id<AccountReference>.Empty;
 
     public static IReadOnlyList<string> GetCulturePreferences(this HttpContext context)
     {

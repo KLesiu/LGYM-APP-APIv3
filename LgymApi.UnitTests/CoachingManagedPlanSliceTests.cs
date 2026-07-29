@@ -17,6 +17,8 @@ using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.TrainingPlanning.Contracts.ManagedPlans;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.TrainingPlanning.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using OwnerAssignUseCase = LgymApi.Application.TrainingPlanning.Contracts.ManagedPlans.IAssignManagedPlanUseCase;
@@ -35,17 +37,16 @@ public sealed class CoachingManagedPlanSliceTests
     [Test]
     public async Task ManagedPlanSlices_AuthorizeThenDelegateEveryOperationWithExactInputsAndResults()
     {
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
-        var planId = Id<Plan>.New();
+        var trainerId = Id<AccountReference>.New();
+        var traineeId = Id<AccountReference>.New();
+        var planId = Id<PlanReference>.New();
         var cancellationToken = new CancellationTokenSource().Token;
         var readModel = new ManagedPlanReadModel(planId, "Managed", true, DateTimeOffset.UtcNow);
         IReadOnlyList<ManagedPlanReadModel> plans = [readModel];
         var dependencies = new Dependencies();
         dependencies.Access.GetAccessDecisionAsync(trainerId, traineeId, cancellationToken)
             .Returns(new CoachingRelationshipAccessDecision(true, true));
-        dependencies.ActiveLinks.FindByTraineeAsync(traineeId, cancellationToken)
-            .Returns(ActiveLink(trainerId, traineeId));
+        dependencies.ActiveLinks.HasForTraineeAsync(traineeId, cancellationToken).Returns(true);
         dependencies.List.ExecuteAsync(Arg.Any<GetManagedPlansQuery>(), cancellationToken)
             .Returns(Result<IReadOnlyList<ManagedPlanReadModel>, AppError>.Success(plans));
         dependencies.Create.ExecuteAsync(Arg.Any<LgymApi.Application.TrainingPlanning.Contracts.ManagedPlans.CreateManagedPlanCommand>(), cancellationToken)
@@ -85,7 +86,7 @@ public sealed class CoachingManagedPlanSliceTests
         unassigned.Value.Should().Be(Unit.Value);
         active.Value.Should().BeSameAs(readModel);
         await dependencies.Access.Received(6).GetAccessDecisionAsync(trainerId, traineeId, cancellationToken);
-        await dependencies.ActiveLinks.Received(1).FindByTraineeAsync(traineeId, cancellationToken);
+        await dependencies.ActiveLinks.Received(1).HasForTraineeAsync(traineeId, cancellationToken);
         await dependencies.List.Received(1).ExecuteAsync(
             Arg.Is<GetManagedPlansQuery>(query => query.TraineeId == traineeId), cancellationToken);
         await dependencies.Create.Received(1).ExecuteAsync(
@@ -114,9 +115,9 @@ public sealed class CoachingManagedPlanSliceTests
     [Test]
     public async Task TrainerManagedPlanSlices_RejectForeignRelationshipBeforeEveryOwnerCall()
     {
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
-        var planId = Id<Plan>.New();
+        var trainerId = Id<AccountReference>.New();
+        var traineeId = Id<AccountReference>.New();
+        var planId = Id<PlanReference>.New();
         var dependencies = new Dependencies();
         dependencies.Access.GetAccessDecisionAsync(trainerId, traineeId, Arg.Any<CancellationToken>())
             .Returns(new CoachingRelationshipAccessDecision(true, false));
@@ -144,8 +145,8 @@ public sealed class CoachingManagedPlanSliceTests
     [Test]
     public async Task ManagedPlanAccess_PreservesForbiddenInvalidAndMissingLinkErrorsBeforeDelegation()
     {
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
+        var trainerId = Id<AccountReference>.New();
+        var traineeId = Id<AccountReference>.New();
         var dependencies = new Dependencies();
         var services = dependencies.CreateServices();
         dependencies.Access.GetAccessDecisionAsync(trainerId, traineeId, Arg.Any<CancellationToken>())
@@ -153,10 +154,10 @@ public sealed class CoachingManagedPlanSliceTests
 
         var forbidden = await Resolve<IListManagedPlansUseCase>(services)
             .ExecuteAsync(new ListManagedPlansQuery(trainerId, traineeId));
-        dependencies.Access.GetAccessDecisionAsync(trainerId, Id<User>.Empty, Arg.Any<CancellationToken>())
+        dependencies.Access.GetAccessDecisionAsync(trainerId, Id<AccountReference>.Empty, Arg.Any<CancellationToken>())
             .Returns(new CoachingRelationshipAccessDecision(true, false));
         var invalid = await Resolve<LgymApi.Application.Coaching.ManagedPlans.Create.ICreateTraineeManagedPlanUseCase>(services)
-            .ExecuteAsync(new LgymApi.Application.Coaching.ManagedPlans.Create.CreateTraineeManagedPlanCommand(trainerId, Id<User>.Empty, "Name"));
+            .ExecuteAsync(new LgymApi.Application.Coaching.ManagedPlans.Create.CreateTraineeManagedPlanCommand(trainerId, Id<AccountReference>.Empty, "Name"));
         var missingActiveLink = await Resolve<IGetActiveManagedPlanUseCase>(services)
             .ExecuteAsync(new GetActiveManagedPlanQuery(traineeId));
 
@@ -171,9 +172,9 @@ public sealed class CoachingManagedPlanSliceTests
     [Test]
     public async Task ManagedPlanSlices_PassThroughOwnerValidationOwnershipAndTransactionFailures()
     {
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
-        var planId = Id<Plan>.New();
+        var trainerId = Id<AccountReference>.New();
+        var traineeId = Id<AccountReference>.New();
+        var planId = Id<PlanReference>.New();
         var invalidName = new InvalidTrainerRelationshipError("invalid name");
         var foreignPlan = new TrainerRelationshipNotFoundError("foreign plan");
         var missingOwner = new TrainerRelationshipNotFoundError("missing owner");
@@ -193,7 +194,7 @@ public sealed class CoachingManagedPlanSliceTests
         var create = await Resolve<LgymApi.Application.Coaching.ManagedPlans.Create.ICreateTraineeManagedPlanUseCase>(services)
             .ExecuteAsync(new LgymApi.Application.Coaching.ManagedPlans.Create.CreateTraineeManagedPlanCommand(trainerId, traineeId, " "));
         var update = await Resolve<LgymApi.Application.Coaching.ManagedPlans.Update.IUpdateTraineeManagedPlanUseCase>(services)
-            .ExecuteAsync(new LgymApi.Application.Coaching.ManagedPlans.Update.UpdateTraineeManagedPlanCommand(trainerId, traineeId, Id<Plan>.Empty, "Name"));
+            .ExecuteAsync(new LgymApi.Application.Coaching.ManagedPlans.Update.UpdateTraineeManagedPlanCommand(trainerId, traineeId, Id<PlanReference>.Empty, "Name"));
         var delete = await Resolve<LgymApi.Application.Coaching.ManagedPlans.Delete.IDeleteTraineeManagedPlanUseCase>(services)
             .ExecuteAsync(new LgymApi.Application.Coaching.ManagedPlans.Delete.DeleteTraineeManagedPlanCommand(trainerId, traineeId, planId));
         Func<Task> assign = () => Resolve<LgymApi.Application.Coaching.ManagedPlans.Assign.IAssignTraineeManagedPlanUseCase>(services)
@@ -212,15 +213,9 @@ public sealed class CoachingManagedPlanSliceTests
         return scope.ServiceProvider.GetRequiredService<TContract>();
     }
 
-    private static CoachingActiveLinkFact ActiveLink(Id<User> trainerId, Id<User> traineeId)
-    {
-        var now = DateTimeOffset.UtcNow;
-        return new CoachingActiveLinkFact(Id<TrainerTraineeLink>.New(), trainerId, traineeId, now, now);
-    }
-
     private sealed class Dependencies
     {
-        public ICoachingRelationshipAccessService Access { get; } = Substitute.For<ICoachingRelationshipAccessService>();
+        public IMarkerCoachingRelationshipAccessService Access { get; } = Substitute.For<IMarkerCoachingRelationshipAccessService>();
         public ICoachingActiveLinkPersistence ActiveLinks { get; } = Substitute.For<ICoachingActiveLinkPersistence>();
         public OwnerListUseCase List { get; } = Substitute.For<OwnerListUseCase>();
         public OwnerCreateUseCase Create { get; } = Substitute.For<OwnerCreateUseCase>();
@@ -233,7 +228,7 @@ public sealed class CoachingManagedPlanSliceTests
         public ServiceCollection CreateServices()
         {
             var services = new ServiceCollection();
-            services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+            services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
             services.AddCoachingModule();
             services.AddScoped(_ => Access);
             services.AddScoped(_ => ActiveLinks);

@@ -4,6 +4,8 @@ using LgymApi.Application.Coaching.Invitations.Create;
 using LgymApi.Application.Coaching.Invitations.CreateByEmail;
 using LgymApi.Application.Coaching.Invitations.ListPaginated;
 using LgymApi.Application.Coaching.Invitations.Revoke;
+using LgymApi.Application.Coaching.Compatibility;
+using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
 using LgymApi.Application.Coaching.ManagedPlans.Assign;
 using LgymApi.Application.Coaching.ManagedPlans.Create;
 using LgymApi.Application.Coaching.ManagedPlans.Delete;
@@ -84,29 +86,15 @@ public sealed class CoachingApiContractImmutabilityGuardTests
     {
         AssertConstructor(
             typeof(TrainerInvitationController),
-            typeof(ICreateInvitationUseCase),
-            typeof(ICreateInvitationByEmailUseCase),
-            typeof(IListPaginatedInvitationsUseCase),
-            typeof(IRevokeInvitationUseCase),
+            typeof(ITrainerInvitationApiPort),
             typeof(IMapper));
         AssertConstructor(
             typeof(TrainerDashboardProgressController),
-            typeof(IGetTrainerDashboardUseCase),
-            typeof(IGetTrainingDatesUseCase),
-            typeof(IGetTrainingByDateUseCase),
-            typeof(IGetExerciseScoresChartUseCase),
-            typeof(IGetEloChartUseCase),
-            typeof(IGetMainRecordsHistoryUseCase),
-            typeof(IUnlinkTraineeUseCase),
+            typeof(ITrainerDashboardProgressApiPort),
             typeof(IMapper));
         AssertConstructor(
             typeof(TrainerManagedPlansController),
-            typeof(IListManagedPlansUseCase),
-            typeof(ICreateTraineeManagedPlanUseCase),
-            typeof(IUpdateTraineeManagedPlanUseCase),
-            typeof(IDeleteTraineeManagedPlanUseCase),
-            typeof(IAssignTraineeManagedPlanUseCase),
-            typeof(IUnassignTraineeManagedPlanUseCase),
+            typeof(IManagedPlanAccountCompatibilityAdapter),
             typeof(IMapper));
     }
 

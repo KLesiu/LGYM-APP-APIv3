@@ -3,16 +3,20 @@ using FluentAssertions;
 using LgymApi.Api;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Features.Trainer.Controllers;
+using LgymApi.Api.Middleware;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Reporting.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Reporting;
 using LgymApi.Application.Features.Reporting.Models;
+using LgymApi.Application.Reporting.Compatibility;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,7 +48,7 @@ public sealed class TraineeReportingControllerTests
         var requestId = Id<ReportRequest>.New();
         var submissionId = Id<ReportSubmission>.New();
         reportingService
-            .SubmitReportRequestAsync(Arg.Any<User>(), Arg.Do<Id<ReportRequest>>(id => capturedRequestId = id), Arg.Do<SubmitReportRequestCommand>(cmd => capturedCommand = cmd), Arg.Any<CancellationToken>())
+            .SubmitReportRequestAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Do<Id<ReportRequest>>(id => capturedRequestId = id), Arg.Do<SubmitReportRequestCommand>(cmd => capturedCommand = cmd), Arg.Any<CancellationToken>())
             .Returns(Result.Success<ReportSubmissionResult, AppError>(CreateSubmissionResult(submissionId, requestId)));
 
         var controller = CreateController(reportingService);
@@ -104,7 +108,7 @@ public sealed class TraineeReportingControllerTests
         var photoId = Id<Photo>.New();
 
         reportingService
-            .GetPhotoHistoryAsync(Arg.Any<User>(), Arg.Do<GetPhotoHistoryCommand>(cmd => capturedCommand = cmd), Arg.Any<CancellationToken>())
+            .GetPhotoHistoryAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Do<GetPhotoHistoryCommand>(cmd => capturedCommand = cmd), Arg.Any<CancellationToken>())
             .Returns(Result.Success<List<PhotoHistoryItemResult>, AppError>(
             [
                 new PhotoHistoryItemResult
@@ -124,7 +128,7 @@ public sealed class TraineeReportingControllerTests
 
         result.Should().BeOfType<OkObjectResult>();
         capturedCommand.Should().NotBeNull();
-        capturedCommand!.TraineeId.Should().Be(currentUser.Id);
+        capturedCommand!.TraineeId.Should().Be(currentUser.Id.Rebind<AccountReference>());
         capturedCommand.RequestId.Should().Be(requestId);
     }
 
@@ -135,21 +139,21 @@ public sealed class TraineeReportingControllerTests
         var currentUser = CreateUser();
         var requestId = Id<ReportRequest>.New();
         reportingService
-            .GetPendingRequestsForTraineeAsync(Arg.Any<User>(), Arg.Any<CancellationToken>())
+            .GetPendingRequestsForTraineeAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success<List<ReportRequestResult>, AppError>(
             [
                 new ReportRequestResult
                 {
                     Id = requestId,
-                    TrainerId = Id<User>.New(),
-                    TraineeId = currentUser.Id,
+                    TrainerId = Id<AccountReference>.New(),
+                    TraineeId = currentUser.Id.Rebind<AccountReference>(),
                     TemplateId = Id<ReportTemplate>.New(),
                     Status = ReportRequestStatus.Pending,
                     CreatedAt = DateTimeOffset.UtcNow,
                     Template = new ReportTemplateResult
                     {
                         Id = Id<ReportTemplate>.New(),
-                        TrainerId = Id<User>.New(),
+                        TrainerId = Id<AccountReference>.New(),
                         Name = "Weekly",
                         CreatedAt = DateTimeOffset.UtcNow
                     }
@@ -169,7 +173,7 @@ public sealed class TraineeReportingControllerTests
     public async Task GetPendingRequests_WhenServiceFails_ReturnsMappedErrorResult()
     {
         var reportingService = Substitute.For<IReportingService>();
-        reportingService.GetPendingRequestsForTraineeAsync(Arg.Any<User>(), Arg.Any<CancellationToken>())
+        reportingService.GetPendingRequestsForTraineeAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Any<CancellationToken>())
             .Returns(Result.Failure<List<ReportRequestResult>, AppError>(new InvalidReportingError("bad request")));
         var controller = CreateController(reportingService);
 
@@ -183,7 +187,7 @@ public sealed class TraineeReportingControllerTests
     {
         var reportingService = Substitute.For<IReportingService>();
         var requestId = Id<ReportRequest>.New();
-        reportingService.SubmitReportRequestAsync(Arg.Any<User>(), requestId, Arg.Any<SubmitReportRequestCommand>(), Arg.Any<CancellationToken>())
+        reportingService.SubmitReportRequestAsync(Arg.Any<AuthenticatedAccountContext>(), requestId, Arg.Any<SubmitReportRequestCommand>(), Arg.Any<CancellationToken>())
             .Returns(Result.Failure<ReportSubmissionResult, AppError>(new InvalidReportingError("bad request")));
         var controller = CreateController(reportingService);
 
@@ -198,7 +202,7 @@ public sealed class TraineeReportingControllerTests
         var reportingService = Substitute.For<IReportingService>();
         var requestId = Id<ReportRequest>.New();
         var submissionId = Id<ReportSubmission>.New();
-        reportingService.GetOwnSubmissionsAsync(Arg.Any<User>(), Arg.Any<CancellationToken>())
+        reportingService.GetOwnSubmissionsAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success<List<ReportSubmissionResult>, AppError>([CreateSubmissionResult(submissionId, requestId)]));
         var controller = CreateController(reportingService);
 
@@ -215,7 +219,7 @@ public sealed class TraineeReportingControllerTests
         var requestId = Id<ReportRequest>.New();
         var submissionId = Id<ReportSubmission>.New();
         Id<ReportSubmission> capturedSubmissionId = Id<ReportSubmission>.Empty;
-        reportingService.MarkTrainerFeedbackAsReadAsync(Arg.Any<User>(), Arg.Do<Id<ReportSubmission>>(id => capturedSubmissionId = id), Arg.Any<CancellationToken>())
+        reportingService.MarkTrainerFeedbackAsReadAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Do<Id<ReportSubmission>>(id => capturedSubmissionId = id), Arg.Any<CancellationToken>())
             .Returns(Result.Success<ReportSubmissionResult, AppError>(CreateSubmissionResult(submissionId, requestId)));
         var controller = CreateController(reportingService);
 
@@ -230,7 +234,7 @@ public sealed class TraineeReportingControllerTests
     {
         var reportingService = Substitute.For<IReportingService>();
         var submissionId = Id<ReportSubmission>.New();
-        reportingService.MarkTrainerFeedbackAsReadAsync(Arg.Any<User>(), submissionId, Arg.Any<CancellationToken>())
+        reportingService.MarkTrainerFeedbackAsReadAsync(Arg.Any<AuthenticatedAccountContext>(), submissionId, Arg.Any<CancellationToken>())
             .Returns(Result.Failure<ReportSubmissionResult, AppError>(new InvalidReportingError("bad request")));
         var controller = CreateController(reportingService);
 
@@ -244,7 +248,7 @@ public sealed class TraineeReportingControllerTests
     {
         var reportingService = Substitute.For<IReportingService>();
         var requestId = Id<ReportRequest>.New();
-        reportingService.InitiatePhotoUploadAsync(Arg.Any<User>(), Arg.Is<InitiatePhotoUploadCommand>(cmd => cmd.ReportRequestId == requestId), Arg.Any<CancellationToken>())
+        reportingService.InitiatePhotoUploadAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Is<InitiatePhotoUploadCommand>(cmd => cmd.ReportRequestId == requestId), Arg.Any<CancellationToken>())
             .Returns(Result.Success<InitiatePhotoUploadResult, AppError>(new InitiatePhotoUploadResult
             {
                 StorageKey = "photos/key.jpg",
@@ -269,7 +273,7 @@ public sealed class TraineeReportingControllerTests
     {
         var reportingService = Substitute.For<IReportingService>();
         var requestId = Id<ReportRequest>.New();
-        reportingService.CompletePhotoUploadAsync(Arg.Any<User>(), Arg.Is<CompletePhotoUploadCommand>(cmd => cmd.ReportRequestId == requestId), Arg.Any<CancellationToken>())
+        reportingService.CompletePhotoUploadAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Is<CompletePhotoUploadCommand>(cmd => cmd.ReportRequestId == requestId), Arg.Any<CancellationToken>())
             .Returns(Result.Success<CompletePhotoUploadResult, AppError>(new CompletePhotoUploadResult
             {
                 PhotoId = Id<Photo>.New(),
@@ -294,7 +298,7 @@ public sealed class TraineeReportingControllerTests
     public async Task GetPhotoHistory_WhenServiceFails_ReturnsMappedErrorResult()
     {
         var reportingService = Substitute.For<IReportingService>();
-        reportingService.GetPhotoHistoryAsync(Arg.Any<User>(), Arg.Any<GetPhotoHistoryCommand>(), Arg.Any<CancellationToken>())
+        reportingService.GetPhotoHistoryAsync(Arg.Any<AuthenticatedAccountContext>(), Arg.Any<GetPhotoHistoryCommand>(), Arg.Any<CancellationToken>())
             .Returns(Result.Failure<List<PhotoHistoryItemResult>, AppError>(new InvalidReportingError("bad request")));
         var controller = CreateController(reportingService);
 
@@ -308,20 +312,20 @@ public sealed class TraineeReportingControllerTests
         {
             Id = submissionId,
             ReportRequestId = requestId,
-            TraineeId = Id<User>.New(),
+            TraineeId = Id<AccountReference>.New(),
             SubmittedAt = DateTimeOffset.UtcNow,
             Request = new ReportRequestResult
             {
                 Id = requestId,
-                TrainerId = Id<User>.New(),
-                TraineeId = Id<User>.New(),
+                TrainerId = Id<AccountReference>.New(),
+                TraineeId = Id<AccountReference>.New(),
                 TemplateId = Id<ReportTemplate>.New(),
                 Status = ReportRequestStatus.Submitted,
                 CreatedAt = DateTimeOffset.UtcNow,
                 Template = new ReportTemplateResult
                 {
                     Id = Id<ReportTemplate>.New(),
-                    TrainerId = Id<User>.New(),
+                    TrainerId = Id<AccountReference>.New(),
                     Name = "Weekly",
                     CreatedAt = DateTimeOffset.UtcNow
                 }
@@ -340,11 +344,11 @@ public sealed class TraineeReportingControllerTests
     private static TraineeReportingController CreateController(IReportingService reportingService, User? user = null)
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
 
-        var controller = new TraineeReportingController(reportingService, mapper)
+        var controller = new TraineeReportingController(new TraineeReportRequestApiAdapter(reportingService), new TraineeReportPhotoApiAdapter(reportingService, mapper), mapper)
         {
             ControllerContext = new ControllerContext
             {
@@ -352,7 +356,9 @@ public sealed class TraineeReportingControllerTests
             }
         };
 
-        controller.HttpContext.Items["User"] = user ?? CreateUser();
+        var account = user ?? CreateUser();
+        controller.HttpContext.Features.Set<IAuthenticatedAccountContextFeature>(new AuthenticatedAccountContextFeature(
+            new AuthenticatedAccountContext(account.Id.Rebind<AccountReference>(), null, [], [], false, false)));
         return controller;
     }
 }

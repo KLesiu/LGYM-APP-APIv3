@@ -9,9 +9,11 @@ using LgymApi.Api.Features.Role.Contracts;
 using LgymApi.Api.Features.Role.Controllers;
 using LgymApi.Application.Features.Role;
 using LgymApi.Application.Features.Role.Models;
+using LgymApi.Application.Identity.ApiCompatibility;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Mvc;
 
@@ -25,16 +27,10 @@ public sealed class RoleControllerTests
     [Test]
     public async Task CreateRole_ReturnsMappedRoleDto()
     {
-        var roleId = Id<LgymApi.Domain.Entities.Role>.New();
+        var roleId = Id<RoleReference>.New();
         var fakeService = new StubRoleService
         {
-            CreateRoleHandler = (_, _, _) => Task.FromResult(Result<RoleResult, AppError>.Success(new RoleResult
-            {
-                Id = roleId,
-                Name = "Coach",
-                Description = "desc",
-                PermissionClaims = ManageUserRolesClaim
-            }))
+            CreateRoleHandler = (_, _, _) => Task.FromResult(Result<RoleProjection, AppError>.Success(new RoleProjection(roleId, "Coach", "desc", ManageUserRolesClaim)))
         };
         var controller = new RoleController(fakeService, BuildMapper());
 
@@ -58,7 +54,7 @@ public sealed class RoleControllerTests
     private static IMapper BuildMapper()
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         using var provider = services.BuildServiceProvider();
         return provider.GetRequiredService<IMapper>();
     }
@@ -66,11 +62,11 @@ public sealed class RoleControllerTests
     [Test]
     public async Task UpdateUserRoles_DelegatesParsedRequestAndCancellationTokenToRoleService()
     {
-        var userId = Id<User>.New();
+        var userId = Id<AccountReference>.New();
         var request = new UpdateUserRolesRequest { Roles = ["Coach", "Analyst"] };
         using var cancellationTokenSource = new CancellationTokenSource();
         var cancellationToken = cancellationTokenSource.Token;
-        var observedUserId = Id<User>.Empty;
+        var observedUserId = Id<AccountReference>.Empty;
         IReadOnlyCollection<string>? observedRoleNames = null;
         var observedCancellationToken = default(CancellationToken);
         var fakeService = new StubRoleService
@@ -124,35 +120,34 @@ public sealed class RoleControllerTests
         updateUserRoles.GetCustomAttribute<HttpPutAttribute>().Should().BeNull();
     }
 
-    private sealed class StubRoleService : IRoleService
+    private sealed class StubRoleService : IRoleManagementApiAdapter
     {
-        public Func<string, string?, IReadOnlyCollection<string>, Task<Result<RoleResult, AppError>>>? CreateRoleHandler { get; init; }
-        public Func<Id<Domain.Entities.User>, IReadOnlyCollection<string>, CancellationToken, Task<Result<Unit, AppError>>>? UpdateUserRolesHandler { get; init; }
+        public Func<string, string?, IReadOnlyCollection<string>, Task<Result<RoleProjection, AppError>>>? CreateRoleHandler { get; init; }
+        public Func<Id<AccountReference>, IReadOnlyCollection<string>, CancellationToken, Task<Result<Unit, AppError>>>? UpdateUserRolesHandler { get; init; }
 
-        public Task<Result<List<RoleResult>, AppError>> GetRolesAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(Result<List<RoleResult>, AppError>.Success(new List<RoleResult>()));
+        public Task<Result<IReadOnlyList<RoleProjection>, AppError>> GetRolesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(Result<IReadOnlyList<RoleProjection>, AppError>.Success([]));
 
-        public Task<Result<RoleResult, AppError>> GetRoleAsync(Id<Domain.Entities.Role> roleId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Result<RoleResult, AppError>.Success(new RoleResult { Id = roleId }));
+        public Task<Result<RoleProjection, AppError>> GetRoleAsync(Id<RoleReference> roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Result<RoleProjection, AppError>.Success(new RoleProjection(roleId, string.Empty, null, [])));
 
-        public Task<Result<RoleResult, AppError>> CreateRoleAsync(string name, string? description, IReadOnlyCollection<string> permissionClaims, CancellationToken cancellationToken = default)
+        public Task<Result<RoleProjection, AppError>> CreateRoleAsync(string name, string? description, IReadOnlyCollection<string> permissionClaims, CancellationToken cancellationToken = default)
             => CreateRoleHandler?.Invoke(name, description, permissionClaims)
-               ?? Task.FromResult(Result<RoleResult, AppError>.Success(new RoleResult { Id = Id<LgymApi.Domain.Entities.Role>.New(), Name = name, Description = description, PermissionClaims = permissionClaims.ToList() }));
+               ?? Task.FromResult(Result<RoleProjection, AppError>.Success(new RoleProjection(Id<RoleReference>.New(), name, description, permissionClaims.ToList())));
 
-        public Task<Result<Unit, AppError>> UpdateRoleAsync(Id<Domain.Entities.Role> roleId, string name, string? description, IReadOnlyCollection<string> permissionClaims, CancellationToken cancellationToken = default)
+        public Task<Result<Unit, AppError>> UpdateRoleAsync(Id<RoleReference> roleId, string name, string? description, IReadOnlyCollection<string> permissionClaims, CancellationToken cancellationToken = default)
             => Task.FromResult(Result<Unit, AppError>.Success(Unit.Value));
 
-        public Task<Result<Unit, AppError>> DeleteRoleAsync(Id<Domain.Entities.Role> roleId, CancellationToken cancellationToken = default)
+        public Task<Result<Unit, AppError>> DeleteRoleAsync(Id<RoleReference> roleId, CancellationToken cancellationToken = default)
             => Task.FromResult(Result<Unit, AppError>.Success(Unit.Value));
 
-        public List<PermissionClaimLookupResult> GetAvailablePermissionClaims()
-            => new();
+        public IReadOnlyList<PermissionClaimProjection> GetAvailablePermissionClaims() => [];
 
-        public Task<Result<Unit, AppError>> UpdateUserRolesAsync(Id<Domain.Entities.User> userId, IReadOnlyCollection<string> roleNames, CancellationToken cancellationToken = default)
+        public Task<Result<Unit, AppError>> UpdateUserRolesAsync(Id<AccountReference> userId, IReadOnlyCollection<string> roleNames, CancellationToken cancellationToken = default)
             => UpdateUserRolesHandler?.Invoke(userId, roleNames, cancellationToken)
                ?? Task.FromResult(Result<Unit, AppError>.Success(Unit.Value));
 
-        public Task<Result<Pagination<RoleResult>, AppError>> GetRolesPaginatedAsync(FilterInput filterInput, CancellationToken cancellationToken = default)
-            => Task.FromResult(Result<Pagination<RoleResult>, AppError>.Success(new Pagination<RoleResult>()));
+        public Task<Result<Pagination<RoleProjection>, AppError>> GetRolesPaginatedAsync(FilterInput filterInput, CancellationToken cancellationToken = default)
+            => Task.FromResult(Result<Pagination<RoleProjection>, AppError>.Success(new Pagination<RoleProjection>()));
     }
 }

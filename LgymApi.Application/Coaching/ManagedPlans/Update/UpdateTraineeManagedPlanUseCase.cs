@@ -10,12 +10,12 @@ namespace LgymApi.Application.Coaching.ManagedPlans.Update;
 
 internal sealed class UpdateTraineeManagedPlanUseCase : IUpdateTraineeManagedPlanUseCase
 {
-    private readonly ICoachingRelationshipAccessService _relationshipAccess;
+    private readonly IMarkerCoachingRelationshipAccessService _relationshipAccess;
     private readonly OwnerUpdateUseCase _owner;
     private readonly IMapper _mapper;
 
     public UpdateTraineeManagedPlanUseCase(
-        ICoachingRelationshipAccessService relationshipAccess,
+        IMarkerCoachingRelationshipAccessService relationshipAccess,
         OwnerUpdateUseCase owner,
         IMapper mapper)
     {

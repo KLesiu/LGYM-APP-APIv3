@@ -22,7 +22,7 @@ public sealed class EloRegistryService : IEloRegistryService
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<Result<List<EloRegistryChartEntry>, AppError>> GetChartAsync(Id<LgymApi.Domain.Entities.User> userId, CancellationToken cancellationToken = default)
+    public async Task<Result<List<EloRegistryChartEntry>, AppError>> GetChartAsync(Id<LgymApi.Identity.Contracts.AccountReference> userId, CancellationToken cancellationToken = default)
     {
         var result = await _progress.GetEloChartAsync(userId, cancellationToken);
         return result.IsFailure
@@ -47,15 +47,19 @@ public sealed class EloRegistryService : IEloRegistryService
             return Result<Unit, AppError>.Failure(registration.Error);
         }
 
-        await _progress.InitializeEloAsync(registration.Value, cancellationToken);
+        var accountId = registration.Value.Rebind<LgymApi.Identity.Contracts.AccountReference>();
+        await _progress.InitializeEloAsync(accountId, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Result<Unit, AppError>.Success(Unit.Value);
     }
 
-    public async Task PopulateLatestEloAsync(UserInfoResult userInfo, CancellationToken cancellationToken = default)
-        => userInfo.Elo = await _progress.GetLatestEloOrDefaultAsync(userInfo.Id, cancellationToken);
-
-    public Task<Result<int, AppError>> GetUserEloAsync(Id<LgymApi.Domain.Entities.User> userId, CancellationToken cancellationToken = default)
+    public Task<Result<int, AppError>> GetUserEloAsync(Id<LgymApi.Identity.Contracts.AccountReference> userId, CancellationToken cancellationToken = default)
         => _progress.GetLatestEloAsync(userId, cancellationToken);
+
+    public async Task PopulateLatestEloAsync(UserInfoResult userInfo, CancellationToken cancellationToken = default)
+        => userInfo.Elo = await _progress.GetLatestEloOrDefaultAsync(userInfo.Id.Rebind<LgymApi.Identity.Contracts.AccountReference>(), cancellationToken);
+
+    public Task<int> GetLatestEloOrDefaultAsync(Id<LgymApi.Identity.Contracts.AccountReference> accountId, CancellationToken cancellationToken = default)
+        => _progress.GetLatestEloOrDefaultAsync(accountId, cancellationToken);
 }

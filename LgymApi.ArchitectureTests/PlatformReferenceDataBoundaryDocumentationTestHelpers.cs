@@ -110,10 +110,10 @@ internal static class PlatformReferenceDataBoundaryDocumentationTestHelpers
     internal static bool MethodInvokes(string sourcePath, string methodName, string invocationName)
     {
         var root = CSharpSyntaxTree.ParseText(File.ReadAllText(sourcePath), path: sourcePath).GetCompilationUnitRoot();
-        var method = root.DescendantNodes().OfType<MethodDeclarationSyntax>()
-            .Single(candidate => candidate.Identifier.ValueText == methodName);
-        return method.DescendantNodes().OfType<InvocationExpressionSyntax>()
-            .Any(invocation => GetInvocationName(invocation) == invocationName);
+        return root.DescendantNodes().OfType<MethodDeclarationSyntax>()
+            .Where(candidate => candidate.Identifier.ValueText == methodName)
+            .Any(method => method.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                .Any(invocation => GetInvocationName(invocation) == invocationName));
     }
 
     private static List<string> ParseCells(string line)

@@ -17,6 +17,9 @@ public sealed class ModulePersistenceOwnershipGuardTests
 
     private static readonly CanonicalRepositoryRegistration[] CanonicalRepositoryRegistrations =
     {
+        new("IPlanRepository", "PlanRepository", "TrainingPlanning"),
+        new("IPlanDayRepository", "PlanDayRepository", "TrainingPlanning"),
+        new("IPlanDayExerciseRepository", "PlanDayExerciseRepository", "TrainingPlanning"),
         new("IExerciseRepository", "ExerciseRepository", "WorkoutProgress"),
         new("ITrainingRepository", "TrainingRepository", "WorkoutProgress"),
         new("ITrainingExerciseScoreRepository", "TrainingExerciseScoreRepository", "WorkoutProgress"),
@@ -25,6 +28,9 @@ public sealed class ModulePersistenceOwnershipGuardTests
         new("IGymRepository", "GymRepository", "WorkoutProgress"),
         new("IEloRegistryRepository", "EloRegistryRepository", "WorkoutProgress"),
         new("IMainRecordRepository", "MainRecordRepository", "WorkoutProgress"),
+        new("IPushInstallationRepository", "PushInstallationRepository", "Notifications"),
+        new("IPushNotificationMessageRepository", "PushNotificationMessageRepository", "Notifications"),
+        new("IInAppNotificationRepository", "InAppNotificationRepository", "Notifications"),
         new("IEmailNotificationLogRepository", "EmailNotificationLogRepository", "Notifications"),
         new("IEmailNotificationSubscriptionRepository", "EmailNotificationSubscriptionRepository", "Notifications"),
         new("IDietPlanPersistence", "DietPlanPersistenceRepository", "Nutrition"),
@@ -37,18 +43,36 @@ public sealed class ModulePersistenceOwnershipGuardTests
         var parseOptions = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var infrastructureFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Infrastructure");
+        var notificationsFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Notifications");
 
+        var trainingPlanningFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.TrainingPlanning");
         var repositoryFiles = infrastructureFiles
+            .Concat(notificationsFiles)
+            .Concat(trainingPlanningFiles)
             .Where(path => Path.GetFileName(path).EndsWith("Repository.cs", StringComparison.Ordinal))
             .ToList();
         var serviceExtensionFiles = infrastructureFiles
             .Where(path => Path.GetFileName(path).EndsWith("ServiceCollectionExtensions.cs", StringComparison.Ordinal))
+            .Concat(notificationsFiles.Where(path => Path.GetFileName(path).Equals("ServiceCollectionExtensions.cs", StringComparison.Ordinal)))
+            .Concat(trainingPlanningFiles.Where(path => Path.GetFileName(path).Equals("TrainingPlanningModule.cs", StringComparison.Ordinal)))
             .ToList();
         var configurationFiles = infrastructureFiles
             .Where(path =>
                 ArchitectureTestHelpers.NormalizePath(path).Contains("/Data/Configurations/", StringComparison.OrdinalIgnoreCase) &&
                 Path.GetFileName(path).EndsWith("EntityTypeConfiguration.cs", StringComparison.Ordinal))
             .ToList();
+        configurationFiles.AddRange(ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Platform")
+            .Where(path => ArchitectureTestHelpers.NormalizePath(path).Contains("/Persistence/Configurations/", StringComparison.OrdinalIgnoreCase) &&
+                           Path.GetFileName(path).EndsWith("EntityTypeConfiguration.cs", StringComparison.Ordinal)));
+        configurationFiles.AddRange(ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Identity")
+            .Where(path => ArchitectureTestHelpers.NormalizePath(path).Contains("/Persistence/Configurations/", StringComparison.OrdinalIgnoreCase) &&
+                            Path.GetFileName(path).EndsWith("EntityTypeConfiguration.cs", StringComparison.Ordinal)));
+        configurationFiles.AddRange(notificationsFiles
+            .Where(path => ArchitectureTestHelpers.NormalizePath(path).Contains("/Persistence/Configurations/", StringComparison.OrdinalIgnoreCase) &&
+                           Path.GetFileName(path).EndsWith("EntityTypeConfiguration.cs", StringComparison.Ordinal)));
+        configurationFiles.AddRange(trainingPlanningFiles
+            .Where(path => ArchitectureTestHelpers.NormalizePath(path).Contains("/Persistence/Configurations/", StringComparison.OrdinalIgnoreCase) &&
+                           Path.GetFileName(path).EndsWith("EntityTypeConfiguration.cs", StringComparison.Ordinal)));
         var registrarFiles = infrastructureFiles
             .Where(path => Path.GetFileName(path).Equals("AppDbContextEntityTypeConfigurationRegistrar.cs", StringComparison.Ordinal))
             .ToList();
@@ -65,7 +89,13 @@ public sealed class ModulePersistenceOwnershipGuardTests
         var repositoryDeclarations = CollectRepositoryDeclarations(repositoryFiles, parseOptions);
         var registrations = CollectRegistrations(serviceExtensionFiles, parseOptions);
         var configurationDeclarations = CollectConfigurationDeclarations(configurationFiles, parseOptions);
-        var registeredConfigurations = CollectRegisteredConfigurations(registrarFiles.Single(), parseOptions);
+        var identityRegistrarFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Identity")
+            .Where(path => Path.GetFileName(path).Equals("IdentityModelConfigurationRegistrar.cs", StringComparison.Ordinal));
+        var trainingPlanningRegistrarFiles = trainingPlanningFiles
+            .Where(path => Path.GetFileName(path).Equals("TrainingPlanningModelConfigurationRegistrar.cs", StringComparison.Ordinal));
+        var notificationsRegistrarFiles = notificationsFiles
+            .Where(path => Path.GetFileName(path).Equals("NotificationsModelConfigurationRegistrar.cs", StringComparison.Ordinal));
+        var registeredConfigurations = CollectRegisteredConfigurations(registrarFiles.Concat(identityRegistrarFiles).Concat(trainingPlanningRegistrarFiles).Concat(notificationsRegistrarFiles), parseOptions);
 
         var rootRegistrations = registrations
             .Where(registration => registration.Module is null)
@@ -112,7 +142,7 @@ public sealed class ModulePersistenceOwnershipGuardTests
         Assert.That(
             missingRepositories,
             Is.Empty,
-            "Every repository must be registered in Infrastructure ServiceCollectionExtensions." + Environment.NewLine +
+            "Every repository must be registered in module-owned ServiceCollectionExtensions." + Environment.NewLine +
             string.Join(Environment.NewLine, missingRepositories.Select(m => m.ToString())));
 
         var unownedConfigurations = configurationDeclarations
@@ -209,6 +239,14 @@ public sealed class ModulePersistenceOwnershipGuardTests
         var configurationFiles = infrastructureFiles.Where(path =>
             ArchitectureTestHelpers.NormalizePath(path).Contains("/Data/Configurations/", StringComparison.OrdinalIgnoreCase) &&
             Path.GetFileName(path).EndsWith("EntityTypeConfiguration.cs", StringComparison.Ordinal));
+        configurationFiles = configurationFiles.Concat(ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Platform")
+            .Where(path => ArchitectureTestHelpers.NormalizePath(path).Contains("/Persistence/Configurations/", StringComparison.OrdinalIgnoreCase) && Path.GetFileName(path).EndsWith("EntityTypeConfiguration.cs", StringComparison.Ordinal)));
+        configurationFiles = configurationFiles.Concat(ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Identity")
+            .Where(path => ArchitectureTestHelpers.NormalizePath(path).Contains("/Persistence/Configurations/", StringComparison.OrdinalIgnoreCase) && Path.GetFileName(path).EndsWith("EntityTypeConfiguration.cs", StringComparison.Ordinal)));
+        configurationFiles = configurationFiles.Concat(ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.TrainingPlanning")
+            .Where(path => ArchitectureTestHelpers.NormalizePath(path).Contains("/Persistence/Configurations/", StringComparison.OrdinalIgnoreCase) && Path.GetFileName(path).EndsWith("EntityTypeConfiguration.cs", StringComparison.Ordinal)));
+        configurationFiles = configurationFiles.Concat(ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Notifications")
+            .Where(path => ArchitectureTestHelpers.NormalizePath(path).Contains("/Persistence/Configurations/", StringComparison.OrdinalIgnoreCase) && Path.GetFileName(path).EndsWith("EntityTypeConfiguration.cs", StringComparison.Ordinal)));
         var configurations = CollectConfigurationDeclarations(
             configurationFiles,
             CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest));
@@ -227,6 +265,11 @@ public sealed class ModulePersistenceOwnershipGuardTests
         yield return new TestCaseData("AppConfigEntityTypeConfiguration", typeof(AppConfig));
         yield return new TestCaseData("ExerciseEntityTypeConfiguration", typeof(Exercise));
         yield return new TestCaseData("ExerciseTranslationEntityTypeConfiguration", typeof(ExerciseTranslation));
+        yield return new TestCaseData("PushInstallationEntityTypeConfiguration", typeof(PushInstallation));
+        yield return new TestCaseData("PushNotificationMessageEntityTypeConfiguration", typeof(PushNotificationMessage));
+        yield return new TestCaseData("NotificationMessageEntityTypeConfiguration", typeof(NotificationMessage));
+        yield return new TestCaseData("EmailNotificationSubscriptionEntityTypeConfiguration", typeof(EmailNotificationSubscription));
+        yield return new TestCaseData("InAppNotificationEntityTypeConfiguration", typeof(InAppNotification));
     }
 
     private static IEnumerable<TestCaseData> InvalidCanonicalRepositoryRegistrationFixtures()
@@ -245,7 +288,7 @@ public sealed class ModulePersistenceOwnershipGuardTests
                         "EloRegistryRepository",
                         "Identity",
                         "AddScoped",
-                        "IdentityServiceCollectionExtensions.cs")
+                        "IdentityModule.cs")
                 },
                 "IEloRegistryRepository -> EloRegistryRepository: expected AddScoped in WorkoutProgress; actual AddScoped in Identity."))
             .SetName("Canonical_Repository_Registration_Guard_Should_Reject_Old_Module_Fixture");
@@ -445,15 +488,15 @@ public sealed class ModulePersistenceOwnershipGuardTests
         return declarations;
     }
 
-    private static HashSet<string> CollectRegisteredConfigurations(string registrarFile, CSharpParseOptions parseOptions)
+    private static HashSet<string> CollectRegisteredConfigurations(IEnumerable<string> registrarFiles, CSharpParseOptions parseOptions)
     {
-        var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(registrarFile), parseOptions, registrarFile);
-        var root = tree.GetCompilationUnitRoot();
-
-        return root.DescendantNodes()
+        return registrarFiles
+            .SelectMany(registrarFile => CSharpSyntaxTree.ParseText(File.ReadAllText(registrarFile), parseOptions, registrarFile)
+                .GetCompilationUnitRoot()
+                .DescendantNodes()
             .OfType<ObjectCreationExpressionSyntax>()
             .Select(objectCreation => NormalizeType(objectCreation.Type))
-            .Where(typeName => typeName.EndsWith("EntityTypeConfiguration", StringComparison.Ordinal))
+            .Where(typeName => typeName.EndsWith("EntityTypeConfiguration", StringComparison.Ordinal)))
             .ToHashSet(StringComparer.Ordinal);
     }
 

@@ -7,6 +7,10 @@ using LgymApi.Application.WorkoutProgress.Contracts.ReportingIntegration;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using WorkoutAcceptedProgressEvent = LgymApi.Application.WorkoutProgress.Contracts.ReportingIntegration.ReportSubmissionAcceptedProgressEvent;
+using WorkoutAcceptedProgressIdempotencyKeys = LgymApi.Application.WorkoutProgress.Contracts.ReportingIntegration.ReportSubmissionAcceptedProgressIdempotencyKeys;
+using WorkoutAcceptedMeasurement = LgymApi.Application.WorkoutProgress.Contracts.ReportingIntegration.ReportSubmissionAcceptedMeasurement;
 
 namespace LgymApi.UnitTests;
 
@@ -15,43 +19,43 @@ public sealed class ReportSubmissionAcceptedProgressContractTests
 {
     private static readonly string[] EventFieldNames =
     [
-        nameof(ReportSubmissionAcceptedProgressEvent.SchemaVersion),
-        nameof(ReportSubmissionAcceptedProgressEvent.EventId),
-        nameof(ReportSubmissionAcceptedProgressEvent.ReportSubmissionId),
-        nameof(ReportSubmissionAcceptedProgressEvent.CorrelationId),
-        nameof(ReportSubmissionAcceptedProgressEvent.CausationId),
-        nameof(ReportSubmissionAcceptedProgressEvent.TraineeId),
-        nameof(ReportSubmissionAcceptedProgressEvent.ObservedAt),
-        nameof(ReportSubmissionAcceptedProgressEvent.AcceptedAt),
-        nameof(ReportSubmissionAcceptedProgressEvent.Measurements)
+        nameof(ReportSubmissionAcceptedProgressPayload.SchemaVersion),
+        nameof(ReportSubmissionAcceptedProgressPayload.EventId),
+        nameof(ReportSubmissionAcceptedProgressPayload.ReportSubmissionId),
+        nameof(ReportSubmissionAcceptedProgressPayload.CorrelationId),
+        nameof(ReportSubmissionAcceptedProgressPayload.CausationId),
+        nameof(ReportSubmissionAcceptedProgressPayload.TraineeId),
+        nameof(ReportSubmissionAcceptedProgressPayload.ObservedAt),
+        nameof(ReportSubmissionAcceptedProgressPayload.AcceptedAt),
+        nameof(ReportSubmissionAcceptedProgressPayload.Measurements)
     ];
 
     [Test]
-    public void Event_ExposesOnlyPrivacyMinimizedFieldsAndSerializesStably()
+    public void Payload_ExposesOnlyPrivacyMinimizedFieldsAndSerializesStably()
     {
-        var @event = CreateValidEvent();
+        var payload = CreateValidPayload();
 
-        GetOrderedPropertyNames<ReportSubmissionAcceptedProgressEvent>().Should().Equal(EventFieldNames);
-        JsonSerializer.Serialize(@event, SharedSerializationOptions.Current).Should().Be(
+        GetOrderedPropertyNames<ReportSubmissionAcceptedProgressPayload>().Should().Equal(EventFieldNames);
+        JsonSerializer.Serialize(payload, SharedSerializationOptions.Current).Should().Be(
             "{\"schemaVersion\":1,\"eventId\":\"00000000-0000-0000-0000-000000000001\",\"reportSubmissionId\":\"00000000-0000-0000-0000-000000000002\",\"correlationId\":\"00000000-0000-0000-0000-000000000003\",\"causationId\":\"00000000-0000-0000-0000-000000000004\",\"traineeId\":\"00000000-0000-0000-0000-000000000005\",\"observedAt\":\"2026-07-20T08:30:00+00:00\",\"acceptedAt\":\"2026-07-20T08:31:00+00:00\",\"measurements\":[{\"bodyPart\":\"Chest\",\"value\":101.5,\"unit\":\"Centimeters\"}]}");
     }
 
     [Test]
-    public void Event_UsesStableSchemaVersionOne()
+    public void Payload_UsesStableSchemaVersionOne()
     {
-        ReportSubmissionAcceptedProgressEvent.CurrentSchemaVersion.Should().Be(1);
-        CreateValidEvent().SchemaVersion.Should().Be(ReportSubmissionAcceptedProgressEvent.CurrentSchemaVersion);
+        ReportSubmissionAcceptedProgressPayload.CurrentSchemaVersion.Should().Be(1);
+        CreateValidPayload().SchemaVersion.Should().Be(ReportSubmissionAcceptedProgressPayload.CurrentSchemaVersion);
     }
 
     [Test]
     public void Command_NestsTheValidatedEventAndRejectsMissingPayload()
     {
-        var @event = CreateValidEvent();
-        var command = new ReportSubmissionAcceptedProgressCommand { Event = @event };
+        var payload = CreateValidPayload();
+        var command = new ReportSubmissionAcceptedProgressCommand { Event = payload };
 
         command.Validate().IsValid.Should().BeTrue();
         JsonSerializer.Serialize(command, SharedSerializationOptions.Current).Should().Be(
-            $"{{\"event\":{JsonSerializer.Serialize(@event, SharedSerializationOptions.Current)}}}");
+            $"{{\"event\":{JsonSerializer.Serialize(payload, SharedSerializationOptions.Current)}}}");
         var deserializeMissingEvent = () => JsonSerializer.Deserialize<ReportSubmissionAcceptedProgressCommand>(
             "{}",
             SharedSerializationOptions.Current);
@@ -62,15 +66,15 @@ public sealed class ReportSubmissionAcceptedProgressContractTests
     [Test]
     public void IdempotencyKeys_AreDeterministicAndMeasurementKeyUsesCanonicalObservedInstant()
     {
-        var @event = CreateValidEvent();
+        var @event = CreateValidWorkoutEvent();
         var sameInstantWithOffset = @event with { ObservedAt = new DateTimeOffset(2026, 7, 20, 10, 30, 0, TimeSpan.FromHours(2)) };
 
-        ReportSubmissionAcceptedProgressIdempotencyKeys.CreateEventKey(@event)
+        WorkoutAcceptedProgressIdempotencyKeys.CreateEventKey(@event)
             .Should().Be("report-submission-accepted-progress:1:event:00000000-0000-0000-0000-000000000001");
-        ReportSubmissionAcceptedProgressIdempotencyKeys.CreateEventKey(@event)
-            .Should().Be(ReportSubmissionAcceptedProgressIdempotencyKeys.CreateEventKey(@event));
-        ReportSubmissionAcceptedProgressIdempotencyKeys.CreateMeasurementKey(@event, @event.Measurements.Single())
-            .Should().Be(ReportSubmissionAcceptedProgressIdempotencyKeys.CreateMeasurementKey(sameInstantWithOffset, sameInstantWithOffset.Measurements.Single()));
+        WorkoutAcceptedProgressIdempotencyKeys.CreateEventKey(@event)
+            .Should().Be(WorkoutAcceptedProgressIdempotencyKeys.CreateEventKey(@event));
+        WorkoutAcceptedProgressIdempotencyKeys.CreateMeasurementKey(@event, @event.Measurements.Single())
+            .Should().Be(WorkoutAcceptedProgressIdempotencyKeys.CreateMeasurementKey(sameInstantWithOffset, sameInstantWithOffset.Measurements.Single()));
     }
 
     [Test]
@@ -90,54 +94,74 @@ public sealed class ReportSubmissionAcceptedProgressContractTests
     }
 
     [Test]
-    public void Event_RejectsMalformedOrEmptyStableIdentifiers()
+    public void Payload_RejectsMalformedOrEmptyStableIdentifiers()
     {
-        var @event = CreateValidEvent();
+        var payload = CreateValidPayload();
         var validations = new[]
         {
-            @event with { EventId = "not-an-id" },
-            @event with { EventId = string.Empty },
-            @event with { ReportSubmissionId = "not-an-id" },
-            @event with { CorrelationId = "not-an-id" },
-            @event with { CausationId = "not-an-id" },
-            @event with { TraineeId = default }
-        }.Select(invalidEvent => invalidEvent.Validate());
+            payload with { EventId = "not-an-id" },
+            payload with { EventId = string.Empty },
+            payload with { ReportSubmissionId = "not-an-id" },
+            payload with { CorrelationId = "not-an-id" },
+            payload with { CausationId = "not-an-id" },
+            payload with { TraineeId = default }
+        }.Select(invalidPayload => invalidPayload.Validate());
 
         validations.Should().OnlyContain(validation =>
-            validation.Outcome == ReportSubmissionAcceptedProgressValidationOutcome.Invalid);
+            validation.Outcome == ReportSubmissionAcceptedProgressPayloadValidationOutcome.Invalid);
     }
 
     [TestCase(double.NaN)]
     [TestCase(0d)]
     [TestCase(-1d)]
-    public void Event_RejectsInvalidMeasurementValues(double value)
+    public void Payload_RejectsInvalidMeasurementValues(double value)
     {
-        var invalidMeasurement = new ReportSubmissionAcceptedMeasurement(BodyParts.Chest, value, MeasurementUnits.Centimeters);
-        var validation = (CreateValidEvent() with { Measurements = [invalidMeasurement] }).Validate();
+        var invalidMeasurement = new ReportSubmissionAcceptedProgressMeasurement(BodyParts.Chest, value, MeasurementUnits.Centimeters);
+        var validation = (CreateValidPayload() with { Measurements = [invalidMeasurement] }).Validate();
 
-        validation.Outcome.Should().Be(ReportSubmissionAcceptedProgressValidationOutcome.Invalid);
+        validation.Outcome.Should().Be(ReportSubmissionAcceptedProgressPayloadValidationOutcome.Invalid);
     }
 
     [Test]
-    public void Event_RejectsUnsupportedSchemaVersion()
+    public void Payload_RejectsUnsupportedSchemaVersion()
     {
-        var validation = (CreateValidEvent() with { SchemaVersion = 2 }).Validate();
+        var validation = (CreateValidPayload() with { SchemaVersion = 2 }).Validate();
 
-        validation.Outcome.Should().Be(ReportSubmissionAcceptedProgressValidationOutcome.UnsupportedSchema);
+        validation.Outcome.Should().Be(ReportSubmissionAcceptedProgressPayloadValidationOutcome.UnsupportedSchema);
     }
 
-    private static ReportSubmissionAcceptedProgressEvent CreateValidEvent()
+    private static ReportSubmissionAcceptedProgressPayload CreateValidPayload()
     {
-        return new ReportSubmissionAcceptedProgressEvent(
+        return new ReportSubmissionAcceptedProgressPayload(
             1,
             "00000000-0000-0000-0000-000000000001",
             "00000000-0000-0000-0000-000000000002",
             "00000000-0000-0000-0000-000000000003",
             "00000000-0000-0000-0000-000000000004",
-            ParseId<User>("00000000-0000-0000-0000-000000000005"),
+            ParseId<AccountReference>("00000000-0000-0000-0000-000000000005"),
             new DateTimeOffset(2026, 7, 20, 8, 30, 0, TimeSpan.Zero),
             new DateTimeOffset(2026, 7, 20, 8, 31, 0, TimeSpan.Zero),
-            [new ReportSubmissionAcceptedMeasurement(BodyParts.Chest, 101.5, MeasurementUnits.Centimeters)]);
+            [new ReportSubmissionAcceptedProgressMeasurement(BodyParts.Chest, 101.5, MeasurementUnits.Centimeters)]);
+    }
+
+    private static WorkoutAcceptedProgressEvent CreateValidWorkoutEvent()
+    {
+        var payload = CreateValidPayload();
+        return new WorkoutAcceptedProgressEvent(
+            payload.SchemaVersion,
+            payload.EventId,
+            payload.ReportSubmissionId,
+            payload.CorrelationId,
+            payload.CausationId,
+            payload.TraineeId,
+            payload.ObservedAt,
+            payload.AcceptedAt,
+            payload.Measurements
+                .Select(measurement => new WorkoutAcceptedMeasurement(
+                    measurement.BodyPart,
+                    measurement.Value,
+                    measurement.Unit))
+                .ToArray());
     }
 
     private static string[] GetOrderedPropertyNames<T>()

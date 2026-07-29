@@ -1,9 +1,9 @@
 using LgymApi.Application.Features.Measurements;
-using LgymApi.Application.Identity.Contracts.Access;
 using LgymApi.Application.WorkoutProgress.Contracts.Measurements;
 using LgymApi.Application.WorkoutProgress.ProgressData;
-using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -26,8 +26,8 @@ public sealed class MeasurementsCoachingAuthorizationBoundaryGuardTests
             Assert.That(method.ReturnType, Is.EqualTo(typeof(Task<bool>)));
             Assert.That(parameters.Select(parameter => parameter.ParameterType), Is.EqualTo(new[]
             {
-                typeof(Id<User>),
-                typeof(Id<User>),
+                typeof(Id<AccountReference>),
+                typeof(Id<AccountReference>),
                 typeof(CancellationToken)
             }));
         });
@@ -39,24 +39,16 @@ public sealed class MeasurementsCoachingAuthorizationBoundaryGuardTests
         var serviceDependencies = typeof(MeasurementsService).GetConstructors().Single().GetParameters()
             .Select(parameter => parameter.ParameterType)
             .ToArray();
-        var dependencyBagTypes = typeof(IMeasurementsServiceDependencies).GetProperties()
-            .Select(property => property.PropertyType)
-            .ToArray();
-
         Assert.Multiple(() =>
         {
             Assert.That(serviceDependencies, Is.EqualTo(new[]
             {
                 typeof(IWorkoutProgressReadWriteService),
-                typeof(IUserAccessReadService),
+                typeof(IAccountAccessReader),
                 typeof(IMeasurementsRelationshipAccessPort)
             }));
-            Assert.That(dependencyBagTypes, Does.Contain(typeof(IUserAccessReadService)));
-            Assert.That(dependencyBagTypes, Does.Contain(typeof(IMeasurementsRelationshipAccessPort)));
             Assert.That(serviceDependencies.Select(type => type.Name), Does.Not.Contain("IRoleRepository"));
             Assert.That(serviceDependencies.Select(type => type.Name), Does.Not.Contain("ITrainerRelationshipRepository"));
-            Assert.That(dependencyBagTypes.Select(type => type.Name), Does.Not.Contain("IRoleRepository"));
-            Assert.That(dependencyBagTypes.Select(type => type.Name), Does.Not.Contain("ITrainerRelationshipRepository"));
         });
     }
 

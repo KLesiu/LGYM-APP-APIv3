@@ -461,7 +461,7 @@ public sealed class CoachingTraineeNoteSliceTests
         access.GetAccessDecisionAsync(trainerId, traineeId, Arg.Any<CancellationToken>())
             .Returns(new CoachingRelationshipAccessDecision(true, true));
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         services.AddCoachingModule();
         services.AddScoped(_ => database);
         services.AddScoped<ICoachingTraineeNotePersistence, CoachingTraineeNotePersistenceRepository>();
@@ -546,7 +546,7 @@ public sealed class CoachingTraineeNoteSliceTests
         public ServiceCollection CreateServices()
         {
             var services = new ServiceCollection();
-            services.AddApplicationMapping(typeof(IMappingProfile).Assembly);
+            services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
             services.AddCoachingModule();
             services.AddScoped(_ => Access);
             services.AddScoped(_ => Notes);
