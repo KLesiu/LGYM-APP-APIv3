@@ -9,8 +9,9 @@ This document explains how the backend is structured and how to add a new module
 - `LgymApi.Platform`, `LgymApi.Identity`, `LgymApi.TrainingPlanning`, and `LgymApi.Notifications` - stable module assemblies with public facades, explicit contracts, and internal implementations.
 - `LgymApi.Domain` - core domain types (entities, enums, domain-only helpers).
 - `LgymApi.Infrastructure` - shared persistence and technical runtime (EF Core `AppDbContext`, UoW, migrations, Hangfire persistence, and module context bridges).
-- `LgymApi.UnitTests` - focused unit tests and architecture guard tests.
-- `LgymApi.IntegrationTests` - end-to-end API tests with `WebApplicationFactory` and in-memory database.
+- `LgymApi.UnitTests` - focused unit tests.
+- `LgymApi.ArchitectureTests` - Roslyn-based architecture guards.
+- `LgymApi.IntegrationTests` - end-to-end API tests with `WebApplicationFactory`, in-memory coverage, and prepared PostgreSQL coverage.
 - `LgymApi.Resources` and `LgymApi.Resources.Generator` - localized resources and source generators for strongly-typed message access.
 
 ## 2. Request Flow
@@ -30,7 +31,8 @@ The project uses explicit Unit of Work semantics.
 - Repositories **must not call** `SaveChangesAsync`.
 - Repositories stage operations only (`Add`, `Update`, `Remove`, query methods).
 - Application services own commit timing with `IUnitOfWork.SaveChangesAsync()`.
-- Multi-step write use-cases should use `BeginTransactionAsync()` in the service, with explicit commit/rollback.
+- One `SaveChangesAsync()` is the default atomic boundary for a write use case.
+- Use `BeginTransactionAsync()` only for multiple saves, intermediate flushes, rollback across those saves, or a verified owner-specific requirement.
 - Read-only repository queries should prefer `AsNoTracking()` unless tracking is explicitly needed.
 
 ### Practical implication
@@ -103,57 +105,21 @@ When reviewing mapper changes:
 - `UserContextMiddleware` validates JWT `userId` and `sid` through the Identity marker-contract resolver and places immutable `AuthenticatedAccountContext` into `HttpContext.Items`.
 - New API adapters read marker IDs and facts via `HttpContext.GetAuthenticatedAccountContext()` / `GetCurrentAccountId()`. Middleware and controllers do not materialize a domain user or use a legacy user item.
 
-## 6. How to Add a New Module
+## 6. Contributing a Use Case or Module-Boundary Change
 
-Use this checklist for a new feature module (for example: `Achievements`, `Notifications`, etc.).
+Start with the canonical owner and follow the conditional layouts in the [Module Contribution Guide](MODULE_CONTRIBUTION_GUIDE.md). Edit only the seams that the owner and use case need, whether the owner is an extracted module or an Application-owned capability.
 
-1. **Domain**
-   - Add new entity/enums in `LgymApi.Domain` if needed.
-
-2. **Infrastructure Data Model**
-   - Add `DbSet<T>` in `AppDbContext` when the module introduces a new aggregate root that must be queried directly from the context.
-    - Add relation/config mapping in the owner's explicit persistence-configuration area and preserve its module registrar phase.
-   - Register the new configuration explicitly in `Data/Configurations/AppDbContextEntityTypeConfigurationRegistrar` and preserve the existing fixed order; do not use assembly scanning.
-   - Create and verify EF migration.
-
-3. **Application Contracts**
-   - Add repository interface in `LgymApi.Application/Repositories`.
-   - Add service interface and models under module folder in `LgymApi.Application`.
-
-4. **Infrastructure Implementation**
-   - Implement repository under `LgymApi.Infrastructure/Repositories`.
-   - Keep writes staged only; no direct commit.
-
-5. **Application Service**
-   - Implement use-case logic.
-   - Validate business rules.
-   - Commit with UoW once per use-case.
-   - Use explicit transaction for multi-step write flows.
-
-6. **API Layer**
-   - Add DTO contracts under `Features/<Module>/Contracts`.
-   - Add validators under `Features/<Module>/Validation`.
-   - Add controller under `Features/<Module>/Controllers`.
-   - Keep route and payload naming conventions compatible with existing API style.
-
-7. **Mapping**
-   - Add profile in `LgymApi.Api/Mapping/Profiles`.
-   - Use mapper in controller instead of hand-mapping where practical.
-
-8. **Dependency Injection**
-   - Register service in `LgymApi.Application/ServiceCollectionExtensions.cs`.
-    - Register concrete dependencies in the owning module helper; Infrastructure retains only technical composition and persistence bridges.
-
-9. **Tests**
-   - Add unit tests for service behavior and commit boundaries.
-   - Add integration tests for endpoint contracts and authorization paths.
-   - Ensure architecture guard tests still pass.
+- Retain one `AppDbContext`, PostgreSQL database, and migration stream. Logical ownership never creates a separate physical persistence topology.
+- Preserve existing endpoint routes, verbs, payload shapes, legacy fields, and registered mapping boundaries.
+- Keep repositories stage-only and use the service-owned one-save atomic boundary by default. Use an explicit transaction only for multiple saves, intermediate flushes, rollback across those saves, or a verified owner-specific requirement.
+- Add focused behavior, integration, and architecture coverage, then run the relevant guards for the changed owner and boundary.
 
 ## 7. Testing Conventions
 
-- **Unit tests** validate isolated behavior and architectural guarantees.
-  - Examples in this repository include UoW commit behavior checks and mapper configuration validation.
-- **Integration tests** validate real HTTP behavior with middleware, auth, serialization, and data persistence.
+- **Unit tests** validate isolated behavior.
+   - Examples in this repository include UoW commit behavior checks and mapper configuration validation.
+- **Architecture tests** validate Roslyn-based dependency, boundary, mapping, DI, and persistence guards.
+- **Integration tests** validate real HTTP behavior with middleware, auth, serialization, and data persistence through in-memory and prepared PostgreSQL coverage.
   - Reuse `IntegrationTestBase` helpers for seeding users, setting auth headers, and creating dependent data.
 
 Recommended validation path for new modules:
@@ -281,22 +247,9 @@ Operators can trace this flow with event ID, report submission ID, correlation I
 
 DI registrations are automatically verified by `ServiceRegistrationGuardTests`. If you add a new service class, the build/test pipeline will fail until it is correctly registered in the appropriate `ServiceCollectionExtensions.cs` file.
 
-## 12. Quick Module Skeleton (Minimal)
+## 12. Contribution References
 
-For module `FeatureX`, add:
-
-- `LgymApi.Application/FeatureX/IFeatureXService.cs`
-- `LgymApi.Application/FeatureX/FeatureXService.cs`
-- `LgymApi.Application/Repositories/IFeatureXRepository.cs`
-- `LgymApi.Infrastructure/Repositories/FeatureXRepository.cs`
-- `LgymApi.Api/Features/FeatureX/Controllers/FeatureXController.cs`
-- `LgymApi.Api/Features/FeatureX/Contracts/FeatureXDtos.cs`
-- `LgymApi.Api/Features/FeatureX/Validation/*.cs`
-- `LgymApi.Api/Mapping/Profiles/FeatureXProfile.cs`
-- `LgymApi.UnitTests/FeatureXServiceTests.cs`
-- `LgymApi.IntegrationTests/FeatureXTests.cs`
-
-Then register service/repository in both service collection extension files and add migration if persistence changed.
+Use the [Module Contribution Guide](MODULE_CONTRIBUTION_GUIDE.md) for owner-first contribution workflow, conditional layouts, persistence, compatibility, and verification rules. [NEW_MODULES_USAGE.md](NEW_MODULES_USAGE.md) is feature usage documentation, not a universal implementation template.
 
 ## 13. Modular monolith direction
 

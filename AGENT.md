@@ -35,6 +35,8 @@ Main areas:
 
 Before changing code in a `.csproj` folder, read that assembly's `<ProjectName>.md` if it exists. Before changing architecture, boundaries, DI, mapping, persistence, feature layout, or cross-project flows, also read `docs/ARCHITECTURE.md`.
 
+Before adding or changing a use case or module boundary, read the [module contribution guide](docs/MODULE_CONTRIBUTION_GUIDE.md), `docs/ARCHITECTURE.md`, and the owner project's adjacent doc. `docs/NEW_MODULES_USAGE.md` is feature-usage documentation, not contribution authority.
+
 For any changed `.csproj` folder, update the matching project doc when responsibilities, dependencies, public APIs, important flows, persistence behavior, messaging, configuration, or cross-project interactions change.
 
 ## Mandatory `.csproj` Purpose Rule

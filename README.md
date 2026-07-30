@@ -25,6 +25,8 @@ The solution has 18 projects and 90 direct project references. The authoritative
 - `LgymApi.DataSeeder`, `LgymApi.DataSeeder.Tests`, `LgymApi.UnitTests`, `LgymApi.IntegrationTests`, `LgymApi.ArchitectureTests`, and `LgymApi.TestUtils` provide bootstrap and verification support.
 - Project-level docs live next to each `.csproj` as `<ProjectName>.md`.
 
+For contributor workflow, use the [module contribution guide](docs/MODULE_CONTRIBUTION_GUIDE.md) and [architecture overview](docs/ARCHITECTURE.md). [New modules usage notes](docs/NEW_MODULES_USAGE.md) cover feature and API usage, not contribution workflow.
+
 ## Requirements
 
 - .NET SDK 10.x

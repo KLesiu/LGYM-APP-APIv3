@@ -51,7 +51,7 @@ This file contains the fixed one-owner matrix for the #375 hotspot and cross-fea
 | Table | `EloRegistries` | `Workout & Progress` | ELO registry rows track workout-progress ranking state. | Non-owners use the owning services or read models only. |
 | Seed constant | `RoleSeedDataConfiguration.TesterRoleSeedId` | `Identity & Accounts` | The tester role seed identifier supports account bootstrap and user lookup rules. | Non-owners consume it only through the identity seed path and tests. |
 | Service family | `InAppNotificationService*` | `Notifications` | In-app notification persistence and fan-out are notification concerns. | Non-owners call the notification service or published contracts only. |
-| Dependency bag | `IInAppNotificationServiceDependencies` | `Notifications` | The dependency bag belongs to the in-app notification service family. | Non-owners do not construct the bag or bypass the service. |
+| Retained owner-aligned dependency aggregate | `IInAppNotificationServiceDependencies` | `Notifications` | The dependency bag belongs to the in-app notification service family. | Non-owners do not construct the bag or bypass the service. |
 | Repository contract | `IInAppNotificationRepository` | `Notifications` | In-app notification rows are notification-owned persisted state. | Non-owners consume notifications through the public service or read model. |
 | Publisher contract | `IInAppNotificationPushPublisher` | `Notifications` | Push fan-out from in-app notifications belongs to the notifications boundary. | Non-owners publish only through the notification service workflow. |
 | Bridge contract | `INotificationEventBridge` | `Notifications` | Event bridging for notification fan-out is notification-owned orchestration. | Non-owners receive events through the bridge contract only. |
@@ -64,9 +64,9 @@ This file contains the fixed one-owner matrix for the #375 hotspot and cross-fea
 | Table | `PushInstallations` | `Notifications` | Installation rows are owned by notification registration and cleanup. | Non-owners never mutate the table directly. They use the notification service flow. |
 | Table | `PushNotificationMessages` | `Notifications` | Push message rows are owned by notification delivery. | Non-owners only observe message state through the service contract or read model. |
 | Service family | `ReportingService*` | `Reporting` | Report templates, requests, submissions, and photo handling belong to reporting. | Non-owners use the reporting service or published contracts only. |
-| Dependency bag | `IReportingServiceDependencies` | `Reporting` | The dependency bag belongs to the reporting service family. | Non-owners do not compose the bag themselves. |
+| Retained owner-aligned dependency aggregate | `IReportingServiceDependencies` | `Reporting` | The dependency bag belongs to the reporting service family. | Non-owners do not compose the bag themselves. |
 | Service family | `RecurringReportAssignmentService*` | `Reporting` | Recurring assignment processing is part of reporting orchestration. | Non-owners call the reporting service layer, not the repository set directly. |
-| Dependency bag | `IRecurringReportAssignmentServiceDependencies` | `Reporting` | The dependency bag belongs to the recurring assignment service family. | Non-owners do not construct the bag. |
+| Retained owner-aligned dependency aggregate | `IRecurringReportAssignmentServiceDependencies` | `Reporting` | The dependency bag belongs to the recurring assignment service family. | Non-owners do not construct the bag. |
 | Persistence port | `IReportTemplatePersistence / ReportTemplatePersistenceRepository` | `Reporting` | Template state is exposed to Reporting through marker-safe persistence models. | Non-owners use Reporting services rather than the port. |
 | Persistence port | `IReportRequestSubmissionPersistence / ReportRequestSubmissionPersistenceRepository` | `Reporting` | Request, submission, and feedback state belong to Reporting. | Non-owners use Reporting services or published results. |
 | Persistence port | `IRecurringReportAssignmentPersistence / RecurringReportAssignmentPersistenceRepository` | `Reporting` | Recurring assignment rows belong to Reporting orchestration. | Non-owners reach them only through the Reporting service. |
@@ -82,7 +82,7 @@ This file contains the fixed one-owner matrix for the #375 hotspot and cross-fea
 | Repository contract | `IPlanDayRepository` | `Training Planning` | Plan day persistence belongs to the planning boundary. | Non-owners access plan days through the planning service only. |
 | Table | `Plans` | `Training Planning` | Plan rows are owned by the planning boundary. | Non-owners do not write plans directly. |
 | Service family | `TrainingService*` | `Workout & Progress` | Training, scoring, and workout progress belong to the workout boundary. | Non-owners call the training service or read model only. |
-| Dependency bag | `ITrainingServiceDependencies` | `Workout & Progress` | The dependency bag belongs to the training service family. | Non-owners do not compose the bag themselves. |
+| Retained owner-aligned dependency aggregate | `ITrainingServiceDependencies` | `Workout & Progress` | The dependency bag belongs to the training service family. | Non-owners do not compose the bag themselves. |
 | Repository contract | `IGymRepository` | `Workout & Progress` | Gym data is part of workout and progress tracking. | Non-owners query gyms through the workout service or read model. |
 | Repository contract | `TrainingRepository / ITrainingRepository` | `Workout & Progress` | Training history is owned by the workout boundary. | Non-owners use the training service or read model only. |
 | Repository contract | `IExerciseRepository` | `Workout & Progress` | Exercise lookup is part of workout and progress. | Non-owners use workout-facing service contracts instead of direct repository calls. |
@@ -129,6 +129,7 @@ This file contains the fixed one-owner matrix for the #375 hotspot and cross-fea
 - AppConfig protected operations cross the Identity boundary only through its ID-only authorization port. The Identity adapter owns active-user and `ManageAppConfig` permission checks, while latest-by-platform remains unauthenticated.
 - Reference Data owns the enum lookup service and concrete mappings. API consumers do not duplicate enum formatting.
 - The current project-reference manifest is 18 projects and 90 edges. The completed extraction does not change persisted ownership totals, physical persistence topology, or the single migration stream.
+- The current one-service dependency aggregates are accepted compatibility seams. New broad, shared, or cross-module construction bags, service-locator wrappers, and aggregates that bypass focused contracts are prohibited and are not templates for new work.
 
 ## Persisted Entity Ownership Catalog
 
@@ -195,6 +196,7 @@ If an artifact appears to touch more than one module, the owner is the module th
 
 ## Links
 
+- [Module Contribution Guide](../MODULE_CONTRIBUTION_GUIDE.md)
 - `docs/adr/006-lgym-evolves-as-modular-monolith.md`
 - `docs/modular-monolith/issue-376-module-context-map.md`
 - `docs/modular-monolith/issue-380-background-contract-ownership.md`
