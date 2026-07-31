@@ -184,7 +184,7 @@ internal static partial class ProjectReferenceDocumentationEvidence
             return false;
         }
 
-        var projectPath = Path.Combine(repositoryRoot, row.SourcePath);
+        var projectPath = Path.Combine(repositoryRoot, ArchitectureTestHelpers.ToHostPath(row.SourcePath));
         if (!File.Exists(projectPath))
         {
             return false;
@@ -200,11 +200,13 @@ internal static partial class ProjectReferenceDocumentationEvidence
                 var include = element.Attribute("Include")?.Value;
                 var lineInfo = (IXmlLineInfo)element;
                 return include is not null &&
-                       lineInfo.HasLineInfo() &&
-                       lineInfo.LineNumber == row.Line &&
-                       string.Equals(
-                           Path.GetFileNameWithoutExtension(Path.GetFullPath(include, projectDirectory)),
-                           row.TargetProject,
+                        lineInfo.HasLineInfo() &&
+                        lineInfo.LineNumber == row.Line &&
+                        string.Equals(
+                            Path.GetFileNameWithoutExtension(Path.GetFullPath(
+                                ArchitectureTestHelpers.ToHostPath(include),
+                                projectDirectory)),
+                            row.TargetProject,
                            StringComparison.Ordinal);
             });
     }

@@ -140,7 +140,7 @@ internal static class ProjectReferenceSourceScanner
                 "Analyzer",
                 StringComparison.Ordinal))
             .Select(element => Path.GetFileNameWithoutExtension(Path.GetFullPath(
-                element.Attribute("Include")!.Value,
+                ArchitectureTestHelpers.ToHostPath(element.Attribute("Include")!.Value),
                 projectDirectory)))
             .Select(targetProject => $"{sourceProject} -> {targetProject}");
     }
