@@ -4,7 +4,7 @@ using LgymApi.Api.Features.InAppNotification.Contracts;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Notifications.Models;
-using LgymApi.Application.Task7ApiCompatibility;
+using LgymApi.Notifications.ApiAdapters;
 using NotificationEntity = global::LgymApi.Domain.Entities.InAppNotification;
 using LgymApi.Resources;
 using Microsoft.AspNetCore.Mvc;
@@ -15,10 +15,10 @@ namespace LgymApi.Api.Features.InAppNotification.Controllers;
 [Route("api")]
 public sealed class InAppNotificationController : ControllerBase
 {
-    private readonly IInAppNotificationApiCompatibilityAdapter _notificationService;
+    private readonly IInAppNotificationApiAdapter _notificationService;
     private readonly IMapper _mapper;
 
-    public InAppNotificationController(IInAppNotificationApiCompatibilityAdapter notificationService, IMapper mapper)
+    public InAppNotificationController(IInAppNotificationApiAdapter notificationService, IMapper mapper)
     {
         _notificationService = notificationService;
         _mapper = mapper;

@@ -5,9 +5,8 @@ using LgymApi.Api.Features.User.Controllers;
 using LgymApi.Api.Mapping;
 using LgymApi.Application.Notifications;
 using LgymApi.Application.Repositories;
-using LgymApi.Application.Task7ApiCompatibility;
-using LgymApi.Application.Identity.ApiCompatibility;
 using LgymApi.Identity.Contracts;
+using LgymApi.Notifications.ApiAdapters;
 using LgymApi.Notifications.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
@@ -61,20 +60,52 @@ public sealed class NotificationHostAdapterCompositionTests
         var notificationsAssembly = typeof(NotificationReference).Assembly;
         var notificationContracts = new[]
         {
-            typeof(IInAppNotificationApiCompatibilityAdapter),
-            typeof(INotificationEventApiCompatibilityAdapter),
-            typeof(IAccountPushInstallationApiAdapter),
+            typeof(IInAppNotificationApiAdapter),
+            typeof(INotificationEventApiAdapter),
+            typeof(IPushInstallationApiAdapter),
             typeof(IInAppNotificationPushPublisher)
         };
 
         notificationContracts.Should().OnlyContain(type => type.IsPublic && type.Assembly == notificationsAssembly);
         MappingAssemblyMarkers.All.Should().ContainSingle(assembly => assembly == notificationsAssembly);
         typeof(InAppNotificationController).GetConstructors().Single().GetParameters()
-            .Select(parameter => parameter.ParameterType).Should().Contain(typeof(IInAppNotificationApiCompatibilityAdapter));
+            .Select(parameter => parameter.ParameterType).Should().Contain(typeof(IInAppNotificationApiAdapter));
         typeof(PushNotificationAdminController).GetConstructors().Single().GetParameters()
-            .Select(parameter => parameter.ParameterType).Should().Contain(typeof(INotificationEventApiCompatibilityAdapter));
+            .Select(parameter => parameter.ParameterType).Should().Contain(typeof(INotificationEventApiAdapter));
         typeof(PushInstallationController).GetConstructors().Single().GetParameters()
-            .Select(parameter => parameter.ParameterType).Should().Contain(typeof(IAccountPushInstallationApiAdapter));
+            .Select(parameter => parameter.ParameterType).Should().Contain(typeof(IPushInstallationApiAdapter));
         typeof(SignalRNotificationPushPublisher).GetInterfaces().Should().Contain(typeof(IInAppNotificationPushPublisher));
+    }
+
+    [Test]
+    public void NotificationsApiAdapters_RegisterAndResolveExactlyOnceAsScoped()
+    {
+        var services = new ServiceCollection();
+        services.AddScoped(_ => Substitute.For<IInAppNotificationService>());
+        services.AddScoped(_ => Substitute.For<INotificationEventBridge>());
+        services.AddScoped(_ => Substitute.For<IPushInstallationLifecycleService>());
+        services.AddNotificationsApiAdapters();
+
+        AssertScopedRegistration<IInAppNotificationApiAdapter, InAppNotificationApiAdapter>(services);
+        AssertScopedRegistration<INotificationEventApiAdapter, NotificationEventApiAdapter>(services);
+        AssertScopedRegistration<IPushInstallationApiAdapter, PushInstallationApiAdapter>(services);
+
+        using var provider = services.BuildServiceProvider(validateScopes: true);
+        using var scope = provider.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IInAppNotificationApiAdapter>()
+            .Should().BeOfType<InAppNotificationApiAdapter>();
+        scope.ServiceProvider.GetRequiredService<INotificationEventApiAdapter>()
+            .Should().BeOfType<NotificationEventApiAdapter>();
+        scope.ServiceProvider.GetRequiredService<IPushInstallationApiAdapter>()
+            .Should().BeOfType<PushInstallationApiAdapter>();
+    }
+
+    private static void AssertScopedRegistration<TContract, TImplementation>(IServiceCollection services)
+    {
+        services.Where(descriptor => descriptor.ServiceType == typeof(TContract))
+            .Should().ContainSingle()
+            .Which.Should().Match<ServiceDescriptor>(descriptor =>
+                descriptor.Lifetime == ServiceLifetime.Scoped
+                && descriptor.ImplementationType == typeof(TImplementation));
     }
 }

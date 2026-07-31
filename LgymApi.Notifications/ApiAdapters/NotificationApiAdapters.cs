@@ -7,9 +7,9 @@ using LgymApi.Identity.Contracts;
 using InAppNotificationEntity = LgymApi.Domain.Entities.InAppNotification;
 using UserEntity = LgymApi.Domain.Entities.User;
 
-namespace LgymApi.Application.Task7ApiCompatibility;
+namespace LgymApi.Notifications.ApiAdapters;
 
-public interface IInAppNotificationApiCompatibilityAdapter
+public interface IInAppNotificationApiAdapter
 {
     Task<Result<PagedResult<InAppNotificationResult>, AppError>> GetForAccountAsync(
         Id<AccountReference> accountId,
@@ -40,18 +40,18 @@ public sealed record EnqueueAccountNotificationEventInput(
     Id<InAppNotificationEntity>? InAppNotificationId,
     string? Deeplink);
 
-public interface INotificationEventApiCompatibilityAdapter
+public interface INotificationEventApiAdapter
 {
     Task EnqueueAsync(
         EnqueueAccountNotificationEventInput input,
         CancellationToken cancellationToken = default);
 }
 
-internal sealed class InAppNotificationApiCompatibilityAdapter : IInAppNotificationApiCompatibilityAdapter
+internal sealed class InAppNotificationApiAdapter : IInAppNotificationApiAdapter
 {
     private readonly IInAppNotificationService _notificationService;
 
-    public InAppNotificationApiCompatibilityAdapter(IInAppNotificationService notificationService)
+    public InAppNotificationApiAdapter(IInAppNotificationService notificationService)
     {
         _notificationService = notificationService;
     }
@@ -80,11 +80,11 @@ internal sealed class InAppNotificationApiCompatibilityAdapter : IInAppNotificat
         => _notificationService.GetUnreadCountAsync(accountId.Rebind<UserEntity>(), cancellationToken);
 }
 
-internal sealed class NotificationEventApiCompatibilityAdapter : INotificationEventApiCompatibilityAdapter
+internal sealed class NotificationEventApiAdapter : INotificationEventApiAdapter
 {
     private readonly INotificationEventBridge _notificationEventBridge;
 
-    public NotificationEventApiCompatibilityAdapter(INotificationEventBridge notificationEventBridge)
+    public NotificationEventApiAdapter(INotificationEventBridge notificationEventBridge)
     {
         _notificationEventBridge = notificationEventBridge;
     }

@@ -6,9 +6,9 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 
-namespace LgymApi.Application.Identity.ApiCompatibility;
+namespace LgymApi.Notifications.ApiAdapters;
 
-public interface IAccountPushInstallationApiAdapter
+public interface IPushInstallationApiAdapter
 {
     Task<Result<Unit, AppError>> RegisterAsync(
         Id<AccountReference>? accountId,
@@ -29,8 +29,8 @@ public interface IAccountPushInstallationApiAdapter
         CancellationToken cancellationToken = default);
 }
 
-internal sealed class AccountPushInstallationApiAdapter(
-    IPushInstallationLifecycleService pushInstallationLifecycleService) : IAccountPushInstallationApiAdapter
+internal sealed class PushInstallationApiAdapter(
+    IPushInstallationLifecycleService pushInstallationLifecycleService) : IPushInstallationApiAdapter
 {
     public Task<Result<Unit, AppError>> RegisterAsync(
         Id<AccountReference>? accountId,

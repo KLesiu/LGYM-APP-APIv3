@@ -16,11 +16,12 @@ using LgymApi.Application.Identity.Contracts.Authentication;
 using LgymApi.Application.Identity.Contracts.Profile;
 using LgymApi.Application.Identity.Contracts.Ranking;
 using LgymApi.Application.Identity.Contracts.Sessions;
-using LgymApi.Application.Identity.ApiCompatibility;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Application.WorkoutProgress.Ranking;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Notifications;
+using LgymApi.Notifications.ApiAdapters;
 using NotificationsPushInstallationActionInput = LgymApi.Application.Notifications.Models.PushInstallationActionInput;
 using NotificationsRegisterPushInstallationInput = LgymApi.Application.Notifications.Models.RegisterPushInstallationInput;
 using LgymApi.Domain.Entities;
@@ -297,7 +298,7 @@ public sealed class UserControllerTests
             mapper);
     }
 
-    private static PushInstallationController CreatePushInstallationController(IAccountPushInstallationApiAdapter pushInstallationLifecycleService)
+    private static PushInstallationController CreatePushInstallationController(IPushInstallationApiAdapter pushInstallationLifecycleService)
     {
         var services = new ServiceCollection();
         services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
@@ -326,7 +327,7 @@ public sealed class UserControllerTests
             Task.FromResult(Result<Unit, AppError>.Success(Unit.Value));
     }
 
-    private sealed class StubPushInstallationLifecycleService : IAccountPushInstallationApiAdapter
+    private sealed class StubPushInstallationLifecycleService : IPushInstallationApiAdapter
     {
         public (Id<AccountReference>? CurrentUserId, Id<AccountSessionReference>? SessionId, NotificationsRegisterPushInstallationInput Input)? LastRegistration { get; private set; }
         public (Id<AccountReference>? CurrentUserId, Id<AccountSessionReference>? SessionId, NotificationsPushInstallationActionInput Input)? LastUnregister { get; private set; }

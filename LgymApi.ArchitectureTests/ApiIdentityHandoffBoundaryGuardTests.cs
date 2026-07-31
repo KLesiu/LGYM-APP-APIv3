@@ -136,16 +136,20 @@ public sealed class ApiIdentityHandoffBoundaryGuardTests
     }
 
     [Test]
-    public void ApiComposition_Should_InvokeTask7CompatibilityExactlyOnce()
+    public void ApiComposition_Should_InvokeApplicationApiAdaptersExactlyOnceWithoutTheTransitionalFacade()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var programPath = Path.Combine(repositoryRoot, "LgymApi.Api", "Program.cs");
         var root = CSharpSyntaxTree.ParseText(File.ReadAllText(programPath)).GetCompilationUnitRoot();
-        var callCount = root.DescendantNodes()
+        var currentCallCount = root.DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Count(invocation => GetInvokedMethodName(invocation) == "AddApplicationApiAdapters");
+        var transitionalCallCount = root.DescendantNodes()
             .OfType<InvocationExpressionSyntax>()
             .Count(invocation => GetInvokedMethodName(invocation) == "AddTask7ApiCompatibility");
 
-        Assert.That(callCount, Is.EqualTo(1));
+        Assert.That(currentCallCount, Is.EqualTo(1));
+        Assert.That(transitionalCallCount, Is.Zero);
     }
 
     private static IReadOnlyList<Violation> CollectViolations(
