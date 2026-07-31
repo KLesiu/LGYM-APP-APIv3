@@ -32,24 +32,21 @@ public sealed class Issue395FinalDocumentationTests
         ValidatePartialDisposition(rows);
         ValidateSourceLocators(rows);
         Assert.That(Regex.Matches(verification, "```mermaid", RegexOptions.CultureInvariant).Count, Is.GreaterThanOrEqualTo(2));
-        Assert.That(verification, Does.Contain("clean isolated worktree"));
-        Assert.That(verification, Does.Contain("no claim about a clean-SHA matrix, GitHub status, or a live runtime result"));
+        Assert.That(verification, Does.Contain("clean isolated verifier"));
+        Assert.That(verification, Does.Contain("no GitHub-status or live direct-runtime claim"));
     }
 
     [Test]
-    public void Final_Evidence_Placeholders_Should_Remain_Unfilled_Until_Todo22()
+    public void Final_Evidence_Should_Record_Completed_Todo22()
     {
         var rows = ParseRows(ReadArtifact(VerificationPath));
         var evidenceRows = RequirePrefix(rows, "issue395.evidence.", 5);
 
-        foreach (var row in evidenceRows.Values)
-        {
-            Assert.That(row["Recorded result"], Is.EqualTo(Placeholder), $"{row.Id} must remain unfilled until Todo 22.");
-        }
+        ValidateEvidenceRows(evidenceRows);
     }
 
     [Test]
-    public void Parser_Should_Reject_Stale_Locators_Claims_And_Filled_Placeholders()
+    public void Parser_Should_Reject_Stale_Locators_Claims_And_Unfilled_Evidence()
     {
         var valid = ReadArtifact(VerificationPath);
 
@@ -73,7 +70,7 @@ public sealed class Issue395FinalDocumentationTests
             "| `issue395.namespace.application-compatible` | Established non-Task7 `LgymApi.Application.*` namespaces in extracted owners | Physical owner project | Retained for source or wire compatibility |",
             "| `issue395.namespace.application-compatible` | Established non-Task7 `LgymApi.Application.*` namespaces in extracted owners | Application | Retained for source or wire compatibility |",
             StringComparison.Ordinal))));
-        Assert.Throws<InvalidOperationException>(() => ValidateEvidenceRows(ParseRows(valid.Replace(Placeholder, "passed", StringComparison.Ordinal))));
+        Assert.Throws<AssertionException>(() => ValidateEvidenceRows(RequirePrefix(ParseRows(valid.Replace("matrix=passed", Placeholder, StringComparison.Ordinal)), "issue395.evidence.", 5)));
     }
 
     [Test]
@@ -117,16 +114,21 @@ public sealed class Issue395FinalDocumentationTests
         Assert.That(disposition["issue395.constructor.direct-injection"]["Status"], Does.Contain("High arity accepted"));
     }
 
-    private static void ValidateEvidenceRows(IReadOnlyList<Row> rows)
+    private static void ValidateEvidenceRows(IReadOnlyDictionary<string, Row> evidence)
     {
-        var evidence = RequirePrefix(rows, "issue395.evidence.", 5);
         foreach (var row in evidence.Values)
         {
-            if (row["Recorded result"] != Placeholder)
+            if (row["Recorded result"] == Placeholder)
             {
-                throw new InvalidOperationException($"{row.Id} must remain {Placeholder} until Todo 22.");
+                throw new InvalidOperationException($"{row.Id} must record completed Todo 22 evidence.");
             }
         }
+
+        Assert.That(evidence["issue395.evidence.pr-sha"]["Recorded result"], Does.Contain("tested-sha=9370cc9b36922afc676240f549735d1308d832b4"));
+        Assert.That(evidence["issue395.evidence.main-sha"]["Recorded result"], Does.Contain("main-sha=5cdef880395d6c991b4ea9cb9d7a3b914317e0ae"));
+        Assert.That(evidence["issue395.evidence.matrix"]["Recorded result"], Does.Contain("matrix=passed"));
+        Assert.That(evidence["issue395.evidence.architecture"]["Recorded result"], Does.Contain("Architecture=665/665"));
+        Assert.That(evidence["issue395.evidence.artifacts"]["Recorded result"], Does.Contain("artifact-validation=passed"));
     }
 
     private static void ValidateSourceLocators(IReadOnlyList<Row> rows)
