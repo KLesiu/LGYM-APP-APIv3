@@ -375,7 +375,7 @@ public static class ArchitectureTestHelpers
 
     private static IReadOnlyList<ProjectReferenceEdge> ParseProjectReferences(string projectFilePath, XDocument document)
     {
-        var normalizedProjectPath = NormalizePath(Path.GetFullPath(projectFilePath));
+        var normalizedProjectPath = NormalizePath(Path.GetFullPath(ToHostPath(projectFilePath)));
         var sourceProject = Path.GetFileNameWithoutExtension(normalizedProjectPath);
         var projectDirectory = Path.GetDirectoryName(normalizedProjectPath)!;
 
@@ -384,7 +384,7 @@ public static class ArchitectureTestHelpers
             .Where(element => element.Name.LocalName == "ProjectReference")
             .Select(element => element.Attribute("Include")?.Value)
             .Where(include => !string.IsNullOrWhiteSpace(include))
-            .Select(include => NormalizePath(Path.GetFullPath(include!, projectDirectory)))
+            .Select(include => NormalizePath(Path.GetFullPath(ToHostPath(include!), projectDirectory)))
             .Select(targetPath => new ProjectReferenceEdge(
                 sourceProject,
                 Path.GetFileNameWithoutExtension(targetPath),
@@ -392,6 +392,9 @@ public static class ArchitectureTestHelpers
                 targetPath))
             .ToList();
     }
+
+    private static string ToHostPath(string path) =>
+        path.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
 
     public static IReadOnlyList<string> GetCanonicalModuleCatalog() => CanonicalModuleCatalog;
 

@@ -245,7 +245,8 @@ public sealed class ApplicationBackgroundWorkerDependencyGuardTests
     [TestCaseSource(nameof(ForbiddenProjectReferenceCases))]
     public void ProjectReference_Parser_Rejects_Worker_Project_Variants(string include, string expectedTarget)
     {
-        var projectPath = Path.Combine("C:\\fixture", ApplicationProjectName, $"{ApplicationProjectName}.csproj");
+        var fixtureRoot = Path.GetFullPath("fixture");
+        var projectPath = Path.Combine(fixtureRoot, ApplicationProjectName, $"{ApplicationProjectName}.csproj");
         var projectXml = $$"""
             <Project Sdk="Microsoft.NET.Sdk">
               <ItemGroup>
@@ -254,7 +255,7 @@ public sealed class ApplicationBackgroundWorkerDependencyGuardTests
             </Project>
             """;
         var references = ArchitectureTestHelpers.ParseProjectReferences(projectPath, projectXml);
-        var violations = FindForbiddenProjectReferences(references, "C:\\fixture");
+        var violations = FindForbiddenProjectReferences(references, fixtureRoot);
 
         Assert.Multiple(() =>
         {
@@ -271,7 +272,8 @@ public sealed class ApplicationBackgroundWorkerDependencyGuardTests
     [Test]
     public void ProjectReference_Parser_Allows_Similar_NonWorker_Project_Names()
     {
-        var projectPath = Path.Combine("C:\\fixture", ApplicationProjectName, $"{ApplicationProjectName}.csproj");
+        var fixtureRoot = Path.GetFullPath("fixture");
+        var projectPath = Path.Combine(fixtureRoot, ApplicationProjectName, $"{ApplicationProjectName}.csproj");
         var projectXml = """
             <Project Sdk="Microsoft.NET.Sdk">
               <ItemGroup>
@@ -282,7 +284,7 @@ public sealed class ApplicationBackgroundWorkerDependencyGuardTests
             """;
         var references = ArchitectureTestHelpers.ParseProjectReferences(projectPath, projectXml);
 
-        Assert.That(FindForbiddenProjectReferences(references, "C:\\fixture"), Is.Empty);
+        Assert.That(FindForbiddenProjectReferences(references, fixtureRoot), Is.Empty);
     }
 
     [TestCaseSource(nameof(SemanticDependencyCases))]
