@@ -1,30 +1,12 @@
-using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
 
-namespace LgymApi.Application.Identity.Compatibility.Task7.Mapping;
+namespace LgymApi.Application.Nutrition.ApiAdapters;
 
-public sealed class Task7AccountCompatibilityMappingProfile : IMappingProfile
+public sealed class NutritionApiAdapterMappingProfile : IMappingProfile
 {
     public void Configure(MappingConfiguration configuration)
     {
-        configuration.CreateMap<PlanCreateAccountCommand, LgymApi.Application.TrainingPlanning.Plan.CreatePlan.CreatePlanCommand>((source, _) => new(source.CurrentAccountId, source.RouteAccountId, source.Name));
-        configuration.CreateMap<PlanUpdateAccountCommand, LgymApi.Application.TrainingPlanning.Plan.UpdatePlan.UpdatePlanCommand>((source, _) => new(source.CurrentAccountId, source.RouteAccountId, source.PlanId.Rebind<LgymApi.TrainingPlanning.Contracts.PlanReference>(), source.Name));
-        configuration.CreateMap<PlanGetConfigAccountQuery, LgymApi.Application.TrainingPlanning.Plan.GetPlanConfig.GetPlanConfigQuery>((source, _) => new(source.CurrentAccountId, source.RouteAccountId));
-        configuration.CreateMap<PlanHasAccountQuery, LgymApi.Application.TrainingPlanning.Plan.CheckIsUserHavePlan.CheckIsUserHavePlanQuery>((source, _) => new(source.CurrentAccountId, source.RouteAccountId));
-        configuration.CreateMap<PlanGetListAccountQuery, LgymApi.Application.TrainingPlanning.Plan.GetPlansList.GetPlansListQuery>((source, _) => new(source.CurrentAccountId, source.RouteAccountId));
-        configuration.CreateMap<PlanSetActiveAccountCommand, LgymApi.Application.TrainingPlanning.Plan.SetActivePlan.SetActivePlanCommand>((source, _) => new(source.CurrentAccountId, source.RouteAccountId, source.PlanId.Rebind<LgymApi.TrainingPlanning.Contracts.PlanReference>()));
-        configuration.CreateMap<PlanCopyAccountCommand, LgymApi.Application.TrainingPlanning.Plan.CopyPlan.CopyPlanCommand>((source, _) => new(source.CurrentAccountId, source.ShareCode));
-        configuration.CreateMap<PlanGenerateShareCodeAccountCommand, LgymApi.Application.TrainingPlanning.Plan.GenerateShareCode.GenerateShareCodeCommand>((source, _) => new(source.CurrentAccountId, source.PlanId.Rebind<LgymApi.TrainingPlanning.Contracts.PlanReference>()));
-        configuration.CreateMap<PlanDeleteAccountCommand, LgymApi.Application.TrainingPlanning.Plan.DeletePlan.DeletePlanCommand>((source, _) => new(source.CurrentAccountId, source.PlanId.Rebind<LgymApi.TrainingPlanning.Contracts.PlanReference>()));
-
-        configuration.CreateMap<ManagedPlanListAccountQuery, LgymApi.Application.Coaching.ManagedPlans.List.ListManagedPlansQuery>((source, _) => new(source.TrainerId, source.TraineeId));
-        configuration.CreateMap<ManagedPlanCreateAccountCommand, LgymApi.Application.Coaching.ManagedPlans.Create.CreateTraineeManagedPlanCommand>((source, _) => new(source.TrainerId, source.TraineeId, source.Name));
-        configuration.CreateMap<ManagedPlanUpdateAccountCommand, LgymApi.Application.Coaching.ManagedPlans.Update.UpdateTraineeManagedPlanCommand>((source, _) => new(source.TrainerId, source.TraineeId, source.PlanId.Rebind<LgymApi.TrainingPlanning.Contracts.PlanReference>(), source.Name));
-        configuration.CreateMap<ManagedPlanDeleteAccountCommand, LgymApi.Application.Coaching.ManagedPlans.Delete.DeleteTraineeManagedPlanCommand>((source, _) => new(source.TrainerId, source.TraineeId, source.PlanId.Rebind<LgymApi.TrainingPlanning.Contracts.PlanReference>()));
-        configuration.CreateMap<ManagedPlanAssignAccountCommand, LgymApi.Application.Coaching.ManagedPlans.Assign.AssignTraineeManagedPlanCommand>((source, _) => new(source.TrainerId, source.TraineeId, source.PlanId.Rebind<LgymApi.TrainingPlanning.Contracts.PlanReference>()));
-        configuration.CreateMap<ManagedPlanUnassignAccountCommand, LgymApi.Application.Coaching.ManagedPlans.Unassign.UnassignTraineeManagedPlanCommand>((source, _) => new(source.TrainerId, source.TraineeId));
-
         configuration.CreateMap<DietPlanListAccountQuery, LgymApi.Application.Nutrition.DietPlans.GetTraineePlans.GetTraineeDietPlansQuery>((source, _) => new(source.TrainerId.Rebind<User>(), source.TraineeId.Rebind<User>()));
         configuration.CreateMap<DietPlanGetAccountQuery, LgymApi.Application.Nutrition.DietPlans.GetTraineePlan.GetTraineeDietPlanQuery>((source, _) => new(source.TrainerId.Rebind<User>(), source.TraineeId.Rebind<User>(), source.DietPlanId));
         configuration.CreateMap<DietPlanCreateAccountCommand, LgymApi.Application.Nutrition.DietPlans.CreateTraineePlan.CreateTraineeDietPlanCommand>((source, _) => new(source.TrainerId.Rebind<User>(), source.TraineeId.Rebind<User>(), source.Data));
@@ -34,7 +16,6 @@ public sealed class Task7AccountCompatibilityMappingProfile : IMappingProfile
         configuration.CreateMap<DietPlanHistoryAccountQuery, LgymApi.Application.Nutrition.DietPlans.GetTraineePlanHistory.Models.GetTraineeDietPlanHistoryQuery>((source, _) => new(source.TrainerId.Rebind<User>(), source.TraineeId.Rebind<User>(), source.DietPlanId));
         configuration.CreateMap<DietPlanCurrentAccountQuery, LgymApi.Application.Nutrition.DietPlans.GetCurrentDietPlans.GetCurrentDietPlansQuery>((source, _) => new(source.TraineeId.Rebind<User>()));
         configuration.CreateMap<DietPlanCurrentAccountQuery, LgymApi.Application.Nutrition.DietPlans.GetCurrentDietPlan.GetCurrentDietPlanQuery>((source, _) => new(source.TraineeId.Rebind<User>()));
-
         configuration.CreateMap<SupplementPlanListAccountQuery, LgymApi.Application.Nutrition.Supplementation.GetTraineePlans.GetTraineeSupplementPlansQuery>((source, _) => new(source.TrainerId.Rebind<User>(), source.TraineeId.Rebind<User>()));
         configuration.CreateMap<SupplementPlanCreateAccountCommand, LgymApi.Application.Nutrition.Supplementation.CreateTraineePlan.CreateTraineeSupplementPlanCommand>((source, _) => new(source.TrainerId.Rebind<User>(), source.TraineeId.Rebind<User>(), source.Data));
         configuration.CreateMap<SupplementPlanUpdateAccountCommand, LgymApi.Application.Nutrition.Supplementation.UpdateTraineePlan.UpdateTraineeSupplementPlanCommand>((source, _) => new(source.TrainerId.Rebind<User>(), source.TraineeId.Rebind<User>(), source.PlanId, source.Data));

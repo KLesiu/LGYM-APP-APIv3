@@ -5,7 +5,7 @@ using LgymApi.Api.Middleware;
 using LgymApi.Application.Platform.ReferenceData.AppConfig;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Pagination;
-using LgymApi.Application.Task7ApiCompatibility;
+using LgymApi.Application.Platform.ReferenceData.ApiAdapters;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
 using Microsoft.AspNetCore.Authorization;
@@ -19,12 +19,12 @@ namespace LgymApi.Api.Features.AppConfig.Controllers;
 [Authorize(Policy = AuthConstants.Policies.ManageAppConfig)]
 public sealed class AppConfigAdminController : ControllerBase
 {
-    private readonly IAppConfigApiCompatibilityAdapter _appConfigApiCompatibility;
+    private readonly IAppConfigApiAdapter _appConfigApiAdapter;
     private readonly IMapper _mapper;
 
-    public AppConfigAdminController(IAppConfigApiCompatibilityAdapter appConfigApiCompatibility, IMapper mapper)
+    public AppConfigAdminController(IAppConfigApiAdapter appConfigApiAdapter, IMapper mapper)
     {
-        _appConfigApiCompatibility = appConfigApiCompatibility;
+        _appConfigApiAdapter = appConfigApiAdapter;
         _mapper = mapper;
     }
 
@@ -40,7 +40,7 @@ public sealed class AppConfigAdminController : ControllerBase
             SortDescriptors = request.SortDescriptors
         };
         var accountId = HttpContext.GetCurrentAccountId();
-        var result = await _appConfigApiCompatibility.GetPaginatedAsync(accountId, filterInput, cancellationToken);
+        var result = await _appConfigApiAdapter.GetPaginatedAsync(accountId, filterInput, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -69,7 +69,7 @@ public sealed class AppConfigAdminController : ControllerBase
     {
         var configId = Id<AppConfigEntity>.TryParse(id, out var parsedConfigId) ? parsedConfigId : Id<AppConfigEntity>.Empty;
         var accountId = HttpContext.GetCurrentAccountId();
-        var result = await _appConfigApiCompatibility.GetByIdAsync(accountId, configId, cancellationToken);
+        var result = await _appConfigApiAdapter.GetByIdAsync(accountId, configId, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -94,7 +94,7 @@ public sealed class AppConfigAdminController : ControllerBase
             request.ForceUpdate,
             request.UpdateUrl,
             request.ReleaseNotes);
-        var result = await _appConfigApiCompatibility.UpdateAsync(accountId, configId, input, cancellationToken);
+        var result = await _appConfigApiAdapter.UpdateAsync(accountId, configId, input, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -111,7 +111,7 @@ public sealed class AppConfigAdminController : ControllerBase
     {
         var configId = Id<AppConfigEntity>.TryParse(id, out var parsedConfigId) ? parsedConfigId : Id<AppConfigEntity>.Empty;
         var accountId = HttpContext.GetCurrentAccountId();
-        var result = await _appConfigApiCompatibility.DeleteAsync(accountId, configId, cancellationToken);
+        var result = await _appConfigApiAdapter.DeleteAsync(accountId, configId, cancellationToken);
 
         if (result.IsFailure)
         {

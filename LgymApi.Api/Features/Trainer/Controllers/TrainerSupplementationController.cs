@@ -3,7 +3,7 @@ using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
+using LgymApi.Application.Nutrition.ApiAdapters;
 using LgymApi.Application.Nutrition.Supplementation.Models;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Security;
@@ -20,11 +20,11 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 [Authorize(Policy = AuthConstants.Policies.TrainerAccess)]
 public sealed class TrainerSupplementationController : ControllerBase
 {
-    private readonly ISupplementationAccountCompatibilityAdapter _supplementation;
+    private readonly ISupplementationApiAdapter _supplementation;
     private readonly IMapper _mapper;
 
     public TrainerSupplementationController(
-        ISupplementationAccountCompatibilityAdapter supplementation,
+        ISupplementationApiAdapter supplementation,
         IMapper mapper)
     {
         _supplementation = supplementation;

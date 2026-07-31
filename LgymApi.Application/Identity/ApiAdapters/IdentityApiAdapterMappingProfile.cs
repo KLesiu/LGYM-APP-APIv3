@@ -9,9 +9,9 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 
-namespace LgymApi.Application.Identity.ApiCompatibility;
+namespace LgymApi.Application.Identity.ApiAdapters;
 
-public sealed class IdentityApiCompatibilityMappingProfile : IMappingProfile
+public sealed class IdentityApiAdapterMappingProfile : IMappingProfile
 {
     public void Configure(MappingConfiguration configuration)
     {

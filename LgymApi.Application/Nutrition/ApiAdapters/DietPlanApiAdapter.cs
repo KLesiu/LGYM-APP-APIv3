@@ -1,6 +1,6 @@
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
-using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
+using LgymApi.Application.Nutrition.ApiAdapters;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Nutrition.DietPlans.ActivateTraineePlan.Contracts;
 using LgymApi.Application.Nutrition.DietPlans.ActivateTraineePlan.Models;
@@ -17,9 +17,9 @@ using LgymApi.Application.Nutrition.DietPlans.Models;
 using LgymApi.Application.Nutrition.DietPlans.UpdateTraineePlan;
 using LgymApi.Application.Nutrition.DietPlans.UpdateTraineePlan.Contracts;
 
-namespace LgymApi.Application.Identity.Compatibility.Task7.Adapters;
+namespace LgymApi.Application.Nutrition.ApiAdapters;
 
-internal sealed class DietPlanAccountCompatibilityAdapter : IDietPlanAccountCompatibilityAdapter
+internal sealed class DietPlanApiAdapter : IDietPlanAccountApiAdapter
 {
     private readonly IGetTraineeDietPlansUseCase _list;
     private readonly IGetTraineeDietPlanUseCase _get;
@@ -32,7 +32,7 @@ internal sealed class DietPlanAccountCompatibilityAdapter : IDietPlanAccountComp
     private readonly IGetCurrentDietPlanUseCase _currentPlan;
     private readonly IMapper _mapper;
 
-    public DietPlanAccountCompatibilityAdapter(IGetTraineeDietPlansUseCase list, IGetTraineeDietPlanUseCase get, ICreateTraineeDietPlanUseCase create, IUpdateTraineeDietPlanUseCase update, IActivateTraineeDietPlanUseCase activate, IDeleteTraineeDietPlanUseCase delete, IGetTraineeDietPlanHistoryUseCase history, IGetCurrentDietPlansUseCase currentPlans, IGetCurrentDietPlanUseCase currentPlan, IMapper mapper)
+    public DietPlanApiAdapter(IGetTraineeDietPlansUseCase list, IGetTraineeDietPlanUseCase get, ICreateTraineeDietPlanUseCase create, IUpdateTraineeDietPlanUseCase update, IActivateTraineeDietPlanUseCase activate, IDeleteTraineeDietPlanUseCase delete, IGetTraineeDietPlanHistoryUseCase history, IGetCurrentDietPlansUseCase currentPlans, IGetCurrentDietPlanUseCase currentPlan, IMapper mapper)
     {
         _list = list;
         _get = get;

@@ -2,7 +2,7 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
+using LgymApi.Application.Coaching.ApiAdapters;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Coaching.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
@@ -23,11 +23,11 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 [Authorize(Policy = AuthConstants.Policies.TrainerAccess)]
 public sealed class TrainerManagedPlansController : ControllerBase
 {
-    private readonly IManagedPlanAccountCompatibilityAdapter _plans;
+    private readonly IManagedPlanAccountApiAdapter _plans;
     private readonly IMapper _mapper;
 
     public TrainerManagedPlansController(
-        IManagedPlanAccountCompatibilityAdapter plans,
+        IManagedPlanAccountApiAdapter plans,
         IMapper mapper)
     {
         _plans = plans;

@@ -1,6 +1,6 @@
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
-using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
+using LgymApi.Application.TrainingPlanning.ApiAdapters;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.TrainingPlanning.Plan.CheckIsUserHavePlan;
 using LgymApi.Application.TrainingPlanning.Plan.CopyPlan;
@@ -13,9 +13,9 @@ using LgymApi.Application.TrainingPlanning.Plan.Models;
 using LgymApi.Application.TrainingPlanning.Plan.SetActivePlan;
 using LgymApi.Application.TrainingPlanning.Plan.UpdatePlan;
 
-namespace LgymApi.Application.Identity.Compatibility.Task7.Adapters;
+namespace LgymApi.Application.TrainingPlanning.ApiAdapters;
 
-internal sealed class PlanAccountCompatibilityAdapter : IPlanAccountCompatibilityAdapter
+internal sealed class PlanApiAdapter : IPlanAccountApiAdapter
 {
     private readonly ICreatePlanUseCase _createPlan;
     private readonly IUpdatePlanUseCase _updatePlan;
@@ -28,7 +28,7 @@ internal sealed class PlanAccountCompatibilityAdapter : IPlanAccountCompatibilit
     private readonly ICheckIsUserHavePlanUseCase _hasPlan;
     private readonly IMapper _mapper;
 
-    public PlanAccountCompatibilityAdapter(
+    public PlanApiAdapter(
         ICreatePlanUseCase createPlan,
         IUpdatePlanUseCase updatePlan,
         IDeletePlanUseCase deletePlan,

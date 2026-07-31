@@ -13,7 +13,7 @@ using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 using LgymApi.Application.Identity.Contracts.Accounts;
 
-namespace LgymApi.Application.Identity.ApiCompatibility;
+namespace LgymApi.Application.Identity.ApiAdapters;
 
 internal sealed class AuthenticatedAccountApiAdapter : IAuthenticatedAccountApiAdapter
 {

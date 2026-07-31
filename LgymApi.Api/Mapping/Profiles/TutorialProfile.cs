@@ -1,6 +1,6 @@
 using LgymApi.Api.Features.Tutorial.Contracts;
 using LgymApi.Application.Features.Tutorial.Models;
-using LgymApi.Application.Identity.ApiCompatibility;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Application.Mapping.Core;
 
 namespace LgymApi.Api.Mapping.Profiles;

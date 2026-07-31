@@ -6,7 +6,7 @@ using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 
-namespace LgymApi.Application.Identity.ApiCompatibility;
+namespace LgymApi.Application.Identity.ApiAdapters;
 
 public sealed record AccountRankProjection(string Name, int NeedElo);
 

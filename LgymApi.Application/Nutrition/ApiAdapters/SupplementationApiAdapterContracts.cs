@@ -5,9 +5,9 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 
-namespace LgymApi.Application.Identity.Compatibility.Task7.Contracts;
+namespace LgymApi.Application.Nutrition.ApiAdapters;
 
-public interface ISupplementationAccountCompatibilityAdapter
+public interface ISupplementationApiAdapter
 {
     Task<Result<IReadOnlyList<SupplementPlanReadModel>, AppError>> GetTraineePlansAsync(SupplementPlanListAccountQuery query, CancellationToken cancellationToken = default);
     Task<Result<SupplementPlanReadModel, AppError>> CreateAsync(SupplementPlanCreateAccountCommand command, CancellationToken cancellationToken = default);

@@ -1,6 +1,6 @@
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
-using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
+using LgymApi.Application.Nutrition.ApiAdapters;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Nutrition.Supplementation.AssignTraineePlan;
 using LgymApi.Application.Nutrition.Supplementation.CheckOffIntake.Contracts;
@@ -17,9 +17,9 @@ using LgymApi.Application.Nutrition.Supplementation.UnassignTraineePlan;
 using LgymApi.Application.Nutrition.Supplementation.UnassignTraineePlan.Contracts;
 using LgymApi.Application.Nutrition.Supplementation.UpdateTraineePlan;
 
-namespace LgymApi.Application.Identity.Compatibility.Task7.Adapters;
+namespace LgymApi.Application.Nutrition.ApiAdapters;
 
-internal sealed class SupplementationAccountCompatibilityAdapter : ISupplementationAccountCompatibilityAdapter
+internal sealed class SupplementationApiAdapter : ISupplementationApiAdapter
 {
     private readonly IGetTraineeSupplementPlansUseCase _list;
     private readonly ICreateTraineeSupplementPlanUseCase _create;
@@ -32,7 +32,7 @@ internal sealed class SupplementationAccountCompatibilityAdapter : ISupplementat
     private readonly ICheckOffSupplementIntakeUseCase _checkOff;
     private readonly IMapper _mapper;
 
-    public SupplementationAccountCompatibilityAdapter(IGetTraineeSupplementPlansUseCase list, ICreateTraineeSupplementPlanUseCase create, IUpdateTraineeSupplementPlanUseCase update, IDeleteTraineeSupplementPlanUseCase delete, IAssignTraineeSupplementPlanUseCase assign, IUnassignTraineeSupplementPlanUseCase unassign, IGetSupplementComplianceSummaryUseCase compliance, IGetSupplementScheduleUseCase schedule, ICheckOffSupplementIntakeUseCase checkOff, IMapper mapper)
+    public SupplementationApiAdapter(IGetTraineeSupplementPlansUseCase list, ICreateTraineeSupplementPlanUseCase create, IUpdateTraineeSupplementPlanUseCase update, IDeleteTraineeSupplementPlanUseCase delete, IAssignTraineeSupplementPlanUseCase assign, IUnassignTraineeSupplementPlanUseCase unassign, IGetSupplementComplianceSummaryUseCase compliance, IGetSupplementScheduleUseCase schedule, ICheckOffSupplementIntakeUseCase checkOff, IMapper mapper)
     {
         _list = list;
         _create = create;

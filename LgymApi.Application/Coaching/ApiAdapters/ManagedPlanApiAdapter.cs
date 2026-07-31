@@ -6,13 +6,13 @@ using LgymApi.Application.Coaching.ManagedPlans.Delete;
 using LgymApi.Application.Coaching.ManagedPlans.List;
 using LgymApi.Application.Coaching.ManagedPlans.Unassign;
 using LgymApi.Application.Coaching.ManagedPlans.Update;
-using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
+using LgymApi.Application.Coaching.ApiAdapters;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.TrainingPlanning.Contracts.ManagedPlans;
 
-namespace LgymApi.Application.Identity.Compatibility.Task7.Adapters;
+namespace LgymApi.Application.Coaching.ApiAdapters;
 
-internal sealed class ManagedPlanAccountCompatibilityAdapter : IManagedPlanAccountCompatibilityAdapter
+internal sealed class ManagedPlanApiAdapter : IManagedPlanAccountApiAdapter
 {
     private readonly IListManagedPlansUseCase _list;
     private readonly ICreateTraineeManagedPlanUseCase _create;
@@ -22,7 +22,7 @@ internal sealed class ManagedPlanAccountCompatibilityAdapter : IManagedPlanAccou
     private readonly IUnassignTraineeManagedPlanUseCase _unassign;
     private readonly IMapper _mapper;
 
-    public ManagedPlanAccountCompatibilityAdapter(IListManagedPlansUseCase list, ICreateTraineeManagedPlanUseCase create, IUpdateTraineeManagedPlanUseCase update, IDeleteTraineeManagedPlanUseCase delete, IAssignTraineeManagedPlanUseCase assign, IUnassignTraineeManagedPlanUseCase unassign, IMapper mapper)
+    public ManagedPlanApiAdapter(IListManagedPlansUseCase list, ICreateTraineeManagedPlanUseCase create, IUpdateTraineeManagedPlanUseCase update, IDeleteTraineeManagedPlanUseCase delete, IAssignTraineeManagedPlanUseCase assign, IUnassignTraineeManagedPlanUseCase unassign, IMapper mapper)
     {
         _list = list;
         _create = create;

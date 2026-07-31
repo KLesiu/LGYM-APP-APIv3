@@ -5,7 +5,7 @@ using LgymApi.Api.Idempotency;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.Features.EloRegistry;
 using LgymApi.Application.Features.User.Models;
-using LgymApi.Application.Identity.ApiCompatibility;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Application.Identity.Contracts.Authentication;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Security;

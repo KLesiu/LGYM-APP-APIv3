@@ -5,9 +5,9 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 
-namespace LgymApi.Application.Identity.Compatibility.Task7.Contracts;
+namespace LgymApi.Application.Coaching.ApiAdapters;
 
-public interface IManagedPlanAccountCompatibilityAdapter
+public interface IManagedPlanAccountApiAdapter
 {
     Task<Result<IReadOnlyList<ManagedPlanReadModel>, AppError>> ListAsync(ManagedPlanListAccountQuery query, CancellationToken cancellationToken = default);
     Task<Result<ManagedPlanReadModel, AppError>> CreateAsync(ManagedPlanCreateAccountCommand command, CancellationToken cancellationToken = default);

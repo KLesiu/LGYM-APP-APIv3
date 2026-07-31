@@ -7,9 +7,9 @@ using LgymApi.Identity.Contracts;
 using AppConfigEntity = LgymApi.Domain.Entities.AppConfig;
 using UserEntity = LgymApi.Domain.Entities.User;
 
-namespace LgymApi.Application.Task7ApiCompatibility;
+namespace LgymApi.Application.Platform.ReferenceData.ApiAdapters;
 
-public interface IAppConfigApiCompatibilityAdapter
+public interface IAppConfigApiAdapter
 {
     Task<Result<Unit, AppError>> CreateNewAppVersionAsync(
         Id<AccountReference> accountId,
@@ -38,11 +38,11 @@ public interface IAppConfigApiCompatibilityAdapter
         CancellationToken cancellationToken = default);
 }
 
-internal sealed class AppConfigApiCompatibilityAdapter : IAppConfigApiCompatibilityAdapter
+internal sealed class AppConfigApiAdapter : IAppConfigApiAdapter
 {
     private readonly IAppConfigService _appConfigService;
 
-    public AppConfigApiCompatibilityAdapter(IAppConfigService appConfigService)
+    public AppConfigApiAdapter(IAppConfigService appConfigService)
     {
         _appConfigService = appConfigService;
     }

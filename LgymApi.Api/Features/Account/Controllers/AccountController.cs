@@ -2,7 +2,7 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Account.Contracts;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Identity.ApiCompatibility;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;

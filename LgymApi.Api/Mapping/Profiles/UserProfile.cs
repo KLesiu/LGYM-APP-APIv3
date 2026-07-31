@@ -1,6 +1,6 @@
 using LgymApi.Api.Features.User.Contracts;
 using LgymApi.Application.Features.User.Models;
-using LgymApi.Application.Identity.ApiCompatibility;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Models;
 using LgymApi.Application.WorkoutProgress.Ranking.Models;

@@ -8,7 +8,7 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 
-namespace LgymApi.Application.Identity.ApiCompatibility;
+namespace LgymApi.Application.Identity.ApiAdapters;
 
 internal sealed class AdminAccountManagementApiAdapter : IAdminAccountManagementApiAdapter
 {

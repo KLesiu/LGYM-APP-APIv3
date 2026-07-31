@@ -1,7 +1,7 @@
 using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Role.Contracts;
-using LgymApi.Application.Identity.ApiCompatibility;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Pagination;
 using LgymApi.Domain.Security;

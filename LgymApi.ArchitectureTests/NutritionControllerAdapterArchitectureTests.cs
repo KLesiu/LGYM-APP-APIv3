@@ -1,6 +1,6 @@
 using System.Reflection;
 using LgymApi.Api.Features.Trainer.Controllers;
-using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
+using LgymApi.Application.Nutrition.ApiAdapters;
 using LgymApi.Application.Mapping.Core;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -76,10 +76,10 @@ public sealed class NutritionControllerAdapterArchitectureTests
     {
         var expectedPorts = new Dictionary<Type, Type>
         {
-            [typeof(TrainerDietPlansController)] = typeof(IDietPlanAccountCompatibilityAdapter),
-            [typeof(TraineeDietPlanController)] = typeof(IDietPlanAccountCompatibilityAdapter),
-            [typeof(TrainerSupplementationController)] = typeof(ISupplementationAccountCompatibilityAdapter),
-            [typeof(TraineeSupplementationController)] = typeof(ISupplementationAccountCompatibilityAdapter)
+            [typeof(TrainerDietPlansController)] = typeof(IDietPlanAccountApiAdapter),
+            [typeof(TraineeDietPlanController)] = typeof(IDietPlanAccountApiAdapter),
+            [typeof(TrainerSupplementationController)] = typeof(ISupplementationApiAdapter),
+            [typeof(TraineeSupplementationController)] = typeof(ISupplementationApiAdapter)
         };
 
         foreach (var specification in Controllers)
