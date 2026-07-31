@@ -26,6 +26,21 @@ namespace LgymApi.UnitTests;
 public sealed class PushNotificationPipelineTests
 {
     [Test]
+    public void PushNotificationDeliveryService_UsesTheSevenDirectDeliveryCollaborators()
+    {
+        var constructor = typeof(PushNotificationDeliveryService).GetConstructors().Should().ContainSingle().Which;
+
+        constructor.GetParameters().Select(parameter => parameter.ParameterType).Should().Equal(
+            typeof(IPushNotificationMessageRepository),
+            typeof(IPushInstallationRepository),
+            typeof(IPushProviderSender),
+            typeof(IPushBackgroundScheduler),
+            typeof(IPushNotificationDeliveryRetrySettings),
+            typeof(IUnitOfWork),
+            typeof(Microsoft.Extensions.Logging.ILogger<PushNotificationDeliveryService>));
+    }
+
+    [Test]
     public void PushEventPayload_InAppNotificationId_IsTypedInternally()
     {
         var property = typeof(PushEventPayload).GetProperty(nameof(PushEventPayload.InAppNotificationId));
@@ -863,14 +878,13 @@ public sealed class PushNotificationPipelineTests
     {
         return new PushNotificationJobHandlerService(
             new PushNotificationDeliveryService(
-                new PushNotificationDeliveryServiceDependencies(
-                    messageRepository,
-                    installationRepository,
-                    sender,
-                    scheduler,
-                    new PushNotificationDeliveryRetrySettings(options),
-                    unitOfWork,
-                    NullLogger<PushNotificationDeliveryService>.Instance)));
+                messageRepository,
+                installationRepository,
+                sender,
+                scheduler,
+                new PushNotificationDeliveryRetrySettings(options),
+                unitOfWork,
+                NullLogger<PushNotificationDeliveryService>.Instance));
     }
 
     private static TResult InvokePrivate<TResult>(object instance, string methodName, params object?[] parameters)

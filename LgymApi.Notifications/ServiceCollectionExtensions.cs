@@ -7,8 +7,7 @@ using LgymApi.Application.Notifications.Contracts.Push;
 using LgymApi.Application.Notifications.Repositories;
 using LgymApi.Application.Notifications.Providers.Fcm;
 using LgymApi.Application.Repositories;
-using LgymApi.Application.Identity.ApiCompatibility;
-using LgymApi.Application.Task7ApiCompatibility;
+using LgymApi.Notifications.ApiAdapters;
 using LgymApi.Infrastructure.Repositories;
 using LgymApi.Infrastructure.Services;
 using LgymApi.Notifications;
@@ -26,12 +25,10 @@ public static class NotificationsModule
 {
     public static IServiceCollection AddNotificationsModule(this IServiceCollection services)
     {
-        services.AddScoped<IInAppNotificationServiceDependencies, InAppNotificationServiceDependencies>();
         services.AddScoped<IInAppNotificationService, InAppNotificationService>();
         services.AddScoped<IInAppNotificationWireWriter, InAppNotificationWireWriter>();
         services.AddScoped<ICoachingNotificationIntentService, CoachingNotificationIntentService>();
         services.AddScoped<IPushNotificationService, PushNotificationService>();
-        services.AddScoped<IPushNotificationDeliveryServiceDependencies, PushNotificationDeliveryServiceDependencies>();
         services.AddScoped<IPushNotificationDeliveryService, PushNotificationDeliveryService>();
         services.AddScoped<IStalePushInstallationCleanupService, StalePushInstallationCleanupService>();
         services.AddScoped<IPushInstallationLifecycleService, PushInstallationLifecycleService>();
@@ -92,9 +89,9 @@ public static class NotificationsModule
 
     public static IServiceCollection AddNotificationsApiAdapters(this IServiceCollection services)
     {
-        services.AddScoped<IInAppNotificationApiCompatibilityAdapter, InAppNotificationApiCompatibilityAdapter>();
-        services.AddScoped<INotificationEventApiCompatibilityAdapter, NotificationEventApiCompatibilityAdapter>();
-        services.AddScoped<IAccountPushInstallationApiAdapter, AccountPushInstallationApiAdapter>();
+        services.AddScoped<IInAppNotificationApiAdapter, InAppNotificationApiAdapter>();
+        services.AddScoped<INotificationEventApiAdapter, NotificationEventApiAdapter>();
+        services.AddScoped<IPushInstallationApiAdapter, PushInstallationApiAdapter>();
 
         return services;
     }
