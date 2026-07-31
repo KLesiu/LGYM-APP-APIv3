@@ -244,7 +244,7 @@ public sealed class Issue395FinalDocumentationTests
 
     private static string Unwrap(string value) => value.Length >= 2 && value[0] == '`' && value[^1] == '`' ? value[1..^1] : value;
 
-    private static string ReadArtifact(string relativePath) => File.ReadAllText(Path.Combine(ArchitectureTestHelpers.ResolveRepositoryRoot(), relativePath));
+    private static string ReadArtifact(string relativePath) => File.ReadAllText(Path.Combine(ArchitectureTestHelpers.ResolveRepositoryRoot(), relativePath)).Replace("\r\n", "\n", StringComparison.Ordinal);
 
     private static string[] RunGit(string root, params string[] arguments)
     {
