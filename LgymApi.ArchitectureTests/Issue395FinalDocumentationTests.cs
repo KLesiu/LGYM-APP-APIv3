@@ -124,7 +124,7 @@ public sealed class Issue395FinalDocumentationTests
             }
         }
 
-        Assert.That(evidence["issue395.evidence.pr-sha"]["Recorded result"], Does.Contain("tested-sha=9370cc9b36922afc676240f549735d1308d832b4"));
+        Assert.That(evidence["issue395.evidence.pr-sha"]["Recorded result"], Does.Contain("tested-sha=fd06249771676f65c20e8f675535974db6b7d071"));
         Assert.That(evidence["issue395.evidence.main-sha"]["Recorded result"], Does.Contain("main-sha=5cdef880395d6c991b4ea9cb9d7a3b914317e0ae"));
         Assert.That(evidence["issue395.evidence.matrix"]["Recorded result"], Does.Contain("matrix=passed"));
         Assert.That(evidence["issue395.evidence.architecture"]["Recorded result"], Does.Contain("Architecture=665/665"));

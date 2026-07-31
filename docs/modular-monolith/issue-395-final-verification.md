@@ -95,25 +95,23 @@ Todo 22 completed from a clean isolated verifier. The matrix evidence below is t
 
 | Evidence ID | Required command | Recorded result |
 | --- | --- | --- |
-| `issue395.evidence.pr-sha` | `git rev-parse HEAD` in the clean isolated PR worktree | `tested-sha=9370cc9b36922afc676240f549735d1308d832b4; detached; status=clean` |
+| `issue395.evidence.pr-sha` | `git rev-parse HEAD` in the clean isolated PR worktree | `tested-sha=fd06249771676f65c20e8f675535974db6b7d071; detached; status=clean` |
 | `issue395.evidence.main-sha` | `git rev-parse HEAD` in the clean isolated main worktree | `main-sha=5cdef880395d6c991b4ea9cb9d7a3b914317e0ae; detached; status=clean; not matrix-tested` |
-| `issue395.evidence.matrix` | `pwsh -NoProfile -File scripts/run-verification-matrix.ps1 -ResultsDirectory TestResults/Final/issue-395-todo-22-9370cc9-20260731 -Configuration Release` | `matrix=passed; Release; Unit/Architecture/InMemoryIntegration/PostgreSqlIntegration/DataSeeder=1966/665/599/660/43` |
-| `issue395.evidence.architecture` | `dotnet test LgymApi.ArchitectureTests/LgymApi.ArchitectureTests.csproj --configuration Release --no-build` | `Architecture=665/665 in matrix; source-locator/topology supplementary=26/26; CRLF verifier regression=4/4` |
-| `issue395.evidence.artifacts` | Validate generated TRX, manifests, hashes, and artifact paths with `scripts/assert-trx.ps1` | `artifact-validation=passed; Worker-related Unit discovery=59; redaction, cleanup, EF, and supplementary gates passed` |
+| `issue395.evidence.matrix` | `pwsh -NoProfile -File scripts/run-verification-matrix.ps1 -ResultsDirectory TestResults/Final/issue-395-todo-22-fd06249-20260731 -Configuration Release` | `matrix=passed; Release; Unit/Architecture/InMemoryIntegration/PostgreSqlIntegration/DataSeeder=1966/665/599/660/43` |
+| `issue395.evidence.architecture` | `dotnet test LgymApi.ArchitectureTests/LgymApi.ArchitectureTests.csproj --configuration Release --no-build` | `Architecture=665/665 in matrix; focused exported-surface, documentation, and topology checks=25/25` |
+| `issue395.evidence.artifacts` | Validate generated TRX, manifests, hashes, and artifact paths with `scripts/assert-trx.ps1` | `artifact-validation=passed by matrix suite assertions; focused PostgreSQL cleanup and Hangfire durability checks passed` |
 
-The tested verifier was `C:\code\LGYM-APP-APIv3-wt-issue-395-final-modular-monolith-verification-9370cc9`. Its ignored evidence root is `TestResults/Final/issue-395-todo-22-9370cc9-20260731/20260731T170324Z-64ca984c4b464d5c98aaf38263f432ff`; `artifact-manifest.json` SHA-256 is `b08563181947a0c34c346e65b4ebdae0ae9cbbd08349d20ade85ac43f8a4ad13`.
+The tested verifier was `C:\code\LGYM-APP-APIv3-wt-issue-395-final-modular-monolith-verification-fd06249`. Its ignored evidence root is `TestResults/Final/issue-395-todo-22-fd06249-20260731/20260731T174328Z-c92ff07089bf449a98e443d3882ec251`; `artifact-manifest.json` SHA-256 is `50ac41a88dbbc073ea71caf97a3ba185c81dfd0ceaedf3e8bf01788527feacd5`.
 
 | Complete suite | Passed / total | Discovery SHA-256 | TRX SHA-256 | Summary SHA-256 |
 | --- | --- | --- | --- | --- |
-| Unit | `1966/1966` | `c1224a18fbdfbf7918003fae830fe70674c9cebe58c5f050875c345eaa6b079b` | `137633ffa4eee84625fb7f3cbd044f6d913bc058e5a69f2c6c01306e03427157` | `14ae2eea356a0935e6449ad923bd735ed0efbbca36415b63b0e7fd730e4f041f` |
-| Architecture | `665/665` | `a587e2b4774ce49063df6bc9e4c904bd29c81b11eb2cf9d26dfb0e40ab3b8e72` | `09bc4edf5ee497ebde06e3dd87df86198478e242ffd11fa91c7c59330720fb34` | `359815b153de926cca8bab419e0e0a6e15e32cad50bbe7c95d308b4cd0c81dc4` |
-| InMemoryIntegration | `599/599` | `090d59772272e29a095676a35f31a23bb26923f05d1b26c09e368644a252fb0e` | `fa6267a39282764d51284eea7d2e687ad04817faf52d47852c74d5a7532abe66` | `19bed3907ea3bdb3579c0b2d4423dde260500497a4bc0eefe76a8dcb12c4cf3d` |
-| PostgreSqlIntegration | `660/660` | `02703f95662ae12bbbf941bf009495d6512c195ac6dcfb576a0e8e815b5286d7` | `c95531d65bde9a45d25806c21d9bc05cb7efd42cc69b1665c4856aba89ebd170` | `f9cb9b0184ffea38da61bdb0acccd6e865856146fcf2aa013a5ec2d430cab223` |
-| DataSeeder | `43/43` | `387abb75fdc37686b1799ccd18134a1eec7c1f17735ae3a67e618d499809d71b` | `e6950c42369985c154a3d072067a450060c699050f07988d826911bba236b19b` | `751e763b46c40045956d18e2a94e8e8979b975de62f606c35c4c1efa3ccd9ef3` |
+| Unit | `1966/1966` | `598cea06c30822c46b14e837e28548d7e93b2c52a0e61e8846205e1c04f91fd5` | `69dced72a4b37d398199c989d283d25aa29ef104008acf04712a22688a213e87` | `b07f96415568c9695812248e8a5505381d9365a02cbdeb623b2cd30b0aad0623` |
+| Architecture | `665/665` | `fda65c85de294fbb1a2f9df23374e54db7d860e7a309e50f02700ceaeefac4b7` | `75b83972f3c9e43fab8c3655ca0591b5e7ba8473f0b4e0d707b7297543192ffd` | `0dec506212235cec956b9b80f3d339b8dc936f61ba2dd3f80bb246c43e76da46` |
+| InMemoryIntegration | `599/599` | `7373a86fd5b88028b6a11dc3d140fd0f5cdec8560a01171a80c6f3e5a2f43193` | `1c91c2c7b50f8f40125ba9f8f54d76a42b22931992b503cc1717a2803e315a66` | `3fd70e05cdcd8e4d04e64693810cb7c5fa5b4ac07179554bc350f147fcf3c8b6` |
+| PostgreSqlIntegration | `660/660` | `2832539493a0f6cd966e96df061955a687190280c0f781541c6ca95e2c9c6667` | `e31e0bbcef556f781766c939fcbd7d47a7391b507f1d226f1613346decbcad5d` | `aa7f4f250518f29b60c35b60dacd146c2c9f310c022da06caf7f2e8450363b72` |
+| DataSeeder | `43/43` | `41251032f012b8ecc78664460bb69be9b9823e077ae8eb774a8d18a5590ebe18` | `286f1f94d729cf66b1aa163d7ec79f478b4e2e2531292541f1c8d4ea6da0cf56` | `5c4f710e90edbb5e368a4c215d1704049fb0f1a6f004c35261de345c3081ecf4` |
 
-Supplementary results: `RuntimeCompositionValidationTests` `4/4` (`8b1abd669d43a18c51da1cd6bf970f546aaad0054468e6d1ce61ee5ddb2f704d`), `IndependentExportedSurfaceTests` `3/3` (`3a544279d31dbc9636fa6df074994143a8282a03788f5dfcd24d4b7675523f9a`), `EndpointContractMatrixTests` `10/10` (`5235e442b59604091697bec23f3cc10d28e28fb5d437ab82887ef46e4ea60e02`), source-locator/topology `26/26` (`26fac48ea1edd024d965f9b34524dfabe898a8e24b9b5a977d2ab892be3cd372`), and `PostgreSqlHangfireDurabilityTests` `1/1` (`8476d2ffef2de72991a6345665d189b54c80f5c90f927cb75645e1ad787c6ba9`). The exported redacted Hangfire receipt is `supplementary/postgresql-hangfire-durability.md`.
-
-The repeated Release build binlog is `supplementary/release-build.binlog` (SHA-256 `5bddbf7b4896ecd41ce7c211ba0b84c92f6e556fe249b83f218144031ab19ffe`). Artifact validation recorded redaction success, exact discovery/TRX identity, manifest hashes, and the nonzero 59-test Worker-related Unit subset in `supplementary/artifact-validation.json`. The failure-path PostgreSQL cleanup probe passed with `exit=1, containers=0, volumes=0`; it removes its working directory by design. `dotnet ef migrations list` and `dotnet ef migrations has-pending-model-changes` both exited 0, with redacted logs at `supplementary/ef-migrations-list.log` and `supplementary/ef-pending-model-changes.log`.
+Supplementary results on the same clean verifier: `RuntimeCompositionValidationTests` `4/4`, focused exported-surface/documentation/topology checks `25/25`, `EndpointContractMatrixTests` `10/10`, and `PostgreSqlHangfireDurabilityTests` `1/1`. The PostgreSQL runner failure-path cleanup probe passed with `exit=1, containers=0, volumes=0`; it removes its working directory by design.
 
 ## Known limitations
 
