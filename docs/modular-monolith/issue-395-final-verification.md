@@ -113,6 +113,8 @@ The tested verifier was `C:\code\LGYM-APP-APIv3-wt-issue-395-final-modular-monol
 
 Supplementary results on the same clean verifier: `RuntimeCompositionValidationTests` `4/4`, focused exported-surface/documentation/topology checks `25/25`, `EndpointContractMatrixTests` `10/10`, and `PostgreSqlHangfireDurabilityTests` `1/1`. The PostgreSQL runner failure-path cleanup probe passed with `exit=1, containers=0, volumes=0`; it removes its working directory by design.
 
+EF evidence was executed after the matrix against a new isolated disposable PostgreSQL database at the tested code SHA, not at this later documentation commit. `dotnet ef database update` exited `0`; `dotnet ef migrations list` then exited `0` and returned `57` migration identifiers, and `dotnet ef migrations has-pending-model-changes` exited `0` with no pending model changes. Redacted receipts are `supplementary/ef-migrations-list.log` and `supplementary/ef-pending-model-changes.log`; cleanup verified `containers=0, volumes=0`.
+
 ## Known limitations
 
 Direct local API process smoke remains blocked by operator-provided JWT and PostgreSQL runtime configuration. This record makes no GitHub-status or live direct-runtime claim; it records only the clean-SHA automated matrix and supplementary evidence above.
