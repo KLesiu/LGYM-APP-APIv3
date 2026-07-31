@@ -365,7 +365,8 @@ public static class ArchitectureTestHelpers
 
     public static IReadOnlyList<ProjectReferenceEdge> ParseProjectReferences(string projectFilePath)
     {
-        return ParseProjectReferences(projectFilePath, XDocument.Load(projectFilePath));
+        var hostProjectPath = ToHostPath(projectFilePath);
+        return ParseProjectReferences(hostProjectPath, XDocument.Load(hostProjectPath));
     }
 
     public static IReadOnlyList<ProjectReferenceEdge> ParseProjectReferences(string projectFilePath, string projectXml)
