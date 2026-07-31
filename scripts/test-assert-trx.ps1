@@ -293,11 +293,32 @@ function Assert-MatrixConfigurationContract {
         [string]$MatrixScript
     )
 
-    $releaseOutput = @(& pwsh -NoProfile -File $MatrixScript -Configuration Release 2>&1)
-    $releaseExitCode = $LASTEXITCODE
-    $releaseText = ($releaseOutput | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
-    if ($releaseExitCode -eq 0 -or $releaseText -notmatch 'Same-SHA evidence requires a clean worktree' -or $releaseText -match 'parameter cannot be found|Cannot find a parameter') {
-        throw "The documented -Configuration Release invocation did not bind before the expected clean-worktree gate."
+    $repositoryRoot = Split-Path -Parent (Split-Path -Parent $MatrixScript)
+    $sentinelName = "fixture-matrix-dirty-$([Guid]::NewGuid().ToString('N')).txt"
+    $sentinelPath = Join-Path $repositoryRoot $sentinelName
+    try {
+        [System.IO.File]::WriteAllText($sentinelPath, "fixture`n", [System.Text.UTF8Encoding]::new($false))
+        $status = @(& git -C $repositoryRoot status --porcelain=v1 --untracked-files=all)
+        if ($LASTEXITCODE -ne 0 -or -not (($status | ForEach-Object { [string]$_ }) -contains "?? $sentinelName")) {
+            throw "The matrix configuration fixture sentinel was not visible to git status."
+        }
+
+        $releaseOutput = @(& pwsh -NoProfile -File $MatrixScript -Configuration Release 2>&1)
+        $releaseExitCode = $LASTEXITCODE
+        $releaseText = ($releaseOutput | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+        if ($releaseExitCode -eq 0 -or $releaseText -notmatch 'Same-SHA evidence requires a clean worktree' -or $releaseText -match 'parameter cannot be found|Cannot find a parameter') {
+            throw "The documented -Configuration Release invocation did not bind before the expected clean-worktree gate."
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $sentinelPath) {
+            Remove-Item -LiteralPath $sentinelPath -Force
+        }
+
+        $remainingStatus = @(& git -C $repositoryRoot status --porcelain=v1 --untracked-files=all)
+        if ($LASTEXITCODE -ne 0 -or (($remainingStatus | ForEach-Object { [string]$_ }) -contains "?? $sentinelName")) {
+            throw "The matrix configuration fixture sentinel was not removed."
+        }
     }
 
     $unsupportedOutput = @(& pwsh -NoProfile -File $MatrixScript -Configuration Debug 2>&1)
