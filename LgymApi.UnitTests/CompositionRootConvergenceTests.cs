@@ -6,7 +6,9 @@ using LgymApi.Application;
 using LgymApi.Application.Abstractions.Storage;
 using LgymApi.Application.Coaching.ManagedPlans;
 using LgymApi.Application.Identity.Adapters;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Identity.Contracts.Accounts;
+using LgymApi.Application.Nutrition.ApiAdapters;
 using LgymApi.Application.Platform.ReferenceData.AppConfig;
 using LgymApi.Application.Platform.ReferenceData.AppConfig.Contracts;
 using LgymApi.Application.Platform.ReferenceData.Enums;
@@ -25,6 +27,7 @@ using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Application.Services;
+using LgymApi.Application.TrainingPlanning.ApiAdapters;
 using LgymApi.Application.WorkoutProgress.Adapters;
 using LgymApi.BackgroundWorker;
 using LgymApi.BackgroundWorker.Actions.Contracts;
@@ -397,7 +400,7 @@ public sealed class CompositionRootConvergenceTests
             enableSensitiveLogging: false,
             isTesting,
             hostBackgroundServer: true);
-        services.AddTask7ApiCompatibility();
+        services.AddApplicationApiAdapters();
         services.AddNotificationsApiAdapters();
         services.AddSignalR();
         services.AddScoped<IInAppNotificationPushPublisher, LgymApi.Api.Features.InAppNotification.SignalRNotificationPushPublisher>();
@@ -514,7 +517,7 @@ public sealed class CompositionRootConvergenceTests
         ValidateSingleDescriptor(services, typeof(IPushBackgroundScheduler), ServiceLifetime.Scoped, expectedPushSchedulerType);
 
         ValidateImplementationCollection(services, typeof(IEmailTemplateComposer), ServiceLifetime.Scoped, expectedCount: 6);
-        ValidateImplementationCollection(services, typeof(IMappingProfile), ServiceLifetime.Singleton, expectedCount: 44);
+        ValidateImplementationCollection(services, typeof(IMappingProfile), ServiceLifetime.Singleton, expectedCount: 46);
         services.Count(descriptor => descriptor.ServiceType == typeof(IAccountLookupService)).Should().Be(1);
         services.Count(descriptor => descriptor.ServiceType == typeof(IAccountAccessReader)).Should().Be(1);
         services.Count(descriptor => descriptor.ServiceType == typeof(IAccountSessionValidator)).Should().Be(1);
@@ -528,6 +531,15 @@ public sealed class CompositionRootConvergenceTests
         services.Where(descriptor => descriptor.ServiceType == typeof(IMappingProfile))
             .Should()
             .ContainSingle(descriptor => descriptor.ImplementationType == typeof(ManagedPlanCollaborationMappingProfile));
+        services.Where(descriptor => descriptor.ServiceType == typeof(IMappingProfile))
+            .Should()
+            .ContainSingle(descriptor => descriptor.ImplementationType == typeof(IdentityApiAdapterMappingProfile));
+        services.Where(descriptor => descriptor.ServiceType == typeof(IMappingProfile))
+            .Should()
+            .ContainSingle(descriptor => descriptor.ImplementationType == typeof(NutritionApiAdapterMappingProfile));
+        services.Where(descriptor => descriptor.ServiceType == typeof(IMappingProfile))
+            .Should()
+            .ContainSingle(descriptor => descriptor.ImplementationType == typeof(PlanApiAdapterMappingProfile));
 
         var hangfireServerDescriptors = services.Where(descriptor => descriptor.ServiceType == typeof(IHostedService)).ToArray();
         hangfireServerDescriptors.Should().HaveCount(isTesting ? 0 : 1);

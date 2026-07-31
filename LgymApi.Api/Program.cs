@@ -82,7 +82,7 @@ builder.Services
         builder.Environment.IsDevelopment(),
         isTesting,
         hostBackgroundServer: false)
-    .AddTask7ApiCompatibility();
+    .AddApplicationApiAdapters();
 builder.Services.AddNotificationsApiAdapters();
 
 builder.Services.AddSignalR();

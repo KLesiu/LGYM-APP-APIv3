@@ -14,7 +14,7 @@ public sealed class CompositionRootRegistrationGuardTests
         "AddNotificationsModule",
         "AddApplication",
         "AddInfrastructure",
-        "AddTask7ApiCompatibility",
+        "AddApplicationApiAdapters",
         "AddNotificationsApiAdapters",
         "AddBackgroundWorkerServices"
     };
@@ -27,7 +27,7 @@ public sealed class CompositionRootRegistrationGuardTests
         "AddNotificationsModule",
         "AddApplication",
         "AddInfrastructure",
-        "AddTask7ApiCompatibility",
+        "AddApplicationApiAdapters",
         "AddNotificationsApiAdapters",
         "AddBackgroundWorkerServices",
         "AddApplicationMapping"
@@ -47,6 +47,11 @@ public sealed class CompositionRootRegistrationGuardTests
         "AddNutritionInfrastructure",
         "AddReportingInfrastructure",
         "AddNotificationsInfrastructure"
+    };
+
+    private static readonly string[] TransitionalFacadeMethods =
+    {
+        "AddTask7ApiCompatibility"
     };
 
     private static readonly string[] RequiredHostRegistrationHelpers =
@@ -144,6 +149,32 @@ public sealed class CompositionRootRegistrationGuardTests
 
         Assert.That(violations, Has.Count.EqualTo(1));
         Assert.That(violations[0], Does.Contain("AddApplication").And.Contain("exactly once"));
+    }
+
+    [Test]
+    public void TransitionalApplicationApiAdapterFacadeFixture_IsRejected()
+    {
+        var calls = RequiredFacadeOrder
+            .Select(method => method == "AddApplicationApiAdapters" ? "AddTask7ApiCompatibility" : method);
+        var root = ParseFacadeCompositionFixture(calls);
+
+        var violations = FindFacadeCompositionViolations(root);
+
+        Assert.That(violations, Does.Contain("Program.cs must not call transitional facade AddTask7ApiCompatibility."));
+    }
+
+    [Test]
+    public void ApplicationApiAdapterFacadeBeforeInfrastructureFixture_IsRejected()
+    {
+        var calls = RequiredFacadeOrder.ToList();
+        calls.Remove("AddApplicationApiAdapters");
+        calls.Insert(Array.IndexOf(RequiredFacadeOrder, "AddInfrastructure"), "AddApplicationApiAdapters");
+        var root = ParseFacadeCompositionFixture(calls);
+
+        var violations = FindFacadeCompositionViolations(root);
+
+        Assert.That(violations, Has.Count.EqualTo(1));
+        Assert.That(violations[0], Does.Contain("ordered").And.Contain("AddApplicationApiAdapters"));
     }
 
     [Test]
@@ -338,6 +369,15 @@ public sealed class CompositionRootRegistrationGuardTests
                 && RequiredFacadeOrder.Contains(invocation.MethodName, StringComparer.Ordinal))
             .ToArray();
         var violations = new List<string>();
+
+        foreach (var facade in TransitionalFacadeMethods)
+        {
+            if (root.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                .Any(invocation => ExtractMethodName(invocation) == facade))
+            {
+                violations.Add($"Program.cs must not call transitional facade {facade}.");
+            }
+        }
 
         foreach (var facade in RequiredFacadeOrder)
         {

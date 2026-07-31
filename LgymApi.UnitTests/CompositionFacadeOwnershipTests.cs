@@ -2,14 +2,14 @@ using FluentAssertions;
 using LgymApi.Application;
 using LgymApi.Application.Coaching.Contracts.Access;
 using LgymApi.Application.Features.Reporting;
-using LgymApi.Application.Identity.ApiCompatibility;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Application.Nutrition.DietPlans.CreateTraineePlan;
 using LgymApi.Application.Notifications;
 using LgymApi.Application.Notifications.Contracts.Push;
 using LgymApi.Application.Platform.ReferenceData.AppConfig;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Services;
-using LgymApi.Application.Task7ApiCompatibility;
+using LgymApi.Application.Platform.ReferenceData.ApiAdapters;
 using LgymApi.Application.TrainingPlanning.Contracts.PlanDay;
 using LgymApi.Application.TrainingPlanning.PlanDay.Persistence;
 using LgymApi.Application.WorkoutProgress.ProgressData;
@@ -21,6 +21,7 @@ using LgymApi.Identity.Contracts;
 using LgymApi.Identity.Contracts.Accounts;
 using LgymApi.Infrastructure;
 using LgymApi.Infrastructure.Services;
+using LgymApi.Notifications.ApiAdapters;
 using LgymApi.Notifications.Contracts;
 using LgymApi.Platform.Contracts;
 using LgymApi.TrainingPlanning.Contracts;
@@ -71,7 +72,7 @@ public sealed class CompositionFacadeOwnershipTests
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(ITokenService));
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IPlanDayService));
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IInAppNotificationService));
-        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IAppConfigApiCompatibilityAdapter));
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IAppConfigApiAdapter));
     }
 
     [Test]
@@ -145,8 +146,8 @@ public sealed class CompositionFacadeOwnershipTests
         new(typeof(ICoachingRelationshipAccessService), ServiceLifetime.Scoped, typeof(LgymApi.Application.ServiceCollectionExtensions).Assembly),
         new(typeof(ICreateTraineeDietPlanUseCase), ServiceLifetime.Scoped, typeof(LgymApi.Application.ServiceCollectionExtensions).Assembly),
         new(typeof(IUnitOfWork), ServiceLifetime.Scoped, typeof(LgymApi.Infrastructure.ServiceCollectionExtensions).Assembly),
-        new(typeof(IAppConfigApiCompatibilityAdapter), ServiceLifetime.Scoped, typeof(LgymApi.Application.ServiceCollectionExtensions).Assembly),
-        new(typeof(IAccountPushInstallationApiAdapter), ServiceLifetime.Scoped, typeof(NotificationReference).Assembly),
+        new(typeof(IAppConfigApiAdapter), ServiceLifetime.Scoped, typeof(LgymApi.Application.ServiceCollectionExtensions).Assembly),
+        new(typeof(IPushInstallationApiAdapter), ServiceLifetime.Scoped, typeof(NotificationReference).Assembly),
         new(typeof(IBackgroundActionResolver), ServiceLifetime.Scoped, typeof(LgymApi.BackgroundWorker.ServiceProvider).Assembly),
         new(typeof(IEmailBackgroundScheduler), ServiceLifetime.Scoped, typeof(NoOpEmailBackgroundScheduler).Assembly)
     ];
@@ -166,7 +167,7 @@ public sealed class CompositionFacadeOwnershipTests
     private static void AssertWorkerIsLast(IServiceCollection services)
     {
         var workerIndex = services.IndexOf(GetSingleDescriptor(services, typeof(IEmailBackgroundScheduler)));
-        var apiAdapterIndex = services.IndexOf(GetSingleDescriptor(services, typeof(IAccountPushInstallationApiAdapter)));
+        var apiAdapterIndex = services.IndexOf(GetSingleDescriptor(services, typeof(IPushInstallationApiAdapter)));
         if (workerIndex <= apiAdapterIndex)
         {
             throw new InvalidOperationException("Worker registrations must be last after API adapters.");

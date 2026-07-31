@@ -59,7 +59,7 @@ internal static class CompositionRootTestHost
             AddApplicationApiAdapters: services => AddUnlessOmitted(
                 CompositionFacade.ApplicationApiAdapters,
                 omittedFacade,
-                services.AddTask7ApiCompatibility),
+                services.AddApplicationApiAdapters),
             AddNotificationsApiAdapters: services =>
             {
                 AddUnlessOmitted(
@@ -117,7 +117,7 @@ internal static class CompositionRootTestHost
         AddUnlessOmitted(
             CompositionFacade.ApplicationApiAdapters,
             omittedFacade,
-            services.AddTask7ApiCompatibility);
+            services.AddApplicationApiAdapters);
         AddUnlessOmitted(
             CompositionFacade.NotificationsApiAdapters,
             omittedFacade,
