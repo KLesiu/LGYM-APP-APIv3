@@ -17,8 +17,6 @@ public sealed class ApplicationCommandProducerContractTests
         yield return CreateCase("Features/Reporting/ReportingService.Requests.cs", "LgymApi.Application.Reporting.Contracts.BackgroundCommands");
         yield return CreateCase("Features/Reporting/ReportingService.Submissions.cs", "LgymApi.Application.Reporting.Contracts.BackgroundCommands");
         yield return CreateCase("Features/Reporting/RecurringReportAssignmentService.cs", "LgymApi.Application.Platform.Contracts.BackgroundCommands", "LgymApi.Application.Reporting.Contracts.BackgroundCommands");
-        yield return CreateCase("Features/Reporting/IReportingServiceDependencies.cs", "LgymApi.Application.Platform.Contracts.BackgroundCommands");
-        yield return CreateCase("Features/Reporting/IRecurringReportAssignmentServiceDependencies.cs", "LgymApi.Application.Platform.Contracts.BackgroundCommands");
     }
 
     [TestCaseSource(nameof(ProducerContractCases))]

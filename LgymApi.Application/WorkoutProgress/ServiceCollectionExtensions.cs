@@ -19,8 +19,6 @@ using LgymApi.Application.WorkoutProgress.Contracts.BackgroundActions;
 using LgymApi.Application.WorkoutProgress.BackgroundActions;
 using LgymApi.Domain.Enums;
 using Microsoft.Extensions.DependencyInjection;
-using CompleteTrainingDependencies = LgymApi.Application.WorkoutProgress.TrainingExecution.TrainingServiceDependencies;
-using LegacyTrainingServiceDependencies = LgymApi.Application.Features.Training.TrainingServiceDependencies;
 
 namespace LgymApi.Application.WorkoutProgress;
 
@@ -28,7 +26,6 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddWorkoutAndProgressModule(this IServiceCollection services)
     {
-        services.AddScoped<WorkoutProgressReadWriteServiceDependencies>();
         services.AddScoped<IWorkoutProgressReadWriteService, WorkoutProgressReadWriteService>();
         services.AddScoped<IWorkoutProgressDashboardReadService, WorkoutProgressDashboardReadService>();
         services.AddScoped<IWorkoutProgressRankingReadService, WorkoutProgressRankingReadService>();
@@ -42,14 +39,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IExerciseScoresService, ExerciseScoresService>();
         services.AddScoped<IEloRegistryService, EloRegistryService>();
         services.AddScoped<IGymService, GymService>();
-        services.AddScoped<IMeasurementsServiceDependencies, MeasurementsServiceDependencies>();
         services.AddScoped<IMeasurementsService, MeasurementsService>();
         services.AddScoped<IMainRecordsService, MainRecordsService>();
-        services.AddScoped<ICompleteTrainingUseCaseDependencies, CompleteTrainingDependencies>();
         services.AddScoped<ICompleteTrainingUseCase, CompleteTrainingUseCase>();
-        services.AddScoped<ITrainingHistoryReadServiceDependencies, TrainingHistoryReadServiceDependencies>();
         services.AddScoped<ITrainingHistoryReadService, TrainingHistoryReadService>();
-        services.AddScoped<ITrainingServiceDependencies, LegacyTrainingServiceDependencies>();
         services.AddScoped<ITrainingService, TrainingService>();
         services.AddScoped<IPlanExerciseCatalogPort, PlanExerciseCatalogAdapter>();
         services.AddScoped<IPlanExerciseClonePort, PlanExerciseCloneAdapter>();

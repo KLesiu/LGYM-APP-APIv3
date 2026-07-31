@@ -1,4 +1,7 @@
 using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Repositories;
+using LgymApi.Application.Services;
+using LgymApi.Application.TrainingPlanning.Contracts.PlanDay;
 using LgymApi.Application.WorkoutProgress.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.WorkoutProgress.Contracts.BackgroundCommands;
@@ -10,18 +13,45 @@ using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
 using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 
 namespace LgymApi.Application.WorkoutProgress.TrainingExecution;
 
 internal sealed class CompleteTrainingUseCase : ICompleteTrainingUseCase
 {
-    private readonly ICompleteTrainingUseCaseDependencies _dependencies;
+    private readonly IAccountAccessReader _accountAccess;
+    private readonly IWorkoutGymPersistence _gymRepository;
+    private readonly IPlanDayReferenceReadService _planDayReferences;
+    private readonly IWorkoutTrainingPersistence _trainingRepository;
+    private readonly IWorkoutExercisePersistence _exerciseRepository;
+    private readonly IWorkoutExerciseScorePersistence _exerciseScoreRepository;
+    private readonly IWorkoutEloPersistence _eloRepository;
+    private readonly IRankService _rankService;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly Dictionary<ExerciseEloFormula, IExerciseEloCalculator> _exerciseEloCalculators;
 
-    public CompleteTrainingUseCase(ICompleteTrainingUseCaseDependencies dependencies)
+    public CompleteTrainingUseCase(
+        IAccountAccessReader accountAccess,
+        IWorkoutGymPersistence gymRepository,
+        IPlanDayReferenceReadService planDayReferences,
+        IWorkoutTrainingPersistence trainingRepository,
+        IWorkoutExercisePersistence exerciseRepository,
+        IWorkoutExerciseScorePersistence exerciseScoreRepository,
+        IWorkoutEloPersistence eloRepository,
+        IRankService rankService,
+        IUnitOfWork unitOfWork,
+        IEnumerable<IExerciseEloCalculator> exerciseEloCalculators)
     {
-        _dependencies = dependencies;
-        _exerciseEloCalculators = dependencies.ExerciseEloCalculators.ToDictionary(calculator => calculator.Formula);
+        _accountAccess = accountAccess;
+        _gymRepository = gymRepository;
+        _planDayReferences = planDayReferences;
+        _trainingRepository = trainingRepository;
+        _exerciseRepository = exerciseRepository;
+        _exerciseScoreRepository = exerciseScoreRepository;
+        _eloRepository = eloRepository;
+        _rankService = rankService;
+        _unitOfWork = unitOfWork;
+        _exerciseEloCalculators = exerciseEloCalculators.ToDictionary(calculator => calculator.Formula);
     }
 
     public async Task<Result<TrainingSummaryResult, AppError>> AddTrainingAsync(
@@ -35,18 +65,18 @@ internal sealed class CompleteTrainingUseCase : ICompleteTrainingUseCase
             return Result<TrainingSummaryResult, AppError>.Failure(new InvalidTrainingDataError(Messages.InvalidId));
         }
 
-        if (await _dependencies.AccountAccess.GetByIdAsync(userId, cancellationToken) is null)
+        if (await _accountAccess.GetByIdAsync(userId, cancellationToken) is null)
         {
             return Result<TrainingSummaryResult, AppError>.Failure(new TrainingNotFoundError(Messages.DidntFind));
         }
 
-        var gym = await _dependencies.GymRepository.FindByIdAsync(gymId, cancellationToken);
+        var gym = await _gymRepository.FindByIdAsync(gymId, cancellationToken);
         if (gym == null)
         {
             return Result<TrainingSummaryResult, AppError>.Failure(new TrainingNotFoundError(Messages.DidntFind));
         }
 
-        var planDay = await _dependencies.PlanDayReferences.GetByIdAsync(planDayId, cancellationToken);
+        var planDay = await _planDayReferences.GetByIdAsync(planDayId, cancellationToken);
         if (!planDay.Exists || planDay.IsDeleted)
         {
             return Result<TrainingSummaryResult, AppError>.Failure(new TrainingNotFoundError(Messages.DidntFind));
@@ -57,17 +87,17 @@ internal sealed class CompleteTrainingUseCase : ICompleteTrainingUseCase
             .Where(exerciseId => !exerciseId.IsEmpty)
             .Distinct()
             .ToList();
-        var exerciseDetails = await _dependencies.ExerciseRepository.GetByIdsAsync(uniqueExerciseIds, cancellationToken);
+        var exerciseDetails = await _exerciseRepository.GetByIdsAsync(uniqueExerciseIds, cancellationToken);
         var exerciseDetailsMap = exerciseDetails.ToDictionary(exercise => exercise.Id, exercise => exercise.Name);
         var exerciseFormulaMap = exerciseDetails.ToDictionary(exercise => exercise.Id, exercise => exercise.EloFormula);
         var previousScoresMap = await FetchPreviousScoresAsync(userId, gym.Id, uniqueExerciseIds, cancellationToken);
 
-        await using var transaction = await _dependencies.UnitOfWork.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
             var createdAtUtc = DateTime.SpecifyKind(createdAt, DateTimeKind.Utc);
             var training = new WorkoutTrainingWriteModel(Id<Training>.New(), userId, planDayId, gym.Id, new DateTimeOffset(createdAtUtc));
-            await _dependencies.TrainingRepository.AddAsync(training, cancellationToken);
+            await _trainingRepository.AddAsync(training, cancellationToken);
 
             var savedScoreIds = new List<Id<ExerciseScore>>();
             var totalElo = 0;
@@ -107,16 +137,16 @@ internal sealed class CompleteTrainingUseCase : ICompleteTrainingUseCase
 
             if (scoresToAdd.Count > 0)
             {
-                await _dependencies.ExerciseScoreRepository.AddRangeAsync(scoresToAdd, cancellationToken);
+                await _exerciseScoreRepository.AddRangeAsync(scoresToAdd, cancellationToken);
             }
 
             var trainingScores = savedScoreIds.Select((scoreId, scoreIndex) => new WorkoutTrainingExerciseScorePersistenceModel(Id<TrainingExerciseScore>.New(), training.Id, scoreId, scoreIndex)).ToList();
             if (trainingScores.Count > 0)
             {
-                await _dependencies.TrainingRepository.AddExerciseScoreLinksAsync(trainingScores, cancellationToken);
+                await _trainingRepository.AddExerciseScoreLinksAsync(trainingScores, cancellationToken);
             }
 
-            var eloEntry = await _dependencies.EloRepository.GetLatestEntryAsync(userId, cancellationToken);
+            var eloEntry = await _eloRepository.GetLatestEntryAsync(userId, cancellationToken);
             if (eloEntry == null)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
@@ -124,12 +154,12 @@ internal sealed class CompleteTrainingUseCase : ICompleteTrainingUseCase
             }
 
             var newElo = totalElo + eloEntry.Elo;
-            var currentRank = _dependencies.RankService.GetCurrentRank(newElo);
-            var nextRank = _dependencies.RankService.GetNextRank(currentRank.Name);
-            await _dependencies.EloRepository.AddAsync(new WorkoutEloWriteModel(Id<EloRegistry>.New(), userId, DateTimeOffset.UtcNow, newElo, training.Id), cancellationToken);
-            await _dependencies.TrainingRepository.UpdateAccountProfileRankAsync(userId, currentRank.Name, cancellationToken);
-            await _dependencies.TrainingRepository.StageTrainingCompletedCommandAsync(userId, training.Id, cancellationToken);
-            await _dependencies.UnitOfWork.SaveChangesAsync(cancellationToken);
+            var currentRank = _rankService.GetCurrentRank(newElo);
+            var nextRank = _rankService.GetNextRank(currentRank.Name);
+            await _eloRepository.AddAsync(new WorkoutEloWriteModel(Id<EloRegistry>.New(), userId, DateTimeOffset.UtcNow, newElo, training.Id), cancellationToken);
+            await _trainingRepository.UpdateAccountProfileRankAsync(userId, currentRank.Name, cancellationToken);
+            await _trainingRepository.StageTrainingCompletedCommandAsync(userId, training.Id, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             var comparison = TrainingComparisonReportBuilder.Build(exercises, previousScoresMap, exerciseDetailsMap);
             await transaction.CommitAsync(cancellationToken);
@@ -166,7 +196,7 @@ internal sealed class CompleteTrainingUseCase : ICompleteTrainingUseCase
         List<Id<Exercise>> exerciseIds,
         CancellationToken cancellationToken)
     {
-        var scores = await _dependencies.ExerciseScoreRepository.GetByAccountAndExercisesAsync(userId, exerciseIds, cancellationToken);
+        var scores = await _exerciseScoreRepository.GetByAccountAndExercisesAsync(userId, exerciseIds, cancellationToken);
         scores = scores
             .Where(score => score.Training != null && score.Training.GymId == gymId)
             .OrderByDescending(score => score.CreatedAt)

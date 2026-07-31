@@ -7,9 +7,11 @@ public sealed partial class TrainingService : ITrainingService
     private readonly ICompleteTrainingUseCase _completeTrainingUseCase;
     private readonly ITrainingHistoryReadService _trainingHistoryReadService;
 
-    public TrainingService(ITrainingServiceDependencies dependencies)
+    public TrainingService(
+        ICompleteTrainingUseCase completeTrainingUseCase,
+        ITrainingHistoryReadService trainingHistoryReadService)
     {
-        _completeTrainingUseCase = dependencies.CompleteTrainingUseCase;
-        _trainingHistoryReadService = dependencies.TrainingHistoryReadService;
+        _completeTrainingUseCase = completeTrainingUseCase;
+        _trainingHistoryReadService = trainingHistoryReadService;
     }
 }

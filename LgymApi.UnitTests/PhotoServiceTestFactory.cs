@@ -112,21 +112,19 @@ internal static class PhotoServiceTestFactory
                     ? pendingUpload
                     : null);
 
-        var dependencies = Substitute.For<IReportingServiceDependencies>();
-        dependencies.TemplatePersistence.Returns(Substitute.For<IReportTemplatePersistence>());
-        dependencies.RequestSubmissionPersistence.Returns(requestPersistence);
-        dependencies.RecurringAssignmentPersistence.Returns(Substitute.For<IRecurringReportAssignmentPersistence>());
-        dependencies.PhotoPersistence.Returns(photoPersistence);
-        dependencies.RelationshipAccessPersistence.Returns(relationshipPersistence);
-        dependencies.ReportSubmissionAcceptedProgressCommandFactory.Returns(new ReportSubmissionAcceptedProgressCommandFactory());
-        dependencies.CommandDispatcher.Returns(Substitute.For<ICommandDispatcher>());
-        dependencies.CommandOutboxWriter.Returns(Substitute.For<ICommandOutboxWriter>());
-        dependencies.UnitOfWork.Returns(unitOfWork ?? Substitute.For<IUnitOfWork>());
-        dependencies.PhotoStorageProvider.Returns(photoStorageProvider ?? Substitute.For<IPhotoStorageProvider>());
-        dependencies.Mapper.Returns(ReportingTestData.Mapper());
-        dependencies.Logger.Returns(Substitute.For<ILogger<ReportingService>>());
-        dependencies.PhotoStorageOptions.Returns(photoStorageOptions ?? new PhotoStorageOptions());
-
-        return new ReportingService(dependencies);
+        return new ReportingService(
+            Substitute.For<IReportTemplatePersistence>(),
+            requestPersistence,
+            Substitute.For<IRecurringReportAssignmentPersistence>(),
+            photoPersistence,
+            relationshipPersistence,
+            new ReportSubmissionAcceptedProgressCommandFactory(),
+            Substitute.For<ICommandDispatcher>(),
+            Substitute.For<ICommandOutboxWriter>(),
+            unitOfWork ?? Substitute.For<IUnitOfWork>(),
+            photoStorageProvider ?? Substitute.For<IPhotoStorageProvider>(),
+            ReportingTestData.Mapper(),
+            Substitute.For<ILogger<ReportingService>>(),
+            photoStorageOptions ?? new PhotoStorageOptions());
     }
 }
