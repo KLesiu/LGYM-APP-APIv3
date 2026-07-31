@@ -11,16 +11,16 @@ public sealed class EmailTemplateOutputPathTests
         {
             ["PasswordRecovery/en.email"] = "88e0160546ec42b9271c562cbeffe7385bcece92ee51b6dda0c6842d780aa8ff",
             ["PasswordRecovery/pl.email"] = "3d78fafbb040316326be01aeb891a44a0061e1054bfb1c9b8526f91b179cd739",
-            ["TrainerInvitation/en.email"] = "16fce6f7a92dbcab05eb340be9dac6b1625964c91225615be560af805ca3fe30",
-            ["TrainerInvitation/pl.email"] = "a0b1bd2efeac828218cbe00fd5a6ac42d971530c3386e476a585de3475d0838f",
+            ["TrainerInvitation/en.email"] = "2cc1617a517198dce7c2e8ebfa8c1edaba47fb83fe03666c893c1a9c241d2644",
+            ["TrainerInvitation/pl.email"] = "440832747069646dab0b76dbb31fe4e1e525ec7266b0649a58b8ea836d674a50",
             ["TrainerInvitationAccepted/en.email"] = "9ebcfbd4c08e5ce3ee7e53d162fab52d72b4db861e62d5e4ab17a8d692035f9a",
             ["TrainerInvitationAccepted/pl.email"] = "cdc0b8ae64d36b24c7e8879151f72f00c4a24182e9f1787dcfdff7f1f9d1ae5f",
             ["TrainerInvitationRevoked/en.email"] = "093ca6aff14dac3db946db803f18768ea1e1770db36eabe8e393e5fc6dffc982",
             ["TrainerInvitationRevoked/pl.email"] = "c49829ecc26a02e2aed45740fce6805f80bec017f95f01fa9c3143762bcd7ab8",
             ["TrainingCompleted/en.email"] = "e15a42e989f4fe190129867367fa1a2164e0010d2e93950a28de6bfd591326fe",
             ["TrainingCompleted/pl.email"] = "e2d749b4f0e801f9db231048116ac37151318962e18000d142ee2af2c92ba1e0",
-            ["Welcome/en.email"] = "37a71e6f3b9ec94a01887216e12740e350442860e9c1786fcdf93234615cb982",
-            ["Welcome/pl.email"] = "6d9b48387dbe16b146a042dd00c9a74bda06b1646dbab34f59e70934851025d5"
+            ["Welcome/en.email"] = "42e03ae6945df3c69caa553fe6b5e10f26f499b560b4644eb8a60597678ef671",
+            ["Welcome/pl.email"] = "db1477c2bce30b5427c6bc3984cddc141f5adfd56a162b73c81d0c5dfac8bc3d"
         };
 
     [Test]
@@ -52,9 +52,14 @@ public sealed class EmailTemplateOutputPathTests
             Path.Combine(AppContext.BaseDirectory, "EmailTemplates")
         };
 
-        foreach (var templateRoot in templateRoots)
+        var sourceManifest = ReadManifest(templateRoots[0]);
+        ValidateManifest(ReadManifest(templateRoots[0], normalizeLineEndings: true));
+
+        foreach (var templateRoot in templateRoots.Skip(1))
         {
-            ValidateManifest(ReadManifest(templateRoot));
+            var outputManifest = ReadManifest(templateRoot);
+            outputManifest.Should().BeEquivalentTo(sourceManifest);
+            ValidateManifest(ReadManifest(templateRoot, normalizeLineEndings: true));
         }
     }
 
@@ -78,7 +83,7 @@ public sealed class EmailTemplateOutputPathTests
             .WithMessage("Runtime email template hash mismatch for 'Welcome/pl.email'.");
     }
 
-    private static IReadOnlyDictionary<string, string> ReadManifest(string templateRoot)
+    private static IReadOnlyDictionary<string, string> ReadManifest(string templateRoot, bool normalizeLineEndings = false)
     {
         if (!Directory.Exists(templateRoot))
         {
@@ -88,8 +93,27 @@ public sealed class EmailTemplateOutputPathTests
         return Directory.EnumerateFiles(templateRoot, "*.email", SearchOption.AllDirectories)
             .ToDictionary(
                 path => Path.GetRelativePath(templateRoot, path).Replace('\\', '/'),
-                path => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant(),
+                path => Convert.ToHexString(SHA256.HashData(
+                    normalizeLineEndings ? NormalizeLineEndings(File.ReadAllBytes(path)) : File.ReadAllBytes(path))).ToLowerInvariant(),
                 StringComparer.Ordinal);
+    }
+
+    private static byte[] NormalizeLineEndings(byte[] content)
+    {
+        var normalized = new byte[content.Length];
+        var normalizedLength = 0;
+
+        for (var index = 0; index < content.Length; index++)
+        {
+            if (content[index] == '\r' && index + 1 < content.Length && content[index + 1] == '\n')
+            {
+                continue;
+            }
+
+            normalized[normalizedLength++] = content[index];
+        }
+
+        return normalized[..normalizedLength];
     }
 
     private static void ValidateManifest(IReadOnlyDictionary<string, string> actual)
