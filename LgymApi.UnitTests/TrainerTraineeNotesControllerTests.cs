@@ -9,7 +9,7 @@ using LgymApi.Application.Coaching.TraineeNotes.History;
 using LgymApi.Application.Coaching.TraineeNotes.Models;
 using LgymApi.Application.Coaching.TraineeNotes.TrainerList;
 using LgymApi.Application.Coaching.TraineeNotes.Update;
-using LgymApi.Application.Coaching.Compatibility;
+using LgymApi.Application.Coaching.ApiAdapters;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping;

@@ -16,7 +16,7 @@ using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 using LgymApi.Identity.Contracts.Accounts;
 
-namespace LgymApi.Application.Coaching.Compatibility;
+namespace LgymApi.Application.Coaching.ApiAdapters;
 
 internal sealed class TrainerDashboardProgressApiAdapter : ITrainerDashboardProgressApiPort
 {

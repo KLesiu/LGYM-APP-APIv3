@@ -6,7 +6,7 @@ using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 using LgymApi.Identity.Contracts.Accounts;
 
-namespace LgymApi.Application.Reporting.Compatibility;
+namespace LgymApi.Application.Reporting.ApiAdapters;
 
 public interface ITrainerReportTemplateApiPort
 {

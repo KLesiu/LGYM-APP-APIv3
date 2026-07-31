@@ -6,7 +6,7 @@ using LgymApi.Api.Middleware;
 using LgymApi.Application.Coaching.TraineeNotes.Models;
 using LgymApi.Application.Coaching.TraineeNotes.VisibleList;
 using LgymApi.Application.Coaching.TraineeNotes.VisibleSingle;
-using LgymApi.Application.Coaching.Compatibility;
+using LgymApi.Application.Coaching.ApiAdapters;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping;

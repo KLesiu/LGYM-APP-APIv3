@@ -2,7 +2,7 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Coaching.Compatibility;
+using LgymApi.Application.Coaching.ApiAdapters;
 using LgymApi.Application.Coaching.TraineeNotes.Models;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;

@@ -62,6 +62,10 @@ Operational records and logs expose event ID, report submission ID, correlation 
 
 Reporting API routes, HTTP verbs, action aliases, DTO type and property names, `JsonPropertyName` values, declared response types, and required legacy fields are compatibility contracts. The guarded API contract surface is maintained by architecture tests, including `ReportingApiContractImmutabilityGuardTests`, which fail on silent drift. Existing aliases and legacy fields, including `_id` and `msg`, remain part of the guarded surface. The current Reporting DTO contract has no `req` JSON property.
 
+The six controller-facing Reporting API ports, their adapters, and their mapping profile reside under `LgymApi.Application/Reporting/ApiAdapters`. They preserve the existing controller-to-owner boundary without introducing routes, persistence access, or a new public service surface.
+
+Reporting contributes six owner-oriented Application API adapters to the final 25-adapter Application handoff. Migration-era adapter CLR identities are removed under ADR-007, while the guarded Reporting route and payload contracts remain unchanged.
+
 ## Persistence and Deployment Boundary
 
 Reporting uses the current shared persistence composition. The production system has one `AppDbContext`, one PostgreSQL database, and one migration stream. Logical write ownership does not create a physical database, schema, context, migration stream, service, or deployment split. There is no broker. Existing tables, migrations, worker identities, routes, and payload shapes remain compatible.

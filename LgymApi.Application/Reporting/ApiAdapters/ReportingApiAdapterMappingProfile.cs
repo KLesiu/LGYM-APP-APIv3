@@ -4,9 +4,9 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 
-namespace LgymApi.Application.Reporting.Compatibility;
+namespace LgymApi.Application.Reporting.ApiAdapters;
 
-public sealed class ReportingApiCompatibilityMappingProfile : IMappingProfile
+public sealed class ReportingApiAdapterMappingProfile : IMappingProfile
 {
     public void Configure(MappingConfiguration configuration)
     {

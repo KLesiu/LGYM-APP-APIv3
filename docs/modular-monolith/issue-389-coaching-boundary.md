@@ -116,9 +116,9 @@ Coaching owns link creation, unlink, trainee detach, and current-trainer facts. 
 
 Coaching owns note visibility, pinning, soft deletion, and history facts. Note mutations persist the note and its history atomically at the Coaching use-case boundary. No row here authorizes changing note payloads, history semantics, notification timing, or malformed-ID API compatibility.
 
-## Compatibility adapters
+## Owner-oriented API adapters and legacy command compatibility
 
-The following adapter rows preserve the current API and durable command surfaces. They are compatibility adapters, not new routes or persisted identities.
+The five controller-facing Coaching API ports, their adapters, and their mapping profile reside under `LgymApi.Application/Coaching/ApiAdapters`. The following adapter rows preserve the current API and durable command surfaces. They are endpoint compatibility boundaries, not new routes or persisted identities.
 
 | Adapter ID | Current compatibility surface | Boundary rule |
 | --- | --- | --- |
@@ -158,6 +158,8 @@ The six intent rows consolidate the eight legacy compatibility adapters without 
 ## Cutover result
 
 The focused Coaching cutover removes obsolete Coaching repository and service seams. The boundary-debt baseline contains 157 active entries after stale Coaching-related rows were removed. Existing guards reject reintroduced persistence, private-service, and entity edges while allowing typed `Id<T>` transport.
+
+Coaching is one of the Application-owned API adapter owners in the final 25-adapter Application handoff. Its five controller-facing ports remain owner-oriented, while migration-era adapter CLR names are removed under ADR-007 without changing the listed HTTP contracts.
 
 All 31 actions now use focused Coaching ownership. Invitation and dashboard identity enrichment occurs before filtering, sorting, totals, and paging. The expired pending email binding path records only `Expired` and `RespondedAt`, keeps `TraineeId` null, creates no link, and queues no command. No schema, model, migration, table, index, foreign-key, query-filter, typed-ID conversion, `AppDbContext`, database, or migration-stream change occurred.
 

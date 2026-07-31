@@ -8,7 +8,7 @@ using LgymApi.Application.Reporting.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Reporting;
 using LgymApi.Application.Features.Reporting.Models;
-using LgymApi.Application.Reporting.Compatibility;
+using LgymApi.Application.Reporting.ApiAdapters;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;

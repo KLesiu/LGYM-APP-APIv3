@@ -132,9 +132,9 @@ public sealed class CoachingManagedPlanSliceArchitectureTests
     [Test]
     public void TrainingPlanningManagedPlanOwner_DoesNotDependOnCoaching()
     {
-        var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var directory = Path.Combine(root, "LgymApi.Application", "TrainingPlanning");
-        var source = Directory.GetFiles(directory, "*.cs", SearchOption.AllDirectories)
+        var sourceFiles = ArchitectureTestHelpers.EnumerateProductionSourceFiles("LgymApi.TrainingPlanning");
+        sourceFiles.Should().NotBeEmpty();
+        var source = sourceFiles
             .Select(File.ReadAllText);
 
         source.Should().NotContain(text => text.Contains("LgymApi.Application.Coaching", StringComparison.Ordinal));
@@ -144,9 +144,15 @@ public sealed class CoachingManagedPlanSliceArchitectureTests
     public void TrainingPlanningManagedPlanOwner_UsesTrainingPlanningPlanErrors()
     {
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var directory = Path.Combine(root, "LgymApi.Application", "TrainingPlanning", "ManagedPlans");
-        var useCaseSources = Directory.GetFiles(directory, "*UseCase.cs", SearchOption.AllDirectories)
+        var useCaseFiles = ArchitectureTestHelpers.EnumerateProductionSourceFiles("LgymApi.TrainingPlanning")
+            .Where(path => ArchitectureTestHelpers.NormalizePath(Path.GetRelativePath(root, path))
+                .StartsWith("LgymApi.TrainingPlanning/ManagedPlans/", StringComparison.Ordinal))
+            .Where(path => Path.GetFileName(path).EndsWith("UseCase.cs", StringComparison.Ordinal))
             .Where(path => !Path.GetFileName(path).StartsWith("I", StringComparison.Ordinal))
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+        useCaseFiles.Should().HaveCount(7);
+        var useCaseSources = useCaseFiles
             .Select(File.ReadAllText);
 
         useCaseSources.Should().OnlyContain(source =>

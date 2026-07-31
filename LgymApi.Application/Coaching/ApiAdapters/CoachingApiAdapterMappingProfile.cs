@@ -27,9 +27,9 @@ using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 using LgymApi.Identity.Contracts.Accounts;
 
-namespace LgymApi.Application.Coaching.Compatibility;
+namespace LgymApi.Application.Coaching.ApiAdapters;
 
-public sealed class CoachingApiCompatibilityMappingProfile : IMappingProfile
+public sealed class CoachingApiAdapterMappingProfile : IMappingProfile
 {
     public void Configure(MappingConfiguration configuration)
     {
