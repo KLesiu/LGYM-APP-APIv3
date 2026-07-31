@@ -405,7 +405,7 @@ jobs:
         with:
           pattern: verification-*-${{ github.sha }}
           path: TestResults/Collected
-          merge-multiple: true
+          merge-multiple: false
 
       - name: Validate complete same-SHA evidence before publication
         shell: pwsh
