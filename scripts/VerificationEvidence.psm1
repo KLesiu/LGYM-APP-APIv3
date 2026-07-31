@@ -78,7 +78,7 @@ function Protect-EvidenceValue {
             $redactedItems.Add((Protect-EvidenceValue -Value $item))
         }
 
-        return @($redactedItems.ToArray())
+        return ,($redactedItems.ToArray())
     }
 
     return $Value

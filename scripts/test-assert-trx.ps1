@@ -308,6 +308,38 @@ function Assert-MatrixConfigurationContract {
     }
 }
 
+function Assert-EvidenceSerializationContract {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Repository,
+        [Parameter(Mandatory)]
+        [string]$ArtifactRoot
+    )
+
+    $snapshot = Get-RepositorySnapshot -RepositoryRoot $Repository.path
+    if (-not $snapshot.worktree.isClean) {
+        throw "The fixture repository must be clean before serializing its snapshot."
+    }
+
+    $cleanSnapshotPath = Join-Path $ArtifactRoot "clean-snapshot.json"
+    Write-RedactedJsonFile -Path $cleanSnapshotPath -Value $snapshot
+    $cleanSnapshotJson = [System.IO.File]::ReadAllText($cleanSnapshotPath)
+    if ($cleanSnapshotJson -notmatch '"status"\s*:\s*\[\s*\]') {
+        throw "A clean repository snapshot did not serialize worktree status as an empty JSON array."
+    }
+
+    $sequencePath = Join-Path $ArtifactRoot "sequence.json"
+    Write-RedactedJsonFile -Path $sequencePath -Value ([pscustomobject]@{
+            nullable = $null
+            values = @("first", "second")
+            password = "fixture-password"
+        })
+    $sequence = [System.IO.File]::ReadAllText($sequencePath) | ConvertFrom-Json -Depth 8
+    if ($null -ne $sequence.nullable -or $sequence.values.Count -ne 2 -or $sequence.values[0] -cne "first" -or $sequence.values[1] -cne "second" -or $sequence.password -cne "[redacted]") {
+        throw "Evidence serialization did not preserve nulls, ordered sequences, and credential redaction."
+    }
+}
+
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("lgym-assert-trx-" + [Guid]::NewGuid().ToString("N"))
 try {
     $null = New-Item -ItemType Directory -Path $temporaryRoot -Force
@@ -317,6 +349,8 @@ try {
         artifactRoot = (New-Item -ItemType Directory -Path (Join-Path $temporaryRoot "artifacts") -Force).FullName
         assertScript = Join-Path $PSScriptRoot "assert-trx.ps1"
     }
+
+    Assert-EvidenceSerializationContract -Repository $repository -ArtifactRoot $fixture.artifactRoot
 
     $polishVstestListing = @(
         "Ostrzeżenie: diagnostyka kompilacji nie jest listą testów.",
