@@ -36,11 +36,10 @@ public sealed class ModuleDependencyGuardTests
         var observedViolations = CollectObservedViolations(scan.RepoRoot, scan.Compilation, treeModules, ownedTypeMap);
 
         TestContext.Progress.WriteLine($"Module dependency scan: {scan.DescribeSourceTreeCounts()}; violations={observedViolations.Count}.");
-        Assert.Multiple(() =>
-        {
-            Assert.That(observedViolations, Is.Empty);
-            ArchitectureTestHelpers.AssertNoUnexpectedModuleBoundaryViolations(GuardId, observedViolations);
-        });
+        Assert.That(
+            observedViolations,
+            Is.Empty,
+            ModuleBoundaryObservedViolation.DescribeAll(observedViolations));
     }
 
     [Test]
@@ -91,6 +90,10 @@ public sealed class ModuleDependencyGuardTests
             compilation,
             treeModules,
             CollectOwnedTypeMap(compilation, treeModules));
+        var assertionFailure = Assert.Throws<AssertionException>(() => Assert.That(
+            violations,
+            Is.Empty,
+            ModuleBoundaryObservedViolation.DescribeAll(violations)));
 
         Assert.Multiple(() =>
         {
@@ -102,6 +105,11 @@ public sealed class ModuleDependencyGuardTests
             Assert.That(violations.Select(violation => violation.TargetSymbolOrPath), Has.Some.Contains("ITrainingRepository"));
             Assert.That(violations.Select(violation => violation.SourceSymbolOrPath), Has.Some.Contains("LgymApi.TrainingPlanning/Relocated/RelocatedPlanningService.cs"));
             Assert.That(violations.Select(violation => violation.SourceSymbolOrPath), Has.Some.Contains("LgymApi.Application/LegacyPlanning/LegacyPlanDayAdapter.cs"));
+            foreach (var violation in violations)
+            {
+                Assert.That(assertionFailure!.Message, Does.Contain(violation.SourceSymbolOrPath));
+                Assert.That(assertionFailure.Message, Does.Contain(violation.TargetSymbolOrPath));
+            }
         });
     }
 
@@ -137,38 +145,56 @@ public sealed class ModuleDependencyGuardTests
         string expectedTargetModule)
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var targetTree = CSharpSyntaxTree.ParseText(
-            $"namespace {targetNamespace}; public sealed class FormerDebtDependency {{ }}",
-            path: Path.Combine(repoRoot, targetPath.Replace('/', Path.DirectorySeparatorChar)));
-        var sourceTree = CSharpSyntaxTree.ParseText(
-            $$"""
-            using {{targetNamespace}};
-            namespace {{sourceNamespace}};
-            internal sealed class FormerDebtConsumer
-            {
-                private readonly FormerDebtDependency _dependency = default!;
-            }
-            """,
-            path: Path.Combine(repoRoot, sourcePath.Replace('/', Path.DirectorySeparatorChar)));
-        List<SyntaxTree> syntaxTrees = [targetTree, sourceTree];
-        var compilation = ArchitectureTestHelpers.CreateCompilation(syntaxTrees);
-        var treeModules = syntaxTrees
-            .Select(tree => new SyntaxTreeModule(tree, ResolveDependencyGuardModule(tree, repoRoot)))
-            .Where(entry => entry.ModuleName is not null)
-            .ToArray();
-
-        var violations = CollectObservedViolations(
+        var violations = CollectDependencyFixtureViolations(
             repoRoot,
-            compilation,
-            treeModules,
-            CollectOwnedTypeMap(compilation, treeModules));
-
-        Assert.That(
+            sourcePath,
+            sourceNamespace,
+            targetPath,
+            targetNamespace);
+        var assertionFailure = Assert.Throws<AssertionException>(() => Assert.That(
             violations,
-            Has.Some.Matches<ModuleBoundaryObservedViolation>(violation =>
+            Is.Empty,
+            ModuleBoundaryObservedViolation.DescribeAll(violations)));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                violations,
+                Has.Some.Matches<ModuleBoundaryObservedViolation>(violation =>
                 violation.SourceModule == expectedSourceModule
                 && violation.TargetModule == expectedTargetModule
                 && violation.TargetSymbolOrPath.Contains("FormerDebtDependency", StringComparison.Ordinal)));
+            Assert.That(assertionFailure!.Message, Does.Contain($"Source module: {expectedSourceModule}"));
+            Assert.That(assertionFailure.Message, Does.Contain($"Target module: {expectedTargetModule}"));
+            Assert.That(assertionFailure.Message, Does.Contain(sourcePath));
+            Assert.That(assertionFailure.Message, Does.Contain("FormerDebtDependency"));
+        });
+    }
+
+    [Test]
+    public void Helper_Folder_Source_Should_Be_Observed_And_Fail_Directly()
+    {
+        const string sourcePath = "LgymApi.Application/Features/Reporting/Helpers/HiddenReportingDebt.cs";
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var violations = CollectDependencyFixtureViolations(
+            repoRoot,
+            sourcePath,
+            "LgymApi.Application.Features.Reporting.Helpers",
+            "LgymApi.Application/WorkoutProgress/Contracts/ReportingIntegration/HiddenWorkoutDependency.cs",
+            "LgymApi.Application.WorkoutProgress.Contracts.ReportingIntegration");
+        var assertionFailure = Assert.Throws<AssertionException>(() => Assert.That(
+            violations,
+            Is.Empty,
+            ModuleBoundaryObservedViolation.DescribeAll(violations)));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(violations, Has.Count.EqualTo(1));
+            Assert.That(violations[0].SourceModule, Is.EqualTo(ArchitectureTestHelpers.ReportingModuleName));
+            Assert.That(violations[0].TargetModule, Is.EqualTo(ArchitectureTestHelpers.WorkoutProgressModuleName));
+            Assert.That(assertionFailure!.Message, Does.Contain(sourcePath));
+            Assert.That(assertionFailure.Message, Does.Contain("HiddenWorkoutDependency"));
+        });
     }
 
     [Test]
@@ -230,6 +256,40 @@ public sealed class ModuleDependencyGuardTests
         return ownedTypeMap;
     }
 
+    private static IReadOnlyList<ModuleBoundaryObservedViolation> CollectDependencyFixtureViolations(
+        string repoRoot,
+        string sourcePath,
+        string sourceNamespace,
+        string targetPath,
+        string targetNamespace)
+    {
+        var targetTree = CSharpSyntaxTree.ParseText(
+            $"namespace {targetNamespace}; public sealed class FormerDebtDependency {{ }}",
+            path: Path.Combine(repoRoot, targetPath.Replace('/', Path.DirectorySeparatorChar)));
+        var sourceTree = CSharpSyntaxTree.ParseText(
+            $$"""
+            using {{targetNamespace}};
+            namespace {{sourceNamespace}};
+            internal sealed class FormerDebtConsumer
+            {
+                private readonly FormerDebtDependency _dependency = default!;
+            }
+            """,
+            path: Path.Combine(repoRoot, sourcePath.Replace('/', Path.DirectorySeparatorChar)));
+        List<SyntaxTree> syntaxTrees = [targetTree, sourceTree];
+        var compilation = ArchitectureTestHelpers.CreateCompilation(syntaxTrees);
+        var treeModules = syntaxTrees
+            .Select(tree => new SyntaxTreeModule(tree, ResolveDependencyGuardModule(tree, repoRoot)))
+            .Where(entry => entry.ModuleName is not null)
+            .ToArray();
+
+        return CollectObservedViolations(
+            repoRoot,
+            compilation,
+            treeModules,
+            CollectOwnedTypeMap(compilation, treeModules));
+    }
+
     private static IReadOnlyList<ModuleBoundaryObservedViolation> CollectObservedViolations(
         string repoRoot,
         Compilation compilation,
@@ -254,7 +314,8 @@ public sealed class ModuleDependencyGuardTests
                 }
 
                 if (targetOwnership.ModuleName.Equals(sourceModule, StringComparison.Ordinal)
-                    || IsAllowedDependency(sourceModule, targetOwnership))
+                    || IsAllowedDependency(sourceModule, targetOwnership)
+                    || ArchitectureTestHelpers.MatchesApiAdapterDependencyContract(normalizedSourcePath, targetOwnership.DisplayName))
                 {
                     continue;
                 }

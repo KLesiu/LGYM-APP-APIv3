@@ -172,6 +172,19 @@ public static class ArchitectureTestHelpers
         "/LgymApi.Notifications/"
     };
 
+    private static readonly IReadOnlyDictionary<string, IReadOnlySet<string>> ApiAdapterDependencyContracts =
+        new Dictionary<string, IReadOnlySet<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["LgymApi.Application/Identity/ApiAdapters/IdentityApiAdapters.cs"] = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "LgymApi.Application.Features.EloRegistry.IEloRegistryService"
+            },
+            ["LgymApi.Application/Platform/ReferenceData/ApiAdapters/AppConfigApiAdapter.cs"] = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "LgymApi.Identity.Contracts.AccountReference"
+            }
+        };
+
     private static readonly string[] PlatformApplicationPathMarkers =
     {
         "/LgymApi.Application/BuildingBlocks/",
@@ -714,6 +727,17 @@ public static class ArchitectureTestHelpers
         return null;
     }
 
+    public static bool MatchesApiAdapterDependencyContract(string sourcePath, string targetMetadataName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetMetadataName);
+
+        var normalizedSourcePath = NormalizePath(sourcePath);
+        return ApiAdapterDependencyContracts.Any(entry =>
+            normalizedSourcePath.EndsWith(entry.Key, StringComparison.OrdinalIgnoreCase)
+            && entry.Value.Contains(targetMetadataName));
+    }
+
     public static PlatformSubBoundary? GetPlatformSubBoundaryFromPath(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -817,11 +841,6 @@ public static class ArchitectureTestHelpers
 
         var compilation = CreateCompilation(syntaxTrees);
         return (repoRoot, compilation, syntaxTrees);
-    }
-
-    public static void AssertNoUnexpectedModuleBoundaryViolations(string guardId, IEnumerable<ModuleBoundaryObservedViolation> observedViolations)
-    {
-        ModuleBoundaryDebtAllowlistRegistry.AssertNoUnexpectedViolations(guardId, observedViolations);
     }
 
     /// <summary>

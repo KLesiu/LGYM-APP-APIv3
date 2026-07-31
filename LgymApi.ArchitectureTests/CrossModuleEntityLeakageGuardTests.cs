@@ -16,8 +16,10 @@ public sealed class CrossModuleEntityLeakageGuardTests
 
     private static readonly string[] RemainingTrainingPlanningApplicationAdapters =
     [
-        "LgymApi.Application/Task7ApiCompatibility/PlanningNutrition/Adapters/PlanAccountCompatibilityAdapter.cs",
-        "LgymApi.Application/Task7ApiCompatibility/PlanningNutrition/Adapters/ManagedPlanAccountCompatibilityAdapter.cs"
+        "LgymApi.Application/TrainingPlanning/ApiAdapters/PlanApiAdapter.cs",
+        "LgymApi.Application/TrainingPlanning/ApiAdapters/PlanApiAdapterContracts.cs",
+        "LgymApi.Application/TrainingPlanning/ApiAdapters/PlanApiAdapterMappingProfile.cs",
+        "LgymApi.Application/Coaching/ApiAdapters/ManagedPlanApiAdapter.cs"
     ];
 
     private static readonly HashSet<string> TrainingPlanningEntityMetadataNames =
@@ -125,6 +127,10 @@ public sealed class CrossModuleEntityLeakageGuardTests
             compilation,
             [applicationTree],
             repoRoot);
+        var assertionFailure = Assert.Throws<AssertionException>(() => Assert.That(
+            violations,
+            Is.Empty,
+            ModuleBoundaryObservedViolation.DescribeAll(violations)));
 
         TestContext.Progress.WriteLine(
             $"Typed fixture source accepts only Id<T> transport while rejecting direct entity and repository values.");
@@ -146,6 +152,11 @@ public sealed class CrossModuleEntityLeakageGuardTests
             Assert.That(violations.Select(violation => violation.TargetSymbolOrPath), Has.Some.Contains(typeof(Plan).FullName));
             Assert.That(violations.Select(violation => violation.TargetSymbolOrPath), Has.Some.Contains("LgymApi.Application.Repositories.IUserRepository"));
             Assert.That(violations.Select(violation => violation.TargetSymbolOrPath), Has.Some.Contains(PlanRepositoryMetadataName));
+            foreach (var violation in violations)
+            {
+                Assert.That(assertionFailure!.Message, Does.Contain(violation.SourceSymbolOrPath));
+                Assert.That(assertionFailure.Message, Does.Contain(violation.TargetSymbolOrPath));
+            }
         });
     }
 
@@ -198,13 +209,29 @@ public sealed class CrossModuleEntityLeakageGuardTests
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         var violations = CollectViolations(compilation, [sourceTree], repoRoot);
-
-        Assert.That(
+        var assertionFailure = Assert.Throws<AssertionException>(() => Assert.That(
             violations,
-            Has.Some.Matches<ModuleBoundaryObservedViolation>(violation =>
+            Is.Empty,
+            ModuleBoundaryObservedViolation.DescribeAll(violations)));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                violations,
+                Has.Some.Matches<ModuleBoundaryObservedViolation>(violation =>
                 violation.SourceModule == expectedSourceModule
                 && violation.TargetModule == ArchitectureTestHelpers.IdentityModuleName
                 && violation.TargetSymbolOrPath == typeof(User).FullName));
+            Assert.That(assertionFailure!.Message, Does.Contain($"Source module: {expectedSourceModule}"));
+            Assert.That(assertionFailure.Message, Does.Contain("Target module: Identity & Accounts"));
+            Assert.That(assertionFailure.Message, Does.Contain(sourcePath));
+            Assert.That(assertionFailure.Message, Does.Contain(typeof(User).FullName));
+            foreach (var violation in violations)
+            {
+                Assert.That(assertionFailure.Message, Does.Contain(violation.SourceSymbolOrPath));
+                Assert.That(assertionFailure.Message, Does.Contain(violation.TargetSymbolOrPath));
+            }
+        });
     }
 
     [Test]
@@ -234,6 +261,10 @@ public sealed class CrossModuleEntityLeakageGuardTests
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         var violations = CollectViolations(compilation, [sourceTree], repoRoot);
+        var assertionFailure = Assert.Throws<AssertionException>(() => Assert.That(
+            violations,
+            Is.Empty,
+            ModuleBoundaryObservedViolation.DescribeAll(violations)));
 
         Assert.Multiple(() =>
         {
@@ -246,6 +277,9 @@ public sealed class CrossModuleEntityLeakageGuardTests
                 violations,
                 Has.None.Matches<ModuleBoundaryObservedViolation>(violation =>
                     violation.SourceSymbolOrPath.Contains("NestedMarkerIds", StringComparison.Ordinal)));
+            Assert.That(assertionFailure!.Message, Does.Contain("DirectNestedEntities"));
+            Assert.That(assertionFailure.Message, Does.Contain(typeof(User).FullName));
+            Assert.That(assertionFailure.Message, Does.Not.Contain("NestedMarkerIds"));
         });
     }
 
@@ -393,7 +427,7 @@ public sealed class CrossModuleEntityLeakageGuardTests
             Assert.That(
                 violations,
                 Is.Empty,
-                "Training Planning production and retained Application adapters must not directly use foreign entities or repositories.");
+                ModuleBoundaryObservedViolation.DescribeAll(violations));
         });
     }
 
@@ -407,8 +441,10 @@ public sealed class CrossModuleEntityLeakageGuardTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(violations, Is.Empty);
-            ArchitectureTestHelpers.AssertNoUnexpectedModuleBoundaryViolations(GuardId, violations);
+            Assert.That(
+                violations,
+                Is.Empty,
+                ModuleBoundaryObservedViolation.DescribeAll(violations));
 
             Assert.That(
                 violations.Any(v => v.TargetSymbolOrPath.Contains("Features.", StringComparison.Ordinal)),
@@ -893,12 +929,14 @@ public sealed class CrossModuleEntityLeakageGuardTests
                 || path.StartsWith("LgymApi.Application/Gym/", StringComparison.OrdinalIgnoreCase)
                 || path.StartsWith("LgymApi.Application/Measurements/", StringComparison.OrdinalIgnoreCase)
                 => "Workout & Progress",
-            var path when path.StartsWith("LgymApi.Application/TrainerRelationships/", StringComparison.OrdinalIgnoreCase)
+            var path when path.StartsWith("LgymApi.Application/Coaching/", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("LgymApi.Application/TrainerRelationships/", StringComparison.OrdinalIgnoreCase)
                 || path.StartsWith("LgymApi.Application/Features/TraineeNotes/", StringComparison.OrdinalIgnoreCase)
                 => "Coaching",
             var path when path.StartsWith("LgymApi.Application/MainRecords/", StringComparison.OrdinalIgnoreCase)
                 => "Workout & Progress",
-            var path when path.StartsWith("LgymApi.Application/Features/DietPlans/", StringComparison.OrdinalIgnoreCase)
+            var path when path.StartsWith("LgymApi.Application/Nutrition/", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("LgymApi.Application/Features/DietPlans/", StringComparison.OrdinalIgnoreCase)
                 || path.StartsWith("LgymApi.Application/Features/Supplementation/", StringComparison.OrdinalIgnoreCase)
                 => "Nutrition",
             _ => null

@@ -3,7 +3,7 @@ using Microsoft.CodeAnalysis.CSharp;
 namespace LgymApi.ArchitectureTests;
 
 [TestFixture]
-public sealed class ModuleBoundaryDebtProductionScanGuardTests
+public sealed class ModuleBoundaryProductionScanGuardTests
 {
     private static readonly string[] ExactProductionProjects =
     [
@@ -58,7 +58,7 @@ public sealed class ModuleBoundaryDebtProductionScanGuardTests
     }
 
     [Test]
-    public void Empty_Registry_Should_Not_Hide_A_Relocated_Production_Violation()
+    public void Relocated_Production_Source_Should_Be_Classified_And_Fail_Directly()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var relocatedTree = CSharpSyntaxTree.ParseText(
@@ -70,18 +70,19 @@ public sealed class ModuleBoundaryDebtProductionScanGuardTests
             ArchitectureTestHelpers.WorkoutProgressModuleName,
             "LgymApi.Application/Relocated/HiddenReportingDebt.cs",
             "LgymApi.Application.WorkoutProgress.Contracts.ReportingIntegration.FormerWorkoutDependency");
+        var assertionFailure = Assert.Throws<AssertionException>(() => Assert.That(
+            new[] { observedViolation },
+            Is.Empty,
+            ModuleBoundaryObservedViolation.DescribeAll([observedViolation])));
 
         Assert.Multiple(() =>
         {
-            Assert.That(ModuleBoundaryDebtAllowlistRegistry.AllEntries, Is.Empty);
             Assert.That(
                 ModuleBoundaryProductionScan.ResolveCanonicalModule(relocatedTree, repoRoot),
                 Is.EqualTo(ArchitectureTestHelpers.ReportingModuleName));
-            Assert.That(
-                () => ModuleBoundaryDebtAllowlistRegistry.AssertNoUnexpectedViolations(
-                    nameof(ModuleDependencyGuardTests),
-                    [observedViolation]),
-                Throws.TypeOf<AssertionException>());
+            Assert.That(assertionFailure!.Message, Does.Contain("Source module: Reporting"));
+            Assert.That(assertionFailure.Message, Does.Contain("Target module: Workout & Progress"));
+            Assert.That(assertionFailure.Message, Does.Contain("LgymApi.Application/Relocated/HiddenReportingDebt.cs"));
         });
     }
 
@@ -100,5 +101,28 @@ public sealed class ModuleBoundaryDebtProductionScanGuardTests
         Assert.That(
             ArchitectureTestHelpers.ClassifyModuleBoundaryFile(helperPath, repoRoot).IsProductionCode,
             Is.True);
+    }
+
+    [Test]
+    public void Api_Adapter_Dependency_Contracts_Should_Match_Only_Their_Exact_Source_And_Target()
+    {
+        const string identityAdapter = "LgymApi.Application/Identity/ApiAdapters/IdentityApiAdapters.cs";
+        const string appConfigAdapter = "LgymApi.Application/Platform/ReferenceData/ApiAdapters/AppConfigApiAdapter.cs";
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                ArchitectureTestHelpers.MatchesApiAdapterDependencyContract(identityAdapter, "LgymApi.Application.Features.EloRegistry.IEloRegistryService"),
+                Is.True);
+            Assert.That(
+                ArchitectureTestHelpers.MatchesApiAdapterDependencyContract(appConfigAdapter, "LgymApi.Identity.Contracts.AccountReference"),
+                Is.True);
+            Assert.That(
+                ArchitectureTestHelpers.MatchesApiAdapterDependencyContract(identityAdapter, "LgymApi.Application.Repositories.IEloRegistryRepository"),
+                Is.False);
+            Assert.That(
+                ArchitectureTestHelpers.MatchesApiAdapterDependencyContract("LgymApi.Application/Identity/Profile/UserProfileService.cs", "LgymApi.Application.Features.EloRegistry.IEloRegistryService"),
+                Is.False);
+        });
     }
 }
