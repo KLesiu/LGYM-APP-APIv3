@@ -11,7 +11,7 @@ Current extracted-module catalog
 - `#381` defines the Notifications write-ownership boundary and provider-neutral contract surface.
 - `#391` codifies Workout & Progress logical ownership and application-path classification without a persistence or API split.
 - `docs/ARCHITECTURE.md` is the reader-facing integration guide for the current maps.
-- ADR-006 explains why the modular-monolith direction exists.
+- ADR-006 explains why the modular-monolith direction exists. ADR-007 records the completed compatibility commitments and issue-395 final verification records the deferred same-SHA evidence workflow.
 
 ## Scope
 
@@ -235,9 +235,11 @@ The eight-module catalog is the current baseline for those checks, and any later
 ## Links
 
 - `docs/adr/006-lgym-evolves-as-modular-monolith.md`
+- `docs/adr/007-final-modular-monolith-compatibility-commitments.md`
 - `docs/modular-monolith/issue-376-ownership-map.md`
 - `docs/modular-monolith/issue-380-background-contract-ownership.md`
 - `docs/modular-monolith/issue-380-project-reference-graph.md`
 - `docs/modular-monolith/issue-381-notifications-boundary.md`
 - `docs/modular-monolith/issue-390-nutrition-boundary.md`
 - `docs/modular-monolith/issue-393-platform-reference-data-boundary.md`
+- `docs/modular-monolith/issue-395-final-verification.md`

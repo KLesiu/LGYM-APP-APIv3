@@ -96,6 +96,8 @@ Retries must be bounded by the delivery policy and must not create a second logi
 
 Compatibility adapters preserve current wire shapes and durable identities after the extraction. They are adapters, not new ownership seams.
 
+The final API handoff retains exactly three Notifications-owned API adapters. Three distinct integration adapters remain by design: `PushInstallationSessionDisassociationAdapter`, `CoachingEmailNotificationSchedulerAdapter`, and `PasswordRecoveryEmailSchedulerAdapter`. They stay until an approved replacement preserves their owner contracts, consumers, registrations, and durable behavior. ADR-007 removes migration-era `Task7`, `ApiCompatibility`, and `Compatibility.Task7` CLR adapter identities without changing external HTTP or JSON contracts.
+
 | Adapter ID | Current compatibility surface | Boundary rule |
 | --- | --- | --- |
 | `notifications.adapter.push-payload` | `PushEventPayload.SchemaVersion`, `Type`, `EventId`, `EntityId`, `InAppNotificationId`, and `Deeplink` | Preserve current meaning and serialization. `EntityId` remains the documented polymorphic string exception. |
