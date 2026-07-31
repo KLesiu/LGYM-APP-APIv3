@@ -7,9 +7,9 @@ using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 
-namespace LgymApi.Application.Task7ApiCompatibility.WorkoutProgress;
+namespace LgymApi.Application.WorkoutProgress.ApiAdapters;
 
-public interface IMainRecordsApiCompatibilityService
+public interface IMainRecordsApiAdapter
 {
     Task<Result<Unit, AppError>> AddNewRecordAsync(Id<AccountReference> accountId, Id<LgymApi.Domain.Entities.Exercise> exerciseId, double weight, WeightUnits unit, DateTime date, CancellationToken cancellationToken = default);
     Task<Result<List<MainRecordReadModel>, AppError>> GetMainRecordsHistoryAsync(Id<AccountReference> accountId, CancellationToken cancellationToken = default);
@@ -19,11 +19,11 @@ public interface IMainRecordsApiCompatibilityService
     Task<Result<PossibleRecordReadModel, AppError>> GetRecordOrPossibleRecordInExerciseAsync(Id<AccountReference> accountId, Id<LgymApi.Domain.Entities.Exercise> exerciseId, CancellationToken cancellationToken = default);
 }
 
-internal sealed class MainRecordsApiCompatibilityService : IMainRecordsApiCompatibilityService
+internal sealed class MainRecordsApiAdapter : IMainRecordsApiAdapter
 {
     private readonly IMainRecordsService _mainRecordsService;
 
-    public MainRecordsApiCompatibilityService(IMainRecordsService mainRecordsService)
+    public MainRecordsApiAdapter(IMainRecordsService mainRecordsService)
     {
         _mainRecordsService = mainRecordsService;
     }

@@ -5,7 +5,7 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Middleware;
 using LgymApi.Api.Mapping.Profiles;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Task7ApiCompatibility.WorkoutProgress;
+using LgymApi.Application.WorkoutProgress.ApiAdapters;
 using LgymApi.Application.WorkoutProgress.ProgressData.Models;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
@@ -16,10 +16,10 @@ namespace LgymApi.Api.Features.MainRecords.Controllers;
 [Route("api")]
 public sealed class MainRecordsController : ControllerBase
 {
-    private readonly IMainRecordsApiCompatibilityService _mainRecordsService;
+    private readonly IMainRecordsApiAdapter _mainRecordsService;
     private readonly IMapper _mapper;
 
-    public MainRecordsController(IMainRecordsApiCompatibilityService mainRecordsService, IMapper mapper)
+    public MainRecordsController(IMainRecordsApiAdapter mainRecordsService, IMapper mapper)
     {
         _mainRecordsService = mainRecordsService;
         _mapper = mapper;

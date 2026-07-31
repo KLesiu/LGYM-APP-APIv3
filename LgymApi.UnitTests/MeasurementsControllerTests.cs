@@ -4,10 +4,10 @@ using LgymApi.Api.Features.Measurements.Controllers;
 using LgymApi.Api.Features.Measurements.Contracts;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
+using LgymApi.Application.Features.Measurements;
 using LgymApi.Application.Features.Measurements.Models;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Task7ApiCompatibility.WorkoutProgress;
 using LgymApi.Application.WorkoutProgress.ProgressData.Models;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
@@ -107,7 +107,7 @@ public sealed class MeasurementsControllerTests
         };
     }
 
-    private sealed class StubMeasurementsService : IMeasurementsApiCompatibilityService
+    private sealed class StubMeasurementsService : IMeasurementsService
     {
         public Id<LgymApi.Domain.Entities.Measurement> LastMeasurementId { get; private set; } = Id<LgymApi.Domain.Entities.Measurement>.Empty;
         public Id<AccountReference> LastRouteAccountId { get; private set; } = Id<AccountReference>.Empty;

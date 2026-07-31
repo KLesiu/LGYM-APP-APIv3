@@ -191,6 +191,11 @@ public sealed class WorkoutProgressPublicContractGuardTests
                     continue;
                 }
 
+                if (ArchitectureTestHelpers.MatchesApiAdapterDependencyContract(tree.FilePath, targetMetadataName))
+                {
+                    continue;
+                }
+
                 var violation = new Violation(sourceModule, targetMetadataName, tree.FilePath, typeSyntax.ToString());
                 violations.TryAdd(violation.Identity, violation);
             }

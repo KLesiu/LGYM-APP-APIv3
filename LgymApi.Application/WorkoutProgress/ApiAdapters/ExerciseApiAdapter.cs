@@ -8,9 +8,9 @@ using LgymApi.Identity.Contracts;
 using LgymApi.Identity.Contracts.Accounts;
 using ExerciseEntity = LgymApi.Domain.Entities.Exercise;
 
-namespace LgymApi.Application.Task7ApiCompatibility.WorkoutProgress;
+namespace LgymApi.Application.WorkoutProgress.ApiAdapters;
 
-public interface IExerciseApiCompatibilityService
+public interface IExerciseApiAdapter
 {
     Task<Result<Unit, AppError>> AddExerciseAsync(string name, BodyParts bodyPart, string? description, string? image, CancellationToken cancellationToken = default);
     Task<Result<Unit, AppError>> AddExerciseWithFormulaAsync(AddExerciseWithFormulaInput input, CancellationToken cancellationToken = default);
@@ -29,11 +29,11 @@ public interface IExerciseApiCompatibilityService
     Task<Result<List<ExerciseTrainingHistoryItem>, AppError>> GetExerciseScoresFromTrainingByExerciseAsync(Id<AccountReference> currentAccountId, Id<ExerciseEntity> exerciseId, CancellationToken cancellationToken = default);
 }
 
-internal sealed class ExerciseApiCompatibilityService : IExerciseApiCompatibilityService
+internal sealed class ExerciseApiAdapter : IExerciseApiAdapter
 {
     private readonly IExerciseService _exerciseService;
 
-    public ExerciseApiCompatibilityService(IExerciseService exerciseService)
+    public ExerciseApiAdapter(IExerciseService exerciseService)
     {
         _exerciseService = exerciseService;
     }

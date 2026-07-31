@@ -3,9 +3,9 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.EloRegistry.Contracts;
 using LgymApi.Api.Middleware;
+using LgymApi.Application.Features.EloRegistry;
 using LgymApi.Application.Features.EloRegistry.Models;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Task7ApiCompatibility.WorkoutProgress;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 using Microsoft.AspNetCore.Mvc;
@@ -16,10 +16,10 @@ namespace LgymApi.Api.Features.EloRegistry.Controllers;
 [Route("api")]
 public sealed class EloRegistryController : ControllerBase
 {
-    private readonly IEloRegistryApiCompatibilityService _eloRegistryService;
+    private readonly IEloRegistryService _eloRegistryService;
     private readonly IMapper _mapper;
 
-    public EloRegistryController(IEloRegistryApiCompatibilityService eloRegistryService, IMapper mapper)
+    public EloRegistryController(IEloRegistryService eloRegistryService, IMapper mapper)
     {
         _eloRegistryService = eloRegistryService;
         _mapper = mapper;

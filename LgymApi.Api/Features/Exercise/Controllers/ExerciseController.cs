@@ -10,7 +10,7 @@ using LgymApi.Application.WorkoutProgress.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Exercise.Models;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Task7ApiCompatibility.WorkoutProgress;
+using LgymApi.Application.WorkoutProgress.ApiAdapters;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Domain.Security;
@@ -25,10 +25,10 @@ namespace LgymApi.Api.Features.Exercise.Controllers;
 [Route("api")]
 public sealed partial class ExerciseController : ControllerBase
 {
-    private readonly IExerciseApiCompatibilityService _exerciseService;
+    private readonly IExerciseApiAdapter _exerciseService;
     private readonly IMapper _mapper;
 
-    public ExerciseController(IExerciseApiCompatibilityService exerciseService, IMapper mapper)
+    public ExerciseController(IExerciseApiAdapter exerciseService, IMapper mapper)
     {
         _exerciseService = exerciseService;
         _mapper = mapper;

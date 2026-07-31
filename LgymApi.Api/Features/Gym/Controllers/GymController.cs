@@ -3,8 +3,8 @@ using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Gym.Contracts;
 using LgymApi.Api.Middleware;
 using LgymApi.Api.Mapping.Profiles;
+using LgymApi.Application.Features.Gym;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Task7ApiCompatibility.WorkoutProgress;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 using Microsoft.AspNetCore.Mvc;
@@ -15,10 +15,10 @@ namespace LgymApi.Api.Features.Gym.Controllers;
 [Route("api")]
 public sealed class GymController : ControllerBase
 {
-    private readonly IGymApiCompatibilityService _gymService;
+    private readonly IGymService _gymService;
     private readonly IMapper _mapper;
 
-    public GymController(IGymApiCompatibilityService gymService, IMapper mapper)
+    public GymController(IGymService gymService, IMapper mapper)
     {
         _gymService = gymService;
         _mapper = mapper;
