@@ -2,6 +2,8 @@ using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Identity.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Identity.Contracts.Sessions;
+using LgymApi.Application.Repositories;
+using LgymApi.Application.Services;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 using LgymApi.Resources;
@@ -12,11 +14,18 @@ namespace LgymApi.Application.Identity.Sessions;
 
 internal sealed class UserSessionTerminationService : IUserSessionTerminationService
 {
-    private readonly UserSessionTerminationServiceDependencies _dependencies;
+    private readonly IUserSessionStore _userSessionStore;
+    private readonly IAccountSessionDisassociationPort _accountSessionDisassociationPort;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public UserSessionTerminationService(UserSessionTerminationServiceDependencies dependencies)
+    public UserSessionTerminationService(
+        IUserSessionStore userSessionStore,
+        IAccountSessionDisassociationPort accountSessionDisassociationPort,
+        IUnitOfWork unitOfWork)
     {
-        _dependencies = dependencies;
+        _userSessionStore = userSessionStore;
+        _accountSessionDisassociationPort = accountSessionDisassociationPort;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<Result<Unit, AppError>> LogoutAsync(
@@ -34,12 +43,12 @@ internal sealed class UserSessionTerminationService : IUserSessionTerminationSer
             return Result<Unit, AppError>.Success(Unit.Value);
         }
 
-        await _dependencies.UserSessionStore.RevokeSessionAsync(sessionId.Value, cancellationToken);
-        await _dependencies.AccountSessionDisassociationPort.StageDisassociateAsync(
+        await _userSessionStore.RevokeSessionAsync(sessionId.Value, cancellationToken);
+        await _accountSessionDisassociationPort.StageDisassociateAsync(
             currentUser.Id.Rebind<AccountReference>(),
             sessionId.Value.Rebind<AccountSessionReference>(),
             cancellationToken);
-        await _dependencies.UnitOfWork.SaveChangesAsync(cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result<Unit, AppError>.Success(Unit.Value);
     }

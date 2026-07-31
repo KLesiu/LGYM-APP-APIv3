@@ -23,14 +23,14 @@ public sealed class UserServiceProfileFailureTests
     {
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _userRepository = new ConfigurableUserRepository();
-        _profileService = new UserProfileService(new UserProfileServiceDependencies(
+        _profileService = new UserProfileService(
             _userRepository,
             new ConfigurableRoleRepository(),
             Substitute.For<LgymApi.Application.Services.IRankService>(),
             _unitOfWork,
             new LgymApi.Application.Options.AppDefaultsOptions(),
             Substitute.For<LgymApi.Application.Features.Tutorial.ITutorialService>(),
-            Substitute.For<IMapper>()));
+            Substitute.For<IMapper>());
     }
 
     [Test]

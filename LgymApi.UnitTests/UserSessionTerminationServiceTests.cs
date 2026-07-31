@@ -52,10 +52,10 @@ public sealed class UserSessionTerminationServiceTests
                 disassociationToken = cancellationToken;
                 return Task.CompletedTask;
             });
-        var service = new UserSessionTerminationService(new UserSessionTerminationServiceDependencies(
+        var service = new UserSessionTerminationService(
             userSessionStore,
             disassociationPort,
-            unitOfWork));
+            unitOfWork);
 
         var result = await service.LogoutAsync(currentUser, sessionId, cancellationToken);
 
@@ -78,10 +78,10 @@ public sealed class UserSessionTerminationServiceTests
         var userSessionStore = new RecordingUserSessionStore();
         var unitOfWork = Substitute.For<IUnitOfWork>();
         var disassociationPort = Substitute.For<IAccountSessionDisassociationPort>();
-        var service = new UserSessionTerminationService(new UserSessionTerminationServiceDependencies(
+        var service = new UserSessionTerminationService(
             userSessionStore,
             disassociationPort,
-            unitOfWork));
+            unitOfWork);
 
         var result = await service.LogoutAsync(null, Id<UserSession>.New());
 
@@ -101,10 +101,10 @@ public sealed class UserSessionTerminationServiceTests
         var userSessionStore = new RecordingUserSessionStore();
         var unitOfWork = Substitute.For<IUnitOfWork>();
         var disassociationPort = Substitute.For<IAccountSessionDisassociationPort>();
-        var service = new UserSessionTerminationService(new UserSessionTerminationServiceDependencies(
+        var service = new UserSessionTerminationService(
             userSessionStore,
             disassociationPort,
-            unitOfWork));
+            unitOfWork);
         var currentUser = new User { Id = Id<User>.New(), Name = "user", Email = "user@example.com" };
 
         var result = await service.LogoutAsync(currentUser, null);
@@ -167,10 +167,10 @@ public sealed class UserSessionTerminationServiceTests
                     sessionId.Rebind<AccountSessionReference>(),
                     CancellationToken.None)
                 .Returns(Task.FromException(stagingFailure));
-            var service = new UserSessionTerminationService(new UserSessionTerminationServiceDependencies(
+            var service = new UserSessionTerminationService(
                 new UserSessionStore(mutationContext),
                 disassociationPort,
-                new EfUnitOfWork(mutationContext)));
+                new EfUnitOfWork(mutationContext));
 
             var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
                 await service.LogoutAsync(

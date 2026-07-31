@@ -33,10 +33,10 @@ internal sealed class PostgreSqlIdentitySharedUnitOfWorkTests : PostgreSqlIntegr
                     && state.UserId == user.Id
                     && state.SessionId == sessionId;
             });
-            var service = new UserSessionTerminationService(new UserSessionTerminationServiceDependencies(
+            var service = new UserSessionTerminationService(
                 serviceScope.ServiceProvider.GetRequiredService<IUserSessionStore>(),
                 serviceScope.ServiceProvider.GetRequiredService<IAccountSessionDisassociationPort>(),
-                unitOfWork));
+                unitOfWork);
 
             var result = await service.LogoutAsync(user, sessionId);
 
@@ -62,10 +62,10 @@ internal sealed class PostgreSqlIdentitySharedUnitOfWorkTests : PostgreSqlIntegr
         {
             var database = serviceScope.ServiceProvider.GetRequiredService<AppDbContext>();
             var unitOfWork = new ObservedUnitOfWork(new EfUnitOfWork(database));
-            var service = new UserSessionTerminationService(new UserSessionTerminationServiceDependencies(
+            var service = new UserSessionTerminationService(
                 serviceScope.ServiceProvider.GetRequiredService<IUserSessionStore>(),
                 new FailingSessionDisassociationPort(stagingFailure),
-                unitOfWork));
+                unitOfWork);
 
             var action = () => service.LogoutAsync(user, sessionId);
 
