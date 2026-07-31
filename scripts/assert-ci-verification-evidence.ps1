@@ -303,7 +303,9 @@ foreach ($file in @(Get-ChildItem -LiteralPath $root -Filter '*.json' -File -Rec
     $documents.Add([pscustomobject]@{ file = $file; document = $document })
 }
 
-$buildManifests = @($documents | Where-Object { $_.document.kind -ceq 'release-build' })
+$buildManifests = @($documents | Where-Object {
+    $_.document.PSObject.Properties['kind'] -and $_.document.kind -ceq 'release-build'
+})
 if ($buildManifests.Count -ne 1) {
     throw "Expected exactly one uploaded Release build manifest, but found $($buildManifests.Count)."
 }
@@ -315,7 +317,9 @@ if ($build.configuration -cne 'Release' -or [int]$build.exitCode -ne 0) {
 }
 
 $expectedSuites = @('Unit', 'Architecture', 'InMemoryIntegration', 'PostgreSqlIntegration', 'DataSeeder')
-$summaries = @($documents | Where-Object { $_.document.kind -ceq 'trx-summary' })
+$summaries = @($documents | Where-Object {
+    $_.document.PSObject.Properties['kind'] -and $_.document.kind -ceq 'trx-summary'
+})
 if ($summaries.Count -ne $expectedSuites.Count) {
     throw "Expected $($expectedSuites.Count) uploaded TRX summaries, but found $($summaries.Count)."
 }
@@ -325,7 +329,9 @@ if (($actualSuites -join "`n") -cne (($expectedSuites | Sort-Object) -join "`n")
     throw "The uploaded TRX summary suite set is incomplete or unexpected: $($actualSuites -join ', ')."
 }
 
-$discoveryManifests = @($documents | Where-Object { $_.document.kind -ceq 'test-discovery' })
+$discoveryManifests = @($documents | Where-Object {
+    $_.document.PSObject.Properties['kind'] -and $_.document.kind -ceq 'test-discovery'
+})
 if ($discoveryManifests.Count -ne $expectedSuites.Count) {
     throw "Expected $($expectedSuites.Count) uploaded discovery manifests, but found $($discoveryManifests.Count)."
 }
@@ -340,7 +346,9 @@ foreach ($summary in $summaries) {
     Assert-PassingTrxSummary -Summary $summary.document -TrxFiles $trxFiles -BuildManifestFile $buildManifests[0].file -DiscoveryManifests $discoveryManifests
 }
 
-$cleanupProbes = @($documents | Where-Object { $_.document.kind -ceq 'postgresql-cleanup' })
+$cleanupProbes = @($documents | Where-Object {
+    $_.document.PSObject.Properties['kind'] -and $_.document.kind -ceq 'postgresql-cleanup'
+})
 if ($cleanupProbes.Count -ne 1) {
     throw "Expected exactly one PostgreSQL cleanup probe, but found $($cleanupProbes.Count)."
 }
