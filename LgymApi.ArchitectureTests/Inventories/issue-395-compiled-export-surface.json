@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "assemblies": [
+    {
+      "name": "LgymApi.Application",
+      "exportedTypeCount": 475,
+      "sha256": "ed69c2dcf646418f0219499b57b606664d0ccd69bff1d02314ad04931e515434"
+    },
+    {
+      "name": "LgymApi.Identity",
+      "exportedTypeCount": 68,
+      "sha256": "bc5c954958a21030af0aabf745bbbf902f7a6be064329a7d452ef2da56158894"
+    },
+    {
+      "name": "LgymApi.Notifications",
+      "exportedTypeCount": 76,
+      "sha256": "c603e94d81ef5bfe1197131db543f8fc84ff68d9d86178e1fe8c513f96678166"
+    },
+    {
+      "name": "LgymApi.Platform",
+      "exportedTypeCount": 69,
+      "sha256": "f9065075db3db3bdfad7c0c906e6b7af2a38e3a0085d8e8a6413d99c81135ab9"
+    },
+    {
+      "name": "LgymApi.TrainingPlanning",
+      "exportedTypeCount": 69,
+      "sha256": "289ae6823e93483a0a1c58758ecf10c9ad2bd5ae9a3b4b2b4ac24c9eb311f9e3"
+    }
+  ]
+}
