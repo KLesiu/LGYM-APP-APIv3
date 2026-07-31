@@ -1461,22 +1461,20 @@ public sealed class ReportingServiceTests
                 return Task.CompletedTask;
             });
 
-        var dependencies = Substitute.For<IReportingServiceDependencies>();
-        dependencies.TemplatePersistence.Returns(templatePersistence);
-        dependencies.RequestSubmissionPersistence.Returns(requestSubmissionPersistence);
-        dependencies.RecurringAssignmentPersistence.Returns(recurringAssignmentPersistence);
-        dependencies.PhotoPersistence.Returns(photoPersistence);
-        dependencies.RelationshipAccessPersistence.Returns(relationshipAccessPersistence);
-        dependencies.UnitOfWork.Returns(unitOfWork);
-        dependencies.CommandDispatcher.Returns(commandDispatcher);
-        dependencies.CommandOutboxWriter.Returns(commandOutboxWriter);
-        dependencies.ReportSubmissionAcceptedProgressCommandFactory.Returns(new ReportSubmissionAcceptedProgressCommandFactory());
-        dependencies.PhotoStorageProvider.Returns(Substitute.For<IPhotoStorageProvider>());
-        dependencies.Mapper.Returns(ReportingTestData.Mapper());
-        dependencies.Logger.Returns(Substitute.For<ILogger<ReportingService>>());
-        dependencies.PhotoStorageOptions.Returns(new PhotoStorageOptions());
-
-        var service = new ReportingService(dependencies);
+        var service = new ReportingService(
+            templatePersistence,
+            requestSubmissionPersistence,
+            recurringAssignmentPersistence,
+            photoPersistence,
+            relationshipAccessPersistence,
+            new ReportSubmissionAcceptedProgressCommandFactory(),
+            commandDispatcher,
+            commandOutboxWriter,
+            unitOfWork,
+            Substitute.For<IPhotoStorageProvider>(),
+            ReportingTestData.Mapper(),
+            Substitute.For<ILogger<ReportingService>>(),
+            new PhotoStorageOptions());
         ReportingServiceTestExtensions.RegisterTrainerRole(service, userHasTrainerRole);
         return service;
     }

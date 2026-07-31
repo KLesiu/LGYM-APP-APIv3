@@ -1,6 +1,6 @@
 using LgymApi.Api.Features.Role.Contracts;
 using LgymApi.Application.Features.Role.Models;
-using LgymApi.Application.Identity.ApiCompatibility;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Application.Mapping.Core;
 
 namespace LgymApi.Api.Mapping.Profiles;

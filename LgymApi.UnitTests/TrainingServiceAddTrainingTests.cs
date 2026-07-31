@@ -43,25 +43,24 @@ public sealed class TrainingServiceAddTrainingTests
         _elo = Substitute.For<IWorkoutEloPersistence>();
         _planDayReferences = Substitute.For<IPlanDayReferenceReadService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        var dependencies = Substitute.For<ICompleteTrainingUseCaseDependencies>();
-        dependencies.AccountAccess.Returns(_accountAccess);
-        dependencies.GymRepository.Returns(_gyms);
-        dependencies.PlanDayReferences.Returns(_planDayReferences);
-        dependencies.TrainingRepository.Returns(_trainings);
-        dependencies.ExerciseRepository.Returns(_exercises);
-        dependencies.ExerciseScoreRepository.Returns(_scores);
-        dependencies.EloRepository.Returns(_elo);
-        dependencies.RankService.Returns(new FixedRankService());
-        dependencies.UnitOfWork.Returns(_unitOfWork);
-        dependencies.ExerciseEloCalculators.Returns([
-            new StandardExerciseEloCalculator(),
-            new StrengthWeightedExerciseEloCalculator(),
-            new VolumeWeightedExerciseEloCalculator(),
-            new PullupWeightedExerciseEloCalculator()
-        ]);
         _planDayReferences.GetByIdAsync(Arg.Any<Id<PlanDayReference>>(), Arg.Any<CancellationToken>())
             .Returns(call => new PlanDayReferenceReadModel(call.ArgAt<Id<PlanDayReference>>(0), Id<PlanReference>.New(), "Plan day", true, false));
-        _service = new CompleteTrainingUseCase(dependencies);
+        _service = new CompleteTrainingUseCase(
+            _accountAccess,
+            _gyms,
+            _planDayReferences,
+            _trainings,
+            _exercises,
+            _scores,
+            _elo,
+            new FixedRankService(),
+            _unitOfWork,
+            [
+                new StandardExerciseEloCalculator(),
+                new StrengthWeightedExerciseEloCalculator(),
+                new VolumeWeightedExerciseEloCalculator(),
+                new PullupWeightedExerciseEloCalculator()
+            ]);
     }
 
     [Test]
@@ -124,6 +123,27 @@ public sealed class TrainingServiceAddTrainingTests
         await _trainings.Received(1).StageTrainingCompletedCommandAsync(accountId, Arg.Any<Id<Training>>(), Arg.Any<CancellationToken>());
         await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
         await transaction.Received(1).CommitAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SaveFailure_ShouldRollbackAndPropagateAfterStagingWrites()
+    {
+        var accountId = Id<AccountReference>.New();
+        var gymId = Id<Gym>.New();
+        var transaction = Substitute.For<IUnitOfWorkTransaction>();
+        ArrangeAccountAndGym(accountId, gymId);
+        _elo.GetLatestEntryAsync(accountId, Arg.Any<CancellationToken>())
+            .Returns(new WorkoutEloPersistenceModel(Id<EloRegistry>.New(), accountId, DateTimeOffset.UtcNow, 1000, null));
+        _unitOfWork.BeginTransactionAsync(Arg.Any<CancellationToken>()).Returns(transaction);
+        _unitOfWork.SaveChangesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<int>(new InvalidOperationException("save failed")));
+
+        var action = () => _service.AddTrainingAsync(accountId, Input(gymId, Id<PlanDayReference>.New()));
+
+        await action.Should().ThrowAsync<InvalidOperationException>();
+        await _trainings.Received(1).AddAsync(Arg.Any<WorkoutTrainingWriteModel>(), Arg.Any<CancellationToken>());
+        await transaction.Received(1).RollbackAsync(CancellationToken.None);
+        await transaction.DidNotReceive().CommitAsync(Arg.Any<CancellationToken>());
     }
 
     [Test]

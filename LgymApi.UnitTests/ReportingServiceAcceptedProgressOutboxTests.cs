@@ -159,21 +159,20 @@ public sealed class ReportingServiceAcceptedProgressOutboxTests
         ICommandDispatcher dispatcher,
         ICommandOutboxWriter outbox)
     {
-        var dependencies = Substitute.For<IReportingServiceDependencies>();
-        dependencies.TemplatePersistence.Returns(Substitute.For<IReportTemplatePersistence>());
-        dependencies.RequestSubmissionPersistence.Returns(persistence);
-        dependencies.RecurringAssignmentPersistence.Returns(Substitute.For<IRecurringReportAssignmentPersistence>());
-        dependencies.PhotoPersistence.Returns(Substitute.For<IReportPhotoPersistence>());
-        dependencies.RelationshipAccessPersistence.Returns(Substitute.For<IReportingRelationshipAccessPersistence>());
-        dependencies.ReportSubmissionAcceptedProgressCommandFactory.Returns(new ReportSubmissionAcceptedProgressCommandFactory());
-        dependencies.CommandDispatcher.Returns(dispatcher);
-        dependencies.CommandOutboxWriter.Returns(outbox);
-        dependencies.UnitOfWork.Returns(unitOfWork);
-        dependencies.PhotoStorageProvider.Returns(Substitute.For<IPhotoStorageProvider>());
-        dependencies.Mapper.Returns(ReportingTestData.Mapper());
-        dependencies.Logger.Returns(Substitute.For<ILogger<ReportingService>>());
-        dependencies.PhotoStorageOptions.Returns(new PhotoStorageOptions());
-        return new ReportingService(dependencies);
+        return new ReportingService(
+            Substitute.For<IReportTemplatePersistence>(),
+            persistence,
+            Substitute.For<IRecurringReportAssignmentPersistence>(),
+            Substitute.For<IReportPhotoPersistence>(),
+            Substitute.For<IReportingRelationshipAccessPersistence>(),
+            new ReportSubmissionAcceptedProgressCommandFactory(),
+            dispatcher,
+            outbox,
+            unitOfWork,
+            Substitute.For<IPhotoStorageProvider>(),
+            ReportingTestData.Mapper(),
+            Substitute.For<ILogger<ReportingService>>(),
+            new PhotoStorageOptions());
     }
 
     private static ReportTemplatePersistenceModel CreateTemplate(params ReportTemplateFieldPersistenceModel[] fields)

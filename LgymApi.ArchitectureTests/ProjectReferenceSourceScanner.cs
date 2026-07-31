@@ -26,7 +26,7 @@ internal static class ProjectReferenceSourceScanner
             projectPath => FindProjectAssembly(projectPath),
             StringComparer.Ordinal);
         var metadataReferences = CollectMetadataReferences(projectPaths, projectAssemblies);
-        var uses = new Dictionary<string, ProjectImportUse>(StringComparer.Ordinal);
+        var uses = new List<ProjectImportUse>();
 
         foreach (var projectPath in projectPaths)
         {
@@ -34,9 +34,9 @@ internal static class ProjectReferenceSourceScanner
         }
 
         return new ProjectImportFixture(
-            ProjectReferenceGraphManifest.ProjectNames,
+            projectNames.OrderBy(project => project, StringComparer.Ordinal).ToArray(),
             edgeIdentities,
-            uses.Values.ToArray(),
+            uses.ToArray(),
             analyzerEdges,
             ProjectReferenceGraphManifest.ForbiddenEdgeIdentities.ToArray(),
             ProjectReferenceGraphManifest.TopologicalOrder);
@@ -47,7 +47,7 @@ internal static class ProjectReferenceSourceScanner
         string projectPath,
         IReadOnlySet<string> projectNames,
         IReadOnlyList<PortableExecutableReference> metadataReferences,
-        IDictionary<string, ProjectImportUse> uses)
+        ICollection<ProjectImportUse> uses)
     {
         var projectName = Path.GetFileNameWithoutExtension(projectPath);
         var projectDirectory = Path.GetDirectoryName(projectPath)!;
@@ -105,12 +105,7 @@ internal static class ProjectReferenceSourceScanner
                     }
 
                     var edgeIdentity = $"{projectName} -> {targetProject}";
-                    if (uses.ContainsKey(edgeIdentity))
-                    {
-                        continue;
-                    }
-
-                    uses.Add(edgeIdentity, new ProjectImportUse(
+                    uses.Add(new ProjectImportUse(
                         projectName,
                         targetProject,
                         Path.GetRelativePath(repositoryRoot, tree.FilePath).Replace('\\', '/'),
@@ -127,7 +122,7 @@ internal static class ProjectReferenceSourceScanner
             .Where(line => line.StartsWith("Project(", StringComparison.Ordinal))
             .Select(line => line.Split('"'))
             .Where(parts => parts.Length > 5 && parts[5].EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
-            .Select(parts => Path.GetFullPath(Path.Combine(repositoryRoot, parts[5])))
+            .Select(parts => Path.GetFullPath(Path.Combine(repositoryRoot, ArchitectureTestHelpers.ToHostPath(parts[5]))))
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();
     }
@@ -145,7 +140,7 @@ internal static class ProjectReferenceSourceScanner
                 "Analyzer",
                 StringComparison.Ordinal))
             .Select(element => Path.GetFileNameWithoutExtension(Path.GetFullPath(
-                element.Attribute("Include")!.Value,
+                ArchitectureTestHelpers.ToHostPath(element.Attribute("Include")!.Value),
                 projectDirectory)))
             .Select(targetProject => $"{sourceProject} -> {targetProject}");
     }

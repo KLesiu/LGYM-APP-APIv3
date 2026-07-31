@@ -40,14 +40,14 @@ public sealed class UserServiceProfileTests
         _rankService = Substitute.For<IRankService>();
         _userRepository.Update = (_, _) => Task.CompletedTask;
         _unitOfWork.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(1));
-        _profileService = new UserProfileService(new UserProfileServiceDependencies(
+        _profileService = new UserProfileService(
             _userRepository,
             _roleRepository,
             _rankService,
             _unitOfWork,
             new AppDefaultsOptions { PreferredTimeZone = "UTC" },
             _tutorialService,
-            BuildMapper()));
+            BuildMapper());
     }
 
     [Test]

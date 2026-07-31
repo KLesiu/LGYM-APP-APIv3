@@ -56,7 +56,7 @@ public sealed class UserServiceAuthTests
         _userSessionStore = new FakeUserSessionStore();
         _rankService = Substitute.For<IRankService>();
         _passwordService.Create(Arg.Any<string>()).Returns(("hash", "salt", 25000, 512, "sha256"));
-        _registrationService = new UserRegistrationService(new UserRegistrationServiceDependencies(
+        _registrationService = new UserRegistrationService(
             _userRepository,
             _roleRepository,
             _passwordService,
@@ -64,8 +64,8 @@ public sealed class UserServiceAuthTests
             _unitOfWork,
             NullLogger<UserRegistrationService>.Instance,
             new AppDefaultsOptions { PreferredLanguage = "en-US", PreferredTimeZone = "UTC" },
-            _tutorialService));
-        _credentialLoginService = new UserCredentialLoginService(new UserCredentialLoginServiceDependencies(
+            _tutorialService);
+        _credentialLoginService = new UserCredentialLoginService(
             _userRepository,
             _roleRepository,
             _passwordService,
@@ -75,7 +75,7 @@ public sealed class UserServiceAuthTests
             _unitOfWork,
             new AppDefaultsOptions { PreferredLanguage = "en-US", PreferredTimeZone = "UTC" },
             _tutorialService,
-            BuildMapper()));
+            BuildMapper());
     }
 
     [Test]

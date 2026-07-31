@@ -3,9 +3,9 @@ using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Training.Contracts;
 using LgymApi.Api.Idempotency;
 using LgymApi.Api.Middleware;
+using LgymApi.Application.Features.Training;
 using LgymApi.Application.Features.Training.Models;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Task7ApiCompatibility.WorkoutProgress;
 using ExerciseEntity = LgymApi.Domain.Entities.Exercise;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
@@ -18,10 +18,10 @@ namespace LgymApi.Api.Features.Training.Controllers;
 [Route("api")]
 public sealed class TrainingController : ControllerBase
 {
-    private readonly ITrainingApiCompatibilityService _trainingService;
+    private readonly ITrainingService _trainingService;
     private readonly IMapper _mapper;
 
-    public TrainingController(ITrainingApiCompatibilityService trainingService, IMapper mapper)
+    public TrainingController(ITrainingService trainingService, IMapper mapper)
     {
         _trainingService = trainingService;
         _mapper = mapper;

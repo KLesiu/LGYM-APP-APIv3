@@ -38,16 +38,17 @@ public sealed class ReportingRelationshipAccessBoundaryGuardTests
         });
     }
 
-    [TestCase(typeof(IReportingServiceDependencies))]
-    [TestCase(typeof(IRecurringReportAssignmentServiceDependencies))]
-    public void ReportingDependencyBag_ShouldExposeOnlyConsumerOwnedRelationshipAccess(Type dependencyBag)
+    [TestCase(typeof(ReportingService))]
+    [TestCase(typeof(RecurringReportAssignmentService))]
+    public void ReportingServiceConstructors_ShouldUseOnlyConsumerOwnedRelationshipAccess(Type serviceType)
     {
-        var relationshipDependencies = dependencyBag.GetProperties()
-            .Select(property => property.PropertyType)
+        var constructorParameters = serviceType.GetConstructors().Single().GetParameters();
+        var relationshipDependencies = constructorParameters
+            .Select(parameter => parameter.ParameterType)
             .Where(type => type.Name.Contains("RelationshipAccess", StringComparison.Ordinal))
             .ToArray();
-        var coachingDependencies = dependencyBag.GetProperties()
-            .Select(property => property.PropertyType)
+        var coachingDependencies = constructorParameters
+            .Select(parameter => parameter.ParameterType)
             .Where(type => type.Namespace?.StartsWith("LgymApi.Application.Coaching", StringComparison.Ordinal) == true)
             .ToArray();
 

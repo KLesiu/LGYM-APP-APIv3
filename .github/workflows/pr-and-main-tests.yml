@@ -2,23 +2,265 @@ name: PR and Main Tests
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, automation/modular-monolith-milestone]
     types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches: [main]
+    branches: [main, automation/modular-monolith-milestone]
 
 permissions:
   contents: read
-  checks: write
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  tests:
+  release-build:
+    name: release-build
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    env:
+      EVIDENCE_ROOT: TestResults/Verification/${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.102
+
+      - name: Restore, Release build, and create same-SHA discovery evidence
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/VerificationEvidence.psm1') -Force
+
+          function Invoke-RequiredDotnet {
+              param([Parameter(Mandatory)][string[]]$Arguments)
+
+              $startedUtc = [System.DateTimeOffset]::UtcNow
+              $originalConsoleOutputEncoding = [Console]::OutputEncoding
+              $originalOutputEncoding = $OutputEncoding
+              try {
+                  $utf8 = [System.Text.UTF8Encoding]::new($false)
+                  [Console]::OutputEncoding = $utf8
+                  $OutputEncoding = $utf8
+                  $output = @(& dotnet @Arguments 2>&1)
+                  $exitCode = $LASTEXITCODE
+              }
+              finally {
+                  [Console]::OutputEncoding = $originalConsoleOutputEncoding
+                  $OutputEncoding = $originalOutputEncoding
+              }
+
+              foreach ($line in $output) {
+                  Write-Host $line
+              }
+
+              if ($exitCode -ne 0) {
+                  throw "dotnet $($Arguments -join ' ') exited with code $exitCode."
+              }
+
+              return [pscustomobject]@{
+                  record = [pscustomobject]@{
+                      arguments = @('dotnet') + @($Arguments)
+                      exitCode = $exitCode
+                      startedUtc = $startedUtc.ToString('O')
+                      completedUtc = [System.DateTimeOffset]::UtcNow.ToString('O')
+                  }
+                  output = @($output | ForEach-Object { [string]$_ })
+              }
+          }
+
+          $snapshot = Get-RepositorySnapshot -RepositoryRoot $env:GITHUB_WORKSPACE
+          Assert-CleanRepositorySnapshot -Snapshot $snapshot
+          if ($snapshot.head -cne $env:GITHUB_SHA) {
+              throw "The checked-out SHA '$($snapshot.head)' does not match GITHUB_SHA '$env:GITHUB_SHA'."
+          }
+
+          $buildStartedUtc = [System.DateTimeOffset]::UtcNow
+          $restore = Invoke-RequiredDotnet -Arguments @('restore', 'LgymApi.sln')
+          $build = Invoke-RequiredDotnet -Arguments @('build', 'LgymApi.sln', '--configuration', 'Release', '--no-restore')
+          $buildCompletedUtc = [System.DateTimeOffset]::UtcNow
+          $postBuildSnapshot = Get-RepositorySnapshot -RepositoryRoot $env:GITHUB_WORKSPACE
+          Assert-CleanRepositorySnapshot -Snapshot $postBuildSnapshot
+          if ($postBuildSnapshot.head -cne $snapshot.head) {
+              throw 'The repository HEAD changed during the Release build.'
+          }
+
+          $buildDirectory = Join-Path $env:EVIDENCE_ROOT 'Build'
+          $null = New-Item -ItemType Directory -Path $buildDirectory -Force
+          $buildManifestPath = Join-Path $buildDirectory 'release-build.json'
+          $buildManifest = [pscustomobject]@{
+              schemaVersion = 1
+              kind = 'release-build'
+              repository = $postBuildSnapshot
+              startedUtc = $buildStartedUtc.ToString('O')
+              completedUtc = $buildCompletedUtc.ToString('O')
+              configuration = 'Release'
+              commands = @($restore.record, $build.record)
+              exitCode = 0
+          }
+          Write-RedactedJsonFile -Path $buildManifestPath -Value $buildManifest -NoClobber
+
+          $suites = @(
+              [pscustomobject]@{ name = 'Unit'; project = 'LgymApi.UnitTests/LgymApi.UnitTests.csproj'; filters = @() },
+              [pscustomobject]@{ name = 'Architecture'; project = 'LgymApi.ArchitectureTests/LgymApi.ArchitectureTests.csproj'; filters = @() },
+              [pscustomobject]@{ name = 'InMemoryIntegration'; project = 'LgymApi.IntegrationTests/LgymApi.IntegrationTests.csproj'; filters = @('TestCategory!=PostgreSql') },
+              [pscustomobject]@{ name = 'PostgreSqlIntegration'; project = 'LgymApi.IntegrationTests/LgymApi.IntegrationTests.csproj'; filters = @() },
+              [pscustomobject]@{ name = 'DataSeeder'; project = 'LgymApi.DataSeeder.Tests/LgymApi.DataSeeder.Tests.csproj'; filters = @() }
+          )
+
+          foreach ($suite in $suites) {
+              $discoveryArguments = @('test', $suite.project, '--configuration', 'Release', '--no-build', '--list-tests')
+              foreach ($filter in $suite.filters) {
+                  $discoveryArguments += @('--filter', $filter)
+              }
+
+              $discovery = Invoke-RequiredDotnet -Arguments $discoveryArguments
+              $tests = Get-ListedTestNames -Lines $discovery.output
+              $discoveryManifest = [pscustomobject]@{
+                  schemaVersion = 1
+                  kind = 'test-discovery'
+                  suite = $suite.name
+                  repository = $postBuildSnapshot
+                  buildHead = $postBuildSnapshot.head
+                  startedUtc = $discovery.record.startedUtc
+                  completedUtc = $discovery.record.completedUtc
+                  commands = @($discovery.record)
+                  exitCode = 0
+                  declaredFilters = @($suite.filters)
+                  identityScheme = 'vstest-display-name-multiset-utf8-v1'
+                  tests = @($tests)
+                  testCount = $tests.Count
+                  testListSha256 = Get-StringListSha256 -Values $tests
+              }
+              Write-RedactedJsonFile -Path (Join-Path $buildDirectory "$($suite.name)-discovery.json") -Value $discoveryManifest -NoClobber
+          }
+
+          $finalSnapshot = Get-RepositorySnapshot -RepositoryRoot $env:GITHUB_WORKSPACE
+          Assert-CleanRepositorySnapshot -Snapshot $finalSnapshot
+          if ($finalSnapshot.head -cne $postBuildSnapshot.head) {
+              throw 'The repository HEAD changed while discovery evidence was running.'
+          }
+
+      - name: Upload Release build and discovery evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-build-${{ github.sha }}
+          path: |
+            TestResults/Verification/${{ github.sha }}/Build/**
+            **/bin/Release/**
+            **/obj/Release/**
+          if-no-files-found: error
+
+  non-postgresql:
+    name: ${{ matrix.suite }} full suite
+    needs: release-build
+    if: needs.release-build.result == 'success'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: Unit
+            project: LgymApi.UnitTests/LgymApi.UnitTests.csproj
+            filter: ''
+          - suite: Architecture
+            project: LgymApi.ArchitectureTests/LgymApi.ArchitectureTests.csproj
+            filter: ''
+          - suite: InMemoryIntegration
+            project: LgymApi.IntegrationTests/LgymApi.IntegrationTests.csproj
+            filter: TestCategory!=PostgreSql
+          - suite: DataSeeder
+            project: LgymApi.DataSeeder.Tests/LgymApi.DataSeeder.Tests.csproj
+            filter: ''
+    env:
+      EVIDENCE_ROOT: TestResults/Verification/${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.102
+
+      - name: Restore packages for no-build execution
+        run: dotnet restore LgymApi.sln
+
+      - name: Download Release build and discovery evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: verification-build-${{ github.sha }}
+
+      - name: Run suite with same-SHA TRX evidence
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $suite = '${{ matrix.suite }}'
+          $suiteDirectory = Join-Path $env:EVIDENCE_ROOT $suite
+          $trxDirectory = Join-Path $suiteDirectory 'trx'
+          $assertionDirectory = Join-Path $suiteDirectory 'evidence'
+          $null = New-Item -ItemType Directory -Path $trxDirectory -Force
+          $trxFileName = "$suite-$env:GITHUB_SHA.trx"
+          $arguments = @(
+              'test',
+              '${{ matrix.project }}',
+              '--configuration', 'Release',
+              '--no-build',
+              '--verbosity', 'normal',
+              '--logger', "trx;LogFileName=$trxFileName",
+              '--results-directory', $trxDirectory
+          )
+          if ('${{ matrix.filter }}' -ne '') {
+              $arguments += @('--filter', '${{ matrix.filter }}')
+          }
+
+          $notBeforeUtc = [System.DateTimeOffset]::UtcNow
+          & dotnet @arguments
+          $testExitCode = $LASTEXITCODE
+          if ($testExitCode -ne 0) {
+              exit $testExitCode
+          }
+
+          $command = @('dotnet') + @($arguments)
+          & pwsh -NoProfile -File scripts/assert-trx.ps1 `
+              -SuiteName $suite `
+              -RepositoryRoot $env:GITHUB_WORKSPACE `
+              -ExpectedHead $env:GITHUB_SHA `
+              -BuildManifestPath (Join-Path $env:EVIDENCE_ROOT 'Build/release-build.json') `
+              -DiscoveryManifestPath (Join-Path $env:EVIDENCE_ROOT "Build/$suite-discovery.json") `
+              -TrxDirectory $trxDirectory `
+              -ExpectedTrxFileName $trxFileName `
+              -NotBeforeUtc $notBeforeUtc.ToString('O') `
+              -CommandExitCode $testExitCode `
+              -EvidenceDirectory $assertionDirectory `
+              -CommandJson ($command | ConvertTo-Json -Compress)
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
+      - name: Upload same-SHA suite evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-${{ matrix.suite }}-${{ github.sha }}
+          path: TestResults/Verification/${{ github.sha }}/${{ matrix.suite }}/**
+          if-no-files-found: error
+
+  postgresql:
+    name: PostgreSQL full suite
+    needs: release-build
+    if: needs.release-build.result == 'success'
+    runs-on: ubuntu-latest
+    env:
+      EVIDENCE_ROOT: TestResults/Verification/${{ github.sha }}
+      LGYM_CI_POSTGRES_ADMIN: Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=postgres;Pooling=false;Timeout=5;Command Timeout=30
     services:
       postgres:
         image: postgres:17-alpine
@@ -43,91 +285,135 @@ jobs:
         with:
           dotnet-version: 10.0.102
 
-      - name: Restore
+      - name: Restore packages for no-build execution
         run: dotnet restore LgymApi.sln
 
-      - name: Build
-        run: dotnet build LgymApi.sln --configuration Release --no-restore
+      - name: Download Release build and discovery evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: verification-build-${{ github.sha }}
 
-      - name: Verify nullable warnings gate (gated projects)
+      - name: Run unfiltered PostgreSQL suite with same-SHA TRX evidence
+        shell: pwsh
         run: |
-          dotnet build LgymApi.Domain/LgymApi.Domain.csproj --configuration Release --no-restore
-          dotnet build LgymApi.BackgroundWorker.Common/LgymApi.BackgroundWorker.Common.csproj --configuration Release --no-restore
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $suite = 'PostgreSqlIntegration'
+          $suiteDirectory = Join-Path $env:EVIDENCE_ROOT $suite
+          $trxDirectory = Join-Path $suiteDirectory 'trx'
+          $assertionDirectory = Join-Path $suiteDirectory 'evidence'
+          $null = New-Item -ItemType Directory -Path $trxDirectory -Force
+          $notBeforeUtc = [System.DateTimeOffset]::UtcNow
 
-      - name: Run unit tests
-        run: dotnet test LgymApi.UnitTests/LgymApi.UnitTests.csproj --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=unit-tests.trx" --results-directory ./TestResults/Unit
+          & pwsh -NoProfile -File scripts/run-postgresql-integration-tests.ps1 `
+              -ConnectionString $env:LGYM_CI_POSTGRES_ADMIN `
+              -ResultsDirectory $trxDirectory `
+              -NoBuild
+          $testExitCode = $LASTEXITCODE
+          if ($testExitCode -ne 0) {
+              exit $testExitCode
+          }
 
-      - name: Run architecture tests
-        run: dotnet test LgymApi.ArchitectureTests/LgymApi.ArchitectureTests.csproj --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=architecture-tests.trx" --results-directory ./TestResults/Architecture
+          $command = @(
+              'pwsh',
+              '-NoProfile',
+              '-File', 'scripts/run-postgresql-integration-tests.ps1',
+              '-ConnectionString', $env:LGYM_CI_POSTGRES_ADMIN,
+              '-ResultsDirectory', $trxDirectory,
+              '-NoBuild'
+          )
+          & pwsh -NoProfile -File scripts/assert-trx.ps1 `
+              -SuiteName $suite `
+              -RepositoryRoot $env:GITHUB_WORKSPACE `
+              -ExpectedHead $env:GITHUB_SHA `
+              -BuildManifestPath (Join-Path $env:EVIDENCE_ROOT 'Build/release-build.json') `
+              -DiscoveryManifestPath (Join-Path $env:EVIDENCE_ROOT 'Build/PostgreSqlIntegration-discovery.json') `
+              -TrxDirectory $trxDirectory `
+              -NotBeforeUtc $notBeforeUtc.ToString('O') `
+              -CommandExitCode $testExitCode `
+              -EvidenceDirectory $assertionDirectory `
+              -CommandJson ($command | ConvertTo-Json -Compress)
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
 
-      - name: Run InMemory integration tests
-        run: dotnet test LgymApi.IntegrationTests/LgymApi.IntegrationTests.csproj --configuration Release --no-build --filter "TestCategory!=PostgreSql" --verbosity normal --logger "trx;LogFileName=inmemory-integration-tests.trx" --results-directory ./TestResults/Integration
-
-      - name: Run PostgreSQL integration tests
-        env:
-          LGYM_CI_POSTGRES_ADMIN: Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=postgres;Pooling=false;Timeout=5;Command Timeout=30
-        run: pwsh -File scripts/run-postgresql-integration-tests.ps1 -ConnectionString "$env:LGYM_CI_POSTGRES_ADMIN" -ResultsDirectory ./TestResults/PostgreSql -NoBuild
-
-      - name: Run DataSeeder tests
-        run: dotnet test LgymApi.DataSeeder.Tests/LgymApi.DataSeeder.Tests.csproj --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=dataseeder-tests.trx" --results-directory ./TestResults/DataSeeder
-
-      - name: Upload test reports
-        if: always()
+      - name: Upload same-SHA PostgreSQL evidence
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports-${{ github.run_number }}
-          path: TestResults/**/*.trx
-          if-no-files-found: warn
+          name: verification-PostgreSqlIntegration-${{ github.sha }}
+          path: TestResults/Verification/${{ github.sha }}/PostgreSqlIntegration/**
+          if-no-files-found: error
 
-      - name: Upload PostgreSQL integration test reports
-        if: always()
+  postgresql-cleanup:
+    name: PostgreSQL cleanup probe
+    needs: release-build
+    if: needs.release-build.result == 'success'
+    runs-on: ubuntu-latest
+    env:
+      EVIDENCE_ROOT: TestResults/Verification/${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run PostgreSQL failure-path cleanup probe
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $workingDirectory = Join-Path $env:RUNNER_TEMP "lgym-postgresql-cleanup-$env:GITHUB_SHA"
+          & pwsh -NoProfile -File scripts/test-postgresql-runner-volume-cleanup.ps1 -WorkingDirectory $workingDirectory
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
+          $cleanupDirectory = Join-Path $env:EVIDENCE_ROOT 'PostgreSqlCleanup'
+          $null = New-Item -ItemType Directory -Path $cleanupDirectory -Force
+          [System.IO.File]::WriteAllText(
+              (Join-Path $cleanupDirectory 'cleanup-probe.json'),
+              (([pscustomobject]@{
+                  schemaVersion = 1
+                  kind = 'postgresql-cleanup'
+                  outcome = 'Passed'
+                  head = $env:GITHUB_SHA
+              } | ConvertTo-Json -Depth 8) + [Environment]::NewLine),
+              [System.Text.UTF8Encoding]::new($false))
+
+      - name: Upload PostgreSQL cleanup evidence
         uses: actions/upload-artifact@v4
         with:
-          name: postgresql-integration-test-reports-${{ github.run_number }}
-          path: TestResults/PostgreSql/**/*.trx
-          if-no-files-found: warn
+          name: verification-PostgreSqlCleanup-${{ github.sha }}
+          path: TestResults/Verification/${{ github.sha }}/PostgreSqlCleanup/**
+          if-no-files-found: error
 
-      - name: Publish unit test summary
-        if: always()
-        continue-on-error: true
-        uses: dorny/test-reporter@v1
-        with:
-          name: Unit Tests
-          path: TestResults/Unit/*.trx
-          reporter: dotnet-trx
+  final-evidence-gate:
+    name: final-evidence-gate
+    needs: [release-build, non-postgresql, postgresql, postgresql-cleanup]
+    if: >-
+      needs.release-build.result == 'success' &&
+      needs.non-postgresql.result == 'success' &&
+      needs.postgresql.result == 'success' &&
+      needs.postgresql-cleanup.result == 'success'
+    runs-on: ubuntu-latest
 
-      - name: Publish integration test summary
-        if: always()
-        continue-on-error: true
-        uses: dorny/test-reporter@v1
-        with:
-          name: Integration Tests
-          path: TestResults/Integration/*.trx
-          reporter: dotnet-trx
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Publish PostgreSQL integration test summary
-        if: always()
-        continue-on-error: true
-        uses: dorny/test-reporter@v1
+      - name: Download same-SHA verification artifacts
+        uses: actions/download-artifact@v4
         with:
-          name: PostgreSQL Integration Tests
-          path: TestResults/PostgreSql/**/*.trx
-          reporter: dotnet-trx
+          pattern: verification-*-${{ github.sha }}
+          path: TestResults/Collected
+          merge-multiple: false
 
-      - name: Publish DataSeeder test summary
-        if: always()
-        continue-on-error: true
-        uses: dorny/test-reporter@v1
-        with:
-          name: DataSeeder Tests
-          path: TestResults/DataSeeder/*.trx
-          reporter: dotnet-trx
+      - name: Validate complete same-SHA evidence before publication
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/assert-ci-verification-evidence.ps1 -EvidenceRoot TestResults/Collected -ExpectedHead ${{ github.sha }}
 
-      - name: Publish architecture test summary
-        if: always()
-        continue-on-error: true
-        uses: dorny/test-reporter@v1
+      - name: Upload validated final evidence
+        uses: actions/upload-artifact@v4
         with:
-          name: Architecture Tests
-          path: TestResults/Architecture/*.trx
-          reporter: dotnet-trx
+          name: verification-final-${{ github.sha }}
+          path: TestResults/Collected/**
+          if-no-files-found: error

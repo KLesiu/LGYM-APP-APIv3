@@ -8,18 +8,28 @@ using LgymApi.Application.TrainingPlanning.Contracts.PlanDay;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using LgymApi.Resources;
 
 namespace LgymApi.Application.WorkoutProgress.TrainingExecution;
 
 internal sealed class TrainingHistoryReadService : ITrainingHistoryReadService
 {
-    private readonly ITrainingHistoryReadServiceDependencies _dependencies;
+    private readonly IAccountAccessReader _accountAccess;
+    private readonly IWorkoutTrainingPersistence _trainingRepository;
+    private readonly IWorkoutExerciseScorePersistence _exerciseScoreRepository;
+    private readonly IPlanDayReferenceReadService _planDayReferences;
 
     public TrainingHistoryReadService(
-        ITrainingHistoryReadServiceDependencies dependencies)
+        IAccountAccessReader accountAccess,
+        IWorkoutTrainingPersistence trainingRepository,
+        IWorkoutExerciseScorePersistence exerciseScoreRepository,
+        IPlanDayReferenceReadService planDayReferences)
     {
-        _dependencies = dependencies;
+        _accountAccess = accountAccess;
+        _trainingRepository = trainingRepository;
+        _exerciseScoreRepository = exerciseScoreRepository;
+        _planDayReferences = planDayReferences;
     }
 
     public async Task<Result<WorkoutTrainingReadModel, AppError>> GetLastTrainingAsync(Id<AccountReference> userId, CancellationToken cancellationToken = default)
@@ -29,18 +39,18 @@ internal sealed class TrainingHistoryReadService : ITrainingHistoryReadService
             return Result<WorkoutTrainingReadModel, AppError>.Failure(new InvalidTrainingDataError(Messages.InvalidId));
         }
 
-        if (await _dependencies.AccountAccess.GetByIdAsync(userId, cancellationToken) is null)
+        if (await _accountAccess.GetByIdAsync(userId, cancellationToken) is null)
         {
             return Result<WorkoutTrainingReadModel, AppError>.Failure(new TrainingNotFoundError(Messages.DidntFind));
         }
 
-        var training = await _dependencies.TrainingRepository.GetLastByAccountIdAsync(userId, cancellationToken);
+        var training = await _trainingRepository.GetLastByAccountIdAsync(userId, cancellationToken);
         if (training is null)
         {
             return Result<WorkoutTrainingReadModel, AppError>.Failure(new TrainingNotFoundError(Messages.DidntFind));
         }
 
-        var planDay = await _dependencies.PlanDayReferences.GetByIdAsync(training.TypePlanDayId, cancellationToken);
+        var planDay = await _planDayReferences.GetByIdAsync(training.TypePlanDayId, cancellationToken);
         return Result<WorkoutTrainingReadModel, AppError>.Success(MapTraining(training, planDay));
     }
 
@@ -51,22 +61,22 @@ internal sealed class TrainingHistoryReadService : ITrainingHistoryReadService
             return Result<List<TrainingByDateDetails>, AppError>.Failure(new InvalidTrainingDataError(Messages.InvalidId));
         }
 
-        if (await _dependencies.AccountAccess.GetByIdAsync(userId, cancellationToken) is null)
+        if (await _accountAccess.GetByIdAsync(userId, cancellationToken) is null)
         {
             return Result<List<TrainingByDateDetails>, AppError>.Failure(new TrainingNotFoundError(Messages.DidntFind));
         }
 
         var startOfDay = new DateTimeOffset(DateTime.SpecifyKind(createdAt.Date, DateTimeKind.Utc));
         var endOfDay = startOfDay.AddDays(1).AddTicks(-1);
-        var trainings = await _dependencies.TrainingRepository.GetByAccountIdAndDateAsync(userId, startOfDay, endOfDay, cancellationToken);
+        var trainings = await _trainingRepository.GetByAccountIdAndDateAsync(userId, startOfDay, endOfDay, cancellationToken);
         if (trainings.Count == 0)
         {
             return Result<List<TrainingByDateDetails>, AppError>.Failure(new TrainingNotFoundError(Messages.DidntFind));
         }
 
-        var trainingScoreRefs = await _dependencies.TrainingRepository.GetExerciseScoreLinksAsync(trainings.Select(training => training.Id).ToList(), cancellationToken);
-        var scores = await _dependencies.ExerciseScoreRepository.GetByIdsAsync(trainingScoreRefs.Select(reference => reference.ExerciseScoreId).Distinct().ToList(), cancellationToken);
-        var planDays = await _dependencies.PlanDayReferences.GetByIdsAsync(trainings.Select(training => training.TypePlanDayId).ToList(), cancellationToken);
+        var trainingScoreRefs = await _trainingRepository.GetExerciseScoreLinksAsync(trainings.Select(training => training.Id).ToList(), cancellationToken);
+        var scores = await _exerciseScoreRepository.GetByIdsAsync(trainingScoreRefs.Select(reference => reference.ExerciseScoreId).Distinct().ToList(), cancellationToken);
+        var planDays = await _planDayReferences.GetByIdsAsync(trainings.Select(training => training.TypePlanDayId).ToList(), cancellationToken);
         var scoreMap = scores.ToDictionary(score => score.Id, score => score);
         var planDaysById = planDays.ToDictionary(planDay => planDay.PlanDayId);
         var result = new List<TrainingByDateDetails>();
@@ -131,7 +141,7 @@ internal sealed class TrainingHistoryReadService : ITrainingHistoryReadService
             return Result<List<DateTime>, AppError>.Failure(new InvalidTrainingDataError(Messages.InvalidId));
         }
 
-        var trainings = await _dependencies.TrainingRepository.GetDatesByAccountIdAsync(userId, cancellationToken);
+        var trainings = await _trainingRepository.GetDatesByAccountIdAsync(userId, cancellationToken);
         return trainings.Count == 0
             ? Result<List<DateTime>, AppError>.Failure(new TrainingNotFoundError(Messages.DidntFind))
             : Result<List<DateTime>, AppError>.Success(trainings.Select(training => training.UtcDateTime).ToList());

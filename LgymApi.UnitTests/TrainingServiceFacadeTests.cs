@@ -22,10 +22,7 @@ public sealed class TrainingServiceFacadeTests
     {
         var completionUseCase = Substitute.For<ICompleteTrainingUseCase>();
         var historyReadService = Substitute.For<ITrainingHistoryReadService>();
-        var dependencies = Substitute.For<ITrainingServiceDependencies>();
-        dependencies.CompleteTrainingUseCase.Returns(completionUseCase);
-        dependencies.TrainingHistoryReadService.Returns(historyReadService);
-        var service = new TrainingService(dependencies);
+        var service = new TrainingService(completionUseCase, historyReadService);
         var userId = Id<AccountReference>.New();
         var input = new AddTrainingInput(
             Id<Gym>.New(),
@@ -57,10 +54,7 @@ public sealed class TrainingServiceFacadeTests
     {
         var completionUseCase = Substitute.For<ICompleteTrainingUseCase>();
         var historyReadService = Substitute.For<ITrainingHistoryReadService>();
-        var dependencies = Substitute.For<ITrainingServiceDependencies>();
-        dependencies.CompleteTrainingUseCase.Returns(completionUseCase);
-        dependencies.TrainingHistoryReadService.Returns(historyReadService);
-        var service = new TrainingService(dependencies);
+        var service = new TrainingService(completionUseCase, historyReadService);
         var userId = Id<AccountReference>.New();
         var createdAt = DateTime.UtcNow;
         historyReadService.GetLastTrainingAsync(userId, Arg.Any<CancellationToken>())

@@ -3,7 +3,7 @@ using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Idempotency;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Coaching.Compatibility;
+using LgymApi.Application.Coaching.ApiAdapters;
 using LgymApi.Application.Coaching.Invitations.Models;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Coaching.Errors;

@@ -80,6 +80,15 @@ public sealed class PersistedEntityOwnershipDocumentationTests
             .With.Message.Contains("Documented persisted entity rows absent from the catalog"));
     }
 
+    [Test]
+    public void Parser_Should_Accept_Windows_Line_Endings()
+    {
+        var markdown = CreateCatalogMarkdown(GetCatalogRows())
+            .Replace("\n", "\r\n", StringComparison.Ordinal);
+
+        Assert.That(() => AssertRowsMatchCatalog(ParseCatalogRows(markdown)), Throws.Nothing);
+    }
+
     private static List<(string EntityName, string Owner)> GetCatalogRows()
     {
         return PersistedEntityOwnershipCatalog.Entries
@@ -109,8 +118,9 @@ public sealed class PersistedEntityOwnershipDocumentationTests
         }
 
         var rows = new List<(string EntityName, string Owner)>();
-        foreach (var line in catalogSection.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var rawLine in catalogSection.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
+            var line = rawLine.TrimEnd('\r');
             var match = Regex.Match(line, "^\\| `(?<entity>[^`]+)` \\| `(?<owner>[^`]+)` \\|$");
             if (match.Success)
             {

@@ -95,7 +95,7 @@ internal sealed class PostgreSqlNotificationTransactionTests : PostgreSqlIntegra
         await using (var serviceScope = Factory.Services.CreateAsyncScope())
         {
             var database = serviceScope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var dependencies = new PushNotificationDeliveryServiceDependencies(
+            var service = new PushNotificationDeliveryService(
                 new PushNotificationMessageRepository(database),
                 new PushInstallationRepository(database),
                 sender,
@@ -103,7 +103,6 @@ internal sealed class PostgreSqlNotificationTransactionTests : PostgreSqlIntegra
                 new TestRetrySettings(),
                 new EfUnitOfWork(database),
                 NullLogger<PushNotificationDeliveryService>.Instance);
-            var service = new PushNotificationDeliveryService(dependencies);
 
             var action = () => service.ProcessAsync(messageId.ToString());
 

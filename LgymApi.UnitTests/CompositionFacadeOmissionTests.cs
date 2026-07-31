@@ -1,13 +1,14 @@
 using FluentAssertions;
 using LgymApi.Application.Features.Reporting;
-using LgymApi.Application.Identity.ApiCompatibility;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Application.Notifications;
 using LgymApi.Application.Platform.ReferenceData.AppConfig;
 using LgymApi.Application.Services;
-using LgymApi.Application.Task7ApiCompatibility;
+using LgymApi.Application.Platform.ReferenceData.ApiAdapters;
 using LgymApi.Application.TrainingPlanning.Contracts.PlanDay;
 using LgymApi.BackgroundWorker.Runtime;
 using LgymApi.Identity.Contracts;
+using LgymApi.Notifications.ApiAdapters;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LgymApi.UnitTests;
@@ -23,8 +24,8 @@ public sealed class CompositionFacadeOmissionTests
         new(CompositionFacade.Notifications, typeof(IInAppNotificationService)),
         new(CompositionFacade.Application, typeof(IReportingService)),
         new(CompositionFacade.Infrastructure, typeof(LgymApi.Application.Repositories.IUnitOfWork)),
-        new(CompositionFacade.ApplicationApiAdapters, typeof(IAppConfigApiCompatibilityAdapter)),
-        new(CompositionFacade.NotificationsApiAdapters, typeof(IAccountPushInstallationApiAdapter)),
+        new(CompositionFacade.ApplicationApiAdapters, typeof(IAppConfigApiAdapter)),
+        new(CompositionFacade.NotificationsApiAdapters, typeof(IPushInstallationApiAdapter)),
         new(CompositionFacade.Worker, typeof(CommandContractRegistry))
     ];
 

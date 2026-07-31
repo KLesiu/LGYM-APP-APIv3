@@ -423,14 +423,14 @@ public sealed class RecurringReportAssignmentServiceTests
             .GetAccessAsync(ReportingTestData.AccountId(trainerId), ReportingTestData.AccountId(traineeId), Arg.Any<CancellationToken>())
             .Returns(new ReportingRelationshipAccessFact(ownsTrainee));
 
-        return new RecurringReportAssignmentService(new RecurringReportAssignmentServiceDependencies(
+        return new RecurringReportAssignmentService(
             new ReportTemplatePersistenceRepository(db),
             new ReportRequestSubmissionPersistenceRepository(db),
             new RecurringReportAssignmentPersistenceRepository(db),
             relationshipAccess,
             ReportingTestData.Mapper(),
             commandDispatcher ?? Substitute.For<ICommandDispatcher>(),
-            new EfUnitOfWork(db)));
+            new EfUnitOfWork(db));
     }
 
     private static AppDbContext CreateDbContext(string name)

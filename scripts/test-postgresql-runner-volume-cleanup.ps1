@@ -45,9 +45,16 @@ $runnerExitCode = $null
 try {
     $fakeBin = New-Item -ItemType Directory -Path (Join-Path $WorkingDirectory "fake-bin") -Force
     $resultsDirectory = New-Item -ItemType Directory -Path (Join-Path $WorkingDirectory "results") -Force
-    [System.IO.File]::WriteAllText(
-        (Join-Path $fakeBin.FullName "dotnet.cmd"),
-        "@echo Simulated dotnet test failure.`r`n@exit /b 23`r`n")
+    $fakeDotnetPath = Join-Path $fakeBin.FullName $(if ($IsWindows) { "dotnet.cmd" } else { "dotnet" })
+    if ($IsWindows) {
+        [System.IO.File]::WriteAllText($fakeDotnetPath, "@echo Simulated dotnet test failure.`r`n@exit /b 23`r`n")
+    }
+    else {
+        [System.IO.File]::WriteAllText($fakeDotnetPath, "#!/usr/bin/env sh`nexit 23`n")
+        [System.IO.File]::SetUnixFileMode(
+            $fakeDotnetPath,
+            [System.IO.UnixFileMode]::UserRead -bor [System.IO.UnixFileMode]::UserWrite -bor [System.IO.UnixFileMode]::UserExecute)
+    }
     $env:PATH = "$($fakeBin.FullName)$([System.IO.Path]::PathSeparator)$originalPath"
 
     $originalErrorActionPreference = $ErrorActionPreference

@@ -9,7 +9,7 @@ using LgymApi.Api.Features.Role.Contracts;
 using LgymApi.Api.Features.Role.Controllers;
 using LgymApi.Application.Features.Role;
 using LgymApi.Application.Features.Role.Models;
-using LgymApi.Application.Identity.ApiCompatibility;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.ValueObjects;

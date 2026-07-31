@@ -26,15 +26,22 @@ internal sealed class PasswordResetService : IPasswordResetService
     private readonly IUserSessionStore _userSessionStore;
     private readonly IUnitOfWork _unitOfWork;
 
-    public PasswordResetService(PasswordResetServiceDependencies dependencies)
+    public PasswordResetService(
+        IUserRepository userRepository,
+        IPasswordResetTokenRepository passwordResetTokenRepository,
+        IPasswordResetTokenGenerationService tokenGenerationService,
+        ILegacyPasswordService legacyPasswordService,
+        IPasswordRecoveryEmailScheduler passwordRecoveryEmailScheduler,
+        IUserSessionStore userSessionStore,
+        IUnitOfWork unitOfWork)
     {
-        _userRepository = dependencies.UserRepository;
-        _passwordResetTokenRepository = dependencies.PasswordResetTokenRepository;
-        _tokenGenerationService = dependencies.TokenGenerationService;
-        _legacyPasswordService = dependencies.LegacyPasswordService;
-        _passwordRecoveryEmailScheduler = dependencies.PasswordRecoveryEmailScheduler;
-        _userSessionStore = dependencies.UserSessionStore;
-        _unitOfWork = dependencies.UnitOfWork;
+        _userRepository = userRepository;
+        _passwordResetTokenRepository = passwordResetTokenRepository;
+        _tokenGenerationService = tokenGenerationService;
+        _legacyPasswordService = legacyPasswordService;
+        _passwordRecoveryEmailScheduler = passwordRecoveryEmailScheduler;
+        _userSessionStore = userSessionStore;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<Result> RequestPasswordResetAsync(string email, string cultureName, CancellationToken cancellationToken)

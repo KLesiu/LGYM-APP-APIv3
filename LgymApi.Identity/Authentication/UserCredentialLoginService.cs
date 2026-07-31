@@ -29,18 +29,28 @@ internal sealed class UserCredentialLoginService : IUserCredentialLoginService
     private readonly ITutorialService _tutorialService;
     private readonly IMapper _mapper;
 
-    public UserCredentialLoginService(UserCredentialLoginServiceDependencies dependencies)
+    public UserCredentialLoginService(
+        IUserRepository userRepository,
+        IRoleRepository roleRepository,
+        ILegacyPasswordService legacyPasswordService,
+        IRankService rankService,
+        IUserSessionStore userSessionStore,
+        ITokenService tokenService,
+        IUnitOfWork unitOfWork,
+        AppDefaultsOptions appDefaultsOptions,
+        ITutorialService tutorialService,
+        IMapper mapper)
     {
-        _userRepository = dependencies.UserRepository;
-        _roleRepository = dependencies.RoleRepository;
-        _legacyPasswordService = dependencies.LegacyPasswordService;
-        _rankService = dependencies.RankService;
-        _userSessionStore = dependencies.UserSessionStore;
-        _tokenService = dependencies.TokenService;
-        _unitOfWork = dependencies.UnitOfWork;
-        _appDefaultsOptions = dependencies.AppDefaultsOptions;
-        _tutorialService = dependencies.TutorialService;
-        _mapper = dependencies.Mapper;
+        _userRepository = userRepository;
+        _roleRepository = roleRepository;
+        _legacyPasswordService = legacyPasswordService;
+        _rankService = rankService;
+        _userSessionStore = userSessionStore;
+        _tokenService = tokenService;
+        _unitOfWork = unitOfWork;
+        _appDefaultsOptions = appDefaultsOptions;
+        _tutorialService = tutorialService;
+        _mapper = mapper;
     }
 
     public Task<Result<LoginResult, AppError>> LoginAsync(

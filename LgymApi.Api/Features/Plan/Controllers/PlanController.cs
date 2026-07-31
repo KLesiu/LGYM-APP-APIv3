@@ -6,7 +6,7 @@ using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.TrainingPlanning.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
+using LgymApi.Application.TrainingPlanning.ApiAdapters;
 using LgymApi.Application.TrainingPlanning.Plan.Models;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
@@ -20,11 +20,11 @@ namespace LgymApi.Api.Features.Plan.Controllers;
 [Route("api")]
 public sealed class PlanController : ControllerBase
 {
-    private readonly IPlanAccountCompatibilityAdapter _plans;
+    private readonly IPlanAccountApiAdapter _plans;
     private readonly IMapper _mapper;
 
     public PlanController(
-        IPlanAccountCompatibilityAdapter plans,
+        IPlanAccountApiAdapter plans,
         IMapper mapper)
     {
         _plans = plans;

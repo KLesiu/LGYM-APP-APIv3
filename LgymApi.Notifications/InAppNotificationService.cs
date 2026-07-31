@@ -2,6 +2,7 @@ using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Notifications.Errors;
 using LgymApi.Application.Notifications.Models;
+using LgymApi.Application.Repositories;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Notifications;
 using LgymApi.Domain.ValueObjects;
@@ -13,12 +14,23 @@ internal sealed class InAppNotificationService : IInAppNotificationService
 {
     private const int PushSchemaVersion = 1;
 
-    private readonly IInAppNotificationServiceDependencies _deps;
+    private readonly IInAppNotificationRepository _inAppNotificationRepository;
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IInAppNotificationPushPublisher _pushPublisher;
+    private readonly INotificationEventBridge _notificationEventBridge;
     private readonly ILogger<InAppNotificationService> _logger;
 
-    public InAppNotificationService(IInAppNotificationServiceDependencies deps, ILogger<InAppNotificationService> logger)
+    public InAppNotificationService(
+        IInAppNotificationRepository inAppNotificationRepository,
+        IUnitOfWork unitOfWork,
+        IInAppNotificationPushPublisher pushPublisher,
+        INotificationEventBridge notificationEventBridge,
+        ILogger<InAppNotificationService> logger)
     {
-        _deps = deps;
+        _inAppNotificationRepository = inAppNotificationRepository;
+        _unitOfWork = unitOfWork;
+        _pushPublisher = pushPublisher;
+        _notificationEventBridge = notificationEventBridge;
         _logger = logger;
     }
 
@@ -38,12 +50,12 @@ internal sealed class InAppNotificationService : IInAppNotificationService
             Type = input.Type,
         };
 
-        await _deps.InAppNotificationRepository.AddAsync(notification, cancellationToken);
+        await _inAppNotificationRepository.AddAsync(notification, cancellationToken);
 
         InAppNotificationResult result;
         try
         {
-            await _deps.UnitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
             result = MapToResult(notification);
         }
         catch (Exception ex)
@@ -64,7 +76,7 @@ internal sealed class InAppNotificationService : IInAppNotificationService
         {
             try
             {
-                await _deps.PushPublisher.PushAsync(result, cancellationToken);
+                await _pushPublisher.PushAsync(result, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -72,7 +84,7 @@ internal sealed class InAppNotificationService : IInAppNotificationService
             }
         }
 
-        await _deps.NotificationEventBridge.EnqueueAsync(
+        await _notificationEventBridge.EnqueueAsync(
             new EnqueueNotificationEventInput(
                 result.RecipientId,
                 PushSchemaVersion,
@@ -88,7 +100,7 @@ internal sealed class InAppNotificationService : IInAppNotificationService
 
     public async Task<Result<PagedResult<InAppNotificationResult>, AppError>> GetForUserAsync(Id<User> userId, CursorPaginationQuery query, CancellationToken cancellationToken = default)
     {
-        var items = await _deps.InAppNotificationRepository.GetPageAsync(userId, query.Limit + 1, query.CursorCreatedAt, query.CursorId, cancellationToken);
+        var items = await _inAppNotificationRepository.GetPageAsync(userId, query.Limit + 1, query.CursorCreatedAt, query.CursorId, cancellationToken);
 
         var hasNextPage = items.Count > query.Limit;
         if (hasNextPage)
@@ -104,7 +116,7 @@ internal sealed class InAppNotificationService : IInAppNotificationService
 
     public async Task<Result<Unit, AppError>> MarkAsReadAsync(Id<InAppNotification> notificationId, Id<User> requestingUserId, CancellationToken cancellationToken = default)
     {
-        var notification = await _deps.InAppNotificationRepository.GetByIdAsync(notificationId, cancellationToken);
+        var notification = await _inAppNotificationRepository.GetByIdAsync(notificationId, cancellationToken);
         if (notification == null)
         {
             return Result<Unit, AppError>.Failure(new InAppNotificationNotFoundError());
@@ -115,23 +127,23 @@ internal sealed class InAppNotificationService : IInAppNotificationService
             return Result<Unit, AppError>.Failure(new InAppNotificationForbiddenError());
         }
 
-        await _deps.InAppNotificationRepository.MarkAsReadAsync(notificationId, cancellationToken);
-        await _deps.UnitOfWork.SaveChangesAsync(cancellationToken);
+        await _inAppNotificationRepository.MarkAsReadAsync(notificationId, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result<Unit, AppError>.Success(Unit.Value);
     }
 
     public async Task<Result<Unit, AppError>> MarkAllAsReadAsync(Id<User> userId, DateTimeOffset? before, CancellationToken cancellationToken = default)
     {
-        await _deps.InAppNotificationRepository.MarkAllAsReadAsync(userId, before, cancellationToken);
-        await _deps.UnitOfWork.SaveChangesAsync(cancellationToken);
+        await _inAppNotificationRepository.MarkAllAsReadAsync(userId, before, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result<Unit, AppError>.Success(Unit.Value);
     }
 
     public async Task<Result<int, AppError>> GetUnreadCountAsync(Id<User> userId, CancellationToken cancellationToken = default)
     {
-        var count = await _deps.InAppNotificationRepository.GetUnreadCountAsync(userId, cancellationToken);
+        var count = await _inAppNotificationRepository.GetUnreadCountAsync(userId, cancellationToken);
         return Result<int, AppError>.Success(count);
     }
 
@@ -149,9 +161,9 @@ internal sealed class InAppNotificationService : IInAppNotificationService
             return null;
         }
 
-        _deps.InAppNotificationRepository.Detach(notification);
+        _inAppNotificationRepository.Detach(notification);
 
-        var existing = await _deps.InAppNotificationRepository.FindByDeliveryKeyAsync(
+        var existing = await _inAppNotificationRepository.FindByDeliveryKeyAsync(
             input.RecipientId,
             input.Type,
             input.DeliveryKey,

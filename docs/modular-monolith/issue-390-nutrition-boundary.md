@@ -110,6 +110,8 @@ The four adapter rows describe existing controllers. They preserve compatibility
 
 All 18 focused actions are implemented and all four existing controllers route to them. The cutover removed obsolete Nutrition facades without changing Nutrition's six persisted entities, the total 48-entity ownership catalog, the single `AppDbContext`, the database, or the migration stream. It creates no physical database, schema, context, migration, project, deployment, or service split.
 
+Nutrition contributes four owner-oriented Application API adapters to the final 25-adapter Application handoff. Their external contracts remain unchanged while migration-era adapter CLR identities are removed under ADR-007.
+
 ## Guard coverage
 
 Architecture tests parse these stable rows instead of matching prose.

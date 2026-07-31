@@ -24,15 +24,22 @@ public sealed partial class RecurringReportAssignmentService : IRecurringReportA
     private readonly ICommandDispatcher _commandDispatcher;
     private readonly IUnitOfWork _unitOfWork;
 
-    public RecurringReportAssignmentService(IRecurringReportAssignmentServiceDependencies dependencies)
+    public RecurringReportAssignmentService(
+        IReportTemplatePersistence templatePersistence,
+        IReportRequestSubmissionPersistence requestSubmissionPersistence,
+        IRecurringReportAssignmentPersistence recurringAssignmentPersistence,
+        IReportingRelationshipAccessPersistence relationshipAccessPersistence,
+        IMapper mapper,
+        ICommandDispatcher commandDispatcher,
+        IUnitOfWork unitOfWork)
     {
-        _templatePersistence = dependencies.TemplatePersistence;
-        _requestSubmissionPersistence = dependencies.RequestSubmissionPersistence;
-        _assignmentPersistence = dependencies.RecurringAssignmentPersistence;
-        _relationshipAccessPersistence = dependencies.RelationshipAccessPersistence;
-        _mapper = dependencies.Mapper;
-        _commandDispatcher = dependencies.CommandDispatcher;
-        _unitOfWork = dependencies.UnitOfWork;
+        _templatePersistence = templatePersistence;
+        _requestSubmissionPersistence = requestSubmissionPersistence;
+        _assignmentPersistence = recurringAssignmentPersistence;
+        _relationshipAccessPersistence = relationshipAccessPersistence;
+        _mapper = mapper;
+        _commandDispatcher = commandDispatcher;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<Result<RecurringReportAssignmentResult, AppError>> CreateAsync(

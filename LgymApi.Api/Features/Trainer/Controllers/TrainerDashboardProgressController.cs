@@ -6,7 +6,7 @@ using LgymApi.Api.Features.MainRecords.Contracts;
 using LgymApi.Api.Features.Training.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Coaching.Compatibility;
+using LgymApi.Application.Coaching.ApiAdapters;
 using LgymApi.Application.Coaching.Relationships.TrainerDashboard;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Coaching.Errors;

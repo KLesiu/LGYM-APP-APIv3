@@ -114,7 +114,7 @@ public sealed class ServiceCommitBehaviorTests
         IUnitOfWork unitOfWork = new EfUnitOfWork(dbContext);
         ICommandDispatcher commandDispatcher = new NoOpCommandDispatcher();
 
-        var userRegistrationService = new UserRegistrationService(new UserRegistrationServiceDependencies(
+        var userRegistrationService = new UserRegistrationService(
             userRepository,
             roleRepository,
             legacyPasswordService,
@@ -122,8 +122,8 @@ public sealed class ServiceCommitBehaviorTests
             unitOfWork,
             NullLogger<UserRegistrationService>.Instance,
             new AppDefaultsOptions(),
-            new NoOpTutorialService()));
-        var progress = new WorkoutProgressReadWriteService(new WorkoutProgressReadWriteServiceDependencies(
+            new NoOpTutorialService());
+        var progress = new WorkoutProgressReadWriteService(
             Substitute.For<IWorkoutExercisePersistence>(),
             Substitute.For<IWorkoutExerciseScorePersistence>(),
             Substitute.For<IWorkoutMeasurementPersistence>(),
@@ -132,7 +132,7 @@ public sealed class ServiceCommitBehaviorTests
             Substitute.For<IAccountAccessReader>(),
             Substitute.For<IUnitConverter<HeightUnits>>(),
             Substitute.For<IUnitConverter<WeightUnits>>(),
-            unitOfWork));
+            unitOfWork);
         var service = new EloRegistryService(progress, userRegistrationService, unitOfWork);
 
         var registerResult = await service.RegisterUserAsync(new RegisterUserInput(
@@ -177,7 +177,7 @@ public sealed class ServiceCommitBehaviorTests
         IUnitOfWork unitOfWork = new EfUnitOfWork(dbContext);
         ICommandDispatcher commandDispatcher = new NoOpCommandDispatcher();
 
-        var service = new UserRegistrationService(new UserRegistrationServiceDependencies(
+        var service = new UserRegistrationService(
             userRepository,
             roleRepository,
             legacyPasswordService,
@@ -185,7 +185,7 @@ public sealed class ServiceCommitBehaviorTests
             unitOfWork,
             NullLogger<UserRegistrationService>.Instance,
             new AppDefaultsOptions(),
-            new NoOpTutorialService()));
+            new NoOpTutorialService());
 
         var registerResult = await service.RegisterAsync(new RegisterUserInput(
             "lang-user",
@@ -227,7 +227,7 @@ public sealed class ServiceCommitBehaviorTests
         ICommandDispatcher commandDispatcher = new NoOpCommandDispatcher();
         var defaults = new AppDefaultsOptions { PreferredLanguage = "de-DE", PreferredTimeZone = "UTC" };
 
-        var service = new UserRegistrationService(new UserRegistrationServiceDependencies(
+        var service = new UserRegistrationService(
             userRepository,
             roleRepository,
             legacyPasswordService,
@@ -235,7 +235,7 @@ public sealed class ServiceCommitBehaviorTests
             unitOfWork,
             NullLogger<UserRegistrationService>.Instance,
             defaults,
-            new NoOpTutorialService()));
+            new NoOpTutorialService());
 
         var registerResult = await service.RegisterAsync(new RegisterUserInput(
             "fallback-user",
@@ -291,14 +291,14 @@ public sealed class ServiceCommitBehaviorTests
         IRoleRepository roleRepository = CreateRoleRepository(dbContext);
         IUnitOfWork unitOfWork = new EfUnitOfWork(dbContext);
 
-        var service = new UserProfileService(new UserProfileServiceDependencies(
+        var service = new UserProfileService(
             userRepository,
             roleRepository,
             new RankService(),
             unitOfWork,
             new AppDefaultsOptions(),
             new NoOpTutorialService(),
-            Substitute.For<IMapper>()));
+            Substitute.For<IMapper>());
 
         var updateTimeZoneResult = await service.UpdateTimeZoneAsync(user, "Europe/Paris");
         updateTimeZoneResult.IsSuccess.Should().BeTrue();
@@ -345,14 +345,14 @@ public sealed class ServiceCommitBehaviorTests
         IRoleRepository roleRepository = CreateRoleRepository(dbContext);
         IUnitOfWork unitOfWork = new EfUnitOfWork(dbContext);
 
-        var service = new UserProfileService(new UserProfileServiceDependencies(
+        var service = new UserProfileService(
             userRepository,
             roleRepository,
             new RankService(),
             unitOfWork,
             new AppDefaultsOptions(),
             new NoOpTutorialService(),
-            Substitute.For<IMapper>()));
+            Substitute.For<IMapper>());
 
         var updateTimeZoneResult = await service.UpdateTimeZoneAsync(user, "Not/ARealTimeZone");
         updateTimeZoneResult.IsFailure.Should().BeTrue();

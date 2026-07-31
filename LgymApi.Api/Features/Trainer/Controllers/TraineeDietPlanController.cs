@@ -2,7 +2,7 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
+using LgymApi.Application.Nutrition.ApiAdapters;
 using LgymApi.Application.Nutrition.DietPlans.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,11 +14,11 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 [Authorize]
 public sealed class TraineeDietPlanController : ControllerBase
 {
-    private readonly IDietPlanAccountCompatibilityAdapter _dietPlans;
+    private readonly IDietPlanAccountApiAdapter _dietPlans;
     private readonly IMapper _mapper;
 
     public TraineeDietPlanController(
-        IDietPlanAccountCompatibilityAdapter dietPlans,
+        IDietPlanAccountApiAdapter dietPlans,
         IMapper mapper)
     {
         _dietPlans = dietPlans;

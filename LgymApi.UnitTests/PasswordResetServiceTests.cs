@@ -46,7 +46,7 @@ public sealed class PasswordResetServiceTests
         scheduledRequest.ResetUrl.Should().BeEmpty();
         scheduledRequest.CultureName.Should().Be("en");
         emailScheduler.CancellationToken.Should().Be(cancellationSource.Token);
-        typeof(PasswordResetServiceDependencies).GetConstructors().Should().ContainSingle()
+        typeof(PasswordResetService).GetConstructors().Should().ContainSingle()
             .Which.GetParameters()[4].ParameterType.Should().Be(typeof(IPasswordRecoveryEmailScheduler));
         unitOfWork.SaveChangesCalls.Should().Be(1);
     }
@@ -311,6 +311,26 @@ public sealed class PasswordResetServiceTests
         sessionStore.RevokedAllUserIds.Should().Contain(user.Id);
     }
 
+    [Test]
+    public async Task RequestPasswordReset_WhenPersistenceFails_DoesNotScheduleEmail()
+    {
+        var user = CreateTestUser("persistence-failure@example.com");
+        var userRepository = new FakeUserRepository { ExistingByEmail = user };
+        var tokenRepository = new FakePasswordResetTokenRepository();
+        var emailScheduler = new FakePasswordRecoveryEmailScheduler();
+        var persistenceFailure = new InvalidOperationException("Password reset persistence failed.");
+        var unitOfWork = new FakeUnitOfWork { SaveChangesException = persistenceFailure };
+        var service = CreateService(userRepository, tokenRepository, emailScheduler, unitOfWork);
+
+        var action = () => service.RequestPasswordResetAsync(user.Email.Value, "en", CancellationToken.None);
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .Where(exception => ReferenceEquals(exception, persistenceFailure));
+        tokenRepository.Added.Should().ContainSingle();
+        emailScheduler.ScheduledRequests.Should().BeEmpty();
+        unitOfWork.SaveChangesCalls.Should().Be(1);
+    }
+
     private static User CreateTestUser(string email)
     {
         return new User
@@ -339,7 +359,7 @@ public sealed class PasswordResetServiceTests
     {
         var actualTokenRepository = tokenRepository ?? new FakePasswordResetTokenRepository();
 
-        var dependencies = new PasswordResetServiceDependencies(
+        return new PasswordResetService(
             userRepository ?? new FakeUserRepository(),
             actualTokenRepository,
             new PasswordResetTokenGenerationService(actualTokenRepository),
@@ -347,8 +367,6 @@ public sealed class PasswordResetServiceTests
             emailScheduler ?? new FakePasswordRecoveryEmailScheduler(),
             sessionStore ?? new FakeUserSessionStore(),
             unitOfWork ?? new FakeUnitOfWork());
-
-        return new PasswordResetService(dependencies);
     }
 
     private sealed class FakeUserRepository : IUserRepository
@@ -448,11 +466,14 @@ public sealed class PasswordResetServiceTests
     private sealed class FakeUnitOfWork : IUnitOfWork
     {
         public int SaveChangesCalls { get; private set; }
+        public Exception? SaveChangesException { get; init; }
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             SaveChangesCalls += 1;
-            return Task.FromResult(1);
+            return SaveChangesException is null
+                ? Task.FromResult(1)
+                : Task.FromException<int>(SaveChangesException);
         }
 
         public Task<IUnitOfWorkTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)

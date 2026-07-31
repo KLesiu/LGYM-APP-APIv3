@@ -1,7 +1,11 @@
 using FluentAssertions;
 using Hangfire;
 using LgymApi.Application.Abstractions.Storage;
+using LgymApi.Application.Coaching.ApiAdapters;
 using LgymApi.Application.Coaching.ManagedPlans;
+using LgymApi.Application.Identity.ApiAdapters;
+using LgymApi.Application.Nutrition.ApiAdapters;
+using LgymApi.Application.Platform.ReferenceData.ApiAdapters;
 using LgymApi.Application.Platform.ReferenceData.AppConfig;
 using LgymApi.Application.Platform.ReferenceData.AppConfig.Contracts;
 using LgymApi.Application.Platform.ReferenceData.Enums;
@@ -14,15 +18,19 @@ using LgymApi.Application.Notifications.Contracts.Push;
 using LgymApi.Application.Pagination;
 using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using LgymApi.Application.Repositories;
+using LgymApi.Application.Reporting.ApiAdapters;
 using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Application.Services;
+using LgymApi.Application.TrainingPlanning.ApiAdapters;
 using LgymApi.Application.WorkoutProgress.Adapters;
+using LgymApi.Application.WorkoutProgress.ApiAdapters;
 using LgymApi.BackgroundWorker;
 using LgymApi.BackgroundWorker.Common.Notifications;
 using LgymApi.BackgroundWorker.Notifications;
 using LgymApi.BackgroundWorker.Runtime;
 using LgymApi.BackgroundWorker.Services;
 using LgymApi.Notifications;
+using LgymApi.Notifications.ApiAdapters;
 using LgymApi.Domain.Enums;
 using LgymApi.Infrastructure.Pagination;
 using LgymApi.Infrastructure.Repositories;
@@ -40,6 +48,42 @@ namespace LgymApi.IntegrationTests;
 [TestFixture]
 public sealed class CompositionRootStartupTests : IntegrationTestBase
 {
+    private static readonly Type[] ApplicationApiAdapterContracts =
+    [
+        typeof(IAuthenticatedAccountApiAdapter),
+        typeof(IAccountAccessApiAdapter),
+        typeof(IAccountEloApiAdapter),
+        typeof(IAccountExternalLoginApiAdapter),
+        typeof(IAccountTutorialApiAdapter),
+        typeof(IAdminAccountManagementApiAdapter),
+        typeof(IRoleManagementApiAdapter),
+        typeof(IPlanAccountApiAdapter),
+        typeof(IManagedPlanAccountApiAdapter),
+        typeof(IDietPlanAccountApiAdapter),
+        typeof(ISupplementationApiAdapter),
+        typeof(IExerciseApiAdapter),
+        typeof(IMainRecordsApiAdapter),
+        typeof(IAppConfigApiAdapter),
+        typeof(ITrainerInvitationApiPort),
+        typeof(ITrainerDashboardProgressApiPort),
+        typeof(ITrainerTraineeNotesApiPort),
+        typeof(ITraineeNotesApiPort),
+        typeof(ITraineeRelationshipApiPort),
+        typeof(ITrainerReportTemplateApiPort),
+        typeof(ITrainerReportRequestApiPort),
+        typeof(ITraineeReportRequestApiPort),
+        typeof(ITrainerReportPhotoApiPort),
+        typeof(ITraineeReportPhotoApiPort),
+        typeof(IRecurringReportAssignmentApiPort)
+    ];
+
+    private static readonly Type[] NotificationsApiAdapterContracts =
+    [
+        typeof(IInAppNotificationApiAdapter),
+        typeof(INotificationEventApiAdapter),
+        typeof(IPushInstallationApiAdapter)
+    ];
+
     [Test]
     public void Worker_Facade_Should_Remain_The_Composition_Entry_Point()
     {
@@ -131,11 +175,18 @@ public sealed class CompositionRootStartupTests : IntegrationTestBase
         emailTemplateComposers.Should().HaveCount(6);
         emailTemplateComposers.Select(composer => composer.GetType()).Should().OnlyHaveUniqueItems();
         var mappingProfiles = services.GetServices<IMappingProfile>().ToArray();
-        mappingProfiles.Should().HaveCount(44);
+        mappingProfiles.Should().HaveCount(46);
         mappingProfiles.Select(profile => profile.GetType()).Should().OnlyHaveUniqueItems();
         mappingProfiles.OfType<EnumLookupMappingProfile>().Should().ContainSingle();
         mappingProfiles.OfType<PlanExerciseWorkoutAdapterMappingProfile>().Should().ContainSingle();
         mappingProfiles.OfType<ManagedPlanCollaborationMappingProfile>().Should().ContainSingle();
+        mappingProfiles.OfType<IdentityApiAdapterMappingProfile>().Should().ContainSingle();
+        mappingProfiles.OfType<NutritionApiAdapterMappingProfile>().Should().ContainSingle();
+        mappingProfiles.OfType<PlanApiAdapterMappingProfile>().Should().ContainSingle();
+        mappingProfiles.OfType<CoachingApiAdapterMappingProfile>().Should().ContainSingle();
+        mappingProfiles.OfType<ReportingApiAdapterMappingProfile>().Should().ContainSingle();
+        AssertApiAdapterContractsResolveExactlyOnce(services, ApplicationApiAdapterContracts, expectedCount: 25);
+        AssertApiAdapterContractsResolveExactlyOnce(services, NotificationsApiAdapterContracts, expectedCount: 3);
         services.GetService<JobStorage>().Should().BeNull();
     }
 
@@ -187,5 +238,20 @@ public sealed class CompositionRootStartupTests : IntegrationTestBase
 
         action.Should().Throw<Exception>()
             .Which.ToString().Should().Contain(expectedMessage);
+    }
+
+    private static void AssertApiAdapterContractsResolveExactlyOnce(
+        IServiceProvider services,
+        IReadOnlyCollection<Type> contracts,
+        int expectedCount)
+    {
+        contracts.Should().HaveCount(expectedCount);
+        contracts.Should().OnlyHaveUniqueItems();
+
+        foreach (var contract in contracts)
+        {
+            services.GetServices(contract).Should().ContainSingle(contract.FullName)
+                .Which.Should().NotBeNull(contract.FullName);
+        }
     }
 }

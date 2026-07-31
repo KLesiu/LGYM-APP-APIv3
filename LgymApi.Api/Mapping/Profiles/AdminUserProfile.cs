@@ -1,6 +1,6 @@
 using LgymApi.Api.Features.AdminManagement.Contracts;
 using LgymApi.Application.Features.AdminManagement.Models;
-using LgymApi.Application.Identity.ApiCompatibility;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Application.Mapping.Core;
 
 namespace LgymApi.Api.Mapping.Profiles;

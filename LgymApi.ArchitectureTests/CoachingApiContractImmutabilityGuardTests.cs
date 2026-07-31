@@ -4,8 +4,7 @@ using LgymApi.Application.Coaching.Invitations.Create;
 using LgymApi.Application.Coaching.Invitations.CreateByEmail;
 using LgymApi.Application.Coaching.Invitations.ListPaginated;
 using LgymApi.Application.Coaching.Invitations.Revoke;
-using LgymApi.Application.Coaching.Compatibility;
-using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
+using LgymApi.Application.Coaching.ApiAdapters;
 using LgymApi.Application.Coaching.ManagedPlans.Assign;
 using LgymApi.Application.Coaching.ManagedPlans.Create;
 using LgymApi.Application.Coaching.ManagedPlans.Delete;
@@ -94,7 +93,7 @@ public sealed class CoachingApiContractImmutabilityGuardTests
             typeof(IMapper));
         AssertConstructor(
             typeof(TrainerManagedPlansController),
-            typeof(IManagedPlanAccountCompatibilityAdapter),
+            typeof(IManagedPlanAccountApiAdapter),
             typeof(IMapper));
     }
 

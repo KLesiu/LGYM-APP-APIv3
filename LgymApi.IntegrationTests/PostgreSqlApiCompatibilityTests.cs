@@ -8,7 +8,7 @@ using LgymApi.Api.Features.Trainer.Controllers;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.Features.Reporting;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Reporting.Compatibility;
+using LgymApi.Application.Reporting.ApiAdapters;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;

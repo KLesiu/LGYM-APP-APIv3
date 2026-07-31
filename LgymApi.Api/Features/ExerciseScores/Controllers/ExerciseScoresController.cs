@@ -3,9 +3,9 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.ExerciseScores.Contracts;
 using LgymApi.Api.Middleware;
+using LgymApi.Application.Features.ExerciseScores;
 using LgymApi.Application.Features.ExerciseScores.Models;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Task7ApiCompatibility.WorkoutProgress;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 using Microsoft.AspNetCore.Mvc;
@@ -16,10 +16,10 @@ namespace LgymApi.Api.Features.ExerciseScores.Controllers;
 [Route("api")]
 public sealed class ExerciseScoresController : ControllerBase
 {
-    private readonly IExerciseScoresApiCompatibilityService _exerciseScoresService;
+    private readonly IExerciseScoresService _exerciseScoresService;
     private readonly IMapper _mapper;
 
-    public ExerciseScoresController(IExerciseScoresApiCompatibilityService exerciseScoresService, IMapper mapper)
+    public ExerciseScoresController(IExerciseScoresService exerciseScoresService, IMapper mapper)
     {
         _exerciseScoresService = exerciseScoresService;
         _mapper = mapper;

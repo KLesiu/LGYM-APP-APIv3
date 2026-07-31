@@ -2,9 +2,9 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Measurements.Contracts;
 using LgymApi.Api.Middleware;
+using LgymApi.Application.Features.Measurements;
 using LgymApi.Application.Features.Measurements.Models;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Task7ApiCompatibility.WorkoutProgress;
 using LgymApi.Application.WorkoutProgress.ProgressData.Models;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
@@ -19,10 +19,10 @@ namespace LgymApi.Api.Features.Measurements.Controllers;
 [Route("api")]
 public sealed class MeasurementsController : ControllerBase
 {
-    private readonly IMeasurementsApiCompatibilityService _measurementsService;
+    private readonly IMeasurementsService _measurementsService;
     private readonly IMapper _mapper;
 
-    public MeasurementsController(IMeasurementsApiCompatibilityService measurementsService, IMapper mapper)
+    public MeasurementsController(IMeasurementsService measurementsService, IMapper mapper)
     {
         _measurementsService = measurementsService;
         _mapper = mapper;

@@ -36,21 +36,34 @@ public sealed partial class ReportingService : IReportingService
     private readonly ILogger<ReportingService> _logger;
     private readonly PhotoStorageOptions _photoStorageOptions;
 
-    public ReportingService(IReportingServiceDependencies dependencies)
+    public ReportingService(
+        IReportTemplatePersistence templatePersistence,
+        IReportRequestSubmissionPersistence requestSubmissionPersistence,
+        IRecurringReportAssignmentPersistence recurringAssignmentPersistence,
+        IReportPhotoPersistence photoPersistence,
+        IReportingRelationshipAccessPersistence relationshipAccessPersistence,
+        IReportSubmissionAcceptedProgressCommandFactory reportSubmissionAcceptedProgressCommandFactory,
+        ICommandDispatcher commandDispatcher,
+        ICommandOutboxWriter commandOutboxWriter,
+        IUnitOfWork unitOfWork,
+        IPhotoStorageProvider photoStorageProvider,
+        IMapper mapper,
+        ILogger<ReportingService> logger,
+        PhotoStorageOptions photoStorageOptions)
     {
-        _templatePersistence = dependencies.TemplatePersistence;
-        _requestSubmissionPersistence = dependencies.RequestSubmissionPersistence;
-        _recurringAssignmentPersistence = dependencies.RecurringAssignmentPersistence;
-        _photoPersistence = dependencies.PhotoPersistence;
-        _relationshipAccessPersistence = dependencies.RelationshipAccessPersistence;
-        _reportSubmissionAcceptedProgressCommandFactory = dependencies.ReportSubmissionAcceptedProgressCommandFactory;
-        _commandDispatcher = dependencies.CommandDispatcher;
-        _commandOutboxWriter = dependencies.CommandOutboxWriter;
-        _unitOfWork = dependencies.UnitOfWork;
-        _photoStorageProvider = dependencies.PhotoStorageProvider;
-        _mapper = dependencies.Mapper;
-        _logger = dependencies.Logger;
-        _photoStorageOptions = dependencies.PhotoStorageOptions;
+        _templatePersistence = templatePersistence;
+        _requestSubmissionPersistence = requestSubmissionPersistence;
+        _recurringAssignmentPersistence = recurringAssignmentPersistence;
+        _photoPersistence = photoPersistence;
+        _relationshipAccessPersistence = relationshipAccessPersistence;
+        _reportSubmissionAcceptedProgressCommandFactory = reportSubmissionAcceptedProgressCommandFactory;
+        _commandDispatcher = commandDispatcher;
+        _commandOutboxWriter = commandOutboxWriter;
+        _unitOfWork = unitOfWork;
+        _photoStorageProvider = photoStorageProvider;
+        _mapper = mapper;
+        _logger = logger;
+        _photoStorageOptions = photoStorageOptions;
     }
 
     private static Result<Unit, AppError> EnsureTrainer(AuthenticatedAccountContext currentTrainer)

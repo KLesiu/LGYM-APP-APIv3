@@ -31,16 +31,24 @@ internal sealed class UserRegistrationService : IUserRegistrationService
     private readonly AppDefaultsOptions _appDefaultsOptions;
     private readonly ITutorialService _tutorialService;
 
-    public UserRegistrationService(UserRegistrationServiceDependencies dependencies)
+    public UserRegistrationService(
+        IUserRepository userRepository,
+        IRoleRepository roleRepository,
+        ILegacyPasswordService legacyPasswordService,
+        ICommandDispatcher commandDispatcher,
+        IUnitOfWork unitOfWork,
+        ILogger<UserRegistrationService> logger,
+        AppDefaultsOptions appDefaultsOptions,
+        ITutorialService tutorialService)
     {
-        _userRepository = dependencies.UserRepository;
-        _roleRepository = dependencies.RoleRepository;
-        _legacyPasswordService = dependencies.LegacyPasswordService;
-        _commandDispatcher = dependencies.CommandDispatcher;
-        _unitOfWork = dependencies.UnitOfWork;
-        _logger = dependencies.Logger;
-        _appDefaultsOptions = dependencies.AppDefaultsOptions;
-        _tutorialService = dependencies.TutorialService;
+        _userRepository = userRepository;
+        _roleRepository = roleRepository;
+        _legacyPasswordService = legacyPasswordService;
+        _commandDispatcher = commandDispatcher;
+        _unitOfWork = unitOfWork;
+        _logger = logger;
+        _appDefaultsOptions = appDefaultsOptions;
+        _tutorialService = tutorialService;
     }
 
     public Task<Result<Id<UserEntity>, AppError>> RegisterAsync(

@@ -1,5 +1,5 @@
 using LgymApi.Api.Features.Account.Contracts;
-using LgymApi.Application.Identity.ApiCompatibility;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Application.Mapping.Core;
 
 namespace LgymApi.Api.Mapping.Profiles;

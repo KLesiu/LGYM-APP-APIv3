@@ -1,6 +1,6 @@
 using FluentAssertions;
 using LgymApi.Api.Features.Trainer.Controllers;
-using LgymApi.Application.Coaching.Compatibility;
+using LgymApi.Application.Coaching.ApiAdapters;
 using LgymApi.Application.Coaching.Invitations.Accept;
 using LgymApi.Application.Coaching.Invitations.Reject;
 using LgymApi.Application.Coaching.ManagedPlans.GetActive;

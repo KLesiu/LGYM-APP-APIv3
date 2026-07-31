@@ -53,7 +53,7 @@ Reporting uses exactly five focused persistence ports for templates, requests/su
 
 Known internal entity references use `Id<T>`. Reporting and Workout & Progress Application persistence contracts use `Id<AccountReference>` for account identity; only their Infrastructure adapters rebind those values to persisted `Id<User>` foreign keys. EF Core stores provider values in PostgreSQL `uuid` columns, while HTTP and JSON UUID values remain strings. The only polymorphic string ID exceptions are `PushNotificationMessage.EntityId` and `PushEventPayload.EntityId`.
 
-Architecture debt has an exact zero-row registry and zero approved maximum. Re-keying, new entries, wildcard exemptions, source or target changes, and scanner path or classifier exclusions are not permitted. The dependency, direct entity/repository, and public-surface guards independently compile every production source in Application, Domain, Platform, Identity, TrainingPlanning, and Notifications, require a nonzero source-tree count for each assembly, and assert zero observed violations rather than treating an empty registry as success. Internal persisted foreign keys remain entity-typed, while cross-module contracts use marker IDs.
+Architecture debt is enforced as direct semantic zero without exception machinery. Wildcard inputs and scanner path or classifier exclusions are not permitted. The dependency, direct entity/repository, and public-surface guards independently compile every production source in Application, Domain, Platform, Identity, TrainingPlanning, and Notifications, require a nonzero source-tree count for each assembly, and print every observed violation on failure. Internal persisted foreign keys remain entity-typed, while cross-module contracts use marker IDs.
 
 Training Planning's PlanDay service accepts marker-only commands and read models, authorizing non-owner access through its consumer-owned account-ID `IPlanDayRelationshipAccessPort`. Workout & Progress Measurements authorizes trainer access through its consumer-owned `IMeasurementsRelationshipAccessPort`. Coaching implements and registers both boolean adapters from `ICoachingRelationshipAccessService`, preserving acyclic dependency direction without exposing Coaching repositories or contracts to either consumer.
 
@@ -262,7 +262,7 @@ Use the [Module Contribution Guide](MODULE_CONTRIBUTION_GUIDE.md) for owner-firs
 - `#391` codifies Workout & Progress logical ownership and path classification without changing the shared persistence topology or legacy API contracts.
 - `#390` codifies Nutrition's six-entity, 18-action logical boundary and compatibility adapters without changing the shared persistence topology, command identity, or legacy API contracts.
 - `#393` defines the executable concern-owner matrix for Platform and Reference Data.
-- `docs/adr/006-lgym-evolves-as-modular-monolith.md` records the decision.
+- `docs/adr/006-lgym-evolves-as-modular-monolith.md` records the direction, while `docs/adr/007-final-modular-monolith-compatibility-commitments.md` records the final compatibility commitments.
 
 ### Issue #376 links
 
@@ -275,7 +275,10 @@ Use the [Module Contribution Guide](MODULE_CONTRIBUTION_GUIDE.md) for owner-firs
 - `docs/modular-monolith/issue-390-nutrition-boundary.md`
 - `docs/modular-monolith/issue-392-reporting-boundary.md`
 - `docs/modular-monolith/issue-393-platform-reference-data-boundary.md`
+- `docs/modular-monolith/issue-395-final-verification.md`
 
 The project-reference manifest fixes the current solution at 18 projects and 90 unique, justified direct edges: 89 have Roslyn-resolved source/import evidence and one is the Resources analyzer edge. The import guard rejects unused edges, missing direct imports, transitive reliance, forbidden edges, duplicates, cycles, and topological-order drift. The graph document also fixes the dependency-first order and 216-edge forbidden complement.
 The production topology remains one `AppDbContext`, one PostgreSQL database, and one migration stream. The eight owner totals remain Identity & Accounts 9, Notifications 5, Reporting 7, Training Planning 3, Workout & Progress 10, Coaching 4, Nutrition 6, and Platform / Reference Data 4, for 48 persisted entities.
 The compatibility, persistence, and Unit of Work guidance elsewhere in this guide continues to apply and is not restated here.
+
+The final handoff has 25 scoped Application API adapters and three scoped Notifications API adapters. Migration-era `Task7`, `ApiCompatibility`, and `Compatibility.Task7` adapter CLR identities are removed, but established HTTP, JSON, DTO, route, policy, and endpoint-specific legacy-field contracts remain unchanged. The three retained Notifications integration adapters are owner-to-owner seams, not API adapters: `PushInstallationSessionDisassociationAdapter`, `CoachingEmailNotificationSchedulerAdapter`, and `PasswordRecoveryEmailSchedulerAdapter`. See ADR-007 and issue-395 final verification for their removal conditions and the Todo 22 clean same-SHA evidence workflow.

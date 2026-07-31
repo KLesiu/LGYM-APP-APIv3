@@ -4,7 +4,7 @@ using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.Platform.ReferenceData.AppConfig;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Task7ApiCompatibility;
+using LgymApi.Application.Platform.ReferenceData.ApiAdapters;
 using LgymApi.Domain.ValueObjects;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
@@ -17,16 +17,16 @@ namespace LgymApi.Api.Features.AppConfig.Controllers;
 public sealed class AppConfigController : ControllerBase
 {
     private readonly IAppConfigService _appConfigService;
-    private readonly IAppConfigApiCompatibilityAdapter _appConfigApiCompatibility;
+    private readonly IAppConfigApiAdapter _appConfigApiAdapter;
     private readonly IMapper _mapper;
 
     public AppConfigController(
         IAppConfigService appConfigService,
-        IAppConfigApiCompatibilityAdapter appConfigApiCompatibility,
+        IAppConfigApiAdapter appConfigApiAdapter,
         IMapper mapper)
     {
         _appConfigService = appConfigService;
-        _appConfigApiCompatibility = appConfigApiCompatibility;
+        _appConfigApiAdapter = appConfigApiAdapter;
         _mapper = mapper;
     }
 
@@ -60,7 +60,7 @@ public sealed class AppConfigController : ControllerBase
             form.ForceUpdate,
             form.UpdateUrl,
             form.ReleaseNotes);
-        var result = await _appConfigApiCompatibility.CreateNewAppVersionAsync(accountId, input, cancellationToken);
+        var result = await _appConfigApiAdapter.CreateNewAppVersionAsync(accountId, input, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();

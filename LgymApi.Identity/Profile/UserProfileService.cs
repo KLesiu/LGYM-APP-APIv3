@@ -1,9 +1,14 @@
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Identity.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
+using LgymApi.Application.Features.Tutorial;
 using LgymApi.Application.Features.User.Models;
 using LgymApi.Application.Identity.Contracts.Profile;
 using LgymApi.Application.Identity.Mapping;
+using LgymApi.Application.Mapping.Core;
+using LgymApi.Application.Options;
+using LgymApi.Application.Repositories;
+using LgymApi.Application.Services;
 using LgymApi.Resources;
 using UserEntity = LgymApi.Domain.Entities.User;
 
@@ -11,11 +16,30 @@ namespace LgymApi.Application.Identity.Profile;
 
 internal sealed class UserProfileService : IUserProfileService
 {
-    private readonly UserProfileServiceDependencies _dependencies;
+    private readonly IUserRepository _userRepository;
+    private readonly IRoleRepository _roleRepository;
+    private readonly IRankService _rankService;
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly AppDefaultsOptions _appDefaultsOptions;
+    private readonly ITutorialService _tutorialService;
+    private readonly IMapper _mapper;
 
-    public UserProfileService(UserProfileServiceDependencies dependencies)
+    public UserProfileService(
+        IUserRepository userRepository,
+        IRoleRepository roleRepository,
+        IRankService rankService,
+        IUnitOfWork unitOfWork,
+        AppDefaultsOptions appDefaultsOptions,
+        ITutorialService tutorialService,
+        IMapper mapper)
     {
-        _dependencies = dependencies;
+        _userRepository = userRepository;
+        _roleRepository = roleRepository;
+        _rankService = rankService;
+        _unitOfWork = unitOfWork;
+        _appDefaultsOptions = appDefaultsOptions;
+        _tutorialService = tutorialService;
+        _mapper = mapper;
     }
 
     public async Task<Result<UserInfoResult, AppError>> CheckTokenAsync(
@@ -27,19 +51,19 @@ internal sealed class UserProfileService : IUserProfileService
             return Result<UserInfoResult, AppError>.Failure(new UserNotFoundError(Messages.DidntFind));
         }
 
-        var nextRank = _dependencies.RankService.GetNextRank(currentUser.ProfileRank);
-        var roles = await _dependencies.RoleRepository.GetRoleNamesByUserIdAsync(currentUser.Id, cancellationToken);
-        var permissionClaims = await _dependencies.RoleRepository.GetPermissionClaimsByUserIdAsync(currentUser.Id, cancellationToken);
-        var hasActiveTutorials = await _dependencies.TutorialService.HasActiveTutorialsAsync(currentUser.Id, cancellationToken);
-        var mappingContext = _dependencies.Mapper.CreateContext();
-        mappingContext.Set(IdentityUserMappingProfile.Keys.DefaultPreferredTimeZone, _dependencies.AppDefaultsOptions.PreferredTimeZone);
+        var nextRank = _rankService.GetNextRank(currentUser.ProfileRank);
+        var roles = await _roleRepository.GetRoleNamesByUserIdAsync(currentUser.Id, cancellationToken);
+        var permissionClaims = await _roleRepository.GetPermissionClaimsByUserIdAsync(currentUser.Id, cancellationToken);
+        var hasActiveTutorials = await _tutorialService.HasActiveTutorialsAsync(currentUser.Id, cancellationToken);
+        var mappingContext = _mapper.CreateContext();
+        mappingContext.Set(IdentityUserMappingProfile.Keys.DefaultPreferredTimeZone, _appDefaultsOptions.PreferredTimeZone);
         mappingContext.Set(IdentityUserMappingProfile.Keys.Elo, 1000);
         mappingContext.Set(IdentityUserMappingProfile.Keys.NextRank, nextRank);
         mappingContext.Set(IdentityUserMappingProfile.Keys.Roles, roles);
         mappingContext.Set(IdentityUserMappingProfile.Keys.PermissionClaims, permissionClaims);
         mappingContext.Set(IdentityUserMappingProfile.Keys.HasActiveTutorials, hasActiveTutorials);
 
-        return Result<UserInfoResult, AppError>.Success(_dependencies.Mapper.Map<UserEntity, UserInfoResult>(currentUser, mappingContext));
+        return Result<UserInfoResult, AppError>.Success(_mapper.Map<UserEntity, UserInfoResult>(currentUser, mappingContext));
     }
 
     public async Task<Result<Unit, AppError>> DeleteAccountAsync(
@@ -55,8 +79,8 @@ internal sealed class UserProfileService : IUserProfileService
         currentUser.Name = $"anonymized_user_{currentUser.Id}";
         currentUser.IsDeleted = true;
 
-        await _dependencies.UserRepository.UpdateAsync(currentUser, cancellationToken);
-        await _dependencies.UnitOfWork.SaveChangesAsync(cancellationToken);
+        await _userRepository.UpdateAsync(currentUser, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         return Result<Unit, AppError>.Success(Unit.Value);
     }
 
@@ -90,8 +114,8 @@ internal sealed class UserProfileService : IUserProfileService
         }
 
         currentUser.PreferredTimeZone = normalizedPreferredTimeZone;
-        await _dependencies.UserRepository.UpdateAsync(currentUser, cancellationToken);
-        await _dependencies.UnitOfWork.SaveChangesAsync(cancellationToken);
+        await _userRepository.UpdateAsync(currentUser, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         return Result<Unit, AppError>.Success(Unit.Value);
     }
 }

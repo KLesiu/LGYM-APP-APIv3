@@ -34,7 +34,9 @@ public sealed class ModuleContributionDocumentationTests
         new("module-guide.authority.dependency-graph", "docs/modular-monolith/issue-380-project-reference-graph.md", "dependencies"),
         new("module-guide.authority.background-messaging", "docs/modular-monolith/issue-380-background-contract-ownership.md", "background-messaging"),
         new("module-guide.authority.reporting-boundary", "docs/modular-monolith/issue-392-reporting-boundary.md", "reporting-boundary"),
-        new("module-guide.authority.platform-provider-boundary", "docs/modular-monolith/issue-393-platform-reference-data-boundary.md", "platform-provider-boundary")
+        new("module-guide.authority.platform-provider-boundary", "docs/modular-monolith/issue-393-platform-reference-data-boundary.md", "platform-provider-boundary"),
+        new("module-guide.authority.final-compatibility", "docs/adr/007-final-modular-monolith-compatibility-commitments.md", "final-compatibility"),
+        new("module-guide.authority.final-verification", "docs/modular-monolith/issue-395-final-verification.md", "final-verification")
     ];
 
     private static readonly PolicyExpectation[] Policies =
@@ -42,7 +44,7 @@ public sealed class ModuleContributionDocumentationTests
         new("module-guide.policy.owner", OwnerPolicyContract()),
         new("module-guide.policy.placement", "owner-first=true; foreign-entities=false; foreign-repositories=false"),
         new("module-guide.policy.namespace-compatibility", "physical-path=owner; legacy-namespace=compatible"),
-        new("module-guide.policy.public-surface", "focused-contracts=true; broad-dependency-aggregate=false"),
+        new("module-guide.policy.public-surface", "focused-contracts=true; dependency-aggregate=false; high-arity=accepted"),
         new("module-guide.policy.vertical-slice", "owner-local=true; cosmetic-partial=false"),
         new("module-guide.policy.command-query", "query=read; command=write"),
         new("module-guide.policy.uow-transactions", "repository-save=false; one-save=default; transaction=multi-save-only"),
@@ -51,6 +53,7 @@ public sealed class ModuleContributionDocumentationTests
         new("module-guide.policy.ef-migrations", "AppDbContext=1; PostgreSQL database=1; migration stream=1; physical split=None"),
         new("module-guide.policy.di", "owner-facade=true; service-locator=false"),
         new("module-guide.policy.api-compatibility", "endpoint-specific=true"),
+        new("module-guide.policy.api-adapters", "application=25; notifications=3; migration-clr-identities=removed"),
         new("module-guide.policy.localization", "resources=en,pl"),
         new("module-guide.policy.tactical-ddd", "invariants=required"),
         new("module-guide.policy.architecture-tests", "focused-guards=true"),
@@ -60,7 +63,7 @@ public sealed class ModuleContributionDocumentationTests
     private static readonly PathExpectation[] TrainingPlanningPath =
     [
         new("module-guide.path.training-planning-read.controller", 1, PersistedEntityOwnershipCatalog.TrainingPlanningModuleName, "LgymApi.Api/Features/Plan/Controllers/PlanController.cs#PlanController.GetPlansList"),
-        new("module-guide.path.training-planning-read.compatibility-adapter", 2, PersistedEntityOwnershipCatalog.TrainingPlanningModuleName, "LgymApi.Application/Task7ApiCompatibility/PlanningNutrition/Adapters/PlanAccountCompatibilityAdapter.cs#PlanAccountCompatibilityAdapter.GetListAsync"),
+        new("module-guide.path.training-planning-read.compatibility-adapter", 2, PersistedEntityOwnershipCatalog.TrainingPlanningModuleName, "LgymApi.Application/TrainingPlanning/ApiAdapters/PlanApiAdapter.cs#PlanApiAdapter.GetListAsync"),
         new("module-guide.path.training-planning-read.use-case-contract", 3, PersistedEntityOwnershipCatalog.TrainingPlanningModuleName, "LgymApi.TrainingPlanning/Plan/GetPlansList/Contracts/IGetPlansListUseCase.cs#IGetPlansListUseCase.ExecuteAsync"),
         new("module-guide.path.training-planning-read.use-case", 4, PersistedEntityOwnershipCatalog.TrainingPlanningModuleName, "LgymApi.TrainingPlanning/Plan/GetPlansList/GetPlansListUseCase.cs#GetPlansListUseCase.ExecuteAsync"),
         new("module-guide.path.training-planning-read.repository-contract", 5, PersistedEntityOwnershipCatalog.TrainingPlanningModuleName, "LgymApi.TrainingPlanning/Persistence/IPlanRepository.cs#IPlanRepository.GetReadModelsByUserIdAsync(Id<User>,CancellationToken)"),
@@ -72,7 +75,7 @@ public sealed class ModuleContributionDocumentationTests
     private static readonly PathExpectation[] ReportingPath =
     [
         new("module-guide.path.reporting-write.controller", 1, PersistedEntityOwnershipCatalog.ReportingModuleName, "LgymApi.Api/Features/Trainer/Controllers/TraineeReportingController.cs#TraineeReportingController.SubmitRequest"),
-        new("module-guide.path.reporting-write.compatibility-adapter", 2, PersistedEntityOwnershipCatalog.ReportingModuleName, "LgymApi.Application/Reporting/Compatibility/ReportTemplateAndRequestApiAdapters.cs#TraineeReportRequestApiAdapter.SubmitAsync"),
+        new("module-guide.path.reporting-write.compatibility-adapter", 2, PersistedEntityOwnershipCatalog.ReportingModuleName, "LgymApi.Application/Reporting/ApiAdapters/ReportTemplateAndRequestApiAdapters.cs#TraineeReportRequestApiAdapter.SubmitAsync"),
         new("module-guide.path.reporting-write.service", 3, PersistedEntityOwnershipCatalog.ReportingModuleName, "LgymApi.Application/Features/Reporting/ReportingService.Submissions.cs#ReportingService.SubmitReportRequestAsync"),
         new("module-guide.path.reporting-write.persistence-add", 4, PersistedEntityOwnershipCatalog.ReportingModuleName, "LgymApi.Application/Reporting/Persistence/IReportRequestSubmissionPersistence.cs#IReportRequestSubmissionPersistence.AddSubmissionAsync"),
         new("module-guide.path.reporting-write.persistence-status", 5, PersistedEntityOwnershipCatalog.ReportingModuleName, "LgymApi.Application/Reporting/Persistence/IReportRequestSubmissionPersistence.cs#IReportRequestSubmissionPersistence.SetRequestSubmittedAsync"),
@@ -88,7 +91,7 @@ public sealed class ModuleContributionDocumentationTests
     [
         new("module-guide.exception.endpoint-specific-legacy-fields", "endpoint-specific", "legacy-fields=route-contract-only"),
         new("module-guide.exception.tracked-mutation-reads", "same-uow-mutation", "tracking=same-uow-mutation-only"),
-        new("module-guide.exception.retained-dependency-aggregates", "owner-aligned-private", "new-broad-aggregate=false"),
+        new("module-guide.exception.direct-high-arity-constructors", "focused-service", "dependency-aggregate=false; numeric-cap=none"),
         new("module-guide.exception.retained-generated-partial-classes", "retained-or-generated", "new-cosmetic-partial=false"),
         new("module-guide.exception.legacy-namespaces-command-ids", "wire-compatibility", "identity=preserve"),
         new("module-guide.exception.query-side-compatibility-cleanup", "compatibility-adapter-only", "owner-path=unchanged"),
@@ -111,13 +114,7 @@ public sealed class ModuleContributionDocumentationTests
         "project-topology-evidence"
     ];
 
-    private static readonly string[] RetainedDependencyAggregates =
-    [
-        "IInAppNotificationServiceDependencies",
-        "IReportingServiceDependencies",
-        "IRecurringReportAssignmentServiceDependencies",
-        "ITrainingServiceDependencies"
-    ];
+    private static readonly string[] RetainedDependencyAggregates = [];
 
     private static readonly string[] StaleArchitectureContributionPatterns =
     [
@@ -473,7 +470,7 @@ public sealed class ModuleContributionDocumentationTests
         var profile = ResolvePathMethod(repositoryRoot, rows, "module-guide.path.training-planning-read.api-mapping");
         var module = ResolvePathMethod(repositoryRoot, rows, "module-guide.path.training-planning-read.module-registration");
 
-        AssertReceiverInvocation(controller, "LgymApi.Application.Identity.Compatibility.Task7.Contracts.IPlanAccountCompatibilityAdapter", "GetListAsync");
+        AssertReceiverInvocation(controller, "LgymApi.Application.TrainingPlanning.ApiAdapters.IPlanAccountApiAdapter", "GetListAsync");
         AssertReceiverInvocation(adapter, "LgymApi.Application.TrainingPlanning.Plan.GetPlansList.IGetPlansListUseCase", "ExecuteAsync");
         AssertPublicOneMethodInterface(contract);
         AssertReceiverInvocation(useCase, "LgymApi.Application.Repositories.IPlanRepository", "GetReadModelsByUserIdAsync");
@@ -511,7 +508,7 @@ public sealed class ModuleContributionDocumentationTests
         var consumer = ResolvePathMethod(repositoryRoot, rows, "module-guide.path.reporting-write.workout-consumer");
         var acceptedSubmissionSpan = GetAcceptedSubmissionOperationSpan(service);
 
-        AssertReceiverInvocation(controller, "LgymApi.Application.Reporting.Compatibility.ITraineeReportRequestApiPort", "SubmitAsync");
+        AssertReceiverInvocation(controller, "LgymApi.Application.Reporting.ApiAdapters.ITraineeReportRequestApiPort", "SubmitAsync");
         AssertReceiverInvocation(adapter, "LgymApi.Application.Features.Reporting.IReportingService", "SubmitReportRequestAsync");
         AssertReportingWriteOrder(service);
         AssertReceiverInvocation(service, "LgymApi.Application.Reporting.Persistence.IReportRequestSubmissionPersistence", "AddSubmissionAsync", acceptedSubmissionSpan);

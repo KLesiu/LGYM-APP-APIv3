@@ -103,12 +103,6 @@ public static class ModuleBoundaryProductionScan
 
     private static string? ResolveCanonicalNamespace(string namespaceName)
     {
-        if (MatchesNamespace(namespaceName, "LgymApi.Application.Identity.Compatibility.Task7")
-            || MatchesNamespace(namespaceName, "LgymApi.Application.Identity.ApiCompatibility"))
-        {
-            return null;
-        }
-
         if (MatchesNamespace(namespaceName, "LgymApi.Application.Identity")
             || MatchesNamespace(namespaceName, "LgymApi.Application.User")
             || MatchesNamespace(namespaceName, "LgymApi.Application.Role")

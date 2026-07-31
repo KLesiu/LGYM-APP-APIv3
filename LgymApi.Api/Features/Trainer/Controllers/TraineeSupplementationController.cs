@@ -4,7 +4,7 @@ using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Identity.Compatibility.Task7.Contracts;
+using LgymApi.Application.Nutrition.ApiAdapters;
 using LgymApi.Application.Nutrition.Supplementation.Models;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
@@ -18,11 +18,11 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 [Authorize]
 public sealed class TraineeSupplementationController : ControllerBase
 {
-    private readonly ISupplementationAccountCompatibilityAdapter _supplementation;
+    private readonly ISupplementationApiAdapter _supplementation;
     private readonly IMapper _mapper;
 
     public TraineeSupplementationController(
-        ISupplementationAccountCompatibilityAdapter supplementation,
+        ISupplementationApiAdapter supplementation,
         IMapper mapper)
     {
         _supplementation = supplementation;

@@ -201,14 +201,14 @@ public sealed class RecurringReportAssignmentServiceRelationalTests
     {
         var relationshipAccess = Substitute.For<IReportingRelationshipAccessPersistence>();
 
-        return new RecurringReportAssignmentService(new RecurringReportAssignmentServiceDependencies(
+        return new RecurringReportAssignmentService(
             new ReportTemplatePersistenceRepository(db),
             new ReportRequestSubmissionPersistenceRepository(db),
             new RecurringReportAssignmentPersistenceRepository(db),
             relationshipAccess,
             ReportingTestData.Mapper(),
             commandDispatcher,
-            new EfUnitOfWork(db)));
+            new EfUnitOfWork(db));
     }
 
     private static User CreateUser(string email, string name)

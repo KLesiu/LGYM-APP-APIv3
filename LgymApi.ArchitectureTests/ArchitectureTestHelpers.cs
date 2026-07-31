@@ -172,6 +172,19 @@ public static class ArchitectureTestHelpers
         "/LgymApi.Notifications/"
     };
 
+    private static readonly IReadOnlyDictionary<string, IReadOnlySet<string>> ApiAdapterDependencyContracts =
+        new Dictionary<string, IReadOnlySet<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["LgymApi.Application/Identity/ApiAdapters/IdentityApiAdapters.cs"] = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "LgymApi.Application.Features.EloRegistry.IEloRegistryService"
+            },
+            ["LgymApi.Application/Platform/ReferenceData/ApiAdapters/AppConfigApiAdapter.cs"] = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "LgymApi.Identity.Contracts.AccountReference"
+            }
+        };
+
     private static readonly string[] PlatformApplicationPathMarkers =
     {
         "/LgymApi.Application/BuildingBlocks/",
@@ -352,7 +365,8 @@ public static class ArchitectureTestHelpers
 
     public static IReadOnlyList<ProjectReferenceEdge> ParseProjectReferences(string projectFilePath)
     {
-        return ParseProjectReferences(projectFilePath, XDocument.Load(projectFilePath));
+        var hostProjectPath = ToHostPath(projectFilePath);
+        return ParseProjectReferences(hostProjectPath, XDocument.Load(hostProjectPath));
     }
 
     public static IReadOnlyList<ProjectReferenceEdge> ParseProjectReferences(string projectFilePath, string projectXml)
@@ -362,7 +376,7 @@ public static class ArchitectureTestHelpers
 
     private static IReadOnlyList<ProjectReferenceEdge> ParseProjectReferences(string projectFilePath, XDocument document)
     {
-        var normalizedProjectPath = NormalizePath(Path.GetFullPath(projectFilePath));
+        var normalizedProjectPath = NormalizePath(Path.GetFullPath(ToHostPath(projectFilePath)));
         var sourceProject = Path.GetFileNameWithoutExtension(normalizedProjectPath);
         var projectDirectory = Path.GetDirectoryName(normalizedProjectPath)!;
 
@@ -371,7 +385,7 @@ public static class ArchitectureTestHelpers
             .Where(element => element.Name.LocalName == "ProjectReference")
             .Select(element => element.Attribute("Include")?.Value)
             .Where(include => !string.IsNullOrWhiteSpace(include))
-            .Select(include => NormalizePath(Path.GetFullPath(include!, projectDirectory)))
+            .Select(include => NormalizePath(Path.GetFullPath(ToHostPath(include!), projectDirectory)))
             .Select(targetPath => new ProjectReferenceEdge(
                 sourceProject,
                 Path.GetFileNameWithoutExtension(targetPath),
@@ -379,6 +393,9 @@ public static class ArchitectureTestHelpers
                 targetPath))
             .ToList();
     }
+
+    public static string ToHostPath(string path) =>
+        path.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
 
     public static IReadOnlyList<string> GetCanonicalModuleCatalog() => CanonicalModuleCatalog;
 
@@ -714,6 +731,17 @@ public static class ArchitectureTestHelpers
         return null;
     }
 
+    public static bool MatchesApiAdapterDependencyContract(string sourcePath, string targetMetadataName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetMetadataName);
+
+        var normalizedSourcePath = NormalizePath(sourcePath);
+        return ApiAdapterDependencyContracts.Any(entry =>
+            normalizedSourcePath.EndsWith(entry.Key, StringComparison.OrdinalIgnoreCase)
+            && entry.Value.Contains(targetMetadataName));
+    }
+
     public static PlatformSubBoundary? GetPlatformSubBoundaryFromPath(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -817,11 +845,6 @@ public static class ArchitectureTestHelpers
 
         var compilation = CreateCompilation(syntaxTrees);
         return (repoRoot, compilation, syntaxTrees);
-    }
-
-    public static void AssertNoUnexpectedModuleBoundaryViolations(string guardId, IEnumerable<ModuleBoundaryObservedViolation> observedViolations)
-    {
-        ModuleBoundaryDebtAllowlistRegistry.AssertNoUnexpectedViolations(guardId, observedViolations);
     }
 
     /// <summary>

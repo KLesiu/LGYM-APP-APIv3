@@ -38,7 +38,7 @@ public sealed class TestServiceProviderFactoryTests
         services.GetServices<IReportingService>().Should().ContainSingle();
         services.GetServices<IUnitOfWork>().Should().ContainSingle();
         services.GetServices<CommandContractRegistry>().Should().ContainSingle();
-        services.GetServices<IMappingProfile>().Should().HaveCount(44);
+        services.GetServices<IMappingProfile>().Should().HaveCount(46);
         services.GetServices<IMappingProfile>().Select(profile => profile.GetType()).Should().OnlyHaveUniqueItems();
     }
 

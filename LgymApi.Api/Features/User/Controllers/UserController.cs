@@ -8,7 +8,7 @@ using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.PasswordReset;
 using LgymApi.Application.Features.EloRegistry;
 using LgymApi.Application.Features.User.Models;
-using LgymApi.Application.Identity.ApiCompatibility;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Application.Identity.Contracts.Authentication;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.WorkoutProgress.Ranking;

@@ -3,9 +3,9 @@ using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.User.Contracts;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.BuildingBlocks.Results;
-using LgymApi.Application.Identity.ApiCompatibility;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Notifications.Models;
+using LgymApi.Notifications.ApiAdapters;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LgymApi.Api.Features.User.Controllers;
@@ -14,12 +14,12 @@ namespace LgymApi.Api.Features.User.Controllers;
 [Route("api/push/installations")]
 public sealed class PushInstallationController : ControllerBase
 {
-    private readonly IAccountPushInstallationApiAdapter _accountPushInstallationApiAdapter;
+    private readonly IPushInstallationApiAdapter _pushInstallationApiAdapter;
     private readonly IMapper _mapper;
 
-    public PushInstallationController(IAccountPushInstallationApiAdapter accountPushInstallationApiAdapter, IMapper mapper)
+    public PushInstallationController(IPushInstallationApiAdapter pushInstallationApiAdapter, IMapper mapper)
     {
-        _accountPushInstallationApiAdapter = accountPushInstallationApiAdapter;
+        _pushInstallationApiAdapter = pushInstallationApiAdapter;
         _mapper = mapper;
     }
 
@@ -36,7 +36,7 @@ public sealed class PushInstallationController : ControllerBase
             request.PermissionStatus);
 
         var accountContext = HttpContext.GetAuthenticatedAccountContext();
-        var result = await _accountPushInstallationApiAdapter.RegisterAsync(
+        var result = await _pushInstallationApiAdapter.RegisterAsync(
             accountContext?.Id,
             accountContext?.SessionId,
             input,
@@ -54,7 +54,7 @@ public sealed class PushInstallationController : ControllerBase
     public async Task<IActionResult> Unregister([FromBody] PushInstallationActionRequest request, CancellationToken cancellationToken = default)
     {
         var accountContext = HttpContext.GetAuthenticatedAccountContext();
-        var result = await _accountPushInstallationApiAdapter.UnregisterAsync(
+        var result = await _pushInstallationApiAdapter.UnregisterAsync(
             accountContext?.Id,
             accountContext?.SessionId,
             new PushInstallationActionInput(request.InstallationId),
@@ -72,7 +72,7 @@ public sealed class PushInstallationController : ControllerBase
     public async Task<IActionResult> Disassociate([FromBody] PushInstallationActionRequest request, CancellationToken cancellationToken = default)
     {
         var accountContext = HttpContext.GetAuthenticatedAccountContext();
-        var result = await _accountPushInstallationApiAdapter.DisassociateAsync(
+        var result = await _pushInstallationApiAdapter.DisassociateAsync(
             accountContext?.Id,
             accountContext?.SessionId,
             new PushInstallationActionInput(request.InstallationId),

@@ -9,7 +9,7 @@ using LgymApi.Application.Coaching.Invitations.Reject;
 using LgymApi.Application.Coaching.ManagedPlans.GetActive;
 using LgymApi.Application.Coaching.Relationships.DetachFromTrainer;
 using LgymApi.Application.Coaching.Relationships.GetCurrentTrainer;
-using LgymApi.Application.Coaching.Compatibility;
+using LgymApi.Application.Coaching.ApiAdapters;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping;

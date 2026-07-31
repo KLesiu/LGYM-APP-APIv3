@@ -43,22 +43,14 @@ public static class IdentityModule
         services.AddScoped<IRoleRepository, RoleRepository>();
         services.AddScoped<ITutorialProgressRepository, TutorialProgressRepository>();
         services.AddScoped<IAdminUserService, AdminUserService>();
-        services.AddScoped<PasswordResetServiceDependencies>();
         services.AddScoped<IPasswordResetTokenGenerationService, PasswordResetTokenGenerationService>();
         services.AddScoped<IPasswordResetService, PasswordResetService>();
         services.AddScoped<IRankService, RankService>();
         services.AddScoped<IAccountLinkingService, AccountLinkingService>();
-        services.AddScoped<UserCredentialLoginServiceDependencies>();
         services.AddScoped<IUserCredentialLoginService, UserCredentialLoginService>();
-        services.AddScoped<UserRegistrationServiceDependencies>();
         services.AddScoped<IUserRegistrationService, UserRegistrationService>();
         services.AddScoped<IRegistrationWelcomeEmailPreparationPort, RegistrationWelcomeEmailPreparationService>();
-        services.AddScoped<UserSessionTerminationServiceDependencies>(serviceProvider => new UserSessionTerminationServiceDependencies(
-            serviceProvider.GetRequiredService<IUserSessionStore>(),
-            serviceProvider.GetRequiredService<IAccountSessionDisassociationPort>(),
-            serviceProvider.GetRequiredService<IUnitOfWork>()));
         services.AddScoped<IUserSessionTerminationService, UserSessionTerminationService>();
-        services.AddScoped<UserProfileServiceDependencies>();
         services.AddScoped<IUserProfileService, UserProfileService>();
         services.AddScoped<IUserRankingService, UserRankingService>();
         services.AddScoped<IRankingAccountProfileReadService, RankingAccountProfileReadService>();

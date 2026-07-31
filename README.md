@@ -25,7 +25,7 @@ The solution has 18 projects and 90 direct project references. The authoritative
 - `LgymApi.DataSeeder`, `LgymApi.DataSeeder.Tests`, `LgymApi.UnitTests`, `LgymApi.IntegrationTests`, `LgymApi.ArchitectureTests`, and `LgymApi.TestUtils` provide bootstrap and verification support.
 - Project-level docs live next to each `.csproj` as `<ProjectName>.md`.
 
-For contributor workflow, use the [module contribution guide](docs/MODULE_CONTRIBUTION_GUIDE.md) and [architecture overview](docs/ARCHITECTURE.md). [New modules usage notes](docs/NEW_MODULES_USAGE.md) cover feature and API usage, not contribution workflow.
+For contributor workflow, use the [module contribution guide](docs/MODULE_CONTRIBUTION_GUIDE.md) and [architecture overview](docs/ARCHITECTURE.md). [ADR-007](docs/adr/007-final-modular-monolith-compatibility-commitments.md) records final compatibility commitments, while [issue-395 verification](docs/modular-monolith/issue-395-final-verification.md) records the Todo 22 same-SHA evidence workflow. [New modules usage notes](docs/NEW_MODULES_USAGE.md) cover feature and API usage, not contribution workflow.
 
 ## Requirements
 

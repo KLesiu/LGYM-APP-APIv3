@@ -61,7 +61,6 @@ public sealed class TrainingHistoryReadServiceTests
         var accountAccess = Substitute.For<IAccountAccessReader>();
         var trainingPersistence = Substitute.For<IWorkoutTrainingPersistence>();
         var scores = Substitute.For<IWorkoutExerciseScorePersistence>();
-        var dependencies = Substitute.For<ITrainingHistoryReadServiceDependencies>();
         accountAccess.GetByIdAsync(accountId, CancellationToken.None)
             .Returns(new AccountAccessFacts(accountId, false, false, [], []));
         trainingPersistence.GetByAccountIdAndDateAsync(accountId, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), CancellationToken.None)
@@ -69,11 +68,7 @@ public sealed class TrainingHistoryReadServiceTests
         trainingPersistence.GetExerciseScoreLinksAsync(Arg.Any<IReadOnlyCollection<Id<Training>>>(), CancellationToken.None)
             .Returns([]);
         scores.GetByIdsAsync(Arg.Any<IReadOnlyCollection<Id<ExerciseScore>>>(), CancellationToken.None).Returns([]);
-        dependencies.AccountAccess.Returns(accountAccess);
-        dependencies.TrainingRepository.Returns(trainingPersistence);
-        dependencies.ExerciseScoreRepository.Returns(scores);
-        dependencies.PlanDayReferences.Returns(planDays);
-        return new TrainingHistoryReadService(dependencies);
+        return new TrainingHistoryReadService(accountAccess, trainingPersistence, scores, planDays);
     }
 
     private static WorkoutTrainingPersistenceModel Training(Id<AccountReference> accountId, Id<PlanDayReference> planDayId)

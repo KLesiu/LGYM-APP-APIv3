@@ -128,6 +128,7 @@ public sealed class RecurringReportAssignmentPersistenceRepository : IRecurringR
 
     private IQueryable<RecurringReportAssignment> BaseQuery()
         => _dbContext.RecurringReportAssignments
+            .AsSplitQuery()
             .Include(assignment => assignment.Template)
                 .ThenInclude(template => template.Fields)
             .Include(assignment => assignment.CurrentReportRequest)

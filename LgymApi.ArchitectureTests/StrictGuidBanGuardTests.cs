@@ -340,7 +340,7 @@ public sealed class StrictGuidBanGuardTests
 
     private static (string RepoRoot, CSharpCompilation Compilation, IReadOnlyList<SyntaxTree> SyntaxTrees) PrepareCompilation()
     {
-        var repoRoot = ResolveRepositoryRoot();
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var parseOptions = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
         var sourceFiles = Directory
             .EnumerateFiles(repoRoot, "*.cs", SearchOption.AllDirectories)
@@ -379,22 +379,6 @@ public sealed class StrictGuidBanGuardTests
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(location => (MetadataReference)MetadataReference.CreateFromFile(location))
             .ToList();
-    }
-
-    private static string ResolveRepositoryRoot()
-    {
-        var current = Directory.GetCurrentDirectory();
-        while (!string.IsNullOrEmpty(current))
-        {
-            if (Directory.Exists(Path.Combine(current, ".git")))
-            {
-                return current;
-            }
-
-            current = Directory.GetParent(current)?.FullName;
-        }
-
-        throw new InvalidOperationException("Could not find repository root (no .git directory found).");
     }
 
     private sealed record Violation(string File, int Line, string Message)

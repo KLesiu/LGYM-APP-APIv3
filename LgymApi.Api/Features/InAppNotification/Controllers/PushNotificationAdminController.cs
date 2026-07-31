@@ -2,7 +2,7 @@ using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.InAppNotification.Contracts;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Task7ApiCompatibility;
+using LgymApi.Notifications.ApiAdapters;
 using LgymApi.Domain.Security;
 using LgymApi.Identity.Contracts;
 using Microsoft.AspNetCore.Authorization;
@@ -18,12 +18,12 @@ public sealed class PushNotificationAdminController : ControllerBase
 {
     private const int SchemaVersion = 1;
 
-    private readonly INotificationEventApiCompatibilityAdapter _notificationEventApiCompatibility;
+    private readonly INotificationEventApiAdapter _notificationEventApiAdapter;
     private readonly IMapper _mapper;
 
-    public PushNotificationAdminController(INotificationEventApiCompatibilityAdapter notificationEventApiCompatibility, IMapper mapper)
+    public PushNotificationAdminController(INotificationEventApiAdapter notificationEventApiAdapter, IMapper mapper)
     {
-        _notificationEventApiCompatibility = notificationEventApiCompatibility;
+        _notificationEventApiAdapter = notificationEventApiAdapter;
         _mapper = mapper;
     }
 
@@ -43,7 +43,7 @@ public sealed class PushNotificationAdminController : ControllerBase
             request.InAppNotificationId.ToNullableId<InAppNotificationEntity>(),
             request.Deeplink);
 
-        await _notificationEventApiCompatibility.EnqueueAsync(input, cancellationToken);
+        await _notificationEventApiAdapter.EnqueueAsync(input, cancellationToken);
 
         return Ok(_mapper.Map<string, ResponseMessageDto>("Push test event queued"));
     }
