@@ -3,7 +3,8 @@ param(
     [string]$ResultsDirectory = "TestResults/PostgreSql",
     [ValidateRange(1, 300)]
     [int]$StartupTimeoutSeconds = 60,
-    [switch]$NoBuild
+    [switch]$NoBuild,
+    [string]$TestFilter = ""
 )
 
 Set-StrictMode -Version Latest
@@ -211,6 +212,10 @@ try {
     )
     if ($NoBuild) {
         $testArguments += "--no-build"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($TestFilter)) {
+        $testArguments += "--filter", $TestFilter
+        Write-Host "Running focused PostgreSQL test slice. This does not replace the unfiltered PostgreSQL suite."
     }
 
     $originalErrorActionPreference = $ErrorActionPreference
