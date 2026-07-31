@@ -190,14 +190,15 @@ internal sealed class CoachingNotificationIntentService(
         CancellationToken cancellationToken)
     {
         EnsureEligibleChannel(intent, CoachingNotificationLegacyChannel.InApp);
-        var traineeName = DisplayNameOrFallback(intent.Trainee, Messages.GenericTraineeDisplayName);
         return await CreateInAppAsync(
             new CreateInAppNotificationInput(
                 intent.TrainerId,
                 intent.TraineeId,
                 $"trainer-relationship-ended:{intent.TrainerId}:{intent.TraineeId}",
                 false,
-                RenderMessage(intent.Trainer?.PreferredLanguage, () => string.Format(Messages.TrainerRelationshipEnded, traineeName)),
+                RenderMessage(intent.Trainer?.PreferredLanguage, () => string.Format(
+                    Messages.TrainerRelationshipEnded,
+                    DisplayNameOrFallback(intent.Trainee, Messages.GenericTraineeDisplayName))),
                 "/trainer/members",
                 InAppNotificationTypes.TrainerRelationshipEnded),
             cancellationToken);
@@ -208,18 +209,18 @@ internal sealed class CoachingNotificationIntentService(
         CancellationToken cancellationToken)
     {
         EnsureEligibleChannel(intent, CoachingNotificationLegacyChannel.InApp);
-        var trainerName = DisplayNameOrFallback(intent.Trainer, Messages.GenericTrainerDisplayName);
-        var noteTitle = string.IsNullOrWhiteSpace(intent.NoteTitle)
-            ? Messages.GenericTrainerNoteDisplayName
-            : intent.NoteTitle.Trim();
-
         return await CreateInAppAsync(
             new CreateInAppNotificationInput(
                 intent.TraineeId,
                 intent.TrainerId,
                 $"trainee-note:{intent.TraineeNoteId}:{intent.TriggeredAt:O}",
                 false,
-                RenderMessage(intent.Trainee?.PreferredLanguage, () => string.Format(Messages.TrainerTraineeNoteUpdated, trainerName, noteTitle)),
+                RenderMessage(intent.Trainee?.PreferredLanguage, () => string.Format(
+                    Messages.TrainerTraineeNoteUpdated,
+                    DisplayNameOrFallback(intent.Trainer, Messages.GenericTrainerDisplayName),
+                    string.IsNullOrWhiteSpace(intent.NoteTitle)
+                        ? Messages.GenericTrainerNoteDisplayName
+                        : intent.NoteTitle.Trim())),
                 $"/trainer/notes/{intent.TraineeNoteId}",
                 InAppNotificationTypes.TraineeNoteUpdated),
             cancellationToken);

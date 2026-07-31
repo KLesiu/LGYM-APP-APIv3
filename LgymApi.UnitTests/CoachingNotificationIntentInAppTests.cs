@@ -79,27 +79,28 @@ public sealed class CoachingNotificationIntentInAppTests
         var trainerId = Id<User>.New();
         var traineeId = Id<User>.New();
 
-        await harness.Service.SubmitAsync(new RelationshipEndedCoachingNotificationIntent(
-            CoachingNotificationLegacyChannel.InApp, trainerId, traineeId, Account(trainerId, "Coach", culture: "pl-PL"), null));
+        await ExecuteWithCurrentUICultureAsync("en-US", () => harness.Service.SubmitAsync(new RelationshipEndedCoachingNotificationIntent(
+            CoachingNotificationLegacyChannel.InApp, trainerId, traineeId, Account(trainerId, "Coach", culture: "pl-PL"), null)));
 
         harness.Inputs.Should().ContainSingle().Which.Should().BeEquivalentTo(new CreateInAppNotificationInput(
             trainerId, traineeId, $"trainer-relationship-ended:{trainerId}:{traineeId}", false,
             "Podopieczny zakończył współpracę.", "/trainer/members", InAppNotificationTypes.TrainerRelationshipEnded));
+        harness.Inputs[0].Message.Should().NotContain("Trainee");
     }
 
     [Test]
     public async Task SubmitAsync_RelationshipEndedInApp_UsesDefaultCultureWhenRecipientAccountIsMissing()
     {
-        var harness = new TestHarness("pl-PL");
+        var harness = new TestHarness();
         var trainerId = Id<User>.New();
         var traineeId = Id<User>.New();
         var previousCulture = CultureInfo.CurrentUICulture;
-        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("pl-PL");
-        var expectedMessage = string.Format(Messages.TrainerRelationshipEnded, "Adam");
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
+        var expectedMessage = string.Format(Messages.TrainerRelationshipEnded, Messages.GenericTraineeDisplayName);
         CultureInfo.CurrentUICulture = previousCulture;
 
-        await harness.Service.SubmitAsync(new RelationshipEndedCoachingNotificationIntent(
-            CoachingNotificationLegacyChannel.InApp, trainerId, traineeId, null, Account(traineeId, "Adam")));
+        await ExecuteWithCurrentUICultureAsync("pl-PL", () => harness.Service.SubmitAsync(new RelationshipEndedCoachingNotificationIntent(
+            CoachingNotificationLegacyChannel.InApp, trainerId, traineeId, null, null)));
 
         harness.Inputs.Should().ContainSingle().Which.Message.Should().Be(expectedMessage);
     }
@@ -113,12 +114,14 @@ public sealed class CoachingNotificationIntentInAppTests
         var noteId = Id<TraineeNote>.New();
         var triggeredAt = new DateTimeOffset(2026, 6, 26, 0, 30, 0, TimeSpan.Zero);
 
-        await harness.Service.SubmitAsync(new TraineeNoteUpdatedCoachingNotificationIntent(
-            CoachingNotificationLegacyChannel.InApp, noteId, traineeId, trainerId, "  ", triggeredAt, null, Account(traineeId, "Trainee", culture: "pl-PL")));
+        await ExecuteWithCurrentUICultureAsync("en-US", () => harness.Service.SubmitAsync(new TraineeNoteUpdatedCoachingNotificationIntent(
+            CoachingNotificationLegacyChannel.InApp, noteId, traineeId, trainerId, "  ", triggeredAt, null, Account(traineeId, "Trainee", culture: "pl-PL"))));
 
         harness.Inputs.Should().ContainSingle().Which.Should().BeEquivalentTo(new CreateInAppNotificationInput(
             traineeId, trainerId, $"trainee-note:{noteId}:{triggeredAt:O}", false,
             "Trener zaktualizował Twoją notatkę: notatka trenera", $"/trainer/notes/{noteId}", InAppNotificationTypes.TraineeNoteUpdated));
+        harness.Inputs[0].Message.Should().NotContain("Trainer");
+        harness.Inputs[0].Message.Should().NotContain("trainer note");
     }
 
     [TestCase(CoachingNotificationLegacyChannel.Email)]
@@ -155,6 +158,20 @@ public sealed class CoachingNotificationIntentInAppTests
 
     private static AccountReadModel Account(Id<User> id, string name, string email = "person@example.com", string culture = "en-US")
         => new(id, name, email, null, culture, "Europe/Warsaw");
+
+    private static async Task ExecuteWithCurrentUICultureAsync(string cultureName, Func<Task> action)
+    {
+        var previousCulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo(cultureName);
+            await action();
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = previousCulture;
+        }
+    }
 
     private sealed class TestHarness
     {
