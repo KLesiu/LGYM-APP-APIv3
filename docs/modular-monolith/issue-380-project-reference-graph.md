@@ -1,4 +1,4 @@
-# Issue #387: Approved Current Project-Reference Graph
+# Issue #380: Approved Current Project-Reference Graph
 
 This is the authoritative current graph after the completed issue #387 extraction. It is derived only from tracked `.csproj` `ProjectReference` items. Namespace imports, runtime registration, and transitive build dependencies are not graph edges.
 
@@ -125,7 +125,7 @@ Each row is one representative source location whose symbol resolves to the targ
 | Edge | Roslyn-resolved source or analyzer evidence |
 | --- | --- |
 | `LgymApi.Api -> LgymApi.Application` | `LgymApi.Api/Features/Account/Controllers/AccountController.cs:19` |
-| `LgymApi.Api -> LgymApi.BackgroundWorker` | `LgymApi.Api/Program.cs:150` |
+| `LgymApi.Api -> LgymApi.BackgroundWorker` | `LgymApi.Api/Program.Hangfire.cs:21` |
 | `LgymApi.Api -> LgymApi.Domain` | `LgymApi.Api/Configuration/ApiAuthorizationExtensions.cs:1` |
 | `LgymApi.Api -> LgymApi.Identity` | `LgymApi.Api/Features/Account/Controllers/AccountController.cs:8` |
 | `LgymApi.Api -> LgymApi.Infrastructure` | `LgymApi.Api/Configuration/LocalPhotoDevelopmentEndpoints.cs:20` |
@@ -135,26 +135,26 @@ Each row is one representative source location whose symbol resolves to the targ
 | `LgymApi.Api -> LgymApi.TrainingPlanning` | `LgymApi.Api/Features/PlanDay/Controllers/PlanDayController.cs:9` |
 | `LgymApi.Application -> LgymApi.Domain` | `LgymApi.Application/Coaching/Access/CoachingRelationshipAccessService.cs:4` |
 | `LgymApi.Application -> LgymApi.Identity` | `LgymApi.Application/Coaching/Access/CoachingRelationshipAccessService.cs:3` |
-| `LgymApi.Application -> LgymApi.Platform` | `LgymApi.Application/Coaching/Compatibility/CoachingApiCompatibilityMappingProfile.cs:24` |
+| `LgymApi.Application -> LgymApi.Platform` | `LgymApi.Application/Coaching/ApiAdapters/CoachingApiAdapterMappingProfile.cs:24` |
 | `LgymApi.Application -> LgymApi.Resources` | `LgymApi.Application/Coaching/Invitations/Accept/AcceptInvitationUseCase.cs:48` |
 | `LgymApi.Application -> LgymApi.TrainingPlanning` | `LgymApi.Application/Coaching/Adapters/PlanDayRelationshipAccessAdapter.cs:2` |
 | `LgymApi.ArchitectureTests -> LgymApi.Api` | `LgymApi.ArchitectureTests/CoachingApiContractImmutabilityGuardTests.cs:2` |
 | `LgymApi.ArchitectureTests -> LgymApi.Application` | `LgymApi.ArchitectureTests/CanonicalRepositoryRegistrationDiTests.cs:41` |
-| `LgymApi.ArchitectureTests -> LgymApi.BackgroundWorker.Common` | `LgymApi.ArchitectureTests/ProjectReferenceGraphGuardTests.cs:22` |
+| `LgymApi.ArchitectureTests -> LgymApi.BackgroundWorker.Common` | `LgymApi.ArchitectureTests/ProjectReferenceGraphGuardTests.cs:1` |
 | `LgymApi.ArchitectureTests -> LgymApi.Domain` | `LgymApi.ArchitectureTests/AppConfigAuthorizationBoundaryGuardTests.cs:2` |
 | `LgymApi.ArchitectureTests -> LgymApi.Identity` | `LgymApi.ArchitectureTests/CoachingManagedPlanSliceArchitectureTests.cs:13` |
 | `LgymApi.ArchitectureTests -> LgymApi.Infrastructure` | `LgymApi.ArchitectureTests/CanonicalRepositoryRegistrationDiTests.cs:37` |
 | `LgymApi.ArchitectureTests -> LgymApi.Notifications` | `LgymApi.ArchitectureTests/CanonicalRepositoryRegistrationDiTests.cs:1` |
 | `LgymApi.ArchitectureTests -> LgymApi.Platform` | `LgymApi.ArchitectureTests/AppConfigAuthorizationBoundaryGuardTests.cs:1` |
-| `LgymApi.ArchitectureTests -> LgymApi.Resources` | `LgymApi.ArchitectureTests/ProjectReferenceGraphGuardTests.cs:23` |
+| `LgymApi.ArchitectureTests -> LgymApi.Resources` | `LgymApi.ArchitectureTests/ProjectReferenceGraphGuardTests.cs:27` |
 | `LgymApi.ArchitectureTests -> LgymApi.TrainingPlanning` | `LgymApi.ArchitectureTests/CoachingManagedPlanSliceArchitectureTests.cs:14` |
-| `LgymApi.BackgroundWorker -> LgymApi.Application` | `LgymApi.BackgroundWorker/Actions/DietPlanUpdatedInAppNotificationCommandHandler.cs:4` |
-| `LgymApi.BackgroundWorker -> LgymApi.BackgroundWorker.Common` | `LgymApi.BackgroundWorker/Actions/SendRegistrationEmailHandler.cs:3` |
-| `LgymApi.BackgroundWorker -> LgymApi.Identity` | `LgymApi.BackgroundWorker/Actions/DietPlanUpdatedInAppNotificationCommandHandler.cs:15` |
+| `LgymApi.BackgroundWorker -> LgymApi.Application` | `LgymApi.BackgroundWorker/Actions/DietPlanUpdatedInAppNotificationCommandHandler.cs:1` |
+| `LgymApi.BackgroundWorker -> LgymApi.BackgroundWorker.Common` | `LgymApi.BackgroundWorker/Actions/SendRegistrationEmailHandler.cs:2` |
+| `LgymApi.BackgroundWorker -> LgymApi.Identity` | `LgymApi.BackgroundWorker/Actions/LocalizedReportNotificationDispatcher.cs:13` |
 | `LgymApi.BackgroundWorker -> LgymApi.Infrastructure` | `LgymApi.BackgroundWorker/ServiceProvider.cs:51` |
-| `LgymApi.BackgroundWorker -> LgymApi.Notifications` | `LgymApi.BackgroundWorker/Actions/DietPlanUpdatedInAppNotificationCommandHandler.cs:8` |
-| `LgymApi.BackgroundWorker -> LgymApi.Platform` | `LgymApi.BackgroundWorker/Actions/DietPlanUpdatedInAppNotificationCommandHandler.cs:56` |
-| `LgymApi.BackgroundWorker.Common -> LgymApi.Domain` | `LgymApi.BackgroundWorker.Common/IActionMessageScheduler.cs:1` |
+| `LgymApi.BackgroundWorker -> LgymApi.Notifications` | `LgymApi.BackgroundWorker/Actions/DietPlanUpdatedInAppNotificationCommandHandler.cs:2` |
+| `LgymApi.BackgroundWorker -> LgymApi.Platform` | `LgymApi.BackgroundWorker/Actions/DietPlanUpdatedInAppNotificationCommandHandler.cs:4` |
+| `LgymApi.BackgroundWorker.Common -> LgymApi.Domain` | `LgymApi.BackgroundWorker.Common/IdempotencyKeyPolicy.cs:1` |
 | `LgymApi.DataSeeder -> LgymApi.Domain` | `LgymApi.DataSeeder/SeedContext.cs:1` |
 | `LgymApi.DataSeeder -> LgymApi.Identity` | `LgymApi.DataSeeder/Program.cs:3` |
 | `LgymApi.DataSeeder -> LgymApi.Infrastructure` | `LgymApi.DataSeeder/Program.cs:51` |
@@ -179,7 +179,7 @@ Each row is one representative source location whose symbol resolves to the targ
 | `LgymApi.IntegrationTests -> LgymApi.Domain` | `LgymApi.IntegrationTests/AdminFlagTests.cs:4` |
 | `LgymApi.IntegrationTests -> LgymApi.Identity` | `LgymApi.IntegrationTests/CoachingContractCompatibilityTests.cs:8` |
 | `LgymApi.IntegrationTests -> LgymApi.Infrastructure` | `LgymApi.IntegrationTests/AdminUserIntegrationTests.cs:86` |
-| `LgymApi.IntegrationTests -> LgymApi.Notifications` | `LgymApi.IntegrationTests/CompositionRootStartupTests.cs:12` |
+| `LgymApi.IntegrationTests -> LgymApi.Notifications` | `LgymApi.IntegrationTests/CompositionRootStartupTests.cs:16` |
 | `LgymApi.IntegrationTests -> LgymApi.Platform` | `LgymApi.IntegrationTests/ApiHostConfigurationCharacterizationTests.cs:9` |
 | `LgymApi.IntegrationTests -> LgymApi.Resources` | `LgymApi.IntegrationTests/ApiHostConfigurationCharacterizationTests.cs:179` |
 | `LgymApi.IntegrationTests -> LgymApi.TestUtils` | `LgymApi.IntegrationTests/CoachingLegacyEnvelopeReplayIntegrationTests.cs:78` |
@@ -189,30 +189,30 @@ Each row is one representative source location whose symbol resolves to the targ
 | `LgymApi.Notifications -> LgymApi.Identity` | `LgymApi.Notifications/Adapters/PushInstallationSessionDisassociationAdapter.cs:1` |
 | `LgymApi.Notifications -> LgymApi.Platform` | `LgymApi.Notifications/CoachingNotificationIntentService.cs:2` |
 | `LgymApi.Notifications -> LgymApi.Resources` | `LgymApi.Notifications/CoachingNotificationIntentService.cs:52` |
-| `LgymApi.Platform -> LgymApi.Domain` | `LgymApi.Platform/Contracts/BackgroundCommands/ICommandOutboxWriter.cs:1` |
+| `LgymApi.Platform -> LgymApi.Domain` | `LgymApi.Platform/Contracts/Serialization/TypedIdJsonConverter.cs:3` |
 | `LgymApi.Platform -> LgymApi.Resources` | `LgymApi.Platform/ReferenceData/AppConfig/AppConfigService.cs:35` |
 | `LgymApi.Resources -> LgymApi.Resources.Generator` | `LgymApi.Resources/LgymApi.Resources.csproj:16` analyzer reference |
-| `LgymApi.TestUtils -> LgymApi.Application` | `LgymApi.TestUtils/TestServiceProviderFactory.cs:13` |
-| `LgymApi.TestUtils -> LgymApi.BackgroundWorker` | `LgymApi.TestUtils/TestServiceProviderFactory.cs:14` |
+| `LgymApi.TestUtils -> LgymApi.Application` | `LgymApi.TestUtils/TestServiceProviderFactory.cs:14` |
+| `LgymApi.TestUtils -> LgymApi.BackgroundWorker` | `LgymApi.TestUtils/TestServiceProviderFactory.cs:15` |
 | `LgymApi.TestUtils -> LgymApi.BackgroundWorker.Common` | `LgymApi.TestUtils/TestEmailSender.cs:1` |
-| `LgymApi.TestUtils -> LgymApi.Domain` | `LgymApi.TestUtils/Fakes/FakeUserSessionStore.cs:2` |
-| `LgymApi.TestUtils -> LgymApi.Identity` | `LgymApi.TestUtils/Fakes/FakeUserSessionStore.cs:1` |
-| `LgymApi.TestUtils -> LgymApi.Infrastructure` | `LgymApi.TestUtils/TestDataFactory.cs:39` |
+| `LgymApi.TestUtils -> LgymApi.Domain` | `LgymApi.TestUtils/TestDataFactory.cs:3` |
+| `LgymApi.TestUtils -> LgymApi.Identity` | `LgymApi.TestUtils/TestDataFactory.cs:7` |
+| `LgymApi.TestUtils -> LgymApi.Infrastructure` | `LgymApi.TestUtils/TestDataFactory.cs:40` |
 | `LgymApi.TrainingPlanning -> LgymApi.Domain` | `LgymApi.TrainingPlanning/Contracts/ManagedPlans/AssignManagedPlanCommand.cs:1` |
 | `LgymApi.TrainingPlanning -> LgymApi.Identity` | `LgymApi.TrainingPlanning/Contracts/ManagedPlans/AssignManagedPlanCommand.cs:2` |
 | `LgymApi.TrainingPlanning -> LgymApi.Platform` | `LgymApi.TrainingPlanning/Contracts/ManagedPlans/IAssignManagedPlanUseCase.cs:1` |
 | `LgymApi.TrainingPlanning -> LgymApi.Resources` | `LgymApi.TrainingPlanning/ManagedPlans/AssignManagedPlanUseCase.cs:44` |
-| `LgymApi.UnitTests -> LgymApi.Api` | `LgymApi.UnitTests/AccountReadServiceTests.cs:181` |
+| `LgymApi.UnitTests -> LgymApi.Api` | `LgymApi.UnitTests/AccountReadServiceTests.cs:195` |
 | `LgymApi.UnitTests -> LgymApi.Application` | `LgymApi.UnitTests/AcceptedProgressCommandOutboxTests.cs:6` |
-| `LgymApi.UnitTests -> LgymApi.BackgroundWorker` | `LgymApi.UnitTests/AcceptedProgressCommandOutboxTests.cs:10` |
-| `LgymApi.UnitTests -> LgymApi.BackgroundWorker.Common` | `LgymApi.UnitTests/AcceptedProgressCommandOutboxTests.cs:20` |
-| `LgymApi.UnitTests -> LgymApi.Domain` | `LgymApi.UnitTests/AcceptedProgressCommandOutboxTests.cs:12` |
-| `LgymApi.UnitTests -> LgymApi.Identity` | `LgymApi.UnitTests/AcceptedProgressCommandOutboxTests.cs:15` |
+| `LgymApi.UnitTests -> LgymApi.BackgroundWorker` | `LgymApi.UnitTests/AcceptedProgressCommandOutboxTests.cs:11` |
+| `LgymApi.UnitTests -> LgymApi.BackgroundWorker.Common` | `LgymApi.UnitTests/AcceptedProgressCommandOutboxTests.cs:21` |
+| `LgymApi.UnitTests -> LgymApi.Domain` | `LgymApi.UnitTests/AcceptedProgressCommandOutboxTests.cs:13` |
+| `LgymApi.UnitTests -> LgymApi.Identity` | `LgymApi.UnitTests/AcceptedProgressCommandOutboxTests.cs:16` |
 | `LgymApi.UnitTests -> LgymApi.Infrastructure` | `LgymApi.UnitTests/AppDbContextFactoryTests.cs:32` |
 | `LgymApi.UnitTests -> LgymApi.Notifications` | `LgymApi.UnitTests/ApplicationPushContractCompatibilityTests.cs:7` |
 | `LgymApi.UnitTests -> LgymApi.Platform` | `LgymApi.UnitTests/AcceptedProgressCommandOutboxTests.cs:4` |
-| `LgymApi.UnitTests -> LgymApi.Resources` | `LgymApi.UnitTests/CoachingNotificationIntentInAppTests.cs:97` |
-| `LgymApi.UnitTests -> LgymApi.TestUtils` | `LgymApi.UnitTests/CompositionRootConvergenceTests.cs:48` |
+| `LgymApi.UnitTests -> LgymApi.Resources` | `LgymApi.UnitTests/CoachingNotificationIntentInAppTests.cs:99` |
+| `LgymApi.UnitTests -> LgymApi.TestUtils` | `LgymApi.UnitTests/ApplicationApiAdapterRegistrationTests.cs:119` |
 | `LgymApi.UnitTests -> LgymApi.TrainingPlanning` | `LgymApi.UnitTests/CoachingManagedPlanSliceTests.cs:17` |
 
 ## Locked topology

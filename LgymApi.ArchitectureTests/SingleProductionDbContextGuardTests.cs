@@ -29,6 +29,10 @@ public sealed class SingleProductionDbContextGuardTests
             Assert.That(sources.Select(source => source.Path), Does.Contain(PersistenceIdentityContract.SnapshotSourcePath));
             Assert.That(sources.Select(source => source.Path), Does.Contain(PersistenceIdentityContract.RegistrarSourcePath));
             Assert.That(PersistenceIdentityContract.DbSets, Has.Count.EqualTo(PersistedEntityCount));
+            Assert.That(PersistedEntityOwnershipCatalog.Entries, Has.Count.EqualTo(PersistedEntityCount));
+            Assert.That(
+                PersistedEntityOwnershipCatalog.Entries.Select(entry => entry.EntityType.FullName),
+                Is.EquivalentTo(expectedEntities));
             Assert.That(
                 () => PersistenceTopologyGuardTestHelpers.EnsureSingleDbContext(
                     topology,
@@ -86,6 +90,33 @@ public sealed class SingleProductionDbContextGuardTests
     }
 
     [Test]
+    public void Physical_Project_And_Persistence_Topology_Worktree_Should_Remain_Unchanged()
+    {
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var headChanges = RunGit(repoRoot,
+        [
+            "diff",
+            "--name-only",
+            "HEAD",
+            "--",
+            "LgymApi.sln",
+            ":(glob)**/*.csproj",
+            MigrationRoot
+        ]);
+        var untrackedFiles = RunGit(repoRoot,
+        [
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "--",
+            ":(glob)**/*.csproj",
+            MigrationRoot
+        ]);
+
+        AssertPhysicalTopologyWorktreeIsClean(headChanges, untrackedFiles);
+    }
+
+    [Test]
     public void Production_Migration_Worktree_Fixture_Should_Reject_A_Staged_Migration_Source()
     {
         const string migrationPath = MigrationRoot + "/20990101000000_SyntheticMigration.cs";
@@ -115,6 +146,11 @@ public sealed class SingleProductionDbContextGuardTests
         using var context = new AppDbContext(options);
 
         Assert.That(context.Database.ProviderName, Is.EqualTo("Npgsql.EntityFrameworkCore.PostgreSQL"));
+        Assert.That(
+            () => PersistenceTopologyGuardTestHelpers.EnsureSingleDatabaseSchemaModel(
+                context,
+                PersistenceIdentityContract.DbSets),
+            Throws.Nothing);
         PersistenceTopologyGuardTestHelpers.EnsureNoPendingModelChanges(context.Database.HasPendingModelChanges());
     }
 
@@ -283,6 +319,16 @@ public sealed class SingleProductionDbContextGuardTests
             Throws.InvalidOperationException.With.Message.Contains("AppDbContextModelSnapshot"));
     }
 
+    [Test]
+    public void Physical_Topology_Worktree_Fixture_Should_Reject_A_Project_Or_Migration_Change()
+    {
+        Assert.That(
+            () => AssertPhysicalTopologyWorktreeIsClean(
+                ["LgymApi.sln", "LgymApi.Infrastructure/Migrations/AppDbContextModelSnapshot.cs"],
+                ["LgymApi.Reporting/LgymApi.Reporting.csproj"]),
+            Throws.InstanceOf<AssertionException>().With.Message.Contains("LgymApi.sln"));
+    }
+
     private static PersistenceTopologyAnalysis AnalyzeFixture(string path, string source)
     {
         return PersistenceTopologyGuardTestHelpers.Analyze([new TopologySource(path, source)]);
@@ -301,6 +347,13 @@ public sealed class SingleProductionDbContextGuardTests
     private static string Describe<T>(IEnumerable<T> values) => string.Join(Environment.NewLine, values);
 
     private static void AssertProductionMigrationWorktreeIsClean(
+        IEnumerable<string> headChanges,
+        IEnumerable<string> untrackedFiles)
+    {
+        AssertPhysicalTopologyWorktreeIsClean(headChanges, untrackedFiles);
+    }
+
+    private static void AssertPhysicalTopologyWorktreeIsClean(
         IEnumerable<string> headChanges,
         IEnumerable<string> untrackedFiles)
     {

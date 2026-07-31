@@ -249,6 +249,37 @@ internal static class PersistenceTopologyGuardTestHelpers
         }
     }
 
+    public static void EnsureSingleDatabaseSchemaModel(
+        DbContext context,
+        IReadOnlyList<PersistedDbSetIdentity> expectedDbSets)
+    {
+        var expectedEntityTypes = expectedDbSets
+            .Select(dbSet => dbSet.EntityType)
+            .OrderBy(entityType => entityType, StringComparer.Ordinal)
+            .ToArray();
+        var actualEntityTypes = context.Model.GetEntityTypes()
+            .Select(entityType => entityType.ClrType.FullName ?? entityType.ClrType.Name)
+            .OrderBy(entityType => entityType, StringComparer.Ordinal)
+            .ToArray();
+        var tables = context.Model.GetRelationalModel().Tables
+            .OrderBy(table => table.Name, StringComparer.Ordinal)
+            .ToArray();
+
+        if (context.Database.ProviderName != "Npgsql.EntityFrameworkCore.PostgreSQL" ||
+            !actualEntityTypes.SequenceEqual(expectedEntityTypes, StringComparer.Ordinal) ||
+            context.Model.GetDefaultSchema() is not null ||
+            tables.Length != expectedDbSets.Count ||
+            tables.Any(table => table.Schema is not null))
+        {
+            throw new InvalidOperationException(
+                $"Expected one Npgsql database model with {expectedDbSets.Count} default-schema entity tables.{Environment.NewLine}" +
+                $"Provider: {context.Database.ProviderName}{Environment.NewLine}" +
+                $"Entities: {string.Join(", ", actualEntityTypes)}{Environment.NewLine}" +
+                $"Default schema: {context.Model.GetDefaultSchema() ?? "<null>"}{Environment.NewLine}" +
+                $"Tables: {string.Join(", ", tables.Select(table => $"{table.Schema ?? "<default>"}.{table.Name}"))}");
+        }
+    }
+
     public static void EnsureExactDbSetIdentities(
         PersistenceTopologyAnalysis topology,
         IReadOnlyList<PersistedDbSetIdentity> expectedDbSets)
