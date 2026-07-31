@@ -122,7 +122,7 @@ internal static class ProjectReferenceSourceScanner
             .Where(line => line.StartsWith("Project(", StringComparison.Ordinal))
             .Select(line => line.Split('"'))
             .Where(parts => parts.Length > 5 && parts[5].EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
-            .Select(parts => Path.GetFullPath(Path.Combine(repositoryRoot, parts[5])))
+            .Select(parts => Path.GetFullPath(Path.Combine(repositoryRoot, ArchitectureTestHelpers.ToHostPath(parts[5]))))
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();
     }

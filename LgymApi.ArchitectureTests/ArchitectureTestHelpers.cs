@@ -393,7 +393,7 @@ public static class ArchitectureTestHelpers
             .ToList();
     }
 
-    private static string ToHostPath(string path) =>
+    public static string ToHostPath(string path) =>
         path.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
 
     public static IReadOnlyList<string> GetCanonicalModuleCatalog() => CanonicalModuleCatalog;
