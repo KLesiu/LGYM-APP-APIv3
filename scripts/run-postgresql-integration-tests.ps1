@@ -87,16 +87,16 @@ function Get-GeneratedTrx {
         [string]$FileName
     )
 
-    $matches = @(Get-ChildItem -LiteralPath $Directory -Filter $FileName -File -Recurse)
-    if ($matches.Count -ne 1) {
-        throw "Expected exactly one PostgreSQL TRX result named '$FileName' under '$Directory', but found $($matches.Count)."
+    $generatedTrxFiles = @(Get-ChildItem -LiteralPath $Directory -Filter $FileName -File -Recurse)
+    if ($generatedTrxFiles.Count -ne 1) {
+        throw "Expected exactly one PostgreSQL TRX result named '$FileName' under '$Directory', but found $($generatedTrxFiles.Count)."
     }
 
-    if ($matches[0].Length -eq 0) {
-        throw "The PostgreSQL TRX result '$($matches[0].FullName)' is empty."
+    if ($generatedTrxFiles[0].Length -eq 0) {
+        throw "The PostgreSQL TRX result '$($generatedTrxFiles[0].FullName)' is empty."
     }
 
-    return $matches[0]
+    return $generatedTrxFiles[0]
 }
 
 function Get-RequiredTrxCounter {
