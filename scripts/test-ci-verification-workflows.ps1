@@ -302,7 +302,7 @@ function Assert-SonarWaitFixtureRejected {
     }
 
     Assert-True -Condition (-not [string]::IsNullOrWhiteSpace($rejection)) -Message "The Sonar workflow contract accepted the $Description fixture."
-    Write-Host "Rejected Sonar $Description fixture: $rejection"
+    Write-Output "Rejected Sonar $Description fixture: $rejection"
 }
 
 function New-EventContext {
