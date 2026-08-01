@@ -195,9 +195,9 @@ Each row is one representative source location whose symbol resolves to the targ
 | `LgymApi.TestUtils -> LgymApi.Application` | `LgymApi.TestUtils/TestServiceProviderFactory.cs:14` |
 | `LgymApi.TestUtils -> LgymApi.BackgroundWorker` | `LgymApi.TestUtils/TestServiceProviderFactory.cs:15` |
 | `LgymApi.TestUtils -> LgymApi.BackgroundWorker.Common` | `LgymApi.TestUtils/TestEmailSender.cs:1` |
-| `LgymApi.TestUtils -> LgymApi.Domain` | `LgymApi.TestUtils/TestDataFactory.cs:3` |
-| `LgymApi.TestUtils -> LgymApi.Identity` | `LgymApi.TestUtils/TestDataFactory.cs:7` |
-| `LgymApi.TestUtils -> LgymApi.Infrastructure` | `LgymApi.TestUtils/TestDataFactory.cs:40` |
+| `LgymApi.TestUtils -> LgymApi.Domain` | `LgymApi.TestUtils/TestDataFactory.cs:4` |
+| `LgymApi.TestUtils -> LgymApi.Identity` | `LgymApi.TestUtils/TestDataFactory.cs:8` |
+| `LgymApi.TestUtils -> LgymApi.Infrastructure` | `LgymApi.TestUtils/TestDataFactory.cs:41` |
 | `LgymApi.TrainingPlanning -> LgymApi.Domain` | `LgymApi.TrainingPlanning/Contracts/ManagedPlans/AssignManagedPlanCommand.cs:1` |
 | `LgymApi.TrainingPlanning -> LgymApi.Identity` | `LgymApi.TrainingPlanning/Contracts/ManagedPlans/AssignManagedPlanCommand.cs:2` |
 | `LgymApi.TrainingPlanning -> LgymApi.Platform` | `LgymApi.TrainingPlanning/Contracts/ManagedPlans/IAssignManagedPlanUseCase.cs:1` |

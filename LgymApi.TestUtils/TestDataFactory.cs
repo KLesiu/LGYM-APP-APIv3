@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
 using LgymApi.Domain.Entities;
@@ -190,6 +191,7 @@ public static class TestDataFactory
         return Task.FromResult(user);
     }
 
+    [SuppressMessage("Critical Vulnerability", "S5344", Justification = "Test-only passport-local-mongoose compatibility fixture; production password hashing is unchanged.")]
     private static (string Hash, string Salt, int Iterations, int KeyLength, string Digest) CreateLegacyPasswordData(string password)
     {
         var salt = RandomNumberGenerator.GetBytes(32);
