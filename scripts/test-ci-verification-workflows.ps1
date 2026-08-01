@@ -247,6 +247,64 @@ function Assert-StringSet {
     }
 }
 
+function Assert-SonarQualityGateWaitContract {
+    param([Parameter(Mandatory)][object]$Workflow)
+
+    $expectedJobIds = @('sonar-required', 'sonar-push')
+    Assert-StringSet -Expected $expectedJobIds -Actual @($Workflow.jobs.PSObject.Properties.Name) -Description 'Sonar workflow job identifiers'
+
+    $waitPropertyPattern = '(?<!\S)/d:sonar\.qualitygate\.wait=true(?!\S)'
+    $qualityGateTimeoutPattern = '(?<!\S)/d:sonar\.qualitygate\.timeout(?:=|\s|$)'
+    $totalBeginSteps = 0
+    $totalEndSteps = 0
+    $totalWaitProperties = 0
+    foreach ($jobId in $expectedJobIds) {
+        $job = $Workflow.jobs.$jobId
+        Assert-True -Condition ([string]$job.name -ceq $jobId) -Message "Sonar job '$jobId' must retain its published job name."
+
+        $runSteps = @($job.steps | Where-Object { $null -ne $_.PSObject.Properties['run'] })
+        $beginSteps = @($runSteps | Where-Object { [string]$_.run -match '^\s*dotnet sonarscanner begin(?:\s|$)' })
+        $endSteps = @($runSteps | Where-Object { [string]$_.run -match '^\s*dotnet sonarscanner end(?:\s|$)' })
+        Assert-True -Condition ($beginSteps.Count -eq 1) -Message "Sonar job '$jobId' must contain exactly one Begin invocation."
+        Assert-True -Condition ($endSteps.Count -eq 1) -Message "Sonar job '$jobId' must contain exactly one End invocation."
+
+        $beginWaitProperties = @([regex]::Matches([string]$beginSteps[0].run, $waitPropertyPattern))
+        $endWaitProperties = @([regex]::Matches([string]$endSteps[0].run, $waitPropertyPattern))
+        $jobWaitProperties = @($runSteps | ForEach-Object { [regex]::Matches([string]$_.run, $waitPropertyPattern) })
+        Assert-True -Condition ($beginWaitProperties.Count -eq 1) -Message "Sonar job '$jobId' Begin must contain exactly one /d:sonar.qualitygate.wait=true property."
+        Assert-True -Condition ($endWaitProperties.Count -eq 0) -Message "Sonar job '$jobId' End must not contain /d:sonar.qualitygate.wait=true."
+        Assert-True -Condition ($jobWaitProperties.Count -eq 1) -Message "Sonar job '$jobId' must place its only Quality Gate wait property on Begin."
+        Assert-True -Condition (@($runSteps | ForEach-Object { [regex]::Matches([string]$_.run, $qualityGateTimeoutPattern) }).Count -eq 0) -Message "Sonar job '$jobId' must retain the scanner's default Quality Gate timeout."
+
+        $totalBeginSteps += $beginSteps.Count
+        $totalEndSteps += $endSteps.Count
+        $totalWaitProperties += $jobWaitProperties.Count
+    }
+
+    Assert-True -Condition ($totalBeginSteps -eq 2) -Message 'The Sonar workflow must contain exactly two Begin invocations.'
+    Assert-True -Condition ($totalEndSteps -eq 2) -Message 'The Sonar workflow must contain exactly two End invocations.'
+    Assert-True -Condition ($totalWaitProperties -eq 2) -Message 'The Sonar workflow must contain exactly two Quality Gate wait properties.'
+}
+
+function Assert-SonarWaitFixtureRejected {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Description
+    )
+
+    $fixtureWorkflow = @(Get-YamlDocuments -Paths @($Path))[0]
+    $rejection = $null
+    try {
+        Assert-SonarQualityGateWaitContract -Workflow $fixtureWorkflow
+    }
+    catch {
+        $rejection = $_.Exception.Message
+    }
+
+    Assert-True -Condition (-not [string]::IsNullOrWhiteSpace($rejection)) -Message "The Sonar workflow contract accepted the $Description fixture."
+    Write-Host "Rejected Sonar $Description fixture: $rejection"
+}
+
 function New-EventContext {
     param(
         [Parameter(Mandatory)][string]$EventName,
@@ -418,6 +476,7 @@ foreach ($sonarJob in @($sonarWorkflow.jobs.'sonar-required', $sonarWorkflow.job
     $integrationStep = @($sonarJob.steps | Where-Object { $_.name -ceq 'Run declared InMemory integration tests with coverage' })
     Assert-True -Condition ($integrationStep.Count -eq 1 -and $integrationStep[0].run -match '--filter "TestCategory!=PostgreSql"') -Message 'Sonar does not use the declared InMemory integration filter.'
 }
+Assert-SonarQualityGateWaitContract -Workflow $sonarWorkflow
 
 $requiredCiJobs = @('release-build', 'non-postgresql', 'postgresql', 'postgresql-cleanup', 'final-evidence-gate')
 $cases = @(
@@ -436,6 +495,19 @@ try {
     $null = New-Item -ItemType Directory -Path $temporaryRoot -Force
     $fixtureHead = '0123456789abcdef0123456789abcdef01234567'
     New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead
+
+    $sonarFixtureRoot = New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'sonar-workflows') -Force
+    $sonarWorkflowText = [System.IO.File]::ReadAllText($sonarWorkflowPath)
+    $waitProperty = '/d:sonar.qualitygate.wait=true'
+    $missingWaitPath = Join-Path $sonarFixtureRoot.FullName 'missing-wait.yml'
+    $duplicateWaitPath = Join-Path $sonarFixtureRoot.FullName 'duplicate-wait.yml'
+    $misplacedWaitPath = Join-Path $sonarFixtureRoot.FullName 'misplaced-wait.yml'
+    [System.IO.File]::WriteAllText($missingWaitPath, [regex]::Replace($sonarWorkflowText, [regex]::Escape($waitProperty), '', 1), [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText($duplicateWaitPath, [regex]::Replace($sonarWorkflowText, [regex]::Escape($waitProperty), "$waitProperty $waitProperty", 1), [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText($misplacedWaitPath, [regex]::Replace($sonarWorkflowText, 'dotnet sonarscanner end', "dotnet sonarscanner end $waitProperty", 1), [System.Text.UTF8Encoding]::new($false))
+    Assert-SonarWaitFixtureRejected -Path $missingWaitPath -Description 'missing-wait'
+    Assert-SonarWaitFixtureRejected -Path $duplicateWaitPath -Description 'duplicate-wait'
+    Assert-SonarWaitFixtureRejected -Path $misplacedWaitPath -Description 'misplaced-wait'
 
     & pwsh -NoProfile -File $evidenceGatePath -EvidenceRoot $temporaryRoot -ExpectedHead $fixtureHead
     Assert-True -Condition ($LASTEXITCODE -eq 0) -Message 'The complete same-SHA artifact fixture failed.'
@@ -482,7 +554,7 @@ try {
     & pwsh -NoProfile -File $evidenceGatePath -EvidenceRoot $temporaryRoot -ExpectedHead $fixtureHead 2>$null
     Assert-True -Condition ($LASTEXITCODE -ne 0) -Message 'The final evidence gate accepted a mismatched TRX display-name multiset.'
 
-    Write-Host 'CI workflow fixture matrix passed: yaml=2, events=4, evidence-happy=1, missing-trx=1, missing-artifact=1, missing-discovery=1, malformed-trx=1, hash-tamper=1, counter-mismatch=1, name-mismatch=1.'
+    Write-Host 'CI workflow fixture matrix passed: yaml=2, events=4, sonar-wait-happy=1, sonar-wait-missing=1, sonar-wait-duplicate=1, sonar-wait-misplaced=1, evidence-happy=1, missing-trx=1, missing-artifact=1, missing-discovery=1, malformed-trx=1, hash-tamper=1, counter-mismatch=1, name-mismatch=1.'
 }
 finally {
     if (Test-Path -LiteralPath $temporaryRoot) {
