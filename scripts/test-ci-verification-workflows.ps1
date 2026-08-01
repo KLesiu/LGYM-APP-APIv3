@@ -216,7 +216,8 @@ function Get-SelectedJobs {
     $selected = [System.Collections.Generic.List[string]]::new()
     foreach ($property in $Workflow.jobs.PSObject.Properties) {
         $condition = [string]$property.Value.if
-        if ([string]::IsNullOrWhiteSpace($condition) -or (Test-GitHubExpression -Expression $condition -Context $Context)) {
+        $isAlways = $condition.Trim() -ceq 'always()'
+        if ([string]::IsNullOrWhiteSpace($condition) -or $isAlways -or (Test-GitHubExpression -Expression $condition -Context $Context)) {
             $selected.Add($property.Name)
         }
     }
@@ -308,6 +309,73 @@ function Assert-SonarWaitFixtureRejected {
 
     Assert-True -Condition (-not [string]::IsNullOrWhiteSpace($rejection)) -Message "The Sonar workflow contract accepted the $Description fixture."
     Write-Output "Rejected Sonar $Description fixture: $rejection"
+}
+
+function Assert-TestsCompatibilityContract {
+    param([Parameter(Mandatory)][object]$Workflow)
+
+    $jobProperties = @($Workflow.jobs.PSObject.Properties | Where-Object { $_.Name -ceq 'tests' })
+    Assert-True -Condition ($jobProperties.Count -eq 1) -Message 'The PR workflow must contain exactly one tests compatibility job.'
+
+    $job = $jobProperties[0].Value
+    Assert-True -Condition ([string]$job.name -ceq 'tests') -Message "The tests compatibility job must publish the exact check name 'tests'."
+    $dependencies = @($job.needs)
+    Assert-True -Condition ($dependencies.Count -eq 1 -and [string]$dependencies[0] -ceq 'final-evidence-gate') -Message 'The tests compatibility job must depend only on final-evidence-gate.'
+    Assert-True -Condition ([string]$job.if -ceq 'always()') -Message 'The tests compatibility job must evaluate the terminal gate result even after an upstream failure.'
+    Assert-True -Condition ($null -eq $job.PSObject.Properties['continue-on-error']) -Message 'The tests compatibility job must not allow failures.'
+
+    $steps = @($job.steps)
+    Assert-True -Condition ($steps.Count -eq 1) -Message 'The tests compatibility job must contain exactly one aggregate assertion step.'
+    $step = $steps[0]
+    Assert-True -Condition ([string]$step.name -ceq 'Require successful final evidence gate') -Message 'The tests compatibility assertion step has an unexpected name.'
+    Assert-True -Condition ([string]$step.shell -ceq 'pwsh') -Message 'The tests compatibility assertion step must use PowerShell.'
+
+    $resultExpression = '${{ needs.final-evidence-gate.result }}'
+    $runTemplate = [string]$step.run
+    Assert-True -Condition (@([regex]::Matches($runTemplate, [regex]::Escape($resultExpression))).Count -eq 1) -Message 'The tests compatibility assertion must consume the final-evidence-gate result exactly once.'
+
+    $resultCases = @(
+        [pscustomobject]@{ result = 'success'; shouldSucceed = $true },
+        [pscustomobject]@{ result = 'failure'; shouldSucceed = $false },
+        [pscustomobject]@{ result = 'skipped'; shouldSucceed = $false },
+        [pscustomobject]@{ result = 'cancelled'; shouldSucceed = $false }
+    )
+    foreach ($case in $resultCases) {
+        $renderedScript = $runTemplate.Replace($resultExpression, $case.result)
+        $failure = $null
+        try {
+            & ([scriptblock]::Create($renderedScript)) *> $null
+        }
+        catch {
+            $failure = $_.Exception.Message
+        }
+
+        if ($case.shouldSucceed) {
+            Assert-True -Condition ([string]::IsNullOrWhiteSpace($failure)) -Message "The tests compatibility assertion rejected terminal result '$($case.result)'."
+        }
+        else {
+            Assert-True -Condition (-not [string]::IsNullOrWhiteSpace($failure)) -Message "The tests compatibility assertion accepted terminal result '$($case.result)'."
+        }
+    }
+}
+
+function Assert-TestsCompatibilityFixtureRejected {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Description
+    )
+
+    $fixtureWorkflow = @(Get-YamlDocuments -Paths @($Path))[0]
+    $rejection = $null
+    try {
+        Assert-TestsCompatibilityContract -Workflow $fixtureWorkflow
+    }
+    catch {
+        $rejection = $_.Exception.Message
+    }
+
+    Assert-True -Condition (-not [string]::IsNullOrWhiteSpace($rejection)) -Message "The PR workflow contract accepted the $Description tests compatibility fixture."
+    Write-Output "Rejected tests compatibility $Description fixture: $rejection"
 }
 
 function New-EventContext {
@@ -468,6 +536,7 @@ Assert-True -Condition (($prWorkflow.jobs.'non-postgresql'.steps | Where-Object 
 Assert-True -Condition (($prWorkflow.jobs.postgresql.steps | Where-Object { $_.name -ceq 'Run unfiltered PostgreSQL suite with same-SHA TRX evidence' }).run -notmatch '(?i)--filter|-filter') -Message 'The PostgreSQL runner must remain unfiltered.'
 Assert-True -Condition (($prWorkflow.jobs.postgresql.steps | Where-Object { $_.name -ceq 'Run unfiltered PostgreSQL suite with same-SHA TRX evidence' }).run -match 'scripts/assert-trx\.ps1') -Message 'The PostgreSQL suite does not assert TRX evidence.'
 Assert-True -Condition (($prWorkflow.jobs.'final-evidence-gate'.steps | Where-Object { $_.name -ceq 'Validate complete same-SHA evidence before publication' }).run -match 'assert-ci-verification-evidence\.ps1') -Message 'The final evidence gate does not execute the artifact validator.'
+Assert-TestsCompatibilityContract -Workflow $prWorkflow
 $actionSteps = @(Get-WorkflowActionSteps -Workflow $prWorkflow)
 $uploads = @($actionSteps | Where-Object { $_.uses -ceq 'actions/upload-artifact@v4' })
 Assert-True -Condition ($uploads.Count -eq 5) -Message 'Expected five fatal evidence artifact uploads.'
@@ -483,7 +552,7 @@ foreach ($sonarJob in @($sonarWorkflow.jobs.'sonar-required', $sonarWorkflow.job
 }
 Assert-SonarQualityGateWaitContract -Workflow $sonarWorkflow
 
-$requiredCiJobs = @('release-build', 'non-postgresql', 'postgresql', 'postgresql-cleanup', 'final-evidence-gate')
+$requiredCiJobs = @('release-build', 'non-postgresql', 'postgresql', 'postgresql-cleanup', 'final-evidence-gate', 'tests')
 $cases = @(
     [pscustomobject]@{ name = 'PR to automation'; context = New-EventContext -EventName 'pull_request' -BaseRef 'automation/modular-monolith-milestone' -Ref 'refs/pull/1/merge'; sonar = 'sonar-required' },
     [pscustomobject]@{ name = 'automation push'; context = New-EventContext -EventName 'push' -BaseRef '' -Ref 'refs/heads/automation/modular-monolith-milestone'; sonar = 'sonar-push' },
@@ -500,6 +569,26 @@ try {
     $null = New-Item -ItemType Directory -Path $temporaryRoot -Force
     $fixtureHead = '0123456789abcdef0123456789abcdef01234567'
     New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead
+
+    $compatibilityFixtureRoot = New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'pr-workflows') -Force
+    $prWorkflowText = [System.IO.File]::ReadAllText($prWorkflowPath)
+    $missingTestsPath = Join-Path $compatibilityFixtureRoot.FullName 'missing-tests.yml'
+    $miswiredTestsPath = Join-Path $compatibilityFixtureRoot.FullName 'miswired-tests.yml'
+    $permissiveTestsPath = Join-Path $compatibilityFixtureRoot.FullName 'permissive-tests.yml'
+    $missingTestsText = [regex]::Replace($prWorkflowText, '(?ms)\r?\n  tests:\r?\n.*\z', '')
+    $miswiredTestsText = [regex]::Replace($prWorkflowText, '(?m)^    needs: final-evidence-gate\s*$', '    needs: release-build', 1)
+    $permissiveTestsText = $prWorkflowText.Replace(
+        '            throw "final-evidence-gate completed with ''$finalResult''."',
+        '            Write-Output "Ignored unsuccessful final-evidence-gate result ''$finalResult''."')
+    Assert-True -Condition ($missingTestsText -cne $prWorkflowText) -Message 'The missing tests compatibility fixture could not remove the job.'
+    Assert-True -Condition ($miswiredTestsText -cne $prWorkflowText) -Message 'The miswired tests compatibility fixture could not replace the dependency.'
+    Assert-True -Condition ($permissiveTestsText -cne $prWorkflowText) -Message 'The permissive tests compatibility fixture could not remove fail-closed behavior.'
+    [System.IO.File]::WriteAllText($missingTestsPath, $missingTestsText, [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText($miswiredTestsPath, $miswiredTestsText, [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText($permissiveTestsPath, $permissiveTestsText, [System.Text.UTF8Encoding]::new($false))
+    Assert-TestsCompatibilityFixtureRejected -Path $missingTestsPath -Description 'missing'
+    Assert-TestsCompatibilityFixtureRejected -Path $miswiredTestsPath -Description 'miswired'
+    Assert-TestsCompatibilityFixtureRejected -Path $permissiveTestsPath -Description 'permissive'
 
     $sonarFixtureRoot = New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'sonar-workflows') -Force
     $sonarWorkflowText = [System.IO.File]::ReadAllText($sonarWorkflowPath)
@@ -564,7 +653,7 @@ try {
     & pwsh -NoProfile -File $evidenceGatePath -EvidenceRoot $temporaryRoot -ExpectedHead $fixtureHead 2>$null
     Assert-True -Condition ($LASTEXITCODE -ne 0) -Message 'The final evidence gate accepted a mismatched TRX display-name multiset.'
 
-    Write-Host 'CI workflow fixture matrix passed: yaml=2, events=4, sonar-wait-happy=1, sonar-wait-missing=1, sonar-wait-duplicate=1, sonar-wait-misplaced=1, sonar-wait-push=1, evidence-happy=1, missing-trx=1, missing-artifact=1, missing-discovery=1, malformed-trx=1, hash-tamper=1, counter-mismatch=1, name-mismatch=1.'
+    Write-Host 'CI workflow fixture matrix passed: yaml=2, events=4, compatibility-happy=1, compatibility-missing=1, compatibility-miswired=1, compatibility-permissive=1, sonar-wait-happy=1, sonar-wait-missing=1, sonar-wait-duplicate=1, sonar-wait-misplaced=1, sonar-wait-push=1, evidence-happy=1, missing-trx=1, missing-artifact=1, missing-discovery=1, malformed-trx=1, hash-tamper=1, counter-mismatch=1, name-mismatch=1.'
 }
 finally {
     if (Test-Path -LiteralPath $temporaryRoot) {

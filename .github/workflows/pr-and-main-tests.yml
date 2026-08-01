@@ -417,3 +417,20 @@ jobs:
           name: verification-final-${{ github.sha }}
           path: TestResults/Collected/**
           if-no-files-found: error
+
+  tests:
+    name: tests
+    needs: final-evidence-gate
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Require successful final evidence gate
+        shell: pwsh
+        run: |
+          $finalResult = '${{ needs.final-evidence-gate.result }}'
+          if ($finalResult -cne 'success') {
+            throw "final-evidence-gate completed with '$finalResult'."
+          }
+
+          Write-Output 'Required validation aggregate passed.'
