@@ -53,7 +53,7 @@ internal sealed class GridifyExecutionService : IGridifyExecutionService
         var supportsAsyncQuery = query.Provider is IAsyncQueryProvider;
         var totalCount = supportsAsyncQuery
             ? await query.CountAsync(cancellationToken)
-            : query.Count();
+            : await CountPlainQuery(query);
 
         var (queryWithEnumOrdering, remainingOrderBy) = ApplyEnumOrdering(
             query, normalizedInput.SortDescriptors, mappings);
@@ -68,7 +68,7 @@ internal sealed class GridifyExecutionService : IGridifyExecutionService
 
         var items = supportsAsyncQuery
             ? await query.ToListAsync(cancellationToken)
-            : query.ToList();
+            : await MaterializePlainQuery(query);
 
         return new Pagination<TProjection>
         {
@@ -78,6 +78,12 @@ internal sealed class GridifyExecutionService : IGridifyExecutionService
             TotalCount = totalCount
         };
     }
+
+    private static Task<int> CountPlainQuery<TProjection>(IQueryable<TProjection> query)
+        => Task.FromResult(query.Count());
+
+    private static Task<List<TProjection>> MaterializePlainQuery<TProjection>(IQueryable<TProjection> query)
+        => Task.FromResult(query.ToList());
 
     private static void ValidatePolicy(PaginationPolicy paginationPolicy)
     {
