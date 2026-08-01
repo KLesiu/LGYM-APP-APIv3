@@ -13,14 +13,13 @@ namespace LgymApi.UnitTests;
 public sealed class RecurringReportAssignmentSchemaTests
 {
     [Test]
-    public async Task SaveChangesAsync_AfterApplyingRecurringAssignmentIndexFix_AllowsMultipleReportRequestsForSameRecurringAssignment()
+    public async Task SaveChangesAsync_AfterEnsureCreated_AllowsMultipleReportRequestsForSameRecurringAssignment()
     {
         await using var sqliteConnection = new SqliteConnection("Data Source=:memory:");
         await sqliteConnection.OpenAsync();
 
         await using var setupContext = CreateDbContext(sqliteConnection);
         await setupContext.Database.EnsureCreatedAsync();
-        await ApplyRecurringAssignmentIndexFixAsync(setupContext);
 
         var trainer = CreateUser("trainer");
         var trainee = CreateUser("trainee");
@@ -68,11 +67,6 @@ public sealed class RecurringReportAssignmentSchemaTests
         => new(new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite(sqliteConnection)
             .Options);
-
-    private static Task<int> ApplyRecurringAssignmentIndexFixAsync(AppDbContext dbContext)
-        => dbContext.Database.ExecuteSqlRawAsync(
-            "DROP INDEX IF EXISTS \"IX_ReportRequests_RecurringReportAssignmentId\"; " +
-            "CREATE INDEX \"IX_ReportRequests_RecurringReportAssignmentId\" ON \"ReportRequests\" (\"RecurringReportAssignmentId\");");
 
     private static User CreateUser(string name)
         => new()
