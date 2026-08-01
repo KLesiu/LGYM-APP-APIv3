@@ -355,7 +355,7 @@ public sealed class ModuleContributionDocumentationTests
         _ = ReadRequiredArtifact(GuideRelativePath);
         var markdown = ReadRequiredArtifact("LgymApi.ArchitectureTests/LgymApi.ArchitectureTests.md");
         var tokens = ExtractInlineCodeTokens(markdown);
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             foreach (var token in new[] { "ModuleContributionDocumentationTests", GuideRelativePath, "path#Type.Member", PullRequestStartMarker, PullRequestEndMarker })
             {
@@ -366,7 +366,7 @@ public sealed class ModuleContributionDocumentationTests
             {
                 Assert.That(tokens.Any(token => token.StartsWith(prefix, StringComparison.Ordinal)), Is.True, $"ArchitectureTests documentation is missing stable prefix {prefix}.");
             }
-        });
+        }
     }
 
     [Test]

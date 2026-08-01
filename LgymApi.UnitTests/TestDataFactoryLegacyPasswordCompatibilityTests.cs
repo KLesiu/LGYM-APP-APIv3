@@ -23,7 +23,7 @@ public sealed class TestDataFactoryLegacyPasswordCompatibilityTests
         var user = await TestDataFactory.SeedUserAsync(context, password: password);
         var verifier = new LegacyPasswordService();
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             user.LegacyIterations.Should().Be(25000);
             user.LegacyKeyLength.Should().Be(512);
@@ -32,6 +32,6 @@ public sealed class TestDataFactoryLegacyPasswordCompatibilityTests
             user.LegacySalt.Should().MatchRegex("^[0-9a-f]+$");
             verifier.Verify(password, user.LegacyHash!, user.LegacySalt!, user.LegacyIterations, user.LegacyKeyLength, user.LegacyDigest).Should().BeTrue();
             verifier.Verify("wrong-password", user.LegacyHash!, user.LegacySalt!, user.LegacyIterations, user.LegacyKeyLength, user.LegacyDigest).Should().BeFalse();
-        });
+        }
     }
 }

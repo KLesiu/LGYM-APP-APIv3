@@ -6,11 +6,12 @@ using System.Text.RegularExpressions;
 namespace LgymApi.ArchitectureTests;
 
 [TestFixture]
-public sealed class SonarSuppressionGuardTests
+public sealed partial class SonarSuppressionGuardTests
 {
     private const string MarkerJustification = "Contract-only Id<T> marker; construction is intentionally prohibited and enforced by ReferenceMarkerPersistenceGuardTests.";
     private const string LegacyPasswordJustification = "Test-only passport-local-mongoose compatibility fixture; production password hashing is unchanged.";
-    private static readonly Regex GuardedPragmaRuleIdentityPattern = new(@"(?<![A-Za-z0-9_:])(?:S3453|S5344|csharpsquid:S3453|csharpsquid:S5344)(?![A-Za-z0-9_:])", RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"(?<![A-Za-z0-9_:])(?:S3453|S5344|csharpsquid:S3453|csharpsquid:S5344)(?![A-Za-z0-9_:])", RegexOptions.CultureInvariant)]
+    private static partial Regex GuardedPragmaRuleIdentityPattern();
 
     private static readonly Suppression[] ApprovedSuppressions =
     [
@@ -40,13 +41,13 @@ public sealed class SonarSuppressionGuardTests
         var actual = repositoryTrees.SelectMany(tree => FindSuppressions(repositoryRoot, tree)).ToArray();
         var scopeViolations = FindScopeViolations(repositoryRoot, repositoryTrees).ToArray();
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(actual, Is.EquivalentTo(ApprovedSuppressions));
             Assert.That(scopeViolations, Is.Empty, string.Join(Environment.NewLine, scopeViolations));
             Assert.That(actual.Count(suppression => suppression.CheckId == "S3453"), Is.EqualTo(9));
             Assert.That(actual.Count(suppression => suppression.CheckId == "S5344"), Is.EqualTo(1));
-        });
+        }
 
         AssertMarkerConstructorsRemainPrivate(trees);
         AssertLegacyPasswordFixtureRemainsCompatible(trees.Single(tree => tree.FilePath.EndsWith("TestDataFactory.cs", StringComparison.Ordinal)));
@@ -98,11 +99,11 @@ public sealed class SonarSuppressionGuardTests
         var actual = repositoryTrees.SelectMany(tree => FindSuppressions(repositoryRoot, tree)).ToArray();
         var violations = FindRosterViolations(actual, ApprovedSuppressions).ToArray();
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(violations, Does.Contain("Unexpected suppression target 'QualifiedS3453Probe'."));
             Assert.That(violations, Does.Contain("Unexpected suppression target 'QualifiedS5344Probe'."));
-        });
+        }
     }
 
     [Test]
@@ -138,12 +139,12 @@ public sealed class SonarSuppressionGuardTests
         const string source = "#pragma warning disable csharpsquid:S3453";
         var pragma = ParsePragma(source);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(string.Join("|", pragma.ErrorCodes.Select(code => code.ToString())), Is.EqualTo("csharpsquid"));
             Assert.That(pragma.ToString(), Is.EqualTo(source));
             Assert.That(ContainsGuardedPragmaRuleIdentity(pragma), Is.True);
-        });
+        }
     }
 
     [TestCase("csharpsquid:S3453")]
@@ -170,13 +171,13 @@ public sealed class SonarSuppressionGuardTests
             .Where(declaration => ApprovedSuppressions.Any(suppression => suppression.Kind == "class" && suppression.Target == declaration.Identifier.ValueText))
             .ToArray();
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(markerClasses, Has.Length.EqualTo(9));
             Assert.That(markerClasses, Has.All.Matches<ClassDeclarationSyntax>(declaration => declaration.Modifiers.Any(SyntaxKind.PublicKeyword) && declaration.Modifiers.Any(SyntaxKind.SealedKeyword)));
             Assert.That(markerClasses, Has.All.Matches<ClassDeclarationSyntax>(declaration => declaration.Members.OfType<ConstructorDeclarationSyntax>().Count() == 1));
             Assert.That(markerClasses, Has.All.Matches<ClassDeclarationSyntax>(declaration => declaration.Members.OfType<ConstructorDeclarationSyntax>().Single().Modifiers.Any(SyntaxKind.PrivateKeyword)));
-        });
+        }
     }
 
     private static void AssertLegacyPasswordFixtureRemainsCompatible(SyntaxTree tree)
@@ -188,7 +189,7 @@ public sealed class SonarSuppressionGuardTests
         var arguments = pbkdf2.ArgumentList.Arguments;
         var methodSource = method.NormalizeWhitespace().ToFullString();
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(method.Modifiers.Any(SyntaxKind.PrivateKeyword), Is.True);
             Assert.That(method.Modifiers.Any(SyntaxKind.StaticKeyword), Is.True);
@@ -197,7 +198,7 @@ public sealed class SonarSuppressionGuardTests
             Assert.That(arguments[4].Expression.ToString(), Is.EqualTo("512"));
             Assert.That(methodSource, Does.Contain("Convert.ToHexString(hash).ToLowerInvariant()"));
             Assert.That(methodSource, Does.Contain("saltHex, 25000, 512, \"sha256\""));
-        });
+        }
     }
 
     private static IEnumerable<string> FindScopeViolations(string repositoryRoot, IEnumerable<SyntaxTree> trees)
@@ -307,7 +308,7 @@ public sealed class SonarSuppressionGuardTests
     private static bool IsGuardedRuleIdentity(string checkId) => checkId is "S3453" or "S5344" or "csharpsquid:S3453" or "csharpsquid:S5344";
 
     private static bool ContainsGuardedPragmaRuleIdentity(PragmaWarningDirectiveTriviaSyntax pragma) => pragma.ErrorCodes.Any(code => IsGuardedRuleIdentity(code.ToString()))
-        || GuardedPragmaRuleIdentityPattern.IsMatch(pragma.ToString());
+        || GuardedPragmaRuleIdentityPattern().IsMatch(pragma.ToString());
 
     private static string GetCheckId(AttributeSyntax attribute)
     {
