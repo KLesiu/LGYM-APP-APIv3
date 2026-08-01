@@ -41,9 +41,14 @@ public class BackgroundActionJobTests
             _testOrchestrator = testOrchestrator ?? throw new ArgumentNullException(nameof(testOrchestrator));
         }
 
-        public async Task ExecuteAsync(Id<CommandEnvelope> actionMessageId)
+        public async Task ExecuteAsync(string actionMessageId)
         {
-            await _testOrchestrator.OrchestrateAsync(actionMessageId);
+            if (!Id<CommandEnvelope>.TryParse(actionMessageId, out var parsedActionMessageId))
+            {
+                throw new FormatException("Action message ID must be a valid ID.");
+            }
+
+            await _testOrchestrator.OrchestrateAsync(parsedActionMessageId);
         }
     }
 
@@ -67,7 +72,7 @@ public class BackgroundActionJobTests
         var messageId = Id<CommandEnvelope>.New();
 
         // Act
-        await _testableJob.ExecuteAsync(messageId);
+        await _testableJob.ExecuteAsync(messageId.ToString());
 
         // Assert
         _testOrchestrator.OrchestrationCalls.Count.Should().Be(1, "Job should delegate to orchestrator exactly once");
@@ -122,7 +127,7 @@ public class BackgroundActionJobTests
 
         // Assert
         _testOrchestrator.OrchestrationCalls.Count.Should().Be(3, "Orchestrator should be called once per execution");
-        
+
         for (int i = 0; i < 3; i++)
         {
             _testOrchestrator.OrchestrationCalls[i].EnvelopeId.Should().Be(messageIds[i], $"Call {i + 1} should pass correct message id");
@@ -163,7 +168,7 @@ public class BackgroundActionJobTests
     }
 
     /// <summary>
-    /// Validates ExecuteAsync accepts exactly one typed-id parameter.
+    /// Validates ExecuteAsync accepts exactly one string wire parameter.
     /// </summary>
     [Test]
     public void ExecuteAsync_HasCorrectSignature()
@@ -174,7 +179,7 @@ public class BackgroundActionJobTests
 
         // Assert
         parameters?.Length.Should().Be(1, "ExecuteAsync should accept exactly 1 parameter");
-        parameters?[0].ParameterType.Should().Be(typeof(Id<CommandEnvelope>), "Parameter should be Id<CommandEnvelope> (actionMessageId)");
+        parameters?[0].ParameterType.Should().Be(typeof(string), "Parameter should be the string actionMessageId wire value");
     }
 
     /// <summary>
@@ -210,7 +215,7 @@ public class BackgroundActionJobTests
         delays[0].Should().Be(60, "First retry at 1 minute");
         delays[1].Should().Be(300, "Second retry at 5 minutes");
         delays[2].Should().Be(900, "Third retry at 15 minutes");
-        
+
         // Verify increasing sequence
         for (int i = 1; i < delays.Length; i++)
         {

@@ -1,6 +1,7 @@
 using System.Net;
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Identity.Errors;
 using LgymApi.Application.Features.AdminManagement;
 using LgymApi.Application.Features.AdminManagement.Models;
 using LgymApi.Application.Models;
@@ -9,6 +10,8 @@ using LgymApi.Application.Repositories;
 using LgymApi.Application.Services;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.UnitTests.Fakes;
+using LgymApi.TestUtils.Fakes;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -18,36 +21,19 @@ namespace LgymApi.UnitTests;
 public sealed class AdminUserServiceTests
 {
     private AdminUserService _service = null!;
-    private IUserRepository _userRepository = null!;
-    private IRoleRepository _roleRepository = null!;
-    private IUserSessionStore _sessionStore = null!;
+    private ConfigurableUserRepository _userRepository = null!;
+    private ConfigurableRoleRepository _roleRepository = null!;
+    private FakeUserSessionStore _sessionStore = null!;
     private IUnitOfWork _unitOfWork = null!;
-    private List<Id<User>> _revokedAllUserIds = null!;
     private int _saveChangesCalls;
 
     [SetUp]
     public void SetUp()
     {
-        _revokedAllUserIds = new List<Id<User>>();
-
-        _userRepository = Substitute.For<IUserRepository>();
-        _roleRepository = Substitute.For<IRoleRepository>();
-        _sessionStore = Substitute.For<IUserSessionStore>();
+        _userRepository = new ConfigurableUserRepository();
+        _roleRepository = new ConfigurableRoleRepository();
+        _sessionStore = new FakeUserSessionStore();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-
-        _sessionStore.CreateSessionAsync(Arg.Any<Id<User>>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
-            .Returns(ci => Task.FromResult(new UserSession
-            {
-                Id = Id<UserSession>.New(),
-                UserId = ci.Arg<Id<User>>(),
-                Jti = Id<UserSession>.New().ToString(),
-                ExpiresAtUtc = ci.Arg<DateTimeOffset>(),
-                RevokedAtUtc = null
-            }));
-        _sessionStore.RevokeAllUserSessionsAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
-        _sessionStore.When(x => x.RevokeAllUserSessionsAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>()))
-            .Do(ci => _revokedAllUserIds.Add(ci.Arg<Id<User>>()));
 
         _unitOfWork.SaveChangesAsync(Arg.Any<CancellationToken>())
             .Returns(ci =>
@@ -67,8 +53,8 @@ public sealed class AdminUserServiceTests
         var user = new User { Id = (Domain.ValueObjects.Id<User>)userId, Name = "Test", Email = new Email("test@test.com") };
         var role = new Role { Id = (Domain.ValueObjects.Id<Role>)roleId, Name = "Admin" };
 
-        _userRepository.FindByIdIncludingDeletedAsync(userId, Arg.Any<CancellationToken>()).Returns(user);
-        _roleRepository.GetRoleNamesByUserIdAsync(userId, Arg.Any<CancellationToken>()).Returns(new List<string> { role.Name });
+        _userRepository.FindByIdIncludingDeleted = (_, _) => Task.FromResult<User?>(user);
+        _roleRepository.GetRoleNamesByUserId = (_, _) => Task.FromResult(new List<string> { role.Name });
 
         var result = await _service.GetUserAsync(userId);
 
@@ -93,13 +79,13 @@ public sealed class AdminUserServiceTests
         var userId = Id<User>.New();
         var adminId = Id<User>.New();
         var user = new User { Id = (Domain.ValueObjects.Id<User>)userId, Name = "Test", Email = new Email("test@test.com") };
-        _userRepository.FindByIdAsync(userId, Arg.Any<CancellationToken>()).Returns(user);
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(user);
 
         var result = await _service.BlockUserAsync(userId, adminId);
 
         result.IsSuccess.Should().BeTrue();
         user.IsBlocked.Should().BeTrue();
-        _revokedAllUserIds.Should().Contain(userId);
+        _sessionStore.RevokedAllUserIds.Should().Contain(userId);
         _saveChangesCalls.Should().Be(1);
     }
 
@@ -107,7 +93,7 @@ public sealed class AdminUserServiceTests
     public async Task Should_ReturnFailure_When_BlockingSelf()
     {
         var userId = Id<User>.New();
-        _userRepository.FindByIdAsync(userId, Arg.Any<CancellationToken>()).Returns(new User { Id = (Domain.ValueObjects.Id<User>)userId, Name = "Test", Email = new Email("test@test.com") });
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(new User { Id = (Domain.ValueObjects.Id<User>)userId, Name = "Test", Email = new Email("test@test.com") });
 
         var result = await _service.BlockUserAsync(userId, userId);
 
@@ -120,7 +106,7 @@ public sealed class AdminUserServiceTests
     {
         var userId = Id<User>.New();
         var user = new User { Id = (Domain.ValueObjects.Id<User>)userId, Name = "Test", Email = new Email("test@test.com"), IsBlocked = true };
-        _userRepository.FindByIdAsync(userId, Arg.Any<CancellationToken>()).Returns(user);
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(user);
 
         var result = await _service.UnblockUserAsync(userId);
 
@@ -134,20 +120,20 @@ public sealed class AdminUserServiceTests
         var userId = Id<User>.New();
         var adminId = Id<User>.New();
         var user = new User { Id = (Domain.ValueObjects.Id<User>)userId, Name = "Test", Email = new Email("test@test.com") };
-        _userRepository.FindByIdAsync(userId, Arg.Any<CancellationToken>()).Returns(user);
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(user);
 
         var result = await _service.DeleteUserAsync(userId, adminId);
 
         result.IsSuccess.Should().BeTrue();
         user.IsDeleted.Should().BeTrue();
-        _revokedAllUserIds.Should().Contain(userId);
+        _sessionStore.RevokedAllUserIds.Should().Contain(userId);
     }
 
     [Test]
     public async Task Should_ReturnFailure_When_DeletingSelf()
     {
         var userId = Id<User>.New();
-        _userRepository.FindByIdAsync(userId, Arg.Any<CancellationToken>()).Returns(new User { Id = (Domain.ValueObjects.Id<User>)userId, Name = "Test", Email = new Email("test@test.com") });
+        _userRepository.FindById = (_, _) => Task.FromResult<User?>(new User { Id = (Domain.ValueObjects.Id<User>)userId, Name = "Test", Email = new Email("test@test.com") });
 
         var result = await _service.DeleteUserAsync(userId, userId);
 
@@ -160,8 +146,8 @@ public sealed class AdminUserServiceTests
     {
         var userId = Id<User>.New();
         var user = new User { Id = (Domain.ValueObjects.Id<User>)userId, Name = "Old", Email = new Email("old@test.com") };
-        _userRepository.FindByIdIncludingDeletedAsync(userId, Arg.Any<CancellationToken>()).Returns(user);
-        _userRepository.FindByEmailAsync(Arg.Any<Email>(), Arg.Any<CancellationToken>()).Returns((User?)null);
+        _userRepository.FindByIdIncludingDeleted = (_, _) => Task.FromResult<User?>(user);
+        _userRepository.FindByEmail = (_, _) => Task.FromResult<User?>(null);
 
         var command = new UpdateUserCommand { Name = "New", Email = "new@test.com", IsVisibleInRanking = false };
         var result = await _service.UpdateUserAsync(userId, Id<User>.New(), command);
@@ -179,8 +165,8 @@ public sealed class AdminUserServiceTests
         var user = new User { Id = (Domain.ValueObjects.Id<User>)userId, Name = "Test", Email = new Email("test@test.com") };
         var otherUser = new User { Id = (Domain.ValueObjects.Id<User>)otherId, Name = "Other", Email = new Email("other@test.com") };
 
-        _userRepository.FindByIdIncludingDeletedAsync(userId, Arg.Any<CancellationToken>()).Returns(user);
-        _userRepository.FindByEmailAsync(new Email("other@test.com"), Arg.Any<CancellationToken>()).Returns(otherUser);
+        _userRepository.FindByIdIncludingDeleted = (_, _) => Task.FromResult<User?>(user);
+        _userRepository.FindByEmail = (_, _) => Task.FromResult<User?>(otherUser);
 
         var command = new UpdateUserCommand { Name = "Test", Email = "other@test.com" };
         var result = await _service.UpdateUserAsync(userId, Id<User>.New(), command);
@@ -195,7 +181,7 @@ public sealed class AdminUserServiceTests
         var user1 = new User { Id = (Domain.ValueObjects.Id<User>)Id<User>.New(), Name = "User1", Email = new Email("u1@test.com") };
         var user2 = new User { Id = (Domain.ValueObjects.Id<User>)Id<User>.New(), Name = "User2", Email = new Email("u2@test.com") };
 
-        _userRepository.GetUsersPaginatedAsync(Arg.Any<FilterInput>(), false, Arg.Any<CancellationToken>()).Returns(new Pagination<UserResult>
+        _userRepository.GetUsersPaginated = (_, _, _) => Task.FromResult(new Pagination<UserResult>
         {
             Items = new List<UserResult>
             {
@@ -206,8 +192,7 @@ public sealed class AdminUserServiceTests
             PageSize = 10,
             TotalCount = 2
         });
-        _roleRepository.GetRoleNamesByUserIdsAsync(Arg.Any<IReadOnlyCollection<Id<User>>>(), Arg.Any<CancellationToken>())
-            .Returns(new Dictionary<Id<User>, List<string>>());
+        _roleRepository.GetRoleNamesByUserIds = (_, _) => Task.FromResult(new Dictionary<Id<User>, List<string>>());
 
         var result = await _service.GetUsersAsync(new FilterInput { Page = 1, PageSize = 10 }, includeDeleted: false);
 
@@ -222,7 +207,7 @@ public sealed class AdminUserServiceTests
         var activeUser = new User { Id = (Domain.ValueObjects.Id<User>)Id<User>.New(), Name = "Active", Email = new Email("active@test.com"), IsDeleted = false };
         var deletedUser = new User { Id = (Domain.ValueObjects.Id<User>)Id<User>.New(), Name = "Deleted", Email = new Email("deleted@test.com"), IsDeleted = true };
 
-        _userRepository.GetUsersPaginatedAsync(Arg.Any<FilterInput>(), true, Arg.Any<CancellationToken>()).Returns(new Pagination<UserResult>
+        _userRepository.GetUsersPaginated = (_, _, _) => Task.FromResult(new Pagination<UserResult>
         {
             Items = new List<UserResult>
             {
@@ -233,8 +218,7 @@ public sealed class AdminUserServiceTests
             PageSize = 10,
             TotalCount = 2
         });
-        _roleRepository.GetRoleNamesByUserIdsAsync(Arg.Any<IReadOnlyCollection<Id<User>>>(), Arg.Any<CancellationToken>())
-            .Returns(new Dictionary<Id<User>, List<string>>());
+        _roleRepository.GetRoleNamesByUserIds = (_, _) => Task.FromResult(new Dictionary<Id<User>, List<string>>());
 
         var resultWithDeleted = await _service.GetUsersAsync(new FilterInput { Page = 1, PageSize = 10 }, includeDeleted: true);
 
@@ -247,8 +231,8 @@ public sealed class AdminUserServiceTests
     {
         var userId = Id<User>.New();
         var user = new User { Id = (Domain.ValueObjects.Id<User>)userId, Name = "Deleted", Email = new Email("deleted@test.com"), IsDeleted = true };
-        _userRepository.FindByIdIncludingDeletedAsync(userId, Arg.Any<CancellationToken>()).Returns(user);
-        _roleRepository.GetRoleNamesByUserIdAsync(userId, Arg.Any<CancellationToken>()).Returns(new List<string>());
+        _userRepository.FindByIdIncludingDeleted = (_, _) => Task.FromResult<User?>(user);
+        _roleRepository.GetRoleNamesByUserId = (_, _) => Task.FromResult(new List<string>());
 
         var result = await _service.GetUserAsync(userId);
 

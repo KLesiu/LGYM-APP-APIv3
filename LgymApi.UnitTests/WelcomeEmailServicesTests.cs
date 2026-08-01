@@ -2,7 +2,7 @@ using FluentAssertions;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.BackgroundWorker.Common.Notifications;
 using LgymApi.BackgroundWorker.Common.Notifications.Models;
-using LgymApi.BackgroundWorker.Notifications;
+using LgymApi.Application.Notifications.Email;
 using LgymApi.Application.Repositories;
 using LgymApi.BackgroundWorker.Common;
 using LgymApi.Domain.Entities;
@@ -39,13 +39,13 @@ public sealed class WelcomeEmailServicesTests
             UserName = "Alex",
             RecipientEmail = "alex@example.com",
             CultureName = "en-US"
-         });
+        });
 
-         repository.Added.Should().HaveCount(1);
-         unitOfWork.SaveChangesCalls.Should().Be(1);
-         scheduler.EnqueuedNotificationIds.Should().BeEmpty();
-         metrics.Enqueued.Should().Be(1);
-         metrics.Retried.Should().Be(0);
+        repository.Added.Should().HaveCount(1);
+        unitOfWork.SaveChangesCalls.Should().Be(1);
+        scheduler.EnqueuedNotificationIds.Should().BeEmpty();
+        metrics.Enqueued.Should().Be(1);
+        metrics.Retried.Should().Be(0);
     }
 
     [Test]
@@ -80,12 +80,12 @@ public sealed class WelcomeEmailServicesTests
             UserName = "Alex",
             RecipientEmail = existing.Recipient,
             CultureName = "en-US"
-         });
+        });
 
-         scheduler.EnqueuedNotificationIds.Should().BeEmpty();
-         repository.Added.Should().BeEmpty();
-         metrics.Enqueued.Should().Be(0);
-         metrics.Retried.Should().Be(0);
+        scheduler.EnqueuedNotificationIds.Should().BeEmpty();
+        repository.Added.Should().BeEmpty();
+        metrics.Enqueued.Should().Be(0);
+        metrics.Retried.Should().Be(0);
     }
 
     [Test]
@@ -109,13 +109,13 @@ public sealed class WelcomeEmailServicesTests
             UserName = "Alex",
             RecipientEmail = "alex@example.com",
             CultureName = "en-US"
-         });
+        });
 
-         repository.Added.Should().BeEmpty();
-         unitOfWork.SaveChangesCalls.Should().Be(0);
-         scheduler.EnqueuedNotificationIds.Should().BeEmpty();
-         metrics.Enqueued.Should().Be(0);
-         metrics.Retried.Should().Be(0);
+        repository.Added.Should().BeEmpty();
+        unitOfWork.SaveChangesCalls.Should().Be(0);
+        scheduler.EnqueuedNotificationIds.Should().BeEmpty();
+        metrics.Enqueued.Should().Be(0);
+        metrics.Retried.Should().Be(0);
     }
 
     [Test]
@@ -154,9 +154,9 @@ public sealed class WelcomeEmailServicesTests
             CultureName = "en-US"
         });
 
-         scheduler.EnqueuedNotificationIds.Should().BeEmpty();
-         metrics.Enqueued.Should().Be(1);
-         metrics.Retried.Should().Be(0);
+        scheduler.EnqueuedNotificationIds.Should().BeEmpty();
+        metrics.Enqueued.Should().Be(1);
+        metrics.Retried.Should().Be(0);
     }
 
     [Test]
@@ -184,11 +184,11 @@ public sealed class WelcomeEmailServicesTests
             metrics,
              NullLogger<EmailJobHandlerService>.Instance);
 
-         await FluentActions.Invoking(() => handler.ProcessAsync(notification.Id)).Should().ThrowAsync<InvalidOperationException>();
-         notification.Status.Should().Be(EmailNotificationStatus.Failed);
-         notification.LastError.Should().StartWith("InvalidOperationException");
-         unitOfWork.SaveChangesCalls.Should().Be(1);
-         metrics.Failed.Should().Be(1);
+        await FluentActions.Invoking(() => handler.ProcessAsync(notification.Id.ToString())).Should().ThrowAsync<InvalidOperationException>();
+        notification.Status.Should().Be(EmailNotificationStatus.Failed);
+        notification.LastError.Should().StartWith("InvalidOperationException");
+        unitOfWork.SaveChangesCalls.Should().Be(1);
+        metrics.Failed.Should().Be(1);
     }
 
     [Test]
@@ -217,14 +217,14 @@ public sealed class WelcomeEmailServicesTests
             metrics,
             NullLogger<EmailJobHandlerService>.Instance);
 
-         await handler.ProcessAsync(notification.Id);
+        await handler.ProcessAsync(notification.Id.ToString());
 
-         unitOfWork.SaveChangesCalls.Should().Be(0);
-         sender.SendCalls.Should().Be(0);
-         notification.Attempts.Should().Be(2);
-         metrics.Sent.Should().Be(0);
-         metrics.Failed.Should().Be(0);
-         metrics.Retried.Should().Be(0);
+        unitOfWork.SaveChangesCalls.Should().Be(0);
+        sender.SendCalls.Should().Be(0);
+        notification.Attempts.Should().Be(2);
+        metrics.Sent.Should().Be(0);
+        metrics.Failed.Should().Be(0);
+        metrics.Retried.Should().Be(0);
     }
 
     private sealed class FakeNotificationRepository : IEmailNotificationLogRepository
@@ -283,9 +283,14 @@ public sealed class WelcomeEmailServicesTests
     {
         public List<Id<NotificationMessage>> EnqueuedNotificationIds { get; } = new();
 
-        public string? Enqueue(Id<NotificationMessage> notificationId)
+        public string? Enqueue(string notificationId)
         {
-            EnqueuedNotificationIds.Add(notificationId);
+            if (!Id<NotificationMessage>.TryParse(notificationId, out var parsedNotificationId))
+            {
+                throw new FormatException("Notification ID must be a valid ID.");
+            }
+
+            EnqueuedNotificationIds.Add(parsedNotificationId);
             return "test-email-job-id";
         }
     }

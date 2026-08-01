@@ -1,7 +1,7 @@
 using LgymApi.Domain.ValueObjects;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using LgymApi.BackgroundWorker.Common.Serialization;
+using LgymApi.Application.Platform.Contracts.Serialization;
 using NUnit.Framework;
 using FluentAssertions;
 
@@ -80,6 +80,20 @@ public sealed class TypedIdTests
         nullableId.Value.Should().Be(id);
     }
 
+    [Test]
+    public void Baseline_ValueEquality_HashAndNullableJsonSemantics_AreStable()
+    {
+        var first = ParseTestId<User>("00000000-0000-0000-0000-000000000003");
+        var same = ParseTestId<User>("00000000-0000-0000-0000-000000000003");
+        Id<User>? missing = null;
+
+        first.Should().Be(same);
+        first.GetHashCode().Should().Be(same.GetHashCode());
+        missing.Should().BeNull();
+        JsonSerializer.Serialize(missing, _serializerOptions).Should().Be("null");
+        JsonSerializer.Deserialize<Id<User>?>("null", _serializerOptions).Should().BeNull();
+    }
+
     #endregion
 
     #region New() Factory
@@ -119,7 +133,7 @@ public sealed class TypedIdTests
     public void ExplicitOperator_WrapsGuid()
     {
         var id = ParseTestId<User>("00000000-0000-0000-0000-000000000099");
-        
+
         id.ToString().Should().Be("00000000-0000-0000-0000-000000000099");
     }
 
@@ -167,7 +181,7 @@ public sealed class TypedIdTests
         // This test documents that intent even though runtime equates them if underlying value is same
         userId.GetType().Name.Should().Be("Id`1");
         planId.GetType().Name.Should().Be("Id`1");
-        
+
         // At runtime they are technically different types (generic instantiation)
         typeof(Id<User>).Should().NotBe(typeof(Id<Plan>));
     }
@@ -244,7 +258,7 @@ public sealed class TypedIdTests
     public void Deserialize_ParsesGuidString()
     {
         var guidString = "\"00000000-0000-0000-0000-000000000043\"";
-        
+
         var id = JsonSerializer.Deserialize<Id<User>>(guidString, _serializerOptions);
 
         id.ToString().Should().Be("00000000-0000-0000-0000-000000000043");
@@ -276,46 +290,46 @@ public sealed class TypedIdTests
     [Test]
     public void Deserialize_WithInvalidUuid_ThrowsJsonException()
     {
-         var invalidJson = "\"not-a-uuid\"";
+        var invalidJson = "\"not-a-uuid\"";
 
-         var ex = FluentActions.Invoking(() =>
-             JsonSerializer.Deserialize<Id<User>>(invalidJson, _serializerOptions)).Should().Throw<JsonException>().Which;
+        var ex = FluentActions.Invoking(() =>
+            JsonSerializer.Deserialize<Id<User>>(invalidJson, _serializerOptions)).Should().Throw<JsonException>().Which;
 
-         ex.Message.Should().Contain("Invalid GUID format");
-     }
+        ex.Message.Should().Contain("Invalid GUID format");
+    }
 
-     [Test]
-     public void Deserialize_WithEmptyString_ThrowsJsonException()
-     {
-         var emptyJson = "\"\"";
+    [Test]
+    public void Deserialize_WithEmptyString_ThrowsJsonException()
+    {
+        var emptyJson = "\"\"";
 
-         var ex = FluentActions.Invoking(() =>
-             JsonSerializer.Deserialize<Id<User>>(emptyJson, _serializerOptions)).Should().Throw<JsonException>().Which;
+        var ex = FluentActions.Invoking(() =>
+            JsonSerializer.Deserialize<Id<User>>(emptyJson, _serializerOptions)).Should().Throw<JsonException>().Which;
 
-         ex.Message.Should().Contain("cannot be empty");
-     }
+        ex.Message.Should().Contain("cannot be empty");
+    }
 
     [Test]
     public void Deserialize_WithNullToken_ThrowsJsonException()
     {
-         var nullJson = "null";
+        var nullJson = "null";
 
-         var ex = FluentActions.Invoking(() =>
-             JsonSerializer.Deserialize<Id<User>>(nullJson, _serializerOptions)).Should().Throw<JsonException>().Which;
+        var ex = FluentActions.Invoking(() =>
+            JsonSerializer.Deserialize<Id<User>>(nullJson, _serializerOptions)).Should().Throw<JsonException>().Which;
 
-         ex.Message.Should().Contain("cannot be null");
-     }
+        ex.Message.Should().Contain("cannot be null");
+    }
 
-     [Test]
-     public void Deserialize_WithNumberToken_ThrowsJsonException()
-     {
-         var numberJson = "123";
+    [Test]
+    public void Deserialize_WithNumberToken_ThrowsJsonException()
+    {
+        var numberJson = "123";
 
-         var ex = FluentActions.Invoking(() =>
-             JsonSerializer.Deserialize<Id<User>>(numberJson, _serializerOptions)).Should().Throw<JsonException>().Which;
+        var ex = FluentActions.Invoking(() =>
+            JsonSerializer.Deserialize<Id<User>>(numberJson, _serializerOptions)).Should().Throw<JsonException>().Which;
 
-         ex.Message.Should().Contain("Expected string token");
-     }
+        ex.Message.Should().Contain("Expected string token");
+    }
 
     #endregion
 

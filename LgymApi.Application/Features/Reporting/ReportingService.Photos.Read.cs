@@ -1,40 +1,36 @@
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Reporting.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Reporting.Models;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
-using UserEntity = LgymApi.Domain.Entities.User;
+using LgymApi.Identity.Contracts.Accounts;
 
 namespace LgymApi.Application.Features.Reporting;
 
 public sealed partial class ReportingService
 {
     public async Task<Result<SignedReadUrlResult, AppError>> GetSignedReadUrlAsync(
-        UserEntity currentUser,
-        string photoId,
+        AuthenticatedAccountContext currentUser,
+        Id<Photo> photoId,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(photoId))
+        if (photoId.IsEmpty)
         {
             return Result<SignedReadUrlResult, AppError>.Failure(
                 new InvalidReportingError(Messages.FieldRequired));
         }
 
-        if (!Id<Photo>.TryParse(photoId, out var parsedPhotoId))
-        {
-            return Result<SignedReadUrlResult, AppError>.Failure(
-                new InvalidReportingError("Invalid photo ID format"));
-        }
-
-        var photo = await _reportingRepository.FindPhotoByIdAsync(parsedPhotoId, cancellationToken);
+        var photo = await _photoPersistence.FindByIdAsync(photoId, cancellationToken);
         if (photo == null || photo.IsDeleted)
         {
             return Result<SignedReadUrlResult, AppError>.Failure(
                 new ReportingNotFoundError(Messages.DidntFind));
         }
 
-        var authCheck = await ValidatePhotoAccessAsync(currentUser, photo.OwnerUserId, cancellationToken);
+        var authCheck = await ValidatePhotoAccessAsync(currentUser, photo.OwnerAccountId, cancellationToken);
         if (authCheck.IsFailure)
         {
             return Result<SignedReadUrlResult, AppError>.Failure(authCheck.Error);
@@ -53,15 +49,15 @@ public sealed partial class ReportingService
     }
 
     public async Task<Result<List<PhotoHistoryItemResult>, AppError>> GetPhotoHistoryAsync(
-        UserEntity currentUser,
+        AuthenticatedAccountContext currentUser,
         GetPhotoHistoryCommand command,
         CancellationToken cancellationToken = default)
     {
-        List<Photo> photos;
+        IReadOnlyList<ReportPhotoPersistenceModel> photos;
 
         if (command.RequestId.HasValue && !command.RequestId.Value.IsEmpty)
         {
-            var reportRequest = await _reportingRepository.FindRequestByIdAsync(command.RequestId.Value, cancellationToken);
+            var reportRequest = await _requestSubmissionPersistence.FindRequestByIdAsync(command.RequestId.Value, cancellationToken);
             if (reportRequest == null)
             {
                 return Result<List<PhotoHistoryItemResult>, AppError>.Failure(
@@ -74,7 +70,7 @@ public sealed partial class ReportingService
                 return Result<List<PhotoHistoryItemResult>, AppError>.Failure(authCheck.Error);
             }
 
-            photos = await _reportingRepository.GetPhotosByRequestIdAsync(command.RequestId.Value, cancellationToken);
+            photos = await _photoPersistence.ListByRequestAsync(command.RequestId.Value, cancellationToken);
         }
         else if (command.TraineeId.HasValue && !command.TraineeId.Value.IsEmpty)
         {
@@ -84,7 +80,7 @@ public sealed partial class ReportingService
                 return Result<List<PhotoHistoryItemResult>, AppError>.Failure(authCheck.Error);
             }
 
-            photos = await _reportingRepository.GetPhotosByTraineeIdAsync(command.TraineeId.Value, cancellationToken);
+            photos = await _photoPersistence.ListByTraineeAsync(command.TraineeId.Value, cancellationToken);
         }
         else
         {

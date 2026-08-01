@@ -45,17 +45,17 @@ public sealed class TrainingTests : IntegrationTestBase
             new() { ExerciseId = exerciseId.ToString(), Series = 2, Reps = "8" }
         });
 
-         using (var scope = Factory.Services.CreateScope())
-         {
-             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-             await db.EmailNotificationSubscriptions.AddAsync(new EmailNotificationSubscription
-             {
-                 Id = Domain.ValueObjects.Id<EmailNotificationSubscription>.New(),
-                 UserId = (Domain.ValueObjects.Id<User>)userId,
-                 NotificationType = EmailNotificationTypes.TrainingCompleted.Value
-             });
-             await db.SaveChangesAsync();
-         }
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await db.EmailNotificationSubscriptions.AddAsync(new EmailNotificationSubscription
+            {
+                Id = Domain.ValueObjects.Id<EmailNotificationSubscription>.New(),
+                UserId = (Domain.ValueObjects.Id<User>)userId,
+                NotificationType = EmailNotificationTypes.TrainingCompleted.Value
+            });
+            await db.SaveChangesAsync();
+        }
 
         var request = new
         {
@@ -676,7 +676,7 @@ public sealed class TrainingTests : IntegrationTestBase
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-         var record = await db.MainRecords.SingleAsync(r => r.UserId == (Domain.ValueObjects.Id<User>)userId && r.ExerciseId == (Domain.ValueObjects.Id<Exercise>)exerciseId);
+        var record = await db.MainRecords.SingleAsync(r => r.UserId == (Domain.ValueObjects.Id<User>)userId && r.ExerciseId == (Domain.ValueObjects.Id<Exercise>)exerciseId);
 
         record.Weight.Value.Should().Be(85.0);
         record.Unit.Should().Be(WeightUnits.Kilograms);
@@ -729,7 +729,7 @@ public sealed class TrainingTests : IntegrationTestBase
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-         var records = await db.MainRecords.Where(r => r.UserId == (Domain.ValueObjects.Id<User>)userId && r.ExerciseId == (Domain.ValueObjects.Id<Exercise>)exerciseId).ToListAsync();
+        var records = await db.MainRecords.Where(r => r.UserId == (Domain.ValueObjects.Id<User>)userId && r.ExerciseId == (Domain.ValueObjects.Id<Exercise>)exerciseId).ToListAsync();
 
         records.Should().HaveCount(2);
         records.Should().Contain(r => r.Weight.Value == 100.0 && r.Unit == WeightUnits.Kilograms);
@@ -785,7 +785,7 @@ public sealed class TrainingTests : IntegrationTestBase
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-         var records = await db.MainRecords.Where(r => r.UserId == (Domain.ValueObjects.Id<User>)userId && r.ExerciseId == (Domain.ValueObjects.Id<Exercise>)exerciseId).ToListAsync();
+        var records = await db.MainRecords.Where(r => r.UserId == (Domain.ValueObjects.Id<User>)userId && r.ExerciseId == (Domain.ValueObjects.Id<Exercise>)exerciseId).ToListAsync();
 
         records.Should().HaveCount(1);
         records[0].Weight.Value.Should().Be(100.0);
@@ -839,7 +839,7 @@ public sealed class TrainingTests : IntegrationTestBase
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-         var record = await db.MainRecords.SingleAsync(r => r.UserId == (Domain.ValueObjects.Id<User>)userId && r.ExerciseId == (Domain.ValueObjects.Id<Exercise>)exerciseId);
+        var record = await db.MainRecords.SingleAsync(r => r.UserId == (Domain.ValueObjects.Id<User>)userId && r.ExerciseId == (Domain.ValueObjects.Id<Exercise>)exerciseId);
 
         record.Weight.Value.Should().Be(100.0);
         record.Unit.Should().Be(WeightUnits.Kilograms);
@@ -949,7 +949,7 @@ public sealed class TrainingTests : IntegrationTestBase
         using (var scope = Factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-             var eloEntries = await db.EloRegistries.Where(e => e.UserId == (Domain.ValueObjects.Id<User>)userId).ToListAsync();
+            var eloEntries = await db.EloRegistries.Where(e => e.UserId == (Domain.ValueObjects.Id<User>)userId).ToListAsync();
             db.EloRegistries.RemoveRange(eloEntries);
             await db.SaveChangesAsync();
         }
@@ -979,14 +979,111 @@ public sealed class TrainingTests : IntegrationTestBase
         using (var scope = Factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-             var trainings = await db.Trainings.Where(t => t.UserId == (Domain.ValueObjects.Id<User>)userId).ToListAsync();
-             var scores = await db.ExerciseScores.Where(s => s.UserId == (Domain.ValueObjects.Id<User>)userId).ToListAsync();
+            var trainings = await db.Trainings.Where(t => t.UserId == (Domain.ValueObjects.Id<User>)userId).ToListAsync();
+            var scores = await db.ExerciseScores.Where(s => s.UserId == (Domain.ValueObjects.Id<User>)userId).ToListAsync();
             var links = await db.TrainingExerciseScores.ToListAsync();
 
             trainings.Should().BeEmpty();
             scores.Should().BeEmpty();
             links.Should().BeEmpty();
         }
+    }
+
+    [Test]
+    public async Task TrainingRoutes_PreserveLegacyJsonContracts()
+    {
+        var (userId, token) = await RegisterUserViaEndpointAsync(
+            name: "training-contract-user",
+            email: "training-contract@example.com",
+            password: "password123");
+
+        Client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+        var exerciseId = await CreateExerciseViaEndpointAsync(userId, "Contract Bench", BodyParts.Chest);
+        var gymId = await CreateGymViaEndpointAsync(userId, "Contract Gym");
+        var planId = await CreatePlanViaEndpointAsync(userId, "Contract Plan");
+        var planDayId = await CreatePlanDayViaEndpointAsync(userId, planId, "Contract Day", new List<PlanDayExerciseInput>
+        {
+            new() { ExerciseId = exerciseId.ToString(), Series = 1, Reps = "8" }
+        });
+        var trainingDate = DateTime.UtcNow;
+
+        var addTrainingResponse = await PostAsJsonWithApiOptionsAsync($"/api/{userId}/addTraining", new
+        {
+            gym = gymId.ToString(),
+            type = planDayId.ToString(),
+            createdAt = trainingDate,
+            exercises = new[]
+            {
+                new { exercise = exerciseId.ToString(), series = 1, reps = 8, weight = 80.0, unit = WeightUnits.Kilograms.ToString() }
+            }
+        });
+
+        addTrainingResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var addTrainingDocument = JsonDocument.Parse(await addTrainingResponse.Content.ReadAsStringAsync()))
+        {
+            var root = addTrainingDocument.RootElement;
+            AssertExactPropertyNames(root, "comparison", "gainElo", "userOldElo", "profileRank", "nextRank", "msg");
+            root.GetProperty("msg").GetString().Should().Be("Created");
+
+            var comparison = root.GetProperty("comparison")[0];
+            AssertExactPropertyNames(comparison, "exerciseId", "exerciseName", "seriesComparisons");
+            Id<Exercise>.TryParse(comparison.GetProperty("exerciseId").GetString(), out _).Should().BeTrue();
+
+            var currentResult = comparison.GetProperty("seriesComparisons")[0].GetProperty("currentResult");
+            AssertExactPropertyNames(currentResult, "reps", "weight", "unit");
+            var unit = currentResult.GetProperty("unit");
+            AssertExactPropertyNames(unit, "id", "name", "displayName");
+            unit.GetProperty("id").GetString().Should().Be(WeightUnits.Kilograms.ToString());
+        }
+
+        var lastTrainingResponse = await Client.GetAsync($"/api/{userId}/getLastTraining");
+
+        lastTrainingResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var lastTrainingDocument = JsonDocument.Parse(await lastTrainingResponse.Content.ReadAsStringAsync()))
+        {
+            var root = lastTrainingDocument.RootElement;
+            AssertExactPropertyNames(root, "_id", "type", "createdAt", "planDay");
+            Id<Training>.TryParse(root.GetProperty("_id").GetString(), out _).Should().BeTrue();
+            root.GetProperty("type").GetString().Should().Be(planDayId.ToString());
+            AssertExactPropertyNames(root.GetProperty("planDay"), "_id", "name");
+            root.GetProperty("planDay").GetProperty("_id").GetString().Should().Be(planDayId.ToString());
+        }
+
+        var trainingByDateResponse = await PostAsJsonWithApiOptionsAsync($"/api/{userId}/getTrainingByDate", new { createdAt = trainingDate });
+
+        trainingByDateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var trainingByDateDocument = JsonDocument.Parse(await trainingByDateResponse.Content.ReadAsStringAsync()))
+        {
+            var training = trainingByDateDocument.RootElement[0];
+            AssertExactPropertyNames(training, "_id", "type", "createdAt", "planDay", "gym", "exercises");
+            Id<Training>.TryParse(training.GetProperty("_id").GetString(), out _).Should().BeTrue();
+            AssertExactPropertyNames(training.GetProperty("planDay"), "_id", "name");
+
+            var exercise = training.GetProperty("exercises")[0];
+            AssertExactPropertyNames(exercise, "exerciseScoreId", "scoresDetails", "exerciseDetails");
+            AssertExactPropertyNames(exercise.GetProperty("exerciseDetails"), "_id", "name", "user", "bodyPart", "eloFormula", "description");
+
+            var score = exercise.GetProperty("scoresDetails")[0];
+            AssertExactPropertyNames(score, "_id", "weight", "unit", "reps", "exercise", "series");
+            Id<ExerciseScore>.TryParse(score.GetProperty("_id").GetString(), out _).Should().BeTrue();
+            AssertExactPropertyNames(score.GetProperty("unit"), "id", "name", "displayName");
+        }
+
+        var trainingDatesResponse = await Client.GetAsync($"/api/{userId}/getTrainingDates");
+
+        trainingDatesResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var trainingDatesDocument = JsonDocument.Parse(await trainingDatesResponse.Content.ReadAsStringAsync());
+        trainingDatesDocument.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        trainingDatesDocument.RootElement.GetArrayLength().Should().BeGreaterThan(0);
+        trainingDatesDocument.RootElement[0].ValueKind.Should().Be(JsonValueKind.String);
+        DateTime.TryParse(trainingDatesDocument.RootElement[0].GetString(), out _).Should().BeTrue();
+    }
+
+    private static void AssertExactPropertyNames(JsonElement element, params string[] expectedPropertyNames)
+    {
+        element.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(expectedPropertyNames);
     }
 
     private sealed class TrainingSummaryResponse
@@ -1185,8 +1282,8 @@ public sealed class TrainingTests : IntegrationTestBase
             {
                 throw new InvalidOperationException($"Failed to parse exercise score ID: {ex.ExerciseScoreId}");
             }
-             var score = await db.ExerciseScores.FirstAsync(s => s.Id == scoreId);
-             returnedExercises.Add(score.ExerciseId);
+            var score = await db.ExerciseScores.FirstAsync(s => s.Id == scoreId);
+            returnedExercises.Add(score.ExerciseId);
         }
 
         returnedExercises[0].Should().Be(exerciseIdShoulders);

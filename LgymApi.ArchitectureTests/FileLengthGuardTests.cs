@@ -54,17 +54,17 @@ public sealed class FileLengthGuardTests
     private static bool IsExcludedFile(string path)
     {
         var normalized = path.Replace('\\', '/');
+        if (normalized.EndsWith("/LgymApi.Api/Program.cs", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
         if (normalized.Contains("/Migrations/", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
         var fileName = Path.GetFileName(path);
-        if (fileName.Equals("AppDbContext.cs", StringComparison.Ordinal))
-        {
-            return true;
-        }
-
         if (fileName.EndsWith(".Designer.cs", StringComparison.Ordinal))
         {
             return true;

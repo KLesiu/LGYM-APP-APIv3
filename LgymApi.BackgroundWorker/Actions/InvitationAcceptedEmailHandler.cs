@@ -1,125 +1,21 @@
-using LgymApi.Application.Options;
-using LgymApi.Application.Repositories;
-using LgymApi.BackgroundWorker.Common;
-using LgymApi.BackgroundWorker.Common.Commands;
-using LgymApi.BackgroundWorker.Common.Notifications;
-using LgymApi.BackgroundWorker.Common.Notifications.Models;
-using LgymApi.Domain.Entities;
-using LgymApi.Domain.Enums;
-using LgymApi.Domain.Notifications;
-using LgymApi.Domain.ValueObjects;
-using Microsoft.Extensions.Logging;
+using LgymApi.Application.Coaching.Contracts.BackgroundCommands;
+using LgymApi.Application.Coaching.Contracts.Notifications;
+using LgymApi.Application.Notifications.Contracts.Email;
+using LgymApi.Application.Platform.Contracts.Serialization;
+using System.Text.Json;
 
 namespace LgymApi.BackgroundWorker.Actions;
 
-public sealed class InvitationAcceptedEmailHandler : IBackgroundAction<InvitationAcceptedCommand>
+public sealed class InvitationAcceptedEmailHandler(
+    IInvitationAcceptedEmailPreparationPort preparationPort,
+    IInvitationAcceptedEmailDeliveryPort deliveryPort) : global::LgymApi.BackgroundWorker.Actions.Contracts.IBackgroundAction<InvitationAcceptedCommand>
 {
-    private readonly ITrainerRelationshipRepository _invitationRepository;
-    private readonly IUserRepository _userRepository;
-    private readonly IEmailScheduler<InvitationAcceptedEmailPayload> _emailScheduler;
-    private readonly IEmailNotificationLogRepository _emailNotificationLogRepository;
-    private readonly ILogger<InvitationAcceptedEmailHandler> _logger;
-    private readonly IEmailNotificationsFeature _emailNotificationsFeature;
-    private readonly AppDefaultsOptions _appDefaultsOptions;
-
-    public InvitationAcceptedEmailHandler(
-        ITrainerRelationshipRepository invitationRepository,
-        IUserRepository userRepository,
-        IEmailScheduler<InvitationAcceptedEmailPayload> emailScheduler,
-        IEmailNotificationLogRepository emailNotificationLogRepository,
-        IEmailNotificationsFeature emailNotificationsFeature,
-        ILogger<InvitationAcceptedEmailHandler> logger,
-        AppDefaultsOptions appDefaultsOptions)
-    {
-        _invitationRepository = invitationRepository ?? throw new ArgumentNullException(nameof(invitationRepository));
-        _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
-        _emailScheduler = emailScheduler ?? throw new ArgumentNullException(nameof(emailScheduler));
-        _emailNotificationLogRepository = emailNotificationLogRepository ?? throw new ArgumentNullException(nameof(emailNotificationLogRepository));
-        _emailNotificationsFeature = emailNotificationsFeature ?? throw new ArgumentNullException(nameof(emailNotificationsFeature));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _appDefaultsOptions = appDefaultsOptions ?? throw new ArgumentNullException(nameof(appDefaultsOptions));
-    }
-
     public async Task ExecuteAsync(InvitationAcceptedCommand command, CancellationToken cancellationToken = default)
     {
-        if (!_emailNotificationsFeature.Enabled)
-        {
-            return;
-        }
-
-        var invitation = await _invitationRepository.FindInvitationByIdAsync(command.InvitationId, cancellationToken);
-        if (invitation == null)
-        {
-            _logger.LogWarning("Invitation not found for InvitationAccepted {InvitationId}", command.InvitationId);
-            return;
-        }
-
-        var trainer = await _userRepository.FindByIdAsync((Id<User>)invitation.TrainerId, cancellationToken);
-        if (trainer == null)
-        {
-            _logger.LogWarning("Trainer user not found for InvitationAccepted {InvitationId}, TrainerId {TrainerId}", command.InvitationId, invitation.TrainerId);
-            return;
-        }
-
-        if (!invitation.TraineeId.HasValue)
-        {
-            _logger.LogWarning("InvitationAccepted email skipped for Invitation {InvitationId} - TraineeId is null", command.InvitationId);
-            return;
-        }
-
-        var trainee = await _userRepository.FindByIdAsync(invitation.TraineeId.Value, cancellationToken);
-        if (trainee == null)
-        {
-            _logger.LogWarning("Trainee user not found for InvitationAccepted {InvitationId}, TraineeId {TraineeId}", command.InvitationId, invitation.TraineeId);
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(trainer.Email))
-        {
-            _logger.LogWarning("InvitationAccepted email skipped for Invitation {InvitationId} - no trainer email provided", command.InvitationId);
-            return;
-        }
-
-        // Idempotency check: query existing notification before scheduling
-        var existingNotification = await _emailNotificationLogRepository.FindByCorrelationAsync(
-            EmailNotificationTypes.TrainerInvitationAccepted,
-            command.InvitationId.Rebind<CorrelationScope>(),
-            trainer.Email,
-            cancellationToken);
-
-        if (existingNotification != null)
-        {
-            if (existingNotification.Status != EmailNotificationStatus.Failed)
-            {
-                // Return early if already sent or in any non-failed status
-                _logger.LogInformation(
-                    "InvitationAccepted email already processed for Invitation {InvitationId} (Status: {Status})",
-                    command.InvitationId, existingNotification.Status);
-                return;
-            }
-            
-            // Only proceed if failed but retries remain
-            if (existingNotification.Attempts >= 5)
-            {
-                _logger.LogInformation(
-                    "InvitationAccepted email max retries reached for Invitation {InvitationId}",
-                    command.InvitationId);
-                return;
-            }
-        }
-
-        var emailPayload = new InvitationAcceptedEmailPayload
-        {
-            InvitationId = command.InvitationId,
-            TrainerName = trainer.Name,
-            TraineeName = trainee.Name,
-            RecipientEmail = trainer.Email,
-            CultureName = string.IsNullOrWhiteSpace(trainer.PreferredLanguage) ? _appDefaultsOptions.PreferredLanguage : trainer.PreferredLanguage,
-            PreferredTimeZone = string.IsNullOrWhiteSpace(trainer.PreferredTimeZone) ? _appDefaultsOptions.PreferredTimeZone : trainer.PreferredTimeZone
-        };
-
-        await _emailScheduler.ScheduleAsync(emailPayload, cancellationToken);
-
-        _logger.LogInformation("InvitationAccepted email scheduled for Invitation {InvitationId} to {Email}", command.InvitationId, trainer.Email);
+        var preparation = await preparationPort.PrepareAsync(JsonSerializer.Serialize(command, SharedSerializationOptions.Current), cancellationToken);
+        if (preparation is null) return;
+        await deliveryPort.DeliverAsync(new InvitationAcceptedEmailDeliveryRequest(
+            preparation.InvitationId, preparation.TrainerId, preparation.TraineeId, preparation.TrainerEmail,
+            preparation.TrainerCultureName, preparation.TrainerTimeZone, preparation.TrainerName, preparation.TraineeName), cancellationToken);
     }
 }

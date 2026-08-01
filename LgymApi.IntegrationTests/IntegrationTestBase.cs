@@ -30,7 +30,7 @@ public abstract class IntegrationTestBase : IDisposable
     /// Gets the web application factory for hosting the API during tests.
     /// </summary>
     protected CustomWebApplicationFactory Factory { get; private set; } = null!;
-    
+
     /// <summary>
     /// Gets the HTTP client for sending requests to the test API.
     /// </summary>
@@ -50,11 +50,11 @@ public abstract class IntegrationTestBase : IDisposable
     public void TearDown()
     {
         Client.Dispose();
-        
+
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         db.Database.EnsureDeleted();
-        
+
         Factory.Dispose();
     }
 
@@ -212,7 +212,7 @@ public abstract class IntegrationTestBase : IDisposable
         // Auto-set idempotency key if not already present (for idempotent mutating endpoints)
         bool hadIdempotencyKey = Client.DefaultRequestHeaders.Contains("Idempotency-Key");
         bool shouldClearAfter = false;
-        
+
         if (!hadIdempotencyKey)
         {
             // Generate unique key using timestamp ticks to avoid Guid.NewGuid() architecture violation
@@ -230,16 +230,16 @@ public abstract class IntegrationTestBase : IDisposable
         options.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter(namingPolicy: null, allowIntegerValues: false));
         var json = System.Text.Json.JsonSerializer.Serialize(value, options);
         var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-        
+
         // Await response to ensure it completes before cleanup
         var response = await Client.PostAsync(requestUri, content);
-        
+
         // Clean up auto-set key after request completes (no race condition with await)
         if (shouldClearAfter)
         {
             ClearIdempotencyKey();
         }
-        
+
         return response;
     }
 
@@ -264,12 +264,12 @@ public abstract class IntegrationTestBase : IDisposable
         // Set idempotency key for registration endpoint (required by T9 middleware)
         // Use deterministic key based on email for test isolation
         SetIdempotencyKey($"test-register-{email}");
-        
+
         var registerResponse = await Client.PostAsJsonAsync("/api/register", registerRequest);
-        
+
         // Clear idempotency key after request
         ClearIdempotencyKey();
-        
+
         if (!registerResponse.IsSuccessStatusCode)
         {
             var errorBody = await registerResponse.Content.ReadAsStringAsync();
@@ -300,7 +300,7 @@ public abstract class IntegrationTestBase : IDisposable
 
         var gymsResponse = await Client.GetAsync($"/api/gym/{userId}/getGyms");
         var gyms = await gymsResponse.Content.ReadFromJsonAsync<List<GymResult>>();
-        
+
         if (!Id<Gym>.TryParse(gyms!.First(g => g.Name == name).Id!, out var gymId))
         {
             throw new InvalidOperationException($"Failed to parse gym ID");
@@ -320,7 +320,7 @@ public abstract class IntegrationTestBase : IDisposable
 
         var plansResponse = await Client.GetAsync($"/api/{userId}/getPlansList");
         var plans = await plansResponse.Content.ReadFromJsonAsync<List<PlanResult>>();
-        
+
         if (!Id<Plan>.TryParse(plans!.First(p => p.Name == name).Id!, out var planId))
         {
             throw new InvalidOperationException($"Failed to parse plan ID");
@@ -343,7 +343,7 @@ public abstract class IntegrationTestBase : IDisposable
 
         var exercisesResponse = await Client.GetAsync($"/api/exercise/{userId}/getAllUserExercises");
         var exercises = await exercisesResponse.Content.ReadFromJsonAsync<List<ExerciseResult>>();
-        
+
         if (!Id<Exercise>.TryParse(exercises!.First(e => e.Name == name).Id!, out var exerciseId))
         {
             throw new InvalidOperationException($"Failed to parse exercise ID");
@@ -366,7 +366,7 @@ public abstract class IntegrationTestBase : IDisposable
 
         var exercisesResponse = await Client.GetAsync("/api/exercise/getAllGlobalExercises");
         var exercises = await exercisesResponse.Content.ReadFromJsonAsync<List<ExerciseResult>>();
-        
+
         if (!Id<Exercise>.TryParse(exercises!.First(e => e.Name == name).Id!, out var exerciseId))
         {
             throw new InvalidOperationException($"Failed to parse exercise ID");
@@ -388,7 +388,7 @@ public abstract class IntegrationTestBase : IDisposable
 
         var planDaysResponse = await Client.GetAsync($"/api/planDay/{planId}/getPlanDays");
         var planDays = await planDaysResponse.Content.ReadFromJsonAsync<List<PlanDayResult>>();
-        
+
         if (!Id<PlanDay>.TryParse(planDays!.First(pd => pd.Name == name).Id!, out var planDayId))
         {
             throw new InvalidOperationException($"Failed to parse plan day ID");
@@ -544,7 +544,7 @@ public abstract class IntegrationTestBase : IDisposable
             {
                 try
                 {
-                    await orchestrator.OrchestrateAsync(envelopeId, CancellationToken.None);
+                    await orchestrator.OrchestrateAsync(envelopeId.ToString(), CancellationToken.None);
                 }
                 catch
                 {
@@ -624,7 +624,7 @@ public abstract class IntegrationTestBase : IDisposable
     {
         var count = await CountCommandEnvelopesByCorrelationIdAsync(correlationId);
 
-        count.Should().Be(1, 
+        count.Should().Be(1,
             message ?? $"Expected exactly one CommandEnvelope for CorrelationId {correlationId}, but found {count}");
     }
 

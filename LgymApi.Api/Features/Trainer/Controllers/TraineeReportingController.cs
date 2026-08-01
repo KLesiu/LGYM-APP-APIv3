@@ -2,11 +2,12 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Features.Reporting;
+using LgymApi.Application.Reporting.ApiAdapters;
 using LgymApi.Application.Features.Reporting.Models;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using LgymApi.Resources;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -18,12 +19,14 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 [Authorize]
 public sealed class TraineeReportingController : ControllerBase
 {
-    private readonly IReportingService _reportingService;
+    private readonly ITraineeReportRequestApiPort _requests;
+    private readonly ITraineeReportPhotoApiPort _photos;
     private readonly IMapper _mapper;
 
-    public TraineeReportingController(IReportingService reportingService, IMapper mapper)
+    public TraineeReportingController(ITraineeReportRequestApiPort requests, ITraineeReportPhotoApiPort photos, IMapper mapper)
     {
-        _reportingService = reportingService;
+        _requests = requests;
+        _photos = photos;
         _mapper = mapper;
     }
 
@@ -31,8 +34,7 @@ public sealed class TraineeReportingController : ControllerBase
     [ProducesResponseType(typeof(List<ReportRequestDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetPendingRequests(CancellationToken cancellationToken = default)
     {
-        var trainee = HttpContext.GetCurrentUser();
-        var result = await _reportingService.GetPendingRequestsForTraineeAsync(trainee!, cancellationToken);
+        var result = await _requests.GetPendingAsync(HttpContext.GetAuthenticatedAccountContext()!, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -52,8 +54,7 @@ public sealed class TraineeReportingController : ControllerBase
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var trainee = HttpContext.GetCurrentUser();
-        var result = await _reportingService.SubmitReportRequestAsync(trainee!, parsedRequestId, new SubmitReportRequestCommand
+        var result = await _requests.SubmitAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedRequestId, new SubmitReportRequestCommand
         {
             Answers = new Dictionary<string, System.Text.Json.JsonElement>(request.Answers, StringComparer.OrdinalIgnoreCase)
         }, cancellationToken);
@@ -70,8 +71,7 @@ public sealed class TraineeReportingController : ControllerBase
     [ProducesResponseType(typeof(List<ReportSubmissionDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetOwnSubmissions(CancellationToken cancellationToken = default)
     {
-        var trainee = HttpContext.GetCurrentUser();
-        var result = await _reportingService.GetOwnSubmissionsAsync(trainee!, cancellationToken);
+        var result = await _requests.GetOwnSubmissionsAsync(HttpContext.GetAuthenticatedAccountContext()!, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -91,8 +91,7 @@ public sealed class TraineeReportingController : ControllerBase
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var trainee = HttpContext.GetCurrentUser();
-        var result = await _reportingService.MarkTrainerFeedbackAsReadAsync(trainee!, parsedSubmissionId, cancellationToken);
+        var result = await _requests.MarkFeedbackReadAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedSubmissionId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -112,9 +111,8 @@ public sealed class TraineeReportingController : ControllerBase
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var currentUser = HttpContext.GetCurrentUser();
-        var result = await _reportingService.InitiatePhotoUploadAsync(
-            currentUser!,
+        var result = await _photos.InitiateAsync(
+            HttpContext.GetAuthenticatedAccountContext()!,
             new InitiatePhotoUploadCommand
             {
                 ReportRequestId = parsedRequestId,
@@ -143,9 +141,8 @@ public sealed class TraineeReportingController : ControllerBase
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var currentUser = HttpContext.GetCurrentUser();
-        var result = await _reportingService.CompletePhotoUploadAsync(
-            currentUser!,
+        var result = await _photos.CompleteAsync(
+            HttpContext.GetAuthenticatedAccountContext()!,
             new CompletePhotoUploadCommand
             {
                 StorageKey = request.StorageKey,
@@ -180,15 +177,7 @@ public sealed class TraineeReportingController : ControllerBase
             parsedRequestId = tempId;
         }
 
-        var currentUser = HttpContext.GetCurrentUser();
-        var result = await _reportingService.GetPhotoHistoryAsync(
-            currentUser!,
-            new GetPhotoHistoryCommand
-            {
-                TraineeId = currentUser.Id,
-                RequestId = parsedRequestId
-            },
-            cancellationToken);
+        var result = await _photos.GetHistoryAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedRequestId, cancellationToken);
 
         if (result.IsFailure)
         {

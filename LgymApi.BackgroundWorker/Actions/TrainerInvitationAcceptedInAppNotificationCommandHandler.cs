@@ -1,41 +1,33 @@
-using LgymApi.BackgroundWorker.Common.Commands;
-using LgymApi.Domain.Notifications;
+using LgymApi.Application.Coaching.Contracts.BackgroundCommands;
+using System.Text.Json;
+using LgymApi.Application.Coaching.Contracts.Notifications;
+using LgymApi.Application.Notifications.Contracts.InApp;
+using LgymApi.Application.Platform.Contracts.Serialization;
+using LgymApi.BackgroundWorker.Actions.Contracts;
 using Microsoft.Extensions.Logging;
-using NotificationsApp = global::LgymApi.Application.Notifications;
 
 namespace LgymApi.BackgroundWorker.Actions;
 
-public sealed class TrainerInvitationAcceptedInAppNotificationCommandHandler : global::LgymApi.BackgroundWorker.Common.IBackgroundAction<TrainerInvitationAcceptedInAppNotificationCommand>
+public sealed partial class TrainerInvitationAcceptedInAppNotificationCommandHandler : IBackgroundAction<TrainerInvitationAcceptedInAppNotificationCommand>
 {
-    private readonly NotificationsApp.IInAppNotificationService _notificationService;
+    private readonly ITrainerInvitationAcceptedInAppPreparationPort _preparationPort;
+    private readonly ITrainerInvitationAcceptedInAppDeliveryPort _deliveryPort;
     private readonly ILogger<TrainerInvitationAcceptedInAppNotificationCommandHandler> _logger;
 
     public TrainerInvitationAcceptedInAppNotificationCommandHandler(
-        NotificationsApp.IInAppNotificationService notificationService,
+        ITrainerInvitationAcceptedInAppPreparationPort preparationPort,
+        ITrainerInvitationAcceptedInAppDeliveryPort deliveryPort,
         ILogger<TrainerInvitationAcceptedInAppNotificationCommandHandler> logger)
     {
-        _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
+        _preparationPort = preparationPort ?? throw new ArgumentNullException(nameof(preparationPort));
+        _deliveryPort = deliveryPort ?? throw new ArgumentNullException(nameof(deliveryPort));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task ExecuteAsync(TrainerInvitationAcceptedInAppNotificationCommand command, CancellationToken cancellationToken = default)
     {
-        var input = new NotificationsApp.Models.CreateInAppNotificationInput(
-            command.TrainerId,
-            command.TraineeId,
-            $"trainer-invitation:{command.InvitationId}:accepted",
-            false,
-            global::LgymApi.Resources.Messages.TrainerInvitationAccepted,
-            $"/trainer/members/{command.TraineeId}",
-            InAppNotificationTypes.InvitationAccepted);
-
-        var result = await _notificationService.CreateAsync(input, cancellationToken);
-        if (result.IsFailure)
-        {
-            _logger.LogError(
-                "Failed to create invitation-accepted notification for trainer {TrainerId}: {Error}",
-                command.TrainerId,
-                result.Error);
-        }
+        var preparation = await _preparationPort.PrepareAsync(JsonSerializer.Serialize(command, SharedSerializationOptions.Current), cancellationToken);
+        await _deliveryPort.DeliverAsync(new TrainerInvitationAcceptedInAppDeliveryRequest(
+            preparation.InvitationId, preparation.TrainerId, preparation.TraineeId), cancellationToken);
     }
 }

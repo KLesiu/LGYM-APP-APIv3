@@ -4,9 +4,9 @@ namespace LgymApi.ArchitectureTests;
 public sealed class FeatureFolderStructureGuardTests
 {
     [Test]
-    public void Features_With_Controllers_Should_Contain_Only_Contracts_Controllers_Validation_Folders()
+    public void Features_With_Controllers_Should_Contain_Only_Contracts_Controllers_Validation_Leaf_Folders()
     {
-        var repoRoot = ResolveRepositoryRoot();
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var featuresRoot = Path.Combine(repoRoot, "LgymApi.Api", "Features");
 
         Assert.That(
@@ -30,63 +30,81 @@ public sealed class FeatureFolderStructureGuardTests
             "Validation"
         };
 
+        var rejectedAlternateLeafFolders = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "Dtos",
+            "Endpoints",
+            "Validators"
+        };
+
         var violations = new List<Violation>();
 
         foreach (var featureDirectory in featureDirectories)
         {
-            var hasController = Directory
-                .EnumerateFiles(featureDirectory, "*Controller.cs", SearchOption.AllDirectories)
-                .Any();
+            var sourceFiles = Directory
+                .EnumerateFiles(featureDirectory, "*.cs", SearchOption.AllDirectories)
+                .Where(path => !ArchitectureTestHelpers.IsInBuildArtifacts(path))
+                .ToList();
+
+            var hasController = sourceFiles.Any(path => ArchitectureTestHelpers.IsApiFeatureLeafFilePath(path, "Controllers"));
 
             if (!hasController)
             {
                 continue;
             }
 
-            var actualSubfolders = Directory
-                .EnumerateDirectories(featureDirectory, "*", SearchOption.TopDirectoryOnly)
+            var featureDirectoriesRecursively = Directory
+                .EnumerateDirectories(featureDirectory, "*", SearchOption.AllDirectories)
+                .ToList();
+
+            var actualLeafFolders = featureDirectoriesRecursively
                 .Select(Path.GetFileName)
                 .Where(name => !string.IsNullOrWhiteSpace(name))
                 .Select(name => name!)
+                .Where(name => expectedSubfolders.Contains(name))
                 .ToHashSet(StringComparer.Ordinal);
 
-            if (!actualSubfolders.SetEquals(expectedSubfolders))
+            var nonLeafExpectedFolders = featureDirectoriesRecursively
+                .Where(path => expectedSubfolders.Contains(Path.GetFileName(path) ?? string.Empty))
+                .Where(path => Directory.EnumerateDirectories(path, "*", SearchOption.TopDirectoryOnly).Any())
+                .Select(path => ArchitectureTestHelpers.NormalizePath(Path.GetRelativePath(repoRoot, path)))
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .ToList();
+
+            var alternateLeafFolders = featureDirectoriesRecursively
+                .Where(path => rejectedAlternateLeafFolders.Contains(Path.GetFileName(path) ?? string.Empty))
+                .Select(path => ArchitectureTestHelpers.NormalizePath(Path.GetRelativePath(repoRoot, path)))
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .ToList();
+
+            if (nonLeafExpectedFolders.Count > 0 || alternateLeafFolders.Count > 0 || actualLeafFolders.Count == 0)
             {
                 var relativeFeaturePath = Path.GetRelativePath(repoRoot, featureDirectory);
-                violations.Add(new Violation(relativeFeaturePath, expectedSubfolders, actualSubfolders));
+                violations.Add(new Violation(relativeFeaturePath, expectedSubfolders, actualLeafFolders, nonLeafExpectedFolders, alternateLeafFolders));
             }
         }
 
         Assert.That(
             violations,
             Is.Empty,
-            "Each feature with controllers must contain exactly 'Contracts', 'Controllers', 'Validation' subfolders. Violations count: " + violations.Count + Environment.NewLine +
+            "Features with controllers may use nested slice containers, but any API leaf folders must still be named 'Contracts', 'Controllers', or 'Validation' and remain terminal directories. Violations count: " + violations.Count + Environment.NewLine +
             string.Join(Environment.NewLine, violations.Select(v => v.ToString())));
     }
 
-    private static string ResolveRepositoryRoot()
-    {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current != null)
-        {
-            if (File.Exists(Path.Combine(current.FullName, "LgymApi.sln")))
-            {
-                return current.FullName;
-            }
-
-            current = current.Parent;
-        }
-
-        throw new InvalidOperationException("Unable to locate repository root.");
-    }
-
-    private sealed record Violation(string FeaturePath, HashSet<string> Expected, HashSet<string> Actual)
+    private sealed record Violation(
+        string FeaturePath,
+        HashSet<string> Expected,
+        HashSet<string> Actual,
+        IReadOnlyList<string> NonLeafExpectedFolders,
+        IReadOnlyList<string> AlternateLeafFolders)
     {
         public override string ToString()
         {
             var expected = string.Join(", ", Expected.OrderBy(x => x, StringComparer.Ordinal));
             var actual = string.Join(", ", Actual.OrderBy(x => x, StringComparer.Ordinal));
-            return $"{FeaturePath} [expected: {expected}] [actual: {actual}]";
+            var nonLeafExpectedFolders = NonLeafExpectedFolders.Count == 0 ? "none" : string.Join(", ", NonLeafExpectedFolders);
+            var alternateLeafFolders = AlternateLeafFolders.Count == 0 ? "none" : string.Join(", ", AlternateLeafFolders);
+            return $"{FeaturePath} [expected leaf names: {expected}] [actual leaf names: {actual}] [non-leaf expected folders: {nonLeafExpectedFolders}] [alternate leaf folders: {alternateLeafFolders}]";
         }
     }
 }

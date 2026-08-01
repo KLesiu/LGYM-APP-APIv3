@@ -1,9 +1,9 @@
 using LgymApi.Api.Features.Common.Contracts;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using Microsoft.AspNetCore.Mvc;
 
-using Unit = LgymApi.Application.Common.Results.Unit;
+using Unit = LgymApi.Application.BuildingBlocks.Results.Unit;
 
 namespace LgymApi.Api.Extensions;
 

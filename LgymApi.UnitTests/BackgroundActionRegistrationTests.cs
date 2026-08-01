@@ -1,6 +1,8 @@
 using FluentAssertions;
+using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using LgymApi.BackgroundWorker;
-using LgymApi.BackgroundWorker.Common;
+using LgymApi.BackgroundWorker.Actions.Contracts;
+using LgymApi.BackgroundWorker.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LgymApi.UnitTests;
@@ -128,20 +130,20 @@ public sealed class BackgroundActionRegistrationTests
         var services = new ServiceCollection();
 
         // Register all handlers as ServiceProvider does
-        services.AddBackgroundAction<LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand, LgymApi.BackgroundWorker.Actions.SendRegistrationEmailHandler>();
-        services.AddBackgroundAction<LgymApi.BackgroundWorker.Common.Commands.InvitationCreatedCommand, LgymApi.BackgroundWorker.Actions.SendInvitationEmailHandler>();
-        services.AddBackgroundAction<LgymApi.BackgroundWorker.Common.Commands.TrainingCompletedCommand, LgymApi.BackgroundWorker.Actions.TrainingCompletedEmailCommandHandler>();
-        services.AddBackgroundAction<LgymApi.BackgroundWorker.Common.Commands.TrainingCompletedCommand, LgymApi.BackgroundWorker.Actions.UpdateTrainingMainRecordsHandler>();
+        services.AddBackgroundAction<LgymApi.Application.Identity.Contracts.BackgroundCommands.UserRegisteredCommand, LgymApi.BackgroundWorker.Actions.SendRegistrationEmailHandler>();
+        services.AddBackgroundAction<LgymApi.Application.Coaching.Contracts.BackgroundCommands.InvitationCreatedCommand, LgymApi.BackgroundWorker.Actions.SendInvitationEmailHandler>();
+        services.AddBackgroundAction<LgymApi.Application.WorkoutProgress.Contracts.BackgroundCommands.TrainingCompletedCommand, LgymApi.BackgroundWorker.Actions.TrainingCompletedEmailCommandHandler>();
+        services.AddBackgroundAction<LgymApi.Application.WorkoutProgress.Contracts.BackgroundCommands.TrainingCompletedCommand, LgymApi.BackgroundWorker.Actions.UpdateTrainingMainRecordsHandler>();
 
         // Act
         var trainingDescriptors = services
-            .Where(d => d.ServiceType == typeof(IBackgroundAction<LgymApi.BackgroundWorker.Common.Commands.TrainingCompletedCommand>))
+            .Where(d => d.ServiceType == typeof(IBackgroundAction<LgymApi.Application.WorkoutProgress.Contracts.BackgroundCommands.TrainingCompletedCommand>))
             .ToList();
         var userDescriptors = services
-            .Where(d => d.ServiceType == typeof(IBackgroundAction<LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand>))
+            .Where(d => d.ServiceType == typeof(IBackgroundAction<LgymApi.Application.Identity.Contracts.BackgroundCommands.UserRegisteredCommand>))
             .ToList();
         var invitationDescriptors = services
-            .Where(d => d.ServiceType == typeof(IBackgroundAction<LgymApi.BackgroundWorker.Common.Commands.InvitationCreatedCommand>))
+            .Where(d => d.ServiceType == typeof(IBackgroundAction<LgymApi.Application.Coaching.Contracts.BackgroundCommands.InvitationCreatedCommand>))
             .ToList();
 
         // Assert - TrainingCompletedCommand has exactly 2 handlers
@@ -159,14 +161,14 @@ public sealed class BackgroundActionRegistrationTests
     {
         var services = new ServiceCollection();
 
-        services.AddBackgroundAction<LgymApi.BackgroundWorker.Common.Commands.ReportSubmissionCreatedInAppNotificationCommand, LgymApi.BackgroundWorker.Actions.ReportSubmissionCreatedInAppNotificationCommandHandler>();
-        services.AddBackgroundAction<LgymApi.BackgroundWorker.Common.Commands.TrainerRelationshipEndedInAppNotificationCommand, LgymApi.BackgroundWorker.Actions.TrainerRelationshipEndedInAppNotificationCommandHandler>();
+        services.AddBackgroundAction<LgymApi.Application.Reporting.Contracts.BackgroundCommands.ReportSubmissionCreatedInAppNotificationCommand, LgymApi.BackgroundWorker.Actions.ReportSubmissionCreatedInAppNotificationCommandHandler>();
+        services.AddBackgroundAction<LgymApi.Application.Coaching.Contracts.BackgroundCommands.TrainerRelationshipEndedInAppNotificationCommand, LgymApi.BackgroundWorker.Actions.TrainerRelationshipEndedInAppNotificationCommandHandler>();
 
         var reportSubmissionDescriptors = services
-            .Where(d => d.ServiceType == typeof(IBackgroundAction<LgymApi.BackgroundWorker.Common.Commands.ReportSubmissionCreatedInAppNotificationCommand>))
+            .Where(d => d.ServiceType == typeof(IBackgroundAction<LgymApi.Application.Reporting.Contracts.BackgroundCommands.ReportSubmissionCreatedInAppNotificationCommand>))
             .ToList();
         var relationshipEndedDescriptors = services
-            .Where(d => d.ServiceType == typeof(IBackgroundAction<LgymApi.BackgroundWorker.Common.Commands.TrainerRelationshipEndedInAppNotificationCommand>))
+            .Where(d => d.ServiceType == typeof(IBackgroundAction<LgymApi.Application.Coaching.Contracts.BackgroundCommands.TrainerRelationshipEndedInAppNotificationCommand>))
             .ToList();
 
         reportSubmissionDescriptors.Should().ContainSingle();
@@ -181,10 +183,10 @@ public sealed class BackgroundActionRegistrationTests
     {
         var services = new ServiceCollection();
 
-        services.AddBackgroundAction<LgymApi.BackgroundWorker.Common.Commands.DietPlanUpdatedInAppNotificationCommand, LgymApi.BackgroundWorker.Actions.DietPlanUpdatedInAppNotificationCommandHandler>();
+        services.AddBackgroundAction<LgymApi.Application.Nutrition.Contracts.BackgroundCommands.DietPlanUpdatedInAppNotificationCommand, LgymApi.BackgroundWorker.Actions.DietPlanUpdatedInAppNotificationCommandHandler>();
 
         var descriptors = services
-            .Where(d => d.ServiceType == typeof(IBackgroundAction<LgymApi.BackgroundWorker.Common.Commands.DietPlanUpdatedInAppNotificationCommand>))
+            .Where(d => d.ServiceType == typeof(IBackgroundAction<LgymApi.Application.Nutrition.Contracts.BackgroundCommands.DietPlanUpdatedInAppNotificationCommand>))
             .ToList();
 
         descriptors.Should().ContainSingle();
@@ -196,10 +198,10 @@ public sealed class BackgroundActionRegistrationTests
     {
         var services = new ServiceCollection();
 
-        services.AddBackgroundAction<LgymApi.BackgroundWorker.Common.Commands.TraineeNoteUpdatedInAppNotificationCommand, LgymApi.BackgroundWorker.Actions.TraineeNoteUpdatedInAppNotificationCommandHandler>();
+        services.AddBackgroundAction<LgymApi.Application.Coaching.Contracts.BackgroundCommands.TraineeNoteUpdatedInAppNotificationCommand, LgymApi.BackgroundWorker.Actions.TraineeNoteUpdatedInAppNotificationCommandHandler>();
 
         var descriptors = services
-            .Where(d => d.ServiceType == typeof(IBackgroundAction<LgymApi.BackgroundWorker.Common.Commands.TraineeNoteUpdatedInAppNotificationCommand>))
+            .Where(d => d.ServiceType == typeof(IBackgroundAction<LgymApi.Application.Coaching.Contracts.BackgroundCommands.TraineeNoteUpdatedInAppNotificationCommand>))
             .ToList();
 
         descriptors.Should().ContainSingle();
@@ -265,6 +267,114 @@ public sealed class BackgroundActionRegistrationTests
         handlers.Any(h => h is MockEmailCommandHandler).Should().BeTrue("MockEmailCommandHandler should be registered");
         handlers.Any(h => h is MockMainRecordsCommandHandler).Should().BeTrue("MockMainRecordsCommandHandler should be registered");
     }
+
+    [Test]
+    public void AddBackgroundWorkerServices_RegistersTheLegacyFifteenCommandManifest()
+    {
+        var services = new ServiceCollection();
+        services.AddBackgroundWorkerServices(isTesting: true);
+
+        var action = () => ValidateClosedWorldBackgroundActionRegistrations(services);
+
+        action.Should().NotThrow();
+        GetClosedBackgroundActionRegistrations(services).Should().HaveCount(16);
+    }
+
+    [Test]
+    public void ClosedWorldRegistrationValidation_RejectsMissingRegistration()
+    {
+        var services = new ServiceCollection();
+        services.AddBackgroundWorkerServices(isTesting: true);
+        var serviceType = typeof(IBackgroundAction<global::LgymApi.Application.Identity.Contracts.BackgroundCommands.UserRegisteredCommand>);
+        services.Remove(services.Single(descriptor => descriptor.ServiceType == serviceType));
+
+        var action = () => ValidateClosedWorldBackgroundActionRegistrations(services);
+
+        action.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Closed background action registration mismatch*SendRegistrationEmailHandler*");
+    }
+
+    [Test]
+    public void ClosedWorldRegistrationValidation_RejectsDuplicateRegistration()
+    {
+        var services = new ServiceCollection();
+        services.AddBackgroundWorkerServices(isTesting: true);
+        services.AddScoped<
+            IBackgroundAction<global::LgymApi.Application.Identity.Contracts.BackgroundCommands.UserRegisteredCommand>,
+            global::LgymApi.BackgroundWorker.Actions.SendRegistrationEmailHandler>();
+
+        var action = () => ValidateClosedWorldBackgroundActionRegistrations(services);
+
+        action.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Closed background action registration mismatch*SendRegistrationEmailHandler*");
+    }
+
+    [Test]
+    public void ClosedWorldRegistrationValidation_RejectsWrongHandlerForListedCommand()
+    {
+        var services = new ServiceCollection();
+        services.AddBackgroundWorkerServices(isTesting: true);
+        var serviceType = typeof(IBackgroundAction<global::LgymApi.Application.Identity.Contracts.BackgroundCommands.UserRegisteredCommand>);
+        services.Remove(services.Single(descriptor => descriptor.ServiceType == serviceType));
+        services.AddScoped<
+            IBackgroundAction<global::LgymApi.Application.Identity.Contracts.BackgroundCommands.UserRegisteredCommand>,
+            WrongUserRegisteredHandler>();
+
+        var action = () => ValidateClosedWorldBackgroundActionRegistrations(services);
+
+        action.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Closed background action registration mismatch*WrongUserRegisteredHandler*");
+    }
+
+    [Test]
+    public void ClosedWorldRegistrationValidation_RejectsUnlistedCommandRegistration()
+    {
+        var services = new ServiceCollection();
+        services.AddBackgroundWorkerServices(isTesting: true);
+        services.AddBackgroundAction<UnlistedManifestCommand, UnlistedManifestHandler>();
+
+        var action = () => ValidateClosedWorldBackgroundActionRegistrations(services);
+
+        action.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Closed background action registration mismatch*UnlistedManifestCommand*UnlistedManifestHandler*");
+    }
+
+    private static void ValidateClosedWorldBackgroundActionRegistrations(IServiceCollection services)
+    {
+        var actual = GetClosedBackgroundActionRegistrations(services);
+        var registry = CommandContractRegistry.CreateDefault();
+        var expected = registry.Contracts
+            .SelectMany(contract => contract.ExpectedHandlerTypes.Select(handlerType =>
+                new LegacyHandlerRegistration(contract.RuntimeType.FullName!, handlerType.FullName!)))
+            .OrderBy(registration => registration.CommandTypeFullName, StringComparer.Ordinal)
+            .ThenBy(registration => registration.HandlerTypeFullName, StringComparer.Ordinal)
+            .ToArray();
+
+        if (!actual.SequenceEqual(expected))
+        {
+            throw new InvalidOperationException(
+                "Closed background action registration mismatch. "
+                + $"Expected [{FormatRegistrations(expected)}]; "
+                + $"actual [{FormatRegistrations(actual)}].");
+        }
+    }
+
+    private static LegacyHandlerRegistration[] GetClosedBackgroundActionRegistrations(IServiceCollection services) =>
+        services
+            .Where(descriptor => descriptor.ServiceType.IsConstructedGenericType
+                && descriptor.ServiceType.GetGenericTypeDefinition() == typeof(IBackgroundAction<>))
+            .Select(descriptor => new LegacyHandlerRegistration(
+                descriptor.ServiceType.GetGenericArguments()[0].FullName!,
+                descriptor.ImplementationType?.FullName
+                    ?? throw new InvalidOperationException(
+                        $"Background action registration '{descriptor.ServiceType}' must use an implementation type.")))
+            .OrderBy(registration => registration.CommandTypeFullName, StringComparer.Ordinal)
+            .ThenBy(registration => registration.HandlerTypeFullName, StringComparer.Ordinal)
+            .ToArray();
+
+    private static string FormatRegistrations(IEnumerable<LegacyHandlerRegistration> registrations) =>
+        string.Join(", ", registrations.Select(registration =>
+            $"{registration.CommandTypeFullName} -> {registration.HandlerTypeFullName}"));
 
     #region Test Fixtures
 
@@ -339,6 +449,27 @@ public sealed class BackgroundActionRegistrationTests
     private sealed class TrainingCompletedCommand : IActionCommand
     {
     }
+
+    private sealed class WrongUserRegisteredHandler :
+        IBackgroundAction<global::LgymApi.Application.Identity.Contracts.BackgroundCommands.UserRegisteredCommand>
+    {
+        public Task ExecuteAsync(
+            global::LgymApi.Application.Identity.Contracts.BackgroundCommands.UserRegisteredCommand command,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class UnlistedManifestCommand : IActionCommand
+    {
+    }
+
+    private sealed class UnlistedManifestHandler : IBackgroundAction<UnlistedManifestCommand>
+    {
+        public Task ExecuteAsync(
+            UnlistedManifestCommand command,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed record LegacyHandlerRegistration(string CommandTypeFullName, string HandlerTypeFullName);
 
     #endregion
 }

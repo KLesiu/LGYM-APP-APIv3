@@ -14,29 +14,107 @@ public sealed class ServiceRegistrationGuardTests
         "AddTransient"
     };
 
+    private static readonly CanonicalServiceRegistration[] WorkoutProgressContractRegistrations =
+    {
+        new("IWorkoutProgressReadWriteService", "WorkoutProgressReadWriteService", "WorkoutProgress"),
+        new("IWorkoutProgressDashboardReadService", "WorkoutProgressDashboardReadService", "WorkoutProgress"),
+        new("IWorkoutProgressRankingReadService", "WorkoutProgressRankingReadService", "WorkoutProgress"),
+        new("ICompleteTrainingUseCase", "CompleteTrainingUseCase", "WorkoutProgress"),
+        new("ITrainingHistoryReadService", "TrainingHistoryReadService", "WorkoutProgress"),
+        new("IRankingAccountProfileReadService", "RankingAccountProfileReadService", "Identity")
+    };
+
     [Test]
     public void Feature_Services_Should_Be_Registered_In_ServiceCollection()
     {
-        var repoRoot = ResolveRepositoryRoot();
-        var featuresRoot = Path.Combine(repoRoot, "LgymApi.Application");
-        var serviceExtensionsPath = Path.Combine(repoRoot, "LgymApi.Application", "ServiceCollectionExtensions.cs");
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(Directory.Exists(featuresRoot), Is.True, $"Application root '{featuresRoot}' not found.");
-            Assert.That(File.Exists(serviceExtensionsPath), Is.True, $"ServiceCollectionExtensions file '{serviceExtensionsPath}' not found.");
-        });
-
         var parseOptions = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
-        var featureFiles = Directory
-            .EnumerateFiles(featuresRoot, "*Service.cs", SearchOption.AllDirectories)
-            .Where(path => !IsInBuildArtifacts(path) && IsFeatureServicePath(path))
+        var applicationFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Application")
+            .Concat(ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Identity"))
+            .ToList();
+        var serviceExtensionFiles = applicationFiles
+            .Where(path => Path.GetFileName(path).EndsWith("ServiceCollectionExtensions.cs", StringComparison.Ordinal)
+                || Path.GetFileName(path).Equals("IdentityModule.cs", StringComparison.Ordinal))
             .ToList();
 
-        Assert.That(featureFiles, Is.Not.Empty, "No feature files found for DI guard test.");
+        Assert.That(serviceExtensionFiles, Is.Not.Empty, "No Application ServiceCollectionExtensions files found for the DI guard test.");
 
-        var serviceDeclarations = new List<ServiceDeclaration>();
-        foreach (var file in featureFiles)
+        var serviceDeclarations = CollectServiceDeclarations(applicationFiles, parseOptions);
+        var registrations = CollectRegistrations(serviceExtensionFiles, parseOptions);
+
+        Assert.That(serviceDeclarations, Is.Not.Empty, "No concrete feature services detected.");
+        Assert.That(registrations, Is.Not.Empty, "No service registrations detected in module-owned helper files.");
+
+        var rootRegistrations = registrations
+            .Where(registration => registration.Module is null)
+            .ToList();
+
+        Assert.That(
+            rootRegistrations,
+            Is.Empty,
+            "Service registrations must live in module-owned ServiceCollectionExtensions files, not the project-root composition shim." + Environment.NewLine +
+            string.Join(Environment.NewLine, rootRegistrations.Select(registration => registration.ToString())));
+
+        var duplicateRegistrations = registrations
+            .GroupBy(registration => new { registration.Interface, registration.Implementation })
+            .Where(group => group.Count() > 1)
+            .Select(group => group.First())
+            .OrderBy(registration => registration.Interface, StringComparer.Ordinal)
+            .ThenBy(registration => registration.Implementation, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.That(
+            duplicateRegistrations,
+            Is.Empty,
+            "Duplicate service registrations were found across module-owned helper files." + Environment.NewLine +
+            string.Join(Environment.NewLine, duplicateRegistrations.Select(registration => registration.ToString())));
+
+        var missing = serviceDeclarations
+            .Where(declaration => !registrations.Any(registration =>
+                registration.Interface == declaration.Interface &&
+                registration.Implementation == declaration.Implementation))
+            .OrderBy(declaration => declaration.Interface, StringComparer.Ordinal)
+            .ThenBy(declaration => declaration.Implementation, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.That(
+            missing,
+            Is.Empty,
+            "Every feature service must be registered in ServiceCollectionExtensions." + Environment.NewLine +
+            string.Join(Environment.NewLine, missing.Select(m => m.ToString())));
+    }
+
+    [Test]
+    public void Workout_Progress_Public_Contracts_Should_Be_Registered_Exactly_Once_By_Their_Owning_Module()
+    {
+        var parseOptions = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
+        var applicationFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Application")
+            .Concat(ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Identity"))
+            .ToList();
+        var registrations = CollectRegistrations(
+            applicationFiles.Where(path => Path.GetFileName(path).EndsWith("ServiceCollectionExtensions.cs", StringComparison.Ordinal)
+                || Path.GetFileName(path).Equals("IdentityModule.cs", StringComparison.Ordinal)),
+            parseOptions);
+
+        var violations = WorkoutProgressContractRegistrations
+            .Select(expected => new
+            {
+                Expected = expected,
+                Matches = registrations.Where(registration =>
+                    registration.Interface == expected.Interface &&
+                    registration.Implementation == expected.Implementation).ToList()
+            })
+            .Where(entry => entry.Matches.Count != 1 || entry.Matches.Single().Module != entry.Expected.Module)
+            .Select(entry => $"{entry.Expected.Interface} -> {entry.Expected.Implementation}: expected exactly one registration in {entry.Expected.Module}.")
+            .ToList();
+
+        Assert.That(violations, Is.Empty, string.Join(Environment.NewLine, violations));
+    }
+
+    private static List<ServiceDeclaration> CollectServiceDeclarations(IEnumerable<string> sourceFiles, CSharpParseOptions parseOptions)
+    {
+        var declarations = new List<ServiceDeclaration>();
+
+        foreach (var file in sourceFiles.Where(IsFeatureServicePath))
         {
             var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(file), parseOptions, file);
             var root = tree.GetCompilationUnitRoot();
@@ -54,25 +132,49 @@ public sealed class ServiceRegistrationGuardTests
                     continue;
                 }
 
-                serviceDeclarations.Add(new ServiceDeclaration(interfaceName, typeDeclaration.Identifier.ValueText));
+                declarations.Add(new ServiceDeclaration(interfaceName, typeDeclaration.Identifier.ValueText, file));
             }
         }
 
-        Assert.That(serviceDeclarations, Is.Not.Empty, "No concrete feature services detected.");
+        return declarations;
+    }
 
-        var serviceExtensionsTree = CSharpSyntaxTree.ParseText(File.ReadAllText(serviceExtensionsPath), parseOptions, serviceExtensionsPath);
-        var registrations = ExtractRegistrations(serviceExtensionsTree);
+    private static List<ServiceRegistration> CollectRegistrations(IEnumerable<string> serviceExtensionFiles, CSharpParseOptions parseOptions)
+    {
+        var registrations = new List<ServiceRegistration>();
 
-        var missing = serviceDeclarations
-            .Where(declaration => !registrations.Contains(declaration))
-            .OrderBy(declaration => declaration.Interface, StringComparer.Ordinal)
-            .ToList();
+        foreach (var file in serviceExtensionFiles)
+        {
+            var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(file), parseOptions, file);
+            var root = tree.GetCompilationUnitRoot();
+            var module = ArchitectureTestHelpers.GetServiceCollectionModuleName(file);
 
-        Assert.That(
-            missing,
-            Is.Empty,
-            "Every feature service must be registered in ServiceCollectionExtensions." + Environment.NewLine +
-            string.Join(Environment.NewLine, missing.Select(m => m.ToString())));
+            foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                if (invocation.Expression is not MemberAccessExpressionSyntax { Name: GenericNameSyntax genericName })
+                {
+                    continue;
+                }
+
+                if (!ValidRegistrationMethods.Contains(genericName.Identifier.ValueText))
+                {
+                    continue;
+                }
+
+                if (genericName.TypeArgumentList.Arguments.Count < 2)
+                {
+                    continue;
+                }
+
+                registrations.Add(new ServiceRegistration(
+                    NormalizeType(genericName.TypeArgumentList.Arguments[0]),
+                    NormalizeType(genericName.TypeArgumentList.Arguments[1]),
+                    module,
+                    file));
+            }
+        }
+
+        return registrations;
     }
 
     private static bool IsConcreteService(ClassDeclarationSyntax typeDeclaration)
@@ -89,7 +191,8 @@ public sealed class ServiceRegistrationGuardTests
     private static bool IsFeatureServicePath(string path)
     {
         var normalized = path.Replace('\\', '/');
-        if (!normalized.Contains("/LgymApi.Application/", StringComparison.OrdinalIgnoreCase))
+        if (!normalized.Contains("/LgymApi.Application/", StringComparison.OrdinalIgnoreCase)
+            && !normalized.Contains("/LgymApi.Identity/", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
@@ -126,37 +229,6 @@ public sealed class ServiceRegistrationGuardTests
         return null;
     }
 
-    private static HashSet<ServiceDeclaration> ExtractRegistrations(SyntaxTree serviceExtensionsTree)
-    {
-        var registrations = new HashSet<ServiceDeclaration>();
-        var root = serviceExtensionsTree.GetCompilationUnitRoot();
-
-        foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
-        {
-            if (invocation.Expression is not MemberAccessExpressionSyntax { Name: GenericNameSyntax genericName })
-            {
-                continue;
-            }
-
-            if (!ValidRegistrationMethods.Contains(genericName.Identifier.ValueText))
-            {
-                continue;
-            }
-
-            if (genericName.TypeArgumentList.Arguments.Count < 2)
-            {
-                continue;
-            }
-
-            var interfaceType = NormalizeType(genericName.TypeArgumentList.Arguments[0]);
-            var implementationType = NormalizeType(genericName.TypeArgumentList.Arguments[1]);
-
-            registrations.Add(new ServiceDeclaration(interfaceType, implementationType));
-        }
-
-        return registrations;
-    }
-
     private static string NormalizeType(TypeSyntax typeSyntax)
     {
         return typeSyntax
@@ -171,24 +243,16 @@ public sealed class ServiceRegistrationGuardTests
         return normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase) || normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string ResolveRepositoryRoot()
-    {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current != null)
-        {
-            if (File.Exists(Path.Combine(current.FullName, "LgymApi.sln")))
-            {
-                return current.FullName;
-            }
-
-            current = current.Parent;
-        }
-
-        throw new InvalidOperationException("Unable to locate repository root.");
-    }
-
-    private sealed record ServiceDeclaration(string Interface, string Implementation)
+    private sealed record ServiceDeclaration(string Interface, string Implementation, string SourceFile)
     {
         public override string ToString() => $"Missing registration: {Interface} -> {Implementation}";
     }
+
+    private sealed record ServiceRegistration(string Interface, string Implementation, string? Module, string SourceFile)
+    {
+        public override string ToString()
+            => $"{SourceFile} [{Module ?? "root"}]: {Interface} -> {Implementation}";
+    }
+
+    private sealed record CanonicalServiceRegistration(string Interface, string Implementation, string Module);
 }

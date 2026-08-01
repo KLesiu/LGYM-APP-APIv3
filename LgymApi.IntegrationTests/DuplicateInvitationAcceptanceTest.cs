@@ -2,7 +2,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using FluentAssertions;
-using LgymApi.Application.Features.TrainerRelationships;
+using LgymApi.Application.Coaching.Invitations.Accept;
 using LgymApi.BackgroundWorker.Common.Notifications;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
@@ -26,12 +26,12 @@ public sealed partial class TrainerEmailInvitationTests
         var trainee = await SeedUserAsync();
         var invitation = await SeedDuplicateAcceptanceInvitationAsync(trainer.Id, trainee.Email.Value, status: TrainerInvitationStatus.Pending);
         using var scope = Factory.Services.CreateScope();
-        var trainerRelationshipService = scope.ServiceProvider.GetRequiredService<ITrainerRelationshipService>();
+        var acceptInvitation = scope.ServiceProvider.GetRequiredService<IAcceptInvitationUseCase>();
 
         // Act
-        await trainerRelationshipService.AcceptInvitationAsync(trainee, invitation);
+        await acceptInvitation.ExecuteAsync(new AcceptInvitationCommand(trainee.Id, invitation));
         await ProcessPendingCommandsAsync();
-        await trainerRelationshipService.AcceptInvitationAsync(trainee, invitation);
+        await acceptInvitation.ExecuteAsync(new AcceptInvitationCommand(trainee.Id, invitation));
         await ProcessPendingCommandsAsync();
 
         Id<NotificationMessage> notificationId;
@@ -50,14 +50,14 @@ public sealed partial class TrainerEmailInvitationTests
         using (var processScope = Factory.Services.CreateScope())
         {
             var handler = processScope.ServiceProvider.GetRequiredService<IEmailJobHandler>();
-            await handler.ProcessAsync(notificationId);
+            await handler.ProcessAsync(notificationId.ToString());
         }
 
         // Act again: a duplicate dispatch of the same notification must not send a second email.
         using (var processScope2 = Factory.Services.CreateScope())
         {
             var handler = processScope2.ServiceProvider.GetRequiredService<IEmailJobHandler>();
-            await handler.ProcessAsync(notificationId);
+            await handler.ProcessAsync(notificationId.ToString());
         }
 
         // Assert
@@ -73,16 +73,16 @@ public sealed partial class TrainerEmailInvitationTests
         var invitation = await SeedDuplicateAcceptanceInvitationAsync(trainer.Id, trainee.Email.Value, status: TrainerInvitationStatus.Pending);
         using (var scope = Factory.Services.CreateScope())
         {
-            var trainerRelationshipService = scope.ServiceProvider.GetRequiredService<ITrainerRelationshipService>();
-            await trainerRelationshipService.AcceptInvitationAsync(trainee, invitation);
+            var acceptInvitation = scope.ServiceProvider.GetRequiredService<IAcceptInvitationUseCase>();
+            await acceptInvitation.ExecuteAsync(new AcceptInvitationCommand(trainee.Id, invitation));
         }
 
         await ProcessPendingCommandsAsync();
 
         using (var scope = Factory.Services.CreateScope())
         {
-            var trainerRelationshipService = scope.ServiceProvider.GetRequiredService<ITrainerRelationshipService>();
-            await trainerRelationshipService.AcceptInvitationAsync(trainee, invitation);
+            var acceptInvitation = scope.ServiceProvider.GetRequiredService<IAcceptInvitationUseCase>();
+            await acceptInvitation.ExecuteAsync(new AcceptInvitationCommand(trainee.Id, invitation));
         }
 
         await ProcessPendingCommandsAsync();
@@ -118,7 +118,7 @@ public sealed partial class TrainerEmailInvitationTests
         using (var processScope = Factory.Services.CreateScope())
         {
             var handler = processScope.ServiceProvider.GetRequiredService<IEmailJobHandler>();
-            await handler.ProcessAsync(notificationId);
+            await handler.ProcessAsync(notificationId.ToString());
         }
 
         // Assert

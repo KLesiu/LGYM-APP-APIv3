@@ -215,6 +215,17 @@ public sealed class MapperNestedCompositionTests
     }
 
     [Test]
+    public void Mapper_Should_Throw_When_Profiles_Register_A_Duplicate_Map()
+    {
+        var action = () => CreateMapper(new PlainIntMappingProfile(), new PlainIntMappingProfile());
+
+        var exception = action.Should().Throw<TargetInvocationException>().Which;
+
+        exception.InnerException.Should().BeOfType<InvalidOperationException>()
+            .Which.Message.Should().Be("Mapping from Int32 to Int32 is already registered.");
+    }
+
+    [Test]
     public void Map_Should_Throw_When_Context_Is_Bound_To_Different_Mapper()
     {
         var firstMapper = CreateMapper(new NestedCompositionProfile());

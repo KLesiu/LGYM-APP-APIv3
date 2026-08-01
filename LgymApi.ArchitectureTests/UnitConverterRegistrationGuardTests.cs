@@ -10,21 +10,18 @@ public sealed class UnitConverterRegistrationGuardTests
     [Test]
     public void Unit_Strategies_And_Converters_Should_Be_Registered_In_ServiceCollection()
     {
-        var repoRoot = ResolveRepositoryRoot();
-        var unitsRoot = Path.Combine(repoRoot, "LgymApi.Application", "Units");
-        var serviceExtensionsPath = Path.Combine(repoRoot, "LgymApi.Application", "ServiceCollectionExtensions.cs");
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(Directory.Exists(unitsRoot), Is.True, $"Units root '{unitsRoot}' not found.");
-            Assert.That(File.Exists(serviceExtensionsPath), Is.True, $"ServiceCollectionExtensions file '{serviceExtensionsPath}' not found.");
-        });
-
         var parseOptions = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
-        var unitFiles = Directory
-            .EnumerateFiles(unitsRoot, "*.cs", SearchOption.AllDirectories)
-            .Where(path => !IsInBuildArtifacts(path))
+        var unitFiles = ArchitectureTestHelpers
+            .EnumerateProjectSourceFiles("LgymApi.Platform", "*.cs")
+            .Where(path => path.Contains($"{Path.DirectorySeparatorChar}Units{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
             .ToList();
+
+        var serviceExtensionFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Platform")
+            .Where(path => Path.GetFileName(path).EndsWith("ServiceCollectionExtensions.cs", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.That(unitFiles, Is.Not.Empty, "No unit strategy/converter files found for the DI guard test.");
+        Assert.That(serviceExtensionFiles, Is.Not.Empty, "No Platform ServiceCollectionExtensions files found for the DI guard test.");
 
         var requiredRegistrations = new List<UnitRegistration>();
         foreach (var file in unitFiles)
@@ -37,13 +34,13 @@ public sealed class UnitConverterRegistrationGuardTests
                 if (!typeDeclaration.Modifiers.Any(modifier => modifier.IsKind(SyntaxKind.AbstractKeyword))
                     && typeDeclaration.Identifier.ValueText.EndsWith("LinearUnitStrategy", StringComparison.Ordinal))
                 {
-                    requiredRegistrations.Add(new UnitRegistration(typeDeclaration.Identifier.ValueText, "LinearUnitStrategy"));
+                    requiredRegistrations.Add(new UnitRegistration(typeDeclaration.Identifier.ValueText, "LinearUnitStrategy", null, file));
                 }
 
                 if (!typeDeclaration.Modifiers.Any(modifier => modifier.IsKind(SyntaxKind.AbstractKeyword))
                     && typeDeclaration.Identifier.ValueText.EndsWith("UnitConverter", StringComparison.Ordinal))
                 {
-                    requiredRegistrations.Add(new UnitRegistration(typeDeclaration.Identifier.ValueText, "UnitConverter"));
+                    requiredRegistrations.Add(new UnitRegistration(typeDeclaration.Identifier.ValueText, "UnitConverter", null, file));
                 }
             }
         }
@@ -54,12 +51,35 @@ public sealed class UnitConverterRegistrationGuardTests
             return;
         }
 
-        var serviceExtensionsTree = CSharpSyntaxTree.ParseText(File.ReadAllText(serviceExtensionsPath), parseOptions, serviceExtensionsPath);
-        var registrations = ExtractRegistrations(serviceExtensionsTree);
+        var registrations = CollectRegistrations(serviceExtensionFiles, parseOptions);
+
+        var rootRegistrations = registrations.Where(registration => registration.Module is null).ToList();
+        Assert.That(
+            rootRegistrations,
+            Is.Empty,
+            "Unit registrations must live in module-owned ServiceCollectionExtensions files, not the project-root composition shim." + Environment.NewLine +
+            string.Join(Environment.NewLine, rootRegistrations.Select(registration => registration.ToString())));
+
+        var duplicateRegistrations = registrations
+            .GroupBy(registration => new { registration.TypeName, registration.Kind })
+            .Where(group => group.Count() > 1)
+            .Select(group => group.First())
+            .OrderBy(registration => registration.TypeName, StringComparer.Ordinal)
+            .ThenBy(registration => registration.Kind, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.That(
+            duplicateRegistrations,
+            Is.Empty,
+            "Duplicate unit registrations were found across module-owned helper files." + Environment.NewLine +
+            string.Join(Environment.NewLine, duplicateRegistrations.Select(registration => registration.ToString())));
 
         var missing = requiredRegistrations
-            .Where(registration => !registrations.Contains(registration))
+            .Where(registration => !registrations.Any(candidate =>
+                SimplifyTypeName(candidate.TypeName) == registration.TypeName &&
+                candidate.Kind == registration.Kind))
             .OrderBy(registration => registration.TypeName, StringComparer.Ordinal)
+            .ThenBy(registration => registration.Kind, StringComparer.Ordinal)
             .ToList();
 
         Assert.That(
@@ -69,37 +89,43 @@ public sealed class UnitConverterRegistrationGuardTests
             string.Join(Environment.NewLine, missing.Select(m => m.ToString())));
     }
 
-    private static HashSet<UnitRegistration> ExtractRegistrations(SyntaxTree serviceExtensionsTree)
+    private static List<UnitRegistration> CollectRegistrations(IEnumerable<string> serviceExtensionFiles, CSharpParseOptions parseOptions)
     {
-        var registrations = new HashSet<UnitRegistration>();
-        var root = serviceExtensionsTree.GetCompilationUnitRoot();
+        var registrations = new List<UnitRegistration>();
 
-        foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        foreach (var file in serviceExtensionFiles)
         {
-            if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
-            {
-                continue;
-            }
+            var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(file), parseOptions, file);
+            var root = tree.GetCompilationUnitRoot();
+            var module = ArchitectureTestHelpers.GetServiceCollectionModuleName(file);
 
-            if (memberAccess.Name is not GenericNameSyntax genericName)
+            foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
             {
-                continue;
-            }
+                if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+                {
+                    continue;
+                }
 
-            if (genericName.TypeArgumentList.Arguments.Count < 2)
-            {
-                continue;
-            }
+                if (memberAccess.Name is not GenericNameSyntax genericName)
+                {
+                    continue;
+                }
 
-            var implementationType = SimplifyTypeName(NormalizeType(genericName.TypeArgumentList.Arguments[1]));
-            if (implementationType.EndsWith("LinearUnitStrategy", StringComparison.Ordinal))
-            {
-                registrations.Add(new UnitRegistration(implementationType, "LinearUnitStrategy"));
-            }
+                if (genericName.TypeArgumentList.Arguments.Count < 2)
+                {
+                    continue;
+                }
 
-            if (implementationType.EndsWith("UnitConverter", StringComparison.Ordinal))
-            {
-                registrations.Add(new UnitRegistration(implementationType, "UnitConverter"));
+                var implementationType = NormalizeType(genericName.TypeArgumentList.Arguments[1]);
+                if (SimplifyTypeName(implementationType).EndsWith("LinearUnitStrategy", StringComparison.Ordinal))
+                {
+                    registrations.Add(new UnitRegistration(implementationType, "LinearUnitStrategy", module, file));
+                }
+
+                if (SimplifyTypeName(implementationType).EndsWith("UnitConverter", StringComparison.Ordinal))
+                {
+                    registrations.Add(new UnitRegistration(implementationType, "UnitConverter", module, file));
+                }
             }
         }
 
@@ -142,8 +168,8 @@ public sealed class UnitConverterRegistrationGuardTests
         throw new InvalidOperationException("Unable to locate repository root.");
     }
 
-    private sealed record UnitRegistration(string TypeName, string Kind)
+    private sealed record UnitRegistration(string TypeName, string Kind, string? Module, string SourceFile)
     {
-        public override string ToString() => $"Missing unit registration for {Kind}: {TypeName}";
+        public override string ToString() => $"{SourceFile} [{Module ?? "root"}]: {Kind} -> {SimplifyTypeName(TypeName)}";
     }
 }

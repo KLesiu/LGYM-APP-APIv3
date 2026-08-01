@@ -1,3 +1,4 @@
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -6,127 +7,249 @@ namespace LgymApi.ArchitectureTests;
 [TestFixture]
 public sealed class MiddlewareRegistrationGuardTests
 {
-    private static readonly string[] RequiredMiddleware =
+    private const string ExpectedRateLimiterCondition = "!app.Environment.IsEnvironment(TestingEnvironment)";
+
+    private static readonly string[] ExpectedPipeline =
     {
-        "ExceptionHandlingMiddleware",
-        "UserContextMiddleware",
-        "ApiIdempotencyMiddleware"
+        "UseRequestLocalization",
+        "UseSerilogRequestLogging",
+        "UseMiddleware<ExceptionHandlingMiddleware>",
+        "UseCors",
+        "UseAuthentication",
+        "UseAuthorization",
+        "UseRateLimiter",
+        "UseMiddleware<UserContextMiddleware>",
+        "UseMiddleware<ApiIdempotencyMiddleware>"
     };
 
     [Test]
-    public void Program_Should_Register_Required_Middleware()
+    public void Program_Should_Preserve_Exact_Middleware_Order_From_Localization_Through_Idempotency()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var programPath = Path.Combine(repoRoot, "LgymApi.Api", "Program.cs");
-
         Assert.That(File.Exists(programPath), Is.True, $"Program.cs not found at '{programPath}'");
 
         var parseOptions = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
         var programContent = File.ReadAllText(programPath);
         var tree = CSharpSyntaxTree.ParseText(programContent, parseOptions, programPath);
         var root = tree.GetCompilationUnitRoot();
+        var violations = FindPipelineViolations(root);
 
-        // Extract all UseMiddleware invocations and middleware class references
-        var registeredMiddleware = ExtractRegisteredMiddleware(root);
-
-        var missing = RequiredMiddleware
-            .Where(middleware => !registeredMiddleware.Contains(middleware))
-            .ToList();
-
-        Assert.That(
-            missing,
-            Is.Empty,
-            $"Program.cs must register the following middleware: {string.Join(", ", RequiredMiddleware)}. " +
-            $"Missing: {string.Join(", ", missing)}");
+        Assert.That(violations, Is.Empty, string.Join(Environment.NewLine, violations));
     }
 
-    /// <summary>
-    /// Extracts registered middleware class names from the Program.cs AST.
-    /// Looks for UseMiddleware<T>() generic invocations and middleware class references.
-    /// </summary>
-    private static List<string> ExtractRegisteredMiddleware(CompilationUnitSyntax root)
+    [Test]
+    public void SwappedMiddlewareOrderFixture_IsRejected()
     {
-        var registered = new HashSet<string>(StringComparer.Ordinal);
+        var root = CSharpSyntaxTree.ParseText("""
+            var app = builder.Build();
+            app.UseRequestLocalization(localizationOptions);
+            app.UseSerilogRequestLogging();
+            app.UseMiddleware<ExceptionHandlingMiddleware>();
+            app.UseCors();
+            app.UseAuthorization();
+            app.UseAuthentication();
+            if (!app.Environment.IsEnvironment(TestingEnvironment))
+            {
+                app.UseRateLimiter();
+            }
+            app.UseMiddleware<UserContextMiddleware>();
+            app.UseMiddleware<ApiIdempotencyMiddleware>();
+            """).GetCompilationUnitRoot();
 
-        var invocations = root.DescendantNodes().OfType<InvocationExpressionSyntax>();
+        var violations = FindPipelineViolations(root);
 
-        foreach (var invocation in invocations)
+        Assert.That(violations, Has.Count.EqualTo(1));
+        Assert.That(violations[0], Does.Contain("UseAuthentication -> UseAuthorization"));
+        Assert.That(violations[0], Does.Contain("UseAuthorization -> UseAuthentication"));
+    }
+
+    [Test]
+    public void UnconditionalRateLimiterFixture_IsRejected()
+    {
+        var root = ParsePipelineFixture("app.UseRateLimiter();");
+
+        var violations = FindPipelineViolations(root);
+
+        Assert.That(violations, Has.Count.EqualTo(1));
+        Assert.That(violations[0], Does.Contain("UseRateLimiter"));
+        Assert.That(violations[0], Does.Contain(ExpectedRateLimiterCondition));
+    }
+
+    [TestCase(
+        "if (app.Environment.IsEnvironment(TestingEnvironment)) { app.UseRateLimiter(); }",
+        TestName = "TestingOnlyRateLimiterFixture_IsRejected")]
+    [TestCase(
+        "if (!app.Environment.IsEnvironment(DevelopmentEnvironment)) { app.UseRateLimiter(); }",
+        TestName = "WrongEnvironmentRateLimiterFixture_IsRejected")]
+    public void InvalidRateLimiterConditionFixture_IsRejected(string rateLimiterRegistration)
+    {
+        var root = ParsePipelineFixture(rateLimiterRegistration);
+
+        var violations = FindPipelineViolations(root);
+
+        Assert.That(violations, Has.Count.EqualTo(1));
+        Assert.That(violations[0], Does.Contain("UseRateLimiter"));
+        Assert.That(violations[0], Does.Contain(ExpectedRateLimiterCondition));
+    }
+
+    private static IReadOnlyList<string> FindPipelineViolations(CompilationUnitSyntax root)
+    {
+        var violations = new List<string>();
+        var actualPipeline = ExtractPipeline(root);
+        if (!actualPipeline.SequenceEqual(ExpectedPipeline, StringComparer.Ordinal))
         {
-            // Look for UseMiddleware<T>() or app.UseMiddleware<T>() pattern
-            if (invocation.Expression is GenericNameSyntax generic &&
-                generic.Identifier.ValueText == "UseMiddleware" &&
-                generic.TypeArgumentList?.Arguments.Count > 0)
-            {
-                // Handle UseMiddleware<T>() where T is a generic argument
-                var typeArg = generic.TypeArgumentList.Arguments[0];
-                var middlewareName = ExtractTypeName(typeArg);
-                if (middlewareName != null)
-                {
-                    registered.Add(middlewareName);
-                }
-            }
-
-            // Alternative pattern: app.UseMiddleware<T>()
-            if (invocation.Expression is MemberAccessExpressionSyntax member &&
-                member.Name is GenericNameSyntax memberGeneric &&
-                memberGeneric.Identifier.ValueText == "UseMiddleware" &&
-                memberGeneric.TypeArgumentList?.Arguments.Count > 0)
-            {
-                var typeArg = memberGeneric.TypeArgumentList.Arguments[0];
-                var middlewareName = ExtractTypeName(typeArg);
-                if (middlewareName != null)
-                {
-                    registered.Add(middlewareName);
-                }
-            }
-
-            // Pattern: UseMiddleware(typeof(T))
-            if (invocation.Expression is MemberAccessExpressionSyntax altMember &&
-                altMember.Name.Identifier.ValueText == "UseMiddleware" &&
-                invocation.ArgumentList?.Arguments.Count > 0)
-            {
-                var arg = invocation.ArgumentList.Arguments[0].Expression;
-                if (arg is TypeOfExpressionSyntax typeOf)
-                {
-                    var middlewareName = ExtractTypeName(typeOf.Type);
-                    if (middlewareName != null)
-                    {
-                        registered.Add(middlewareName);
-                    }
-                }
-            }
+            violations.Add(
+                "Middleware pipeline order changed. " +
+                $"Expected: {string.Join(" -> ", ExpectedPipeline)}. " +
+                $"Actual: {string.Join(" -> ", actualPipeline)}.");
         }
 
-        return registered.ToList();
+        var rateLimiterRegistrations = root.DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Where(invocation => FormatAppUseInvocation(invocation) == "UseRateLimiter")
+            .ToList();
+        if (rateLimiterRegistrations.Count != 1
+            || !HasExpectedRateLimiterCondition(rateLimiterRegistrations[0]))
+        {
+            violations.Add(
+                "UseRateLimiter must be registered exactly once and directly within the condition " +
+                $"'{ExpectedRateLimiterCondition}'.");
+        }
+
+        return violations;
     }
 
-    /// <summary>
-    /// Extracts the simple class name from a type syntax, handling qualified names like
-    /// LgymApi.Api.Middleware.UserContextMiddleware and simple names like ExceptionHandlingMiddleware.
-    /// </summary>
-    private static string? ExtractTypeName(TypeSyntax type)
+    private static bool HasExpectedRateLimiterCondition(InvocationExpressionSyntax rateLimiterRegistration)
     {
-        return type switch
+        var containingConditions = rateLimiterRegistration.Ancestors().OfType<IfStatementSyntax>().ToList();
+        if (containingConditions.Count != 1)
         {
-            // Simple name: ExceptionHandlingMiddleware
-            IdentifierNameSyntax identifier => identifier.Identifier.ValueText,
-            // Qualified name: LgymApi.Api.Middleware.UserContextMiddleware
-            QualifiedNameSyntax qualified => ExtractSimpleNameFromQualified(qualified),
+            return false;
+        }
+
+        var containingCondition = containingConditions[0];
+        return IsDirectlyControlledBy(containingCondition.Statement, rateLimiterRegistration)
+            && IsExpectedRateLimiterCondition(containingCondition.Condition);
+    }
+
+    private static bool IsDirectlyControlledBy(StatementSyntax controlledStatement, InvocationExpressionSyntax invocation)
+    {
+        var invocationStatement = invocation.FirstAncestorOrSelf<ExpressionStatementSyntax>();
+        return invocationStatement != null
+            && (controlledStatement == invocationStatement
+                || controlledStatement is BlockSyntax block && block.Statements.Contains(invocationStatement));
+    }
+
+    private static bool IsExpectedRateLimiterCondition(ExpressionSyntax condition)
+    {
+        condition = RemoveParentheses(condition);
+        var negation = condition as PrefixUnaryExpressionSyntax;
+        if (negation == null || !negation.IsKind(SyntaxKind.LogicalNotExpression))
+        {
+            return false;
+        }
+
+        var negatedExpression = RemoveParentheses(negation.Operand);
+        return negatedExpression is InvocationExpressionSyntax
+        {
+            Expression: MemberAccessExpressionSyntax
+            {
+                Expression: MemberAccessExpressionSyntax
+                {
+                    Expression: IdentifierNameSyntax { Identifier.ValueText: "app" },
+                    Name: IdentifierNameSyntax { Identifier.ValueText: "Environment" }
+                },
+                Name: IdentifierNameSyntax { Identifier.ValueText: "IsEnvironment" }
+            },
+            ArgumentList.Arguments:
+            [
+                {
+                    Expression: IdentifierNameSyntax { Identifier.ValueText: "TestingEnvironment" }
+                }
+            ]
+        };
+    }
+
+    private static ExpressionSyntax RemoveParentheses(ExpressionSyntax expression)
+    {
+        while (expression is ParenthesizedExpressionSyntax parenthesized)
+        {
+            expression = parenthesized.Expression;
+        }
+
+        return expression;
+    }
+
+    private static IReadOnlyList<string> ExtractPipeline(CompilationUnitSyntax root)
+    {
+        var registrations = root.DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Select(FormatAppUseInvocation)
+            .Where(registration => registration != null)
+            .Cast<string>()
+            .ToList();
+
+        var start = registrations.FindIndex(registration => registration == ExpectedPipeline[0]);
+        if (start < 0)
+        {
+            return registrations;
+        }
+
+        var end = registrations.FindIndex(start, registration => registration == ExpectedPipeline[^1]);
+        return end < 0
+            ? registrations.Skip(start).ToList()
+            : registrations.GetRange(start, end - start + 1);
+    }
+
+    private static CompilationUnitSyntax ParsePipelineFixture(string rateLimiterRegistration)
+    {
+        return CSharpSyntaxTree.ParseText($$"""
+            var app = builder.Build();
+            app.UseRequestLocalization(localizationOptions);
+            app.UseSerilogRequestLogging();
+            app.UseMiddleware<ExceptionHandlingMiddleware>();
+            app.UseCors();
+            app.UseAuthentication();
+            app.UseAuthorization();
+            {{rateLimiterRegistration}}
+            app.UseMiddleware<UserContextMiddleware>();
+            app.UseMiddleware<ApiIdempotencyMiddleware>();
+            """).GetCompilationUnitRoot();
+    }
+
+    private static string? FormatAppUseInvocation(InvocationExpressionSyntax invocation)
+    {
+        if (invocation.Expression is not MemberAccessExpressionSyntax
+            {
+                Expression: IdentifierNameSyntax { Identifier.ValueText: "app" },
+                Name: var memberName
+            })
+        {
+            return null;
+        }
+
+        return memberName switch
+        {
+            IdentifierNameSyntax identifier when identifier.Identifier.ValueText.StartsWith("Use", StringComparison.Ordinal)
+                => identifier.Identifier.ValueText,
+            GenericNameSyntax
+            {
+                Identifier.ValueText: "UseMiddleware",
+                TypeArgumentList.Arguments: [var middlewareType]
+            } => $"UseMiddleware<{ExtractTypeName(middlewareType)}>",
             _ => null
         };
     }
 
-    /// <summary>
-    /// Extracts the rightmost simple name from a qualified name.
-    /// Example: LgymApi.Api.Middleware.UserContextMiddleware -> UserContextMiddleware
-    /// </summary>
-    private static string? ExtractSimpleNameFromQualified(QualifiedNameSyntax qualified)
+    private static string ExtractTypeName(TypeSyntax type)
     {
-        if (qualified.Right is IdentifierNameSyntax identifier)
+        return type switch
         {
-            return identifier.Identifier.ValueText;
-        }
-
-        return null;
+            IdentifierNameSyntax identifier => identifier.Identifier.ValueText,
+            QualifiedNameSyntax qualified => ExtractTypeName(qualified.Right),
+            AliasQualifiedNameSyntax aliasQualified => aliasQualified.Name.Identifier.ValueText,
+            _ => type.ToString()
+        };
     }
 }

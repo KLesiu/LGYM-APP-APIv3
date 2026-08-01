@@ -1,23 +1,27 @@
 using FluentAssertions;
 using LgymApi.Api;
-using LgymApi.Api.Features.ExerciseScores.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Features.Trainer.Controllers;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
-using LgymApi.Application.Features.EloRegistry.Models;
-using LgymApi.Application.Features.ExerciseScores.Models;
-using LgymApi.Application.Features.TrainerRelationships;
-using LgymApi.Application.Features.TrainerRelationships.Models;
-using LgymApi.Application.Features.Training.Models;
+using LgymApi.Api.Middleware;
+using LgymApi.Application.Coaching.Invitations.Create;
+using LgymApi.Application.Coaching.Invitations.CreateByEmail;
+using LgymApi.Application.Coaching.Invitations.ListPaginated;
+using LgymApi.Application.Coaching.Invitations.Models;
+using LgymApi.Application.Coaching.Invitations.Revoke;
+using LgymApi.Application.Coaching.ApiAdapters;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Pagination;
 using LgymApi.Domain.Entities;
+using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace LgymApi.UnitTests;
 
@@ -32,128 +36,54 @@ public sealed class TrainerRelationshipControllerTests
         var result = await controller.CreateInvitation(new CreateTrainerInvitationRequest { TraineeId = "not-a-guid" });
 
         result.Should().BeOfType<ObjectResult>();
-        ((ObjectResult)result).StatusCode.Should().Be(400);
+        ((ObjectResult)result).StatusCode.Should().Be(StatusCodes.Status400BadRequest);
     }
 
     [Test]
-    public async Task GetTraineeTrainingDates_WithInvalidTraineeId_ReturnsBadRequest()
+    public async Task CreateInvitation_WithFocusedResult_MapsLegacyInvitationDto()
     {
-        var controller = CreateController();
+        var createInvitation = Substitute.For<ICreateInvitationUseCase>();
+        var trainerId = Id<User>.New();
+        var traineeId = Id<User>.New();
+        CreateInvitationCommand? captured = null;
+        var invitation = new InvitationReadModel(
+            Id<TrainerInvitation>.New(),
+            trainerId,
+            traineeId,
+            "trainee@example.com",
+            "CODE",
+            TrainerInvitationStatus.Pending,
+            DateTimeOffset.UtcNow.AddDays(1),
+            null,
+            DateTimeOffset.UtcNow,
+            "Trainee",
+            "trainee@example.com");
+        createInvitation.ExecuteAsync(Arg.Do<CreateInvitationCommand>(command => captured = command), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(Result.Success<InvitationReadModel, AppError>(invitation)));
+        var controller = CreateController(createInvitation, trainerId);
 
-        var result = await controller.GetTraineeTrainingDates("invalid-id");
+        var result = await controller.CreateInvitation(new CreateTrainerInvitationRequest { TraineeId = traineeId.ToString() });
 
-        result.Should().BeOfType<ObjectResult>();
-        ((ObjectResult)result).StatusCode.Should().Be(400);
+        var dto = ((OkObjectResult)result).Value.Should().BeOfType<TrainerInvitationDto>().Subject;
+        dto.Id.Should().Be(invitation.Id.ToString());
+        dto.Status.Should().Be("Pending");
+        captured.Should().Be(new CreateInvitationCommand(trainerId, traineeId));
     }
 
-    [Test]
-    public async Task GetTraineeExerciseScoresChartData_WithInvalidTraineeId_ReturnsBadRequest()
-    {
-        var controller = CreateController();
-
-        var result = await controller.GetTraineeExerciseScoresChartData("invalid-id", new ExerciseScoresChartRequestDto { ExerciseId = Id<Exercise>.New().ToString() });
-
-        result.Should().BeOfType<ObjectResult>();
-        ((ObjectResult)result).StatusCode.Should().Be(400);
-    }
-
-    [Test]
-    public async Task GetTraineeExerciseScoresChartData_WithInvalidExerciseId_ReturnsBadRequest()
-    {
-        var controller = CreateController();
-
-        var result = await controller.GetTraineeExerciseScoresChartData(Id<User>.New().ToString(), new ExerciseScoresChartRequestDto { ExerciseId = "invalid-exercise" });
-
-        result.Should().BeOfType<ObjectResult>();
-        ((ObjectResult)result).StatusCode.Should().Be(400);
-    }
-
-    [Test]
-    public async Task UpdateTraineePlan_WithInvalidPlanId_ReturnsBadRequest()
-    {
-        var controller = CreateController();
-
-        var result = await controller.UpdateTraineePlan(Id<User>.New().ToString(), "not-a-guid", new TrainerPlanFormRequest { Name = "Plan" });
-
-        result.Should().BeOfType<ObjectResult>();
-        ((ObjectResult)result).StatusCode.Should().Be(400);
-    }
-
-    [Test]
-    public async Task GetCurrentTrainer_WhenLinkExists_ReturnsOk()
-    {
-        var controller = CreateTraineeController();
-
-        var result = await controller.GetCurrentTrainer();
-
-        result.Should().BeOfType<OkObjectResult>();
-    }
-
-    private static TrainerRelationshipController CreateController()
+    private static TrainerInvitationController CreateController(ICreateInvitationUseCase? createInvitation = null, Id<User>? trainerId = null)
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
-        return new TrainerRelationshipController(new StubTrainerRelationshipService(), mapper);
-    }
-
-    private static TraineeRelationshipController CreateTraineeController()
-    {
-        var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
-        using var provider = services.BuildServiceProvider();
-        var mapper = provider.GetRequiredService<IMapper>();
-
-        var controller = new TraineeRelationshipController(new StubTrainerRelationshipService(), mapper)
+        var controller = new TrainerInvitationController(
+            new TrainerInvitationApiAdapter(createInvitation ?? Substitute.For<ICreateInvitationUseCase>(), Substitute.For<ICreateInvitationByEmailUseCase>(), Substitute.For<IListPaginatedInvitationsUseCase>(), Substitute.For<IRevokeInvitationUseCase>(), mapper),
+            mapper)
         {
-            ControllerContext = new ControllerContext
-            {
-                HttpContext = new DefaultHttpContext()
-            }
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
-
-        controller.HttpContext.Items["User"] = new User
-        {
-            Id = Id<User>.New(),
-            Name = "Trainee",
-            Email = "trainee@example.com"
-        };
-
+        controller.HttpContext.Features.Set<IAuthenticatedAccountContextFeature>(new AuthenticatedAccountContextFeature(
+            new AuthenticatedAccountContext((trainerId ?? Id<User>.New()).Rebind<AccountReference>(), null, [], [], false, false)));
         return controller;
-    }
-
-    private sealed class StubTrainerRelationshipService : ITrainerRelationshipService
-    {
-        public Task<Result<TrainerInvitationResult, AppError>> CreateInvitationAsync(User currentTrainer, Id<User> traineeId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<TrainerInvitationResult, AppError>> CreateInvitationByEmailAsync(User currentTrainer, string inviteeEmail, string preferredLanguage, string preferredTimeZone, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<List<TrainerInvitationResult>, AppError>> GetTrainerInvitationsAsync(User currentTrainer, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<Pagination<TrainerInvitationResult>, AppError>> GetInvitationsPaginatedAsync(User currentTrainer, FilterInput filterInput, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<TrainerDashboardTraineeListResult, AppError>> GetDashboardTraineesAsync(User currentTrainer, TrainerDashboardTraineeQuery query, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<List<DateTime>, AppError>> GetTraineeTrainingDatesAsync(User currentTrainer, Id<User> traineeId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<List<TrainingByDateDetails>, AppError>> GetTraineeTrainingByDateAsync(User currentTrainer, Id<User> traineeId, DateTime createdAt, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<List<ExerciseScoresChartData>, AppError>> GetTraineeExerciseScoresChartDataAsync(User currentTrainer, Id<User> traineeId, Id<Exercise> exerciseId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<List<EloRegistryChartEntry>, AppError>> GetTraineeEloChartAsync(User currentTrainer, Id<User> traineeId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<List<MainRecord>, AppError>> GetTraineeMainRecordsHistoryAsync(User currentTrainer, Id<User> traineeId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<List<TrainerManagedPlanResult>, AppError>> GetTraineePlansAsync(User currentTrainer, Id<User> traineeId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<TrainerManagedPlanResult, AppError>> CreateTraineePlanAsync(User currentTrainer, Id<User> traineeId, string name, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<TrainerManagedPlanResult, AppError>> UpdateTraineePlanAsync(User currentTrainer, Id<User> traineeId, Id<Plan> planId, string name, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<Unit, AppError>> DeleteTraineePlanAsync(User currentTrainer, Id<User> traineeId, Id<Plan> planId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<Unit, AppError>> AssignTraineePlanAsync(User currentTrainer, Id<User> traineeId, Id<Plan> planId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<Unit, AppError>> UnassignTraineePlanAsync(User currentTrainer, Id<User> traineeId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<TraineeTrainerProfileResult, AppError>> GetCurrentTrainerAsync(User currentTrainee, CancellationToken cancellationToken = default) => Task.FromResult(Result<TraineeTrainerProfileResult, AppError>.Success(new TraineeTrainerProfileResult
-        {
-            TrainerId = Id<User>.New(),
-            Name = "Trainer Test",
-            Email = "trainer@example.com",
-            Avatar = null,
-            LinkedAt = DateTimeOffset.UtcNow
-        }));
-        public Task<Result<TrainerManagedPlanResult, AppError>> GetActiveAssignedPlanAsync(User currentTrainee, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<Unit, AppError>> AcceptInvitationAsync(User currentTrainee, Id<TrainerInvitation> invitationId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<Unit, AppError>> RejectInvitationAsync(User currentTrainee, Id<TrainerInvitation> invitationId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<Unit, AppError>> RevokeInvitationAsync(User currentTrainer, Id<TrainerInvitation> invitationId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<Unit, AppError>> UnlinkTraineeAsync(User currentTrainer, Id<User> traineeId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result<Unit, AppError>> DetachFromTrainerAsync(User currentTrainee, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }

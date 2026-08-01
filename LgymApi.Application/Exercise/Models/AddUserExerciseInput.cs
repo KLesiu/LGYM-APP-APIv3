@@ -4,14 +4,14 @@ using LgymApi.Domain.ValueObjects;
 namespace LgymApi.Application.Features.Exercise.Models;
 
 public sealed record AddUserExerciseInput(
-    Id<LgymApi.Domain.Entities.User> UserId,
+    Id<LgymApi.Identity.Contracts.AccountReference> UserId,
     string Name,
     BodyParts BodyPart,
     string? Description,
     string? Image);
 
 public sealed record AddUserExerciseWithFormulaInput(
-    Id<LgymApi.Domain.Entities.User> UserId,
+    Id<LgymApi.Identity.Contracts.AccountReference> UserId,
     string Name,
     BodyParts BodyPart,
     ExerciseEloFormula? EloFormula,

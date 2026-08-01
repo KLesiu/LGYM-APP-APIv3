@@ -48,10 +48,10 @@ public sealed class GymSeeder : IEntitySeeder
                 continue;
             }
 
-             var gym = new Gym
-             {
-                 Id = Id<Gym>.New(),
-                 UserId = user.Id,
+            var gym = new Gym
+            {
+                Id = Id<Gym>.New(),
+                UserId = user.Id,
                 Name = name,
                 AddressId = address.Id
             };

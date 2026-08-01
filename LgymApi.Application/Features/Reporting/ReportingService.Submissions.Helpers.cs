@@ -1,10 +1,11 @@
 using System.Globalization;
 using System.Text.Json;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Reporting.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Measurements;
 using LgymApi.Application.Features.Reporting.Models;
-using LgymApi.Domain.Entities;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Enums;
 using LgymApi.Resources;
 
@@ -12,7 +13,7 @@ namespace LgymApi.Application.Features.Reporting;
 
 public sealed partial class ReportingService
 {
-    private static Result<Unit, AppError> ValidateAnswersAgainstTemplate(ReportTemplate template, Dictionary<string, JsonElement> answers)
+    private static Result<Unit, AppError> ValidateAnswersAgainstTemplate(ReportTemplatePersistenceModel template, Dictionary<string, JsonElement> answers)
     {
         var expected = template.Fields.ToDictionary(x => x.Key, x => x, StringComparer.OrdinalIgnoreCase);
 
@@ -56,7 +57,7 @@ public sealed partial class ReportingService
         return Result<Unit, AppError>.Success(Unit.Value);
     }
 
-    private static bool AreMeasurementAnswersValid(ReportTemplateField field, JsonElement answer)
+    private static bool AreMeasurementAnswersValid(ReportTemplateFieldPersistenceModel field, JsonElement answer)
     {
         if (string.IsNullOrWhiteSpace(field.ModuleConfig)
             || answer.ValueKind != JsonValueKind.Object)
@@ -128,7 +129,7 @@ public sealed partial class ReportingService
         return normalizedComments;
     }
 
-    private static Result<Unit, AppError> ValidateTrainerFieldComments(ReportTemplate template, Dictionary<string, string> comments)
+    private static Result<Unit, AppError> ValidateTrainerFieldComments(ReportTemplatePersistenceModel template, Dictionary<string, string> comments)
     {
         var expected = template.Fields
             .Select(field => field.Key)
@@ -171,34 +172,6 @@ public sealed partial class ReportingService
             ReportFieldType.Photos => value.ValueKind is JsonValueKind.Array or JsonValueKind.Object,
             ReportFieldType.Measurements => value.ValueKind == JsonValueKind.Object,
             _ => false
-        };
-    }
-
-    private static ReportSubmissionResult MapSubmission(ReportSubmission submission)
-    {
-        var answersRaw = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(submission.PayloadJson);
-        var answers = answersRaw == null
-            ? new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase)
-            : new Dictionary<string, JsonElement>(answersRaw, StringComparer.OrdinalIgnoreCase);
-        var trainerFieldCommentsRaw = string.IsNullOrWhiteSpace(submission.TrainerFieldCommentsJson)
-            ? null
-            : JsonSerializer.Deserialize<Dictionary<string, string>>(submission.TrainerFieldCommentsJson);
-        var trainerFieldComments = trainerFieldCommentsRaw == null
-            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            : new Dictionary<string, string>(trainerFieldCommentsRaw, StringComparer.OrdinalIgnoreCase);
-
-        return new ReportSubmissionResult
-        {
-            Id = submission.Id,
-            ReportRequestId = submission.ReportRequestId,
-            TraineeId = submission.TraineeId,
-            SubmittedAt = submission.CreatedAt,
-            Answers = answers,
-            TrainerOverallComment = submission.TrainerOverallComment,
-            TrainerFieldComments = trainerFieldComments,
-            TrainerFeedbackAddedAt = submission.TrainerFeedbackAddedAt,
-            TrainerFeedbackReadAt = submission.TrainerFeedbackReadAt,
-            Request = MapRequest(submission.ReportRequest)
         };
     }
 

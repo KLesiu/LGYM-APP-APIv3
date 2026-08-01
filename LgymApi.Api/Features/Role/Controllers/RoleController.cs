@@ -1,12 +1,12 @@
 using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Role.Contracts;
-using LgymApi.Application.Features.Role;
-using LgymApi.Application.Features.Role.Models;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Pagination;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,12 +17,12 @@ namespace LgymApi.Api.Features.Role.Controllers;
 [Authorize(Policy = AuthConstants.Policies.ManageUserRoles)]
 public sealed class RoleController : ControllerBase
 {
-    private readonly IRoleService _roleService;
+    private readonly IRoleManagementApiAdapter _roleManagementApiAdapter;
     private readonly IMapper _mapper;
 
-    public RoleController(IRoleService roleService, IMapper mapper)
+    public RoleController(IRoleManagementApiAdapter roleManagementApiAdapter, IMapper mapper)
     {
-        _roleService = roleService;
+        _roleManagementApiAdapter = roleManagementApiAdapter;
         _mapper = mapper;
     }
 
@@ -30,14 +30,14 @@ public sealed class RoleController : ControllerBase
     [ProducesResponseType(typeof(List<RoleDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetRoles(CancellationToken cancellationToken = default)
     {
-        var result = await _roleService.GetRolesAsync(cancellationToken);
-        
+        var result = await _roleManagementApiAdapter.GetRolesAsync(cancellationToken);
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
-        return Ok(_mapper.MapList<RoleResult, RoleDto>(result.Value));
+
+        return Ok(_mapper.MapList<RoleProjection, RoleDto>(result.Value));
     }
 
     [HttpPost("paginated")]
@@ -51,8 +51,8 @@ public sealed class RoleController : ControllerBase
             FilterGroups = request.FilterGroups,
             SortDescriptors = request.SortDescriptors
         };
-        var result = await _roleService.GetRolesPaginatedAsync(filterInput, cancellationToken);
-        
+        var result = await _roleManagementApiAdapter.GetRolesPaginatedAsync(filterInput, cancellationToken);
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -61,7 +61,7 @@ public sealed class RoleController : ControllerBase
         var pagination = result.Value;
         var response = new PaginatedRoleResult
         {
-            Items = _mapper.MapList<RoleResult, RoleDto>(pagination.Items),
+            Items = _mapper.MapList<RoleProjection, RoleDto>(pagination.Items),
             Page = pagination.Page,
             PageSize = pagination.PageSize,
             TotalCount = pagination.TotalCount,
@@ -69,7 +69,7 @@ public sealed class RoleController : ControllerBase
             HasNextPage = pagination.HasNextPage,
             HasPreviousPage = pagination.HasPreviousPage
         };
-        
+
         return Ok(response);
     }
 
@@ -78,23 +78,23 @@ public sealed class RoleController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetRole([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var roleId = Id<Domain.Entities.Role>.TryParse(id, out var parsedRoleId) ? parsedRoleId : Id<Domain.Entities.Role>.Empty;
-        var result = await _roleService.GetRoleAsync(roleId, cancellationToken);
-        
+        var roleId = Id<RoleReference>.TryParse(id, out var parsedRoleId) ? parsedRoleId : Id<RoleReference>.Empty;
+        var result = await _roleManagementApiAdapter.GetRoleAsync(roleId, cancellationToken);
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
-        return Ok(_mapper.Map<RoleResult, RoleDto>(result.Value));
+
+        return Ok(_mapper.Map<RoleProjection, RoleDto>(result.Value));
     }
 
     [HttpGet("permission-claims")]
     [ProducesResponseType(typeof(List<PermissionClaimLookupDto>), StatusCodes.Status200OK)]
     public IActionResult GetPermissionClaims()
     {
-        var claims = _roleService.GetAvailablePermissionClaims();
-        return Ok(_mapper.MapList<PermissionClaimLookupResult, PermissionClaimLookupDto>(claims));
+        var claims = _roleManagementApiAdapter.GetAvailablePermissionClaims();
+        return Ok(_mapper.MapList<PermissionClaimProjection, PermissionClaimLookupDto>(claims));
     }
 
     [HttpPost]
@@ -102,14 +102,14 @@ public sealed class RoleController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateRole([FromBody] UpsertRoleRequest request, CancellationToken cancellationToken = default)
     {
-        var result = await _roleService.CreateRoleAsync(request.Name, request.Description, request.PermissionClaims, cancellationToken);
-        
+        var result = await _roleManagementApiAdapter.CreateRoleAsync(request.Name, request.Description, request.PermissionClaims, cancellationToken);
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
-        return Ok(_mapper.Map<RoleResult, RoleDto>(result.Value));
+
+        return Ok(_mapper.Map<RoleProjection, RoleDto>(result.Value));
     }
 
     [HttpPost("{id}/update")]
@@ -118,14 +118,14 @@ public sealed class RoleController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateRole([FromRoute] string id, [FromBody] UpsertRoleRequest request, CancellationToken cancellationToken = default)
     {
-        var roleId = Id<Domain.Entities.Role>.TryParse(id, out var parsedRoleId) ? parsedRoleId : Id<Domain.Entities.Role>.Empty;
-        var result = await _roleService.UpdateRoleAsync(roleId, request.Name, request.Description, request.PermissionClaims, cancellationToken);
-        
+        var roleId = Id<RoleReference>.TryParse(id, out var parsedRoleId) ? parsedRoleId : Id<RoleReference>.Empty;
+        var result = await _roleManagementApiAdapter.UpdateRoleAsync(roleId, request.Name, request.Description, request.PermissionClaims, cancellationToken);
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Updated));
     }
 
@@ -134,14 +134,14 @@ public sealed class RoleController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteRole([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var roleId = Id<Domain.Entities.Role>.TryParse(id, out var parsedRoleId) ? parsedRoleId : Id<Domain.Entities.Role>.Empty;
-        var result = await _roleService.DeleteRoleAsync(roleId, cancellationToken);
-        
+        var roleId = Id<RoleReference>.TryParse(id, out var parsedRoleId) ? parsedRoleId : Id<RoleReference>.Empty;
+        var result = await _roleManagementApiAdapter.DeleteRoleAsync(roleId, cancellationToken);
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Deleted));
     }
 
@@ -151,14 +151,14 @@ public sealed class RoleController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateUserRoles([FromRoute] string id, [FromBody] UpdateUserRolesRequest request, CancellationToken cancellationToken = default)
     {
-        var userId = Id<Domain.Entities.User>.TryParse(id, out var parsedUserId) ? parsedUserId : Id<Domain.Entities.User>.Empty;
-        var result = await _roleService.UpdateUserRolesAsync(userId, request.Roles, cancellationToken);
-        
+        var userId = Id<AccountReference>.TryParse(id, out var parsedUserId) ? parsedUserId : Id<AccountReference>.Empty;
+        var result = await _roleManagementApiAdapter.UpdateUserRolesAsync(userId, request.Roles, cancellationToken);
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Updated));
     }
 

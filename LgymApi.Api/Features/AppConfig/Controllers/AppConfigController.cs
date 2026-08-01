@@ -2,8 +2,9 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.AppConfig.Contracts;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.AppConfig;
+using LgymApi.Application.Platform.ReferenceData.AppConfig;
 using LgymApi.Application.Mapping.Core;
+using LgymApi.Application.Platform.ReferenceData.ApiAdapters;
 using LgymApi.Domain.ValueObjects;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
@@ -16,11 +17,16 @@ namespace LgymApi.Api.Features.AppConfig.Controllers;
 public sealed class AppConfigController : ControllerBase
 {
     private readonly IAppConfigService _appConfigService;
+    private readonly IAppConfigApiAdapter _appConfigApiAdapter;
     private readonly IMapper _mapper;
 
-    public AppConfigController(IAppConfigService appConfigService, IMapper mapper)
+    public AppConfigController(
+        IAppConfigService appConfigService,
+        IAppConfigApiAdapter appConfigApiAdapter,
+        IMapper mapper)
     {
         _appConfigService = appConfigService;
+        _appConfigApiAdapter = appConfigApiAdapter;
         _mapper = mapper;
     }
 
@@ -36,7 +42,7 @@ public sealed class AppConfigController : ControllerBase
         {
             return result.ToActionResult();
         }
-        
+
         return Ok(_mapper.Map<AppConfigEntity, AppConfigInfoDto>(result.Value));
     }
 
@@ -46,8 +52,7 @@ public sealed class AppConfigController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> CreateNewAppVersion([FromRoute] string id, [FromBody] AppConfigInfoWithPlatformDto form, CancellationToken cancellationToken = default)
     {
-        var guidUserId = HttpContext.ParseRouteUserIdForCurrentAdmin(id);
-        var userId = guidUserId;
+        var accountId = HttpContext.ParseRouteAccountIdForCurrentAdmin(id);
         var input = new CreateAppVersionInput(
             form.Platform,
             form.MinRequiredVersion,
@@ -55,7 +60,7 @@ public sealed class AppConfigController : ControllerBase
             form.ForceUpdate,
             form.UpdateUrl,
             form.ReleaseNotes);
-        var result = await _appConfigService.CreateNewAppVersionAsync(userId, input, cancellationToken);
+        var result = await _appConfigApiAdapter.CreateNewAppVersionAsync(accountId, input, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();

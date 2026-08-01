@@ -1,7 +1,8 @@
 using FluentAssertions;
 using LgymApi.Application.Features.AdminManagement.Models;
 using System.Net;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Identity.Errors;
 using LgymApi.Application.Features.Role;
 using LgymApi.Application.Models;
 using LgymApi.Application.Pagination;
@@ -51,15 +52,15 @@ public sealed class RoleServiceTests
         roles[0].PermissionClaims.Should().BeEquivalentTo(_roleRepository.RoleClaims[_roleRepository.Roles.First().Id]);
     }
 
-     [Test]
-     public async Task GetRoleAsync_ReturnsFailure_WhenRoleIdEmpty()
-     {
-         var emptyId = default(Id<Role>);
-         var result = await _service.GetRoleAsync(emptyId);
+    [Test]
+    public async Task GetRoleAsync_ReturnsFailure_WhenRoleIdEmpty()
+    {
+        var emptyId = default(Id<Role>);
+        var result = await _service.GetRoleAsync(emptyId);
 
-         result.IsFailure.Should().BeTrue();
-         result.Error.Should().BeOfType<InvalidRoleError>();
-         result.Error.HttpStatusCode.Should().Be((int)HttpStatusCode.BadRequest);
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<InvalidRoleError>();
+        result.Error.HttpStatusCode.Should().Be((int)HttpStatusCode.BadRequest);
     }
 
     [Test]
@@ -73,28 +74,28 @@ public sealed class RoleServiceTests
                 AuthConstants.Permissions.ManageUserRoles,
                 AuthConstants.Permissions.ManageAppConfig
             ]);
-        
-         var result = roleResult.Value;
 
-         result.Name.Should().Be("Coach");
-         result.Description.Should().Be("Training tools");
-         result.PermissionClaims.Should().Equal(new[]
-         {
+        var result = roleResult.Value;
+
+        result.Name.Should().Be("Coach");
+        result.Description.Should().Be("Training tools");
+        result.PermissionClaims.Should().Equal(new[]
+        {
              AuthConstants.Permissions.ManageAppConfig,
              AuthConstants.Permissions.ManageUserRoles
          });
-         _roleRepository.Roles.Any(r => r.Id == result.Id).Should().BeTrue();
-         _unitOfWork.SaveChangesCalls.Should().Be(1);
+        _roleRepository.Roles.Any(r => r.Id == result.Id).Should().BeTrue();
+        _unitOfWork.SaveChangesCalls.Should().Be(1);
     }
 
     [Test]
     public async Task CreateRoleAsync_ReturnsFailure_WhenClaimInvalid()
     {
-         var result = await _service.CreateRoleAsync("Coach", null, ["invalid.claim"]);
+        var result = await _service.CreateRoleAsync("Coach", null, ["invalid.claim"]);
 
-         result.IsFailure.Should().BeTrue();
-         result.Error.Should().BeOfType<InvalidRoleError>();
-         result.Error.HttpStatusCode.Should().Be((int)HttpStatusCode.BadRequest);
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<InvalidRoleError>();
+        result.Error.HttpStatusCode.Should().Be((int)HttpStatusCode.BadRequest);
     }
 
     [Test]
@@ -103,15 +104,15 @@ public sealed class RoleServiceTests
         var adminRole = new Role { Id = Id<Role>.New(), Name = AuthConstants.Roles.Admin };
         _roleRepository.Roles.Add(adminRole);
 
-         var result = await _service.UpdateRoleAsync(
-             adminRole.Id,
-             "AdminUpdated",
-             null,
-             [AuthConstants.Permissions.ManageUserRoles]);
+        var result = await _service.UpdateRoleAsync(
+            adminRole.Id,
+            "AdminUpdated",
+            null,
+            [AuthConstants.Permissions.ManageUserRoles]);
 
-         result.IsFailure.Should().BeTrue();
-         result.Error.Should().BeOfType<RoleForbiddenError>();
-         result.Error.HttpStatusCode.Should().Be((int)HttpStatusCode.Forbidden);
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<RoleForbiddenError>();
+        result.Error.HttpStatusCode.Should().Be((int)HttpStatusCode.Forbidden);
     }
 
     [Test]
@@ -126,11 +127,11 @@ public sealed class RoleServiceTests
             "  New desc  ",
             ManageGlobalExercisesClaim);
 
-         var updated = _roleRepository.Roles.Single(r => r.Id == roleId);
-         updated.Name.Should().Be("Senior Coach");
-         updated.Description.Should().Be("New desc");
-         _roleRepository.RoleClaims[updated.Id].Should().Equal(ManageGlobalExercisesClaim);
-         _unitOfWork.SaveChangesCalls.Should().Be(1);
+        var updated = _roleRepository.Roles.Single(r => r.Id == roleId);
+        updated.Name.Should().Be("Senior Coach");
+        updated.Description.Should().Be("New desc");
+        _roleRepository.RoleClaims[updated.Id].Should().Equal(ManageGlobalExercisesClaim);
+        _unitOfWork.SaveChangesCalls.Should().Be(1);
     }
 
     [Test]
@@ -139,11 +140,11 @@ public sealed class RoleServiceTests
         var userRole = new Role { Id = Id<Role>.New(), Name = AuthConstants.Roles.User };
         _roleRepository.Roles.Add(userRole);
 
-         var result = await _service.DeleteRoleAsync(userRole.Id);
+        var result = await _service.DeleteRoleAsync(userRole.Id);
 
-         result.IsFailure.Should().BeTrue();
-         result.Error.Should().BeOfType<RoleForbiddenError>();
-         result.Error.HttpStatusCode.Should().Be((int)HttpStatusCode.Forbidden);
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<RoleForbiddenError>();
+        result.Error.HttpStatusCode.Should().Be((int)HttpStatusCode.Forbidden);
     }
 
     [Test]
@@ -152,10 +153,10 @@ public sealed class RoleServiceTests
         var role = new Role { Id = Id<Role>.New(), Name = "Coach" };
         _roleRepository.Roles.Add(role);
 
-         await _service.DeleteRoleAsync(role.Id);
+        await _service.DeleteRoleAsync(role.Id);
 
-         _roleRepository.Roles.Any(r => r.Id == role.Id).Should().BeFalse();
-         _unitOfWork.SaveChangesCalls.Should().Be(1);
+        _roleRepository.Roles.Any(r => r.Id == role.Id).Should().BeFalse();
+        _unitOfWork.SaveChangesCalls.Should().Be(1);
     }
 
     [Test]
@@ -168,21 +169,22 @@ public sealed class RoleServiceTests
         var analyst = new Role { Id = Id<Role>.New(), Name = "Analyst" };
         _roleRepository.Roles.AddRange([coach, analyst]);
 
-         await _service.UpdateUserRolesAsync((Id<User>)userId, [" coach ", "ANALYST", "coach"]);
+        await _service.UpdateUserRolesAsync((Id<User>)userId, [" coach ", "ANALYST", "coach"]);
 
-         _roleRepository.UserRoleAssignments.TryGetValue(userId, out var roles).Should().BeTrue();
-         roles!.Should().BeEquivalentTo(new[] { coach.Id, analyst.Id });
-         _unitOfWork.SaveChangesCalls.Should().Be(1);
+        _roleRepository.UserRoleAssignments.TryGetValue(userId, out var roles).Should().BeTrue();
+        roles!.Should().BeEquivalentTo(new[] { coach.Id, analyst.Id });
+        _unitOfWork.SaveChangesCalls.Should().Be(1);
     }
 
     [Test]
     public async Task UpdateUserRolesAsync_ReturnsFailure_WhenUserMissing()
     {
-         var result = await _service.UpdateUserRolesAsync(Id<User>.New(), ["Coach"]);
+        var result = await _service.UpdateUserRolesAsync(Id<User>.New(), ["Coach"]);
 
-         result.IsFailure.Should().BeTrue();
-         result.Error.Should().BeOfType<RoleNotFoundError>();
-         result.Error.HttpStatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<RoleNotFoundError>();
+        result.Error.HttpStatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        _unitOfWork.SaveChangesCalls.Should().Be(0);
     }
 
     [Test]
@@ -191,35 +193,36 @@ public sealed class RoleServiceTests
         var userId = Id<User>.New();
         _userRepository.Users.Add(new User { Id = (Domain.ValueObjects.Id<User>)userId, Name = "u", Email = "u@x.com" });
 
-         var result = await _service.UpdateUserRolesAsync((Id<User>)userId, ["UnknownRole"]);
+        var result = await _service.UpdateUserRolesAsync((Id<User>)userId, ["UnknownRole"]);
 
-         result.IsFailure.Should().BeTrue();
-         result.Error.Should().BeOfType<InvalidRoleError>();
-         result.Error.HttpStatusCode.Should().Be((int)HttpStatusCode.BadRequest);
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<InvalidRoleError>();
+        result.Error.HttpStatusCode.Should().Be((int)HttpStatusCode.BadRequest);
+        _unitOfWork.SaveChangesCalls.Should().Be(0);
     }
 
     [Test]
     public void GetAvailablePermissionClaims_ReturnsLocalizedCatalog()
     {
-         var claims = _service.GetAvailablePermissionClaims();
+        var claims = _service.GetAvailablePermissionClaims();
 
-         claims.Select(c => c.ClaimValue).Should().Equal(AuthConstants.Permissions.All.OrderBy(c => c, StringComparer.Ordinal).ToList());
-         claims.All(c => c.ClaimType == AuthConstants.PermissionClaimType).Should().BeTrue();
-         claims.All(c => !string.IsNullOrWhiteSpace(c.DisplayName)).Should().BeTrue();
+        claims.Select(c => c.ClaimValue).Should().Equal(AuthConstants.Permissions.All.OrderBy(c => c, StringComparer.Ordinal).ToList());
+        claims.All(c => c.ClaimType == AuthConstants.PermissionClaimType).Should().BeTrue();
+        claims.All(c => !string.IsNullOrWhiteSpace(c.DisplayName)).Should().BeTrue();
     }
 
     private sealed class InMemoryUserRepository : IUserRepository
     {
         public List<User> Users { get; } = new();
 
-         public Task<User?> FindByIdAsync(Id<LgymApi.Domain.Entities.User> id, CancellationToken cancellationToken = default)
-             => Task.FromResult(Users.FirstOrDefault(u => u.Id == id));
+        public Task<User?> FindByIdAsync(Id<LgymApi.Domain.Entities.User> id, CancellationToken cancellationToken = default)
+            => Task.FromResult(Users.FirstOrDefault(u => u.Id == id));
 
-         public Task<User?> FindByIdIncludingDeletedAsync(Id<LgymApi.Domain.Entities.User> id, CancellationToken cancellationToken = default)
-             => Task.FromResult(Users.FirstOrDefault(u => u.Id == id));
+        public Task<User?> FindByIdIncludingDeletedAsync(Id<LgymApi.Domain.Entities.User> id, CancellationToken cancellationToken = default)
+            => Task.FromResult(Users.FirstOrDefault(u => u.Id == id));
 
-         public Task<User?> FindByIdWithRolesAsync(Id<LgymApi.Domain.Entities.User> id, CancellationToken cancellationToken = default)
-             => Task.FromResult(Users.FirstOrDefault(u => u.Id == id));
+        public Task<User?> FindByIdWithRolesAsync(Id<LgymApi.Domain.Entities.User> id, CancellationToken cancellationToken = default)
+            => Task.FromResult(Users.FirstOrDefault(u => u.Id == id));
 
         public Task<User?> FindByNameAsync(string name, CancellationToken cancellationToken = default)
             => Task.FromResult(Users.FirstOrDefault(u => u.Name == name));
@@ -312,10 +315,10 @@ public sealed class RoleServiceTests
             return Task.FromResult(claims);
         }
 
-         public Task<List<string>> GetPermissionClaimsByRoleIdAsync(Id<Role> roleId, CancellationToken cancellationToken = default)
-             => Task.FromResult(RoleClaims.TryGetValue(roleId, out var claims)
-                 ? claims.OrderBy(c => c).ToList()
-                 : new List<string>());
+        public Task<List<string>> GetPermissionClaimsByRoleIdAsync(Id<Role> roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult(RoleClaims.TryGetValue(roleId, out var claims)
+                ? claims.OrderBy(c => c).ToList()
+                : new List<string>());
 
         public Task<Dictionary<Id<Role>, List<string>>> GetPermissionClaimsByRoleIdsAsync(IReadOnlyCollection<Id<Role>> roleIds, CancellationToken cancellationToken = default)
         {
@@ -396,24 +399,24 @@ public sealed class RoleServiceTests
 
         public Task AddUserRolesAsync(Id<User> userId, IReadOnlyCollection<Id<Role>> roleIds, CancellationToken cancellationToken = default)
         {
-             var userIdGuid = userId;
-             if (!UserRoleAssignments.TryGetValue(userIdGuid, out var assignments))
-             {
-                 assignments = new List<Id<Role>>();
-                 UserRoleAssignments[userIdGuid] = assignments;
-             }
+            var userIdGuid = userId;
+            if (!UserRoleAssignments.TryGetValue(userIdGuid, out var assignments))
+            {
+                assignments = new List<Id<Role>>();
+                UserRoleAssignments[userIdGuid] = assignments;
+            }
 
-             foreach (var roleId in roleIds.Where(roleId => !assignments.Contains(roleId)))
-             {
-                 assignments.Add(roleId);
-             }
+            foreach (var roleId in roleIds.Where(roleId => !assignments.Contains(roleId)))
+            {
+                assignments.Add(roleId);
+            }
 
-             return Task.CompletedTask;
-         }
+            return Task.CompletedTask;
+        }
 
-         public Task ReplaceUserRolesAsync(Id<User> userId, IReadOnlyCollection<Id<Role>> roleIds, CancellationToken cancellationToken = default)
-         {
-             UserRoleAssignments[userId] = roleIds.Distinct().ToList();
+        public Task ReplaceUserRolesAsync(Id<User> userId, IReadOnlyCollection<Id<Role>> roleIds, CancellationToken cancellationToken = default)
+        {
+            UserRoleAssignments[userId] = roleIds.Distinct().ToList();
             return Task.CompletedTask;
         }
 

@@ -2,14 +2,22 @@ using FluentAssertions;
 using LgymApi.Api;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Features.Trainer.Controllers;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
-using LgymApi.Application.Features.TraineeNotes;
-using LgymApi.Application.Features.TraineeNotes.Models;
+using LgymApi.Api.Middleware;
+using LgymApi.Application.Coaching.TraineeNotes.Create;
+using LgymApi.Application.Coaching.TraineeNotes.Delete;
+using LgymApi.Application.Coaching.TraineeNotes.History;
+using LgymApi.Application.Coaching.TraineeNotes.Models;
+using LgymApi.Application.Coaching.TraineeNotes.TrainerList;
+using LgymApi.Application.Coaching.TraineeNotes.Update;
+using LgymApi.Application.Coaching.ApiAdapters;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,11 +31,11 @@ public sealed class TrainerTraineeNotesControllerTests
     [Test]
     public async Task GetNotes_WithInvalidTraineeId_ForwardsEmptyIdToService()
     {
-        var service = Substitute.For<ITraineeNoteService>();
+        var listNotes = Substitute.For<IListTrainerNotesUseCase>();
         Id<User> capturedId = Id<User>.New();
-        service.GetTrainerNotesAsync(Arg.Any<User>(), Arg.Do<Id<User>>(id => capturedId = id), Arg.Any<CancellationToken>())
-            .Returns(Result.Success<List<TraineeNoteResult>, AppError>([]));
-        var controller = CreateController(service);
+        listNotes.ExecuteAsync(Arg.Do<ListTrainerNotesQuery>(query => capturedId = query.TraineeId), Arg.Any<CancellationToken>())
+            .Returns(Result.Success<IReadOnlyList<TraineeNoteReadModel>, AppError>([]));
+        var controller = CreateController(listNotes: listNotes);
 
         var result = await controller.GetNotes("bad-id");
 
@@ -38,12 +46,12 @@ public sealed class TrainerTraineeNotesControllerTests
     [Test]
     public async Task CreateNote_WithValidRequest_MapsCommandAndReturnsCreated()
     {
-        var service = Substitute.For<ITraineeNoteService>();
+        var createNote = Substitute.For<ICreateTraineeNoteUseCase>();
         var traineeId = Id<User>.New();
-        UpsertTraineeNoteCommand? captured = null;
-        service.CreateTrainerNoteAsync(Arg.Any<User>(), traineeId, Arg.Do<UpsertTraineeNoteCommand>(cmd => captured = cmd), Arg.Any<CancellationToken>())
-            .Returns(Result.Success<TraineeNoteResult, AppError>(CreateNoteResult()));
-        var controller = CreateController(service);
+        CreateTraineeNoteCommand? captured = null;
+        createNote.ExecuteAsync(Arg.Do<CreateTraineeNoteCommand>(command => captured = command), Arg.Any<CancellationToken>())
+            .Returns(Result.Success<TraineeNoteReadModel, AppError>(CreateNoteResult()));
+        var controller = CreateController(createNote: createNote);
 
         var result = await controller.CreateNote(traineeId.ToString(), new UpsertTraineeNoteRequest
         {
@@ -56,13 +64,14 @@ public sealed class TrainerTraineeNotesControllerTests
         result.Should().BeOfType<ObjectResult>();
         ((ObjectResult)result).StatusCode.Should().Be(StatusCodes.Status201Created);
         captured.Should().NotBeNull();
-        captured!.Content.Should().Be("Warm up first");
+        captured.Should().NotBeNull();
+        captured!.Data.Content.Should().Be("Warm up first");
     }
 
     [Test]
     public async Task UpdateNote_WithInvalidIds_ReturnsBadRequest()
     {
-        var controller = CreateController(Substitute.For<ITraineeNoteService>());
+        var controller = CreateController();
 
         (await controller.UpdateNote("bad-user", Id<TraineeNote>.New().ToString(), new UpsertTraineeNoteRequest())).Should().BeAssignableTo<ObjectResult>();
         (await controller.UpdateNote(Id<User>.New().ToString(), "bad-note", new UpsertTraineeNoteRequest())).Should().BeAssignableTo<ObjectResult>();
@@ -71,12 +80,12 @@ public sealed class TrainerTraineeNotesControllerTests
     [Test]
     public async Task UpdateNote_WithValidIds_ReturnsMappedDto()
     {
-        var service = Substitute.For<ITraineeNoteService>();
+        var updateNote = Substitute.For<IUpdateTraineeNoteUseCase>();
         var traineeId = Id<User>.New();
         var noteId = Id<TraineeNote>.New();
-        service.UpdateTrainerNoteAsync(Arg.Any<User>(), traineeId, noteId, Arg.Any<UpsertTraineeNoteCommand>(), Arg.Any<CancellationToken>())
-            .Returns(Result.Success<TraineeNoteResult, AppError>(CreateNoteResult()));
-        var controller = CreateController(service);
+        updateNote.ExecuteAsync(Arg.Any<UpdateTraineeNoteCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Success<TraineeNoteReadModel, AppError>(CreateNoteResult()));
+        var controller = CreateController(updateNote: updateNote);
 
         var result = await controller.UpdateNote(traineeId.ToString(), noteId.ToString(), new UpsertTraineeNoteRequest { Content = "Updated" });
 
@@ -86,7 +95,7 @@ public sealed class TrainerTraineeNotesControllerTests
     [Test]
     public async Task DeleteNote_WithInvalidIds_ReturnsBadRequest()
     {
-        var controller = CreateController(Substitute.For<ITraineeNoteService>());
+        var controller = CreateController();
 
         (await controller.DeleteNote("bad-user", Id<TraineeNote>.New().ToString())).Should().BeAssignableTo<ObjectResult>();
         (await controller.DeleteNote(Id<User>.New().ToString(), "bad-note")).Should().BeAssignableTo<ObjectResult>();
@@ -95,12 +104,12 @@ public sealed class TrainerTraineeNotesControllerTests
     [Test]
     public async Task DeleteNote_WithValidIds_ReturnsDeletedMessage()
     {
-        var service = Substitute.For<ITraineeNoteService>();
+        var deleteNote = Substitute.For<IDeleteTraineeNoteUseCase>();
         var traineeId = Id<User>.New();
         var noteId = Id<TraineeNote>.New();
-        service.DeleteTrainerNoteAsync(Arg.Any<User>(), traineeId, noteId, Arg.Any<CancellationToken>())
+        deleteNote.ExecuteAsync(Arg.Any<DeleteTraineeNoteCommand>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success<Unit, AppError>(Unit.Value));
-        var controller = CreateController(service);
+        var controller = CreateController(deleteNote: deleteNote);
 
         var result = await controller.DeleteNote(traineeId.ToString(), noteId.ToString());
 
@@ -110,20 +119,19 @@ public sealed class TrainerTraineeNotesControllerTests
     [Test]
     public async Task GetNoteHistory_WithValidIds_ReturnsMappedDtos()
     {
-        var service = Substitute.For<ITraineeNoteService>();
+        var history = Substitute.For<IGetTraineeNoteHistoryUseCase>();
         var traineeId = Id<User>.New();
         var noteId = Id<TraineeNote>.New();
-        service.GetTrainerNoteHistoryAsync(Arg.Any<User>(), traineeId, noteId, Arg.Any<CancellationToken>())
-            .Returns(Result.Success<List<TraineeNoteHistoryResult>, AppError>([new TraineeNoteHistoryResult
-            {
-                Id = Id<TraineeNoteHistory>.New(),
-                TraineeNoteId = noteId,
-                ChangedByUserId = Id<User>.New(),
-                ChangedAt = DateTimeOffset.UtcNow,
-                NewContent = "Updated",
-                ChangeType = "Update"
-            }]));
-        var controller = CreateController(service);
+        history.ExecuteAsync(Arg.Any<GetTraineeNoteHistoryQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Success<IReadOnlyList<TraineeNoteHistoryReadModel>, AppError>([new TraineeNoteHistoryReadModel(
+                Id<TraineeNoteHistory>.New(),
+                noteId,
+                Id<User>.New(),
+                DateTimeOffset.UtcNow,
+                null,
+                "Updated",
+                "Update")]));
+        var controller = CreateController(history: history);
 
         var result = await controller.GetNoteHistory(traineeId.ToString(), noteId.ToString());
 
@@ -134,39 +142,45 @@ public sealed class TrainerTraineeNotesControllerTests
     [Test]
     public async Task GetNoteHistory_WithInvalidIds_ReturnsBadRequest()
     {
-        var controller = CreateController(Substitute.For<ITraineeNoteService>());
+        var controller = CreateController();
 
         (await controller.GetNoteHistory("bad-user", Id<TraineeNote>.New().ToString())).Should().BeAssignableTo<ObjectResult>();
         (await controller.GetNoteHistory(Id<User>.New().ToString(), "bad-note")).Should().BeAssignableTo<ObjectResult>();
     }
 
-    private static TrainerTraineeNotesController CreateController(ITraineeNoteService service)
+    private static TrainerTraineeNotesController CreateController(
+        IListTrainerNotesUseCase? listNotes = null,
+        ICreateTraineeNoteUseCase? createNote = null,
+        IUpdateTraineeNoteUseCase? updateNote = null,
+        IDeleteTraineeNoteUseCase? deleteNote = null,
+        IGetTraineeNoteHistoryUseCase? history = null)
     {
         var services = new ServiceCollection();
-        services.AddApplicationMapping(typeof(Program).Assembly, typeof(IMappingProfile).Assembly);
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetRequiredService<IMapper>();
-        var controller = new TrainerTraineeNotesController(service, mapper)
+        var controller = new TrainerTraineeNotesController(
+            new TrainerTraineeNotesApiAdapter(listNotes ?? Substitute.For<IListTrainerNotesUseCase>(), createNote ?? Substitute.For<ICreateTraineeNoteUseCase>(), updateNote ?? Substitute.For<IUpdateTraineeNoteUseCase>(), deleteNote ?? Substitute.For<IDeleteTraineeNoteUseCase>(), history ?? Substitute.For<IGetTraineeNoteHistoryUseCase>(), mapper),
+            mapper)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
-        controller.HttpContext.Items["User"] = new User { Id = Id<User>.New(), Name = "Trainer", Email = "trainer@notes.test", ProfileRank = "Rookie" };
+        controller.HttpContext.Features.Set<IAuthenticatedAccountContextFeature>(new AuthenticatedAccountContextFeature(
+            new AuthenticatedAccountContext(Id<AccountReference>.New(), null, [], [], false, false)));
         return controller;
     }
 
-    private static TraineeNoteResult CreateNoteResult()
-        => new()
-        {
-            Id = Id<TraineeNote>.New(),
-            TrainerId = Id<User>.New(),
-            TraineeId = Id<User>.New(),
-            Title = "Reminder",
-            Content = "Warm up first",
-            VisibleToTrainee = true,
-            IsPinned = true,
-            LastUpdatedByUserId = Id<User>.New(),
-            LastUpdatedAt = DateTimeOffset.UtcNow,
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow
-        };
+    private static TraineeNoteReadModel CreateNoteResult()
+        => new(
+            Id<TraineeNote>.New(),
+            Id<User>.New(),
+            Id<User>.New(),
+            "Reminder",
+            "Warm up first",
+            true,
+            true,
+            Id<User>.New(),
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
 }

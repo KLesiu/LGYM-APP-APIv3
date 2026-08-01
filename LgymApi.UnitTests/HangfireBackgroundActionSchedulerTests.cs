@@ -26,12 +26,12 @@ public sealed class HangfireBackgroundActionSchedulerTests
         var created = client.CreatedJobs[0];
         created.Job.Type.Should().Be(typeof(IActionMessageJob));
         created.Job.Method.Name.Should().Be("ExecuteAsync");
-        created.Job.Args[0].Should().Be(actionMessageId);
+        created.Job.Args[0].Should().Be(actionMessageId.ToString());
         created.State.Should().BeOfType<EnqueuedState>();
     }
 
     [Test]
-    public void Enqueue_PassesOnlyTypedId_NoPayloadObject()
+    public void Enqueue_PassesOnlyStringId_NoPayloadObject()
     {
         var client = new FakeBackgroundJobClient();
         var scheduler = new HangfireActionMessageScheduler(client);
@@ -41,7 +41,7 @@ public sealed class HangfireBackgroundActionSchedulerTests
 
         var created = client.CreatedJobs[0];
         created.Job.Args.Should().HaveCount(1);
-        created.Job.Args[0].Should().BeOfType<Id<CommandEnvelope>>();
+        created.Job.Args[0].Should().BeOfType<string>().Which.Should().Be(actionMessageId.ToString());
     }
 
     private sealed class FakeBackgroundJobClient : IBackgroundJobClient

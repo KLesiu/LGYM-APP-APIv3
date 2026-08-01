@@ -6,26 +6,13 @@ namespace LgymApi.ArchitectureTests;
 [TestFixture]
 public sealed class ServiceTransactionHeuristicGuardTests
 {
-    private static readonly HashSet<string> AllowlistedMethods = new(StringComparer.Ordinal)
-    {
-        // Keep this list intentionally small and local.
-        // Add "ServiceName.MethodName" entries only when the heuristic
-        // would otherwise flag a proven-safe multi-write flow.
-    };
-
     [Test]
-    public void Multi_Write_Service_Methods_Should_Use_A_Commit_Boundary_Or_Be_Allowlisted()
+    public void Multi_Write_Service_Methods_Should_Use_A_Commit_Boundary()
     {
-        var repoRoot = ResolveRepositoryRoot();
-        var applicationRoot = Path.Combine(repoRoot, "LgymApi.Application");
-
-        Assert.That(Directory.Exists(applicationRoot), Is.True, $"Application root '{applicationRoot}' not found.");
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
 
         var parseOptions = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
-        var serviceFiles = Directory
-            .EnumerateFiles(applicationRoot, "*.cs", SearchOption.AllDirectories)
-            .Where(path => !IsInBuildArtifacts(path))
-            .ToList();
+        var serviceFiles = ArchitectureTestHelpers.EnumerateProductionSourceFiles("LgymApi.Application");
 
         Assert.That(serviceFiles, Is.Not.Empty, "No application source files found for transaction heuristic guard test.");
 
@@ -51,12 +38,6 @@ public sealed class ServiceTransactionHeuristicGuardTests
                         continue;
                     }
 
-                    var allowlistKey = GetAllowlistKey(serviceClass.Identifier.ValueText, method.Identifier.ValueText);
-                    if (AllowlistedMethods.Contains(allowlistKey))
-                    {
-                        continue;
-                    }
-
                     var lineSpan = tree.GetLineSpan(method.Span);
                     violations.Add(new Violation(
                         Path.GetRelativePath(repoRoot, serviceFile),
@@ -74,8 +55,67 @@ public sealed class ServiceTransactionHeuristicGuardTests
         Assert.That(
             violations,
             Is.Empty,
-            "Multi-write service methods must either commit through SaveChanges/transaction boundaries or be explicitly allowlisted." + Environment.NewLine +
+            "Multi-write service methods must commit through SaveChanges or transaction boundaries." + Environment.NewLine +
             string.Join(Environment.NewLine, violations.Select(v => v.ToString())));
+    }
+
+    [TestCase("firstRepository.Add(); secondRepository.Update();", 1, 2, 0, 0)]
+    [TestCase("firstRepository.Add(); secondRepository.Update(); unitOfWork.SaveChangesAsync();", 0, 0, 0, 0)]
+    [TestCase("firstRepository.Add(); secondRepository.Update(); unitOfWork.BeginTransactionAsync();", 0, 0, 0, 0)]
+    [TestCase("repository.Add();", 0, 0, 0, 0)]
+    public void Transaction_Boundary_Fixtures_Should_Produce_Deterministic_Results(
+        string methodBody,
+        int expectedViolationCount,
+        int expectedWriteCount,
+        int expectedSaveCount,
+        int expectedTransactionCount)
+    {
+        var source = $$"""
+            namespace Example;
+
+            public sealed class FixtureService
+            {
+                public void Execute()
+                {
+                    {{methodBody}}
+                }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(
+            source,
+            CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest),
+            path: "TransactionFixture.cs");
+        var method = tree.GetCompilationUnitRoot()
+            .DescendantNodes()
+            .OfType<MethodDeclarationSyntax>()
+            .Single();
+        var analysis = Analyze(method);
+        var isViolation = analysis.IsMultiWriteCandidate && !analysis.HasCommitBoundary;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(isViolation ? 1 : 0, Is.EqualTo(expectedViolationCount));
+            if (expectedViolationCount == 1)
+            {
+                Assert.That(analysis.RepositoryWriteCount, Is.EqualTo(expectedWriteCount));
+                Assert.That(analysis.SaveChangesCount, Is.EqualTo(expectedSaveCount));
+                Assert.That(analysis.BeginTransactionCount, Is.EqualTo(expectedTransactionCount));
+                Assert.That(analysis.RepositoryWriteCalls, Is.EqualTo(new[] { "Add", "Update" }));
+            }
+        });
+    }
+
+    [Test]
+    public void Legacy_Exception_Hook_Should_Be_Absent()
+    {
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var guardSource = File.ReadAllText(Path.Combine(
+            repoRoot,
+            "LgymApi.ArchitectureTests",
+            "ServiceTransactionHeuristicGuardTests.cs"));
+        var forbiddenTerm = string.Concat("allow", "list");
+
+        Assert.That(guardSource.Contains(forbiddenTerm, StringComparison.OrdinalIgnoreCase), Is.False);
     }
 
     private static MethodAnalysis Analyze(MethodDeclarationSyntax method)
@@ -170,41 +210,13 @@ public sealed class ServiceTransactionHeuristicGuardTests
 
     private static bool IsPublicMethod(MethodDeclarationSyntax method)
     {
-        return method.Modifiers.Any(modifier => modifier.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.PublicKeyword);
+        return method.Modifiers.Any(modifier => Microsoft.CodeAnalysis.CSharpExtensions.IsKind(modifier, Microsoft.CodeAnalysis.CSharp.SyntaxKind.PublicKeyword));
     }
 
     private static bool IsConcreteService(ClassDeclarationSyntax typeDeclaration)
     {
         return typeDeclaration.Identifier.ValueText.EndsWith("Service", StringComparison.Ordinal)
-            && !typeDeclaration.Modifiers.Any(modifier => modifier.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.AbstractKeyword);
-    }
-
-    private static bool IsInBuildArtifacts(string path)
-    {
-        var normalized = path.Replace('\\', '/');
-        return normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string GetAllowlistKey(string serviceName, string methodName)
-    {
-        return $"{serviceName}.{methodName}";
-    }
-
-    private static string ResolveRepositoryRoot()
-    {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current != null)
-        {
-            if (File.Exists(Path.Combine(current.FullName, "LgymApi.sln")))
-            {
-                return current.FullName;
-            }
-
-            current = current.Parent;
-        }
-
-        throw new InvalidOperationException("Unable to locate repository root.");
+            && !typeDeclaration.Modifiers.Any(modifier => Microsoft.CodeAnalysis.CSharpExtensions.IsKind(modifier, Microsoft.CodeAnalysis.CSharp.SyntaxKind.AbstractKeyword));
     }
 
     private sealed record MethodAnalysis(

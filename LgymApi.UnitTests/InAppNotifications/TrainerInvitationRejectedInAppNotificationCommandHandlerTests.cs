@@ -1,15 +1,15 @@
+using System.Text.Json;
 using FluentAssertions;
-using LgymApi.Resources;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
-using LgymApi.Application.Notifications;
-using LgymApi.Application.Notifications.Models;
+using LgymApi.Application.Coaching.Contracts.BackgroundCommands;
+using LgymApi.Application.Coaching.Contracts.Notifications;
+using LgymApi.Application.Notifications.Contracts.InApp;
+using LgymApi.Application.Platform.Contracts.Serialization;
 using LgymApi.BackgroundWorker.Actions;
-using LgymApi.BackgroundWorker.Common.Commands;
 using LgymApi.Domain.Entities;
-using LgymApi.Domain.Notifications;
 using LgymApi.Domain.ValueObjects;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
+using NSubstitute;
+using NUnit.Framework;
 
 namespace LgymApi.UnitTests.InAppNotifications;
 
@@ -17,57 +17,24 @@ namespace LgymApi.UnitTests.InAppNotifications;
 public sealed class TrainerInvitationRejectedInAppNotificationCommandHandlerTests
 {
     [Test]
-    public async Task ExecuteAsync_Success_CreatesExpectedNotification()
+    public async Task ExecuteAsync_SerializesCanonicalCommandAndForwardsScalarPreparation()
     {
-        var service = new FakeNotificationService(Result<InAppNotificationResult, AppError>.Success(CreateResult()));
-        var handler = new TrainerInvitationRejectedInAppNotificationCommandHandler(service, NullLogger<TrainerInvitationRejectedInAppNotificationCommandHandler>.Instance);
-        var command = new TrainerInvitationRejectedInAppNotificationCommand { InvitationId = Id<TrainerInvitation>.New(), TrainerId = Id<User>.New(), TraineeId = Id<User>.New() };
+        var command = new TrainerInvitationRejectedInAppNotificationCommand
+        {
+            InvitationId = Id<TrainerInvitation>.New(), TrainerId = Id<User>.New(), TraineeId = Id<User>.New()
+        };
+        var preparationPort = Substitute.For<ITrainerInvitationRejectedInAppPreparationPort>();
+        var deliveryPort = Substitute.For<ITrainerInvitationRejectedInAppDeliveryPort>();
+        preparationPort.PrepareAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new TrainerInvitationRejectedInAppPreparation(
+            command.InvitationId.ToString(), command.TrainerId.ToString(), command.TraineeId.ToString()));
+        var handler = new TrainerInvitationRejectedInAppNotificationCommandHandler(preparationPort, deliveryPort,
+            Substitute.For<ILogger<TrainerInvitationRejectedInAppNotificationCommandHandler>>());
 
         await handler.ExecuteAsync(command);
 
-        service.Calls.Should().Be(1);
-        service.LastInput!.RecipientId.Should().Be(command.TrainerId);
-        service.LastInput.SenderUserId.Should().Be(command.TraineeId);
-        service.LastInput.DeliveryKey.Should().Be($"trainer-invitation:{command.InvitationId}:rejected");
-        service.LastInput.IsSystemNotification.Should().BeFalse();
-        service.LastInput.Message.Should().Be(Messages.TrainerInvitationRejected);
-        service.LastInput.RedirectUrl.Should().Be("/trainer/invitations");
-        service.LastInput.Type.Should().Be(InAppNotificationTypes.InvitationRejected);
-    }
-
-    [Test]
-    public async Task ExecuteAsync_Failure_StillInvokesService()
-    {
-        var service = new FakeNotificationService(Result<InAppNotificationResult, AppError>.Failure(new BadRequestError("boom")));
-        var handler = new TrainerInvitationRejectedInAppNotificationCommandHandler(service, NullLogger<TrainerInvitationRejectedInAppNotificationCommandHandler>.Instance);
-
-        await handler.ExecuteAsync(new TrainerInvitationRejectedInAppNotificationCommand { InvitationId = Id<TrainerInvitation>.New(), TrainerId = Id<User>.New(), TraineeId = Id<User>.New() });
-
-        service.Calls.Should().Be(1);
-    }
-
-    private static InAppNotificationResult CreateResult()
-        => new(Id<InAppNotification>.New(), Id<User>.New(), "message", null, false, InAppNotificationTypes.InvitationRejected, false, null, DateTimeOffset.UtcNow);
-
-    private sealed class FakeNotificationService : IInAppNotificationService
-    {
-        private readonly Result<InAppNotificationResult, AppError> _result;
-
-        public FakeNotificationService(Result<InAppNotificationResult, AppError> result) => _result = result;
-
-        public int Calls { get; private set; }
-        public CreateInAppNotificationInput? LastInput { get; private set; }
-
-        public Task<Result<InAppNotificationResult, AppError>> CreateAsync(CreateInAppNotificationInput input, CancellationToken cancellationToken = default)
-        {
-            Calls++;
-            LastInput = input;
-            return Task.FromResult(_result);
-        }
-
-        public Task<Result<PagedResult<InAppNotificationResult>, AppError>> GetForUserAsync(Id<User> userId, CursorPaginationQuery query, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<Result<Unit, AppError>> MarkAsReadAsync(Id<InAppNotification> notificationId, Id<User> requestingUserId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<Result<Unit, AppError>> MarkAllAsReadAsync(Id<User> userId, DateTimeOffset? before, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<Result<int, AppError>> GetUnreadCountAsync(Id<User> userId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        var serialized = JsonSerializer.Serialize(command, SharedSerializationOptions.Current);
+        await preparationPort.Received(1).PrepareAsync(serialized, Arg.Any<CancellationToken>());
+        await deliveryPort.Received(1).DeliverAsync(new TrainerInvitationRejectedInAppDeliveryRequest(
+            command.InvitationId.ToString(), command.TrainerId.ToString(), command.TraineeId.ToString()), Arg.Any<CancellationToken>());
     }
 }

@@ -16,14 +16,14 @@ public static class IdempotencyKeyPolicy
     /// <param name="correlationId">Correlation ID (must not be empty)</param>
     /// <returns>Idempotency key as string (format: correlation ID in "D" format)</returns>
     /// <exception cref="ArgumentException">Thrown if correlationId is empty</exception>
-    public static string CalculateKey(Id<CorrelationScope> correlationId)
+    public static string CalculateKey(string correlationId)
     {
-        if (correlationId.IsEmpty)
+        if (!Id<CorrelationScope>.TryParse(correlationId, out var parsedCorrelationId) || parsedCorrelationId.IsEmpty)
         {
             throw new ArgumentException("Correlation ID cannot be empty.", nameof(correlationId));
         }
 
-        return correlationId.ToString();
+        return parsedCorrelationId.ToString();
     }
 
     /// <summary>
@@ -45,7 +45,7 @@ public static class IdempotencyKeyPolicy
     /// <param name="idempotencyKey">Idempotency key to verify (may be null)</param>
     /// <param name="correlationId">Correlation ID to match against</param>
     /// <returns>True if the key matches the correlation ID, false otherwise</returns>
-    public static bool IsKeyForCorrelation(string? idempotencyKey, Id<CorrelationScope> correlationId)
+    public static bool IsKeyForCorrelation(string? idempotencyKey, string correlationId)
     {
         if (string.IsNullOrEmpty(idempotencyKey))
         {

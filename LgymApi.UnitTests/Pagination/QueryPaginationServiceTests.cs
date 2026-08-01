@@ -1,6 +1,6 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Pagination;
 using LgymApi.Infrastructure.Pagination;
 using NUnit.Framework;

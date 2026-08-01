@@ -1,11 +1,14 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Data.SeedData;
+using LgymApi.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -56,6 +59,25 @@ public sealed class TraineeNotesApiTests : IntegrationTestBase
         visibleNotesResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var visibleNotes = await visibleNotesResponse.Content.ReadFromJsonAsync<List<TraineeNoteResponse>>();
         visibleNotes.Should().ContainSingle(x => x.Id == created.Id);
+
+        SetAuthorizationHeader(trainer.Id);
+        var deleteResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/notes/{created.Id}/delete", null);
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var deleted = JsonDocument.Parse(await deleteResponse.Content.ReadAsStringAsync());
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
+        try
+        {
+            deleted.RootElement.GetProperty("msg").GetString().Should().Be(Messages.Deleted);
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
+
+        SetAuthorizationHeader(trainee.Id);
+        var deletedNoteResponse = await Client.GetAsync($"/api/trainee/notes/{created.Id}");
+        deletedNoteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -111,6 +133,44 @@ public sealed class TraineeNotesApiTests : IntegrationTestBase
         var notes = await notesResponse.Content.ReadFromJsonAsync<List<TraineeNoteResponse>>();
         notes.Should().NotBeNull();
         notes.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task MalformedNoteIds_PreserveLegacyErrorPrecedenceAndMessages()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
+        try
+        {
+            var trainer = await SeedTrainerAsync("trainer-malformed-note", "trainer-malformed-note@example.com");
+            SetAuthorizationHeader(trainer.Id);
+
+            var malformedTrainee = await Client.GetAsync("/api/trainer/trainees/not-a-guid/notes");
+            malformedTrainee.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var traineeError = JsonDocument.Parse(await malformedTrainee.Content.ReadAsStringAsync());
+            traineeError.RootElement.GetProperty("msg").GetString().Should().Be(Messages.UserIdRequired);
+
+            var malformedNote = await Client.PostAsJsonAsync(
+                $"/api/trainer/trainees/{Id<User>.New()}/notes/not-a-guid/update",
+                new { content = "Ignored" });
+            malformedNote.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var noteError = JsonDocument.Parse(await malformedNote.Content.ReadAsStringAsync());
+            noteError.RootElement.GetProperty("msg").GetString().Should().Be(Messages.FieldRequired);
+
+            var trainee = await SeedUserAsync("trainee-malformed-visible-note", "trainee-malformed-visible-note@example.com", "password123");
+            SetAuthorizationHeader(trainee.Id);
+            var malformedVisibleNote = await Client.GetAsync("/api/trainee/notes/not-a-guid");
+            malformedVisibleNote.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var visibleError = JsonDocument.Parse(await malformedVisibleNote.Content.ReadAsStringAsync());
+            visibleError.RootElement.GetProperty("msg").GetString().Should().Be(Messages.FieldRequired);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
     }
 
     private async Task<User> SeedTrainerAsync(string name, string email)

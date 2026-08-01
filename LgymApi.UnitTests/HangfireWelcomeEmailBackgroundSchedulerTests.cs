@@ -26,7 +26,7 @@ public sealed class HangfireEmailBackgroundSchedulerTests
         var created = client.CreatedJobs[0];
         created.Job.Type.Should().Be(typeof(IEmailJob));
         created.Job.Method.Name.Should().Be("ExecuteAsync");
-        created.Job.Args[0].Should().Be(notificationId);
+        created.Job.Args[0].Should().Be(notificationId.ToString());
         created.State.Should().BeOfType<EnqueuedState>();
     }
 

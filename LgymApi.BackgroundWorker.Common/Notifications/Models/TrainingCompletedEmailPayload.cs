@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json.Serialization;
+using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.Notifications;
 using LgymApi.Domain.ValueObjects;
@@ -39,7 +40,7 @@ public sealed class TrainingCompletedEmailPayload : IEmailPayload
 
 public sealed class TrainingExerciseSummary
 {
-    public string ExerciseId { get; init; } = string.Empty;
+    public Id<Exercise> ExerciseId { get; init; }
     public string ExerciseName { get; init; } = string.Empty;
     public int Series { get; init; }
     public double Reps { get; init; }

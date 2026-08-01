@@ -1,436 +1,194 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Training.Elo;
-using LgymApi.Application.Features.Training;
-using LgymApi.Application.Features.Training.Models;
+using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Services;
-using LgymApi.BackgroundWorker.Common;
-using LgymApi.BackgroundWorker.Common.Commands;
+using LgymApi.Application.WorkoutProgress.Errors;
+using LgymApi.Application.WorkoutProgress.Persistence;
+using LgymApi.Application.WorkoutProgress.Scoring.Elo;
+using LgymApi.Application.WorkoutProgress.TrainingExecution;
+using LgymApi.Application.TrainingPlanning.Contracts.PlanDay;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.Services;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using LgymApi.Resources;
+using LgymApi.TrainingPlanning.Contracts;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
-using NUnit.Framework;
 
 namespace LgymApi.UnitTests;
 
 [TestFixture]
 public sealed class TrainingServiceAddTrainingTests
 {
-    private ITrainingServiceDependencies _deps = null!;
-    private IUserRepository _userRepository = null!;
-    private IGymRepository _gymRepository = null!;
-    private ITrainingRepository _trainingRepository = null!;
-    private IExerciseRepository _exerciseRepository = null!;
-    private IExerciseScoreRepository _exerciseScoreRepository = null!;
-    private ITrainingExerciseScoreRepository _trainingExerciseScoreRepository = null!;
-    private ICommandDispatcher _commandDispatcher = null!;
-    private IEloRegistryRepository _eloRepository = null!;
-    private IRankService _rankService = null!;
+    private IAccountAccessReader _accountAccess = null!;
+    private IWorkoutGymPersistence _gyms = null!;
+    private IWorkoutTrainingPersistence _trainings = null!;
+    private IWorkoutExercisePersistence _exercises = null!;
+    private IWorkoutExerciseScorePersistence _scores = null!;
+    private IWorkoutEloPersistence _elo = null!;
+    private IPlanDayReferenceReadService _planDayReferences = null!;
     private IUnitOfWork _unitOfWork = null!;
-    private TrainingService _service = null!;
+    private ICompleteTrainingUseCase _service = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _userRepository = Substitute.For<IUserRepository>();
-        _gymRepository = Substitute.For<IGymRepository>();
-        _trainingRepository = Substitute.For<ITrainingRepository>();
-        _exerciseRepository = Substitute.For<IExerciseRepository>();
-        _exerciseScoreRepository = Substitute.For<IExerciseScoreRepository>();
-        _trainingExerciseScoreRepository = Substitute.For<ITrainingExerciseScoreRepository>();
-        _commandDispatcher = Substitute.For<ICommandDispatcher>();
-        _eloRepository = Substitute.For<IEloRegistryRepository>();
-        _rankService = Substitute.For<IRankService>();
+        _accountAccess = Substitute.For<IAccountAccessReader>();
+        _gyms = Substitute.For<IWorkoutGymPersistence>();
+        _trainings = Substitute.For<IWorkoutTrainingPersistence>();
+        _exercises = Substitute.For<IWorkoutExercisePersistence>();
+        _scores = Substitute.For<IWorkoutExerciseScorePersistence>();
+        _elo = Substitute.For<IWorkoutEloPersistence>();
+        _planDayReferences = Substitute.For<IPlanDayReferenceReadService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-
-        _deps = Substitute.For<ITrainingServiceDependencies>();
-        _deps.UserRepository.Returns(_userRepository);
-        _deps.GymRepository.Returns(_gymRepository);
-        _deps.TrainingRepository.Returns(_trainingRepository);
-        _deps.ExerciseRepository.Returns(_exerciseRepository);
-        _deps.ExerciseScoreRepository.Returns(_exerciseScoreRepository);
-        _deps.TrainingExerciseScoreRepository.Returns(_trainingExerciseScoreRepository);
-        _deps.CommandDispatcher.Returns(_commandDispatcher);
-        _deps.EloRepository.Returns(_eloRepository);
-        _deps.RankService.Returns(_rankService);
-        _deps.UnitOfWork.Returns(_unitOfWork);
-        _deps.ExerciseEloCalculators.Returns(new IExerciseEloCalculator[]
-        {
-            new StandardExerciseEloCalculator(),
-            new StrengthWeightedExerciseEloCalculator(),
-            new VolumeWeightedExerciseEloCalculator(),
-            new PullupWeightedExerciseEloCalculator()
-        });
-
-        _service = new TrainingService(_deps);
+        _planDayReferences.GetByIdAsync(Arg.Any<Id<PlanDayReference>>(), Arg.Any<CancellationToken>())
+            .Returns(call => new PlanDayReferenceReadModel(call.ArgAt<Id<PlanDayReference>>(0), Id<PlanReference>.New(), "Plan day", true, false));
+        _service = new CompleteTrainingUseCase(
+            _accountAccess,
+            _gyms,
+            _planDayReferences,
+            _trainings,
+            _exercises,
+            _scores,
+            _elo,
+            new FixedRankService(),
+            _unitOfWork,
+            [
+                new StandardExerciseEloCalculator(),
+                new StrengthWeightedExerciseEloCalculator(),
+                new VolumeWeightedExerciseEloCalculator(),
+                new PullupWeightedExerciseEloCalculator()
+            ]);
     }
 
     [Test]
-    public async Task Should_ReturnInternalServerError_When_EloEntryIsNull()
+    public async Task EmptyAccountId_ShouldReturnInvalidTrainingDataError()
     {
-        // Arrange
-        var userId = Id<User>.New();
+        var result = await _service.AddTrainingAsync(Id<AccountReference>.Empty, Input(Id<Gym>.New(), Id<PlanDayReference>.New()));
+        result.Error.Should().BeOfType<InvalidTrainingDataError>();
+    }
+
+    [Test]
+    public async Task MissingAccount_ShouldReturnTrainingNotFoundError()
+    {
+        var accountId = Id<AccountReference>.New();
+        _accountAccess.GetByIdAsync(accountId, Arg.Any<CancellationToken>()).Returns((AccountAccessFacts?)null);
+        var result = await _service.AddTrainingAsync(accountId, Input(Id<Gym>.New(), Id<PlanDayReference>.New()));
+        result.Error.Should().BeOfType<TrainingNotFoundError>();
+    }
+
+    [Test]
+    public async Task MissingEloEntry_ShouldRollbackAndReturnInternalError()
+    {
+        var accountId = Id<AccountReference>.New();
         var gymId = Id<Gym>.New();
-        var planDayId = Id<PlanDay>.New();
-        var exerciseId = Id<Exercise>.New();
-
-        var user = new User
-        {
-            Id = userId,
-            Name = "TestUser",
-            Email = "test@example.com",
-            ProfileRank = "Junior 1"
-        };
-
-        var gym = new Gym { Id = gymId, UserId = userId, Name = "TestGym" };
-
-        var exercises = new List<TrainingExerciseInput>
-        {
-            new() { ExerciseId = exerciseId, Series = 1, Reps = 10, Weight = 80, Unit = WeightUnits.Kilograms }
-        };
-
-        var input = new AddTrainingInput(gymId, planDayId, DateTime.UtcNow, exercises);
-
-        _userRepository.FindByIdAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
-            .Returns(user);
-        _gymRepository.FindByIdAsync(Arg.Any<Id<Gym>>(), Arg.Any<CancellationToken>())
-            .Returns(gym);
-        _exerciseRepository.GetByIdsAsync(Arg.Any<List<Id<Exercise>>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Exercise> { new() { Id = exerciseId, Name = "Bench Press" } });
-        _exerciseScoreRepository.GetByUserAndExercisesAsync(Arg.Any<Id<User>>(), Arg.Any<List<Id<Exercise>>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<ExerciseScore>());
-
         var transaction = Substitute.For<IUnitOfWorkTransaction>();
-        _unitOfWork.BeginTransactionAsync(Arg.Any<CancellationToken>())
-            .Returns(transaction);
+        ArrangeAccountAndGym(accountId, gymId);
+        _unitOfWork.BeginTransactionAsync(Arg.Any<CancellationToken>()).Returns(transaction);
+        _elo.GetLatestEntryAsync(accountId, Arg.Any<CancellationToken>()).Returns((WorkoutEloPersistenceModel?)null);
 
-        _eloRepository.GetLatestEntryAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
-            .Returns((EloRegistry?)null);
+        var result = await _service.AddTrainingAsync(accountId, Input(gymId, Id<PlanDayReference>.New()));
 
-        // Act
-        var result = await _service.AddTrainingAsync(userId, input);
-
-        // Assert
-        result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<InternalServerError>();
         result.Error.Message.Should().Be(Messages.TryAgain);
+        await transaction.Received(1).RollbackAsync(CancellationToken.None);
     }
 
-     [Test]
-     public async Task Should_PropagateException_When_RepositoryThrowsException()
-     {
-         // Arrange
-         var userId = Id<User>.New();
-         var gymId = Id<Gym>.New();
-         var planDayId = Id<PlanDay>.New();
-
-         var input = new AddTrainingInput(gymId, planDayId, DateTime.UtcNow, new List<TrainingExerciseInput>());
-
-         _userRepository.FindByIdAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
-             .Throws(new InvalidOperationException("Database connection failed"));
-
-         // Act & Assert
-         var action = () => _service.AddTrainingAsync(userId, input);
-         var ex = await action.Should().ThrowAsync<InvalidOperationException>();
-         ex.And.Message.Should().Be("Database connection failed");
-     }
-
     [Test]
-    public async Task Should_ReturnInvalidTrainingDataError_When_UserIdIsEmpty()
+    public async Task SuccessfulTraining_ShouldStageAllWritesSaveOnceAndCommit()
     {
-        // Arrange
-        var emptyUserId = Id<User>.Empty;
+        var accountId = Id<AccountReference>.New();
         var gymId = Id<Gym>.New();
-        var planDayId = Id<PlanDay>.New();
-
-        var input = new AddTrainingInput(gymId, planDayId, DateTime.UtcNow, new List<TrainingExerciseInput>());
-
-        // Act
-        var result = await _service.AddTrainingAsync(emptyUserId, input);
-
-        // Assert
-        result.IsFailure.Should().BeTrue();
-        result.Error.Should().BeOfType<InvalidTrainingDataError>();
-    }
-
-    [Test]
-    public async Task Should_ReturnInvalidTrainingDataError_When_GymIdIsEmpty()
-    {
-        // Arrange
-        var userId = Id<User>.New();
-        var emptyGymId = Id<Gym>.Empty;
-        var planDayId = Id<PlanDay>.New();
-
-        var input = new AddTrainingInput(emptyGymId, planDayId, DateTime.UtcNow, new List<TrainingExerciseInput>());
-
-        // Act
-        var result = await _service.AddTrainingAsync(userId, input);
-
-        // Assert
-        result.IsFailure.Should().BeTrue();
-        result.Error.Should().BeOfType<InvalidTrainingDataError>();
-    }
-
-    [Test]
-    public async Task Should_ReturnInvalidTrainingDataError_When_PlanDayIdIsEmpty()
-    {
-        // Arrange
-        var userId = Id<User>.New();
-        var gymId = Id<Gym>.New();
-        var emptyPlanDayId = Id<PlanDay>.Empty;
-
-        var input = new AddTrainingInput(gymId, emptyPlanDayId, DateTime.UtcNow, new List<TrainingExerciseInput>());
-
-        // Act
-        var result = await _service.AddTrainingAsync(userId, input);
-
-        // Assert
-        result.IsFailure.Should().BeTrue();
-        result.Error.Should().BeOfType<InvalidTrainingDataError>();
-    }
-
-    [Test]
-    public async Task Should_ReturnInvalidTrainingDataError_When_ExerciseHasUnknownUnit()
-    {
-        // Arrange
-        var userId = Id<User>.New();
-        var gymId = Id<Gym>.New();
-        var planDayId = Id<PlanDay>.New();
         var exerciseId = Id<Exercise>.New();
-
-        var user = new User
-        {
-            Id = userId,
-            Name = "TestUser",
-            Email = "test@example.com",
-            ProfileRank = "Junior 1"
-        };
-
-        var gym = new Gym { Id = gymId, UserId = userId, Name = "TestGym" };
-
-        var exercises = new List<TrainingExerciseInput>
-        {
-            new() { ExerciseId = exerciseId, Series = 1, Reps = 10, Weight = 80, Unit = WeightUnits.Unknown }
-        };
-
-        var input = new AddTrainingInput(gymId, planDayId, DateTime.UtcNow, exercises);
-
-        _userRepository.FindByIdAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
-            .Returns(user);
-        _gymRepository.FindByIdAsync(Arg.Any<Id<Gym>>(), Arg.Any<CancellationToken>())
-            .Returns(gym);
-        _exerciseRepository.GetByIdsAsync(Arg.Any<List<Id<Exercise>>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Exercise> { new() { Id = exerciseId, Name = "Bench Press" } });
-        _exerciseScoreRepository.GetByUserAndExercisesAsync(Arg.Any<Id<User>>(), Arg.Any<List<Id<Exercise>>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<ExerciseScore>());
-
         var transaction = Substitute.For<IUnitOfWorkTransaction>();
-        _unitOfWork.BeginTransactionAsync(Arg.Any<CancellationToken>())
-            .Returns(transaction);
+        ArrangeAccountAndGym(accountId, gymId);
+        _exercises.GetByIdsAsync(Arg.Any<IReadOnlyCollection<Id<Exercise>>>(), Arg.Any<CancellationToken>())
+            .Returns([Exercise(exerciseId, ExerciseEloFormula.Standard)]);
+        _scores.GetByAccountAndExercisesAsync(accountId, Arg.Any<IReadOnlyCollection<Id<Exercise>>>(), Arg.Any<CancellationToken>())
+            .Returns([Score(accountId, exerciseId, gymId)]);
+        _elo.GetLatestEntryAsync(accountId, Arg.Any<CancellationToken>())
+            .Returns(new WorkoutEloPersistenceModel(Id<EloRegistry>.New(), accountId, DateTimeOffset.UtcNow, 1000, null));
+        _unitOfWork.BeginTransactionAsync(Arg.Any<CancellationToken>()).Returns(transaction);
 
-        // Act
-        var result = await _service.AddTrainingAsync(userId, input);
+        var result = await _service.AddTrainingAsync(accountId, Input(gymId, Id<PlanDayReference>.New(), exerciseId));
 
-        // Assert
-        result.IsFailure.Should().BeTrue();
-        result.Error.Should().BeOfType<InvalidTrainingDataError>();
-
-        // Verify transaction was rolled back
-        await transaction.Received(1).RollbackAsync(Arg.Any<CancellationToken>());
+        result.IsSuccess.Should().BeTrue();
+        await _trainings.Received(1).AddAsync(Arg.Any<WorkoutTrainingWriteModel>(), Arg.Any<CancellationToken>());
+        await _scores.Received(1).AddRangeAsync(Arg.Any<IReadOnlyCollection<WorkoutExerciseScoreWriteModel>>(), Arg.Any<CancellationToken>());
+        await _trainings.Received(1).AddExerciseScoreLinksAsync(Arg.Any<IReadOnlyCollection<WorkoutTrainingExerciseScorePersistenceModel>>(), Arg.Any<CancellationToken>());
+        await _elo.Received(1).AddAsync(Arg.Any<WorkoutEloWriteModel>(), Arg.Any<CancellationToken>());
+        await _trainings.Received(1).UpdateAccountProfileRankAsync(accountId, "Junior 1", Arg.Any<CancellationToken>());
+        await _trainings.Received(1).StageTrainingCompletedCommandAsync(accountId, Arg.Any<Id<Training>>(), Arg.Any<CancellationToken>());
+        await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+        await transaction.Received(1).CommitAsync(Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task Should_UseDifferentEloGain_ForDifferentExerciseProfiles()
+    public async Task SaveFailure_ShouldRollbackAndPropagateAfterStagingWrites()
     {
-        var userId = Id<User>.New();
+        var accountId = Id<AccountReference>.New();
         var gymId = Id<Gym>.New();
-        var planDayId = Id<PlanDay>.New();
-        var exerciseId = Id<Exercise>.New();
+        var transaction = Substitute.For<IUnitOfWorkTransaction>();
+        ArrangeAccountAndGym(accountId, gymId);
+        _elo.GetLatestEntryAsync(accountId, Arg.Any<CancellationToken>())
+            .Returns(new WorkoutEloPersistenceModel(Id<EloRegistry>.New(), accountId, DateTimeOffset.UtcNow, 1000, null));
+        _unitOfWork.BeginTransactionAsync(Arg.Any<CancellationToken>()).Returns(transaction);
+        _unitOfWork.SaveChangesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<int>(new InvalidOperationException("save failed")));
 
-        var user = new User
-        {
-            Id = userId,
-            Name = "TestUser",
-            Email = "test@example.com",
-            ProfileRank = "Junior 1"
-        };
+        var action = () => _service.AddTrainingAsync(accountId, Input(gymId, Id<PlanDayReference>.New()));
 
-        var gym = new Gym { Id = gymId, UserId = userId, Name = "TestGym" };
-
-        var exercises = new List<TrainingExerciseInput>
-        {
-            new() { ExerciseId = exerciseId, Series = 1, Reps = 10, Weight = 80, Unit = WeightUnits.Kilograms }
-        };
-
-        var input = new AddTrainingInput(gymId, planDayId, DateTime.UtcNow, exercises);
-        var previousTraining = new Training
-        {
-            Id = Id<Training>.New(),
-            UserId = userId,
-            TypePlanDayId = planDayId,
-            GymId = gymId
-        };
-
-        var previousScore = new ExerciseScore
-        {
-            Id = Id<ExerciseScore>.New(),
-            ExerciseId = exerciseId,
-            UserId = userId,
-            Reps = 5,
-            Series = 1,
-            Weight = new Weight(80, WeightUnits.Kilograms),
-            TrainingId = previousTraining.Id,
-            Training = previousTraining
-        };
-
-        _userRepository.FindByIdAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
-            .Returns(user);
-        _gymRepository.FindByIdAsync(Arg.Any<Id<Gym>>(), Arg.Any<CancellationToken>())
-            .Returns(gym);
-        _exerciseScoreRepository.GetByUserAndExercisesAsync(Arg.Any<Id<User>>(), Arg.Any<List<Id<Exercise>>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<ExerciseScore> { previousScore });
-        _eloRepository.GetLatestEntryAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
-            .Returns(new EloRegistry { Id = Id<EloRegistry>.New(), UserId = userId, Date = DateTimeOffset.UtcNow, Elo = 1000 });
-        async Task<int> RunProfileAsync(ExerciseEloFormula formula)
-        {
-            var transaction = Substitute.For<IUnitOfWorkTransaction>();
-            _unitOfWork.BeginTransactionAsync(Arg.Any<CancellationToken>())
-                .Returns(transaction);
-            var service = new TrainingService(new SuccessfulTrainingServiceDependencies(
-                _userRepository,
-                _gymRepository,
-                _trainingRepository,
-                _exerciseRepository,
-                _exerciseScoreRepository,
-                _trainingExerciseScoreRepository,
-                _commandDispatcher,
-                _eloRepository,
-                new FixedRankService(),
-                _unitOfWork,
-                new IExerciseEloCalculator[]
-                {
-                    new StandardExerciseEloCalculator(),
-                    new StrengthWeightedExerciseEloCalculator(),
-                    new VolumeWeightedExerciseEloCalculator(),
-                    new PullupWeightedExerciseEloCalculator()
-                }));
-
-            _exerciseRepository.GetByIdsAsync(Arg.Any<List<Id<Exercise>>>(), Arg.Any<CancellationToken>())
-                .Returns(new List<Exercise>
-                {
-                    new()
-                    {
-                        Id = exerciseId,
-                        Name = "Machine Pullup",
-                        EloFormula = formula
-                    }
-                });
-
-            _trainingRepository.AddAsync(Arg.Any<Training>(), Arg.Any<CancellationToken>())
-                .Returns(Task.CompletedTask);
-            _exerciseScoreRepository.AddRangeAsync(Arg.Any<IEnumerable<ExerciseScore>>(), Arg.Any<CancellationToken>())
-                .Returns(Task.CompletedTask);
-            _trainingExerciseScoreRepository.AddRangeAsync(Arg.Any<IEnumerable<TrainingExerciseScore>>(), Arg.Any<CancellationToken>())
-                .Returns(Task.CompletedTask);
-            _eloRepository.AddAsync(Arg.Any<EloRegistry>(), Arg.Any<CancellationToken>())
-                .Returns(Task.CompletedTask);
-            _userRepository.UpdateAsync(Arg.Any<User>(), Arg.Any<CancellationToken>())
-                .Returns(Task.CompletedTask);
-            _commandDispatcher.EnqueueAsync(Arg.Any<TrainingCompletedCommand>())
-                .Returns(Task.CompletedTask);
-            _unitOfWork.SaveChangesAsync(Arg.Any<CancellationToken>())
-                .Returns(Task.FromResult(1));
-
-            var result = await service.AddTrainingAsync(userId, input);
-
-            result.IsSuccess.Should().BeTrue();
-            await transaction.Received(1).CommitAsync(Arg.Any<CancellationToken>());
-            return result.Value.GainElo;
-        }
-
-        var standardGain = await RunProfileAsync(ExerciseEloFormula.Standard);
-        var strengthGain = await RunProfileAsync(ExerciseEloFormula.StrengthWeighted);
-        var volumeGain = await RunProfileAsync(ExerciseEloFormula.VolumeWeighted);
-
-        strengthGain.Should().BeLessThan(standardGain);
-        standardGain.Should().BeLessThan(volumeGain);
+        await action.Should().ThrowAsync<InvalidOperationException>();
+        await _trainings.Received(1).AddAsync(Arg.Any<WorkoutTrainingWriteModel>(), Arg.Any<CancellationToken>());
+        await transaction.Received(1).RollbackAsync(CancellationToken.None);
+        await transaction.DidNotReceive().CommitAsync(Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public void Should_RewardLowerWeight_ForPullupProfile()
+    public void PullupProfile_ShouldRewardLowerWeight()
     {
         var calculator = new PullupWeightedExerciseEloCalculator();
-
-        var lowerWeightGain = calculator.Calculate(new ExerciseEloCalculationInput(
-            PreviousWeight: 80,
-            PreviousReps: 8,
-            CurrentWeight: 60,
-            CurrentReps: 8));
-
-        var higherWeightGain = calculator.Calculate(new ExerciseEloCalculationInput(
-            PreviousWeight: 80,
-            PreviousReps: 8,
-            CurrentWeight: 100,
-            CurrentReps: 8));
-
-        lowerWeightGain.Should().BeGreaterThan(higherWeightGain);
+        calculator.Calculate(new(80, 8, 60, 8)).Should().BeGreaterThan(calculator.Calculate(new(80, 8, 100, 8)));
     }
+
+    [Test]
+    public async Task MissingPlanDay_ShouldReturnTrainingNotFoundErrorWithoutStagingWrites()
+    {
+        var accountId = Id<AccountReference>.New();
+        var gymId = Id<Gym>.New();
+        var planDayId = Id<PlanDayReference>.New();
+        ArrangeAccountAndGym(accountId, gymId);
+        _planDayReferences.GetByIdAsync(planDayId, Arg.Any<CancellationToken>()).Returns(new PlanDayReferenceReadModel(planDayId, Id<PlanReference>.Empty, string.Empty, false, false));
+
+        var result = await _service.AddTrainingAsync(accountId, Input(gymId, planDayId));
+
+        result.Error.Should().BeOfType<TrainingNotFoundError>();
+        await _trainings.DidNotReceive().AddAsync(Arg.Any<WorkoutTrainingWriteModel>(), Arg.Any<CancellationToken>());
+        await _unitOfWork.DidNotReceive().BeginTransactionAsync(Arg.Any<CancellationToken>());
+    }
+
+    private void ArrangeAccountAndGym(Id<AccountReference> accountId, Id<Gym> gymId)
+    {
+        _accountAccess.GetByIdAsync(accountId, Arg.Any<CancellationToken>()).Returns(new AccountAccessFacts(accountId, false, false, [], []));
+        _gyms.FindByIdAsync(gymId, Arg.Any<CancellationToken>()).Returns(new WorkoutGymPersistenceModel(gymId, accountId, "Gym", null, false, default, default));
+    }
+
+    private static CompleteTrainingInput Input(Id<Gym> gymId, Id<PlanDayReference> planDayId, Id<Exercise>? exerciseId = null)
+        => new(gymId, planDayId, DateTime.UtcNow, exerciseId.HasValue ? [new() { ExerciseId = exerciseId.Value, Series = 1, Reps = 10, Weight = 80, Unit = WeightUnits.Kilograms }] : []);
+
+    private static WorkoutExercisePersistenceModel Exercise(Id<Exercise> id, ExerciseEloFormula formula)
+        => new(id, null, "Exercise", BodyParts.Chest, formula, null, null, false, default, default);
+
+    private static WorkoutExerciseScorePersistenceModel Score(Id<AccountReference> accountId, Id<Exercise> exerciseId, Id<Gym> gymId)
+        => new(Id<ExerciseScore>.New(), exerciseId, accountId, 5, 1, 70, WeightUnits.Kilograms, Id<Training>.New(), 0, DateTimeOffset.UtcNow, null,
+            new WorkoutTrainingPersistenceModel(Id<Training>.New(), accountId, Id<PlanDayReference>.New(), gymId, DateTimeOffset.UtcNow, null));
 
     private sealed class FixedRankService : IRankService
     {
-        public IReadOnlyList<RankDefinition> GetRanks() => [new RankDefinition { Name = "Junior 1", NeedElo = 0 }];
-
-        public RankDefinition GetCurrentRank(Elo elo) => new RankDefinition { Name = "Junior 1", NeedElo = 0 };
-
-        public RankDefinition? GetNextRank(string currentRankName)
-            => currentRankName == "Junior 1"
-                ? new RankDefinition { Name = "Junior 2", NeedElo = 1001 }
-                : null;
-    }
-
-    private sealed class SuccessfulTrainingServiceDependencies : ITrainingServiceDependencies
-    {
-        public SuccessfulTrainingServiceDependencies(
-            IUserRepository userRepository,
-            IGymRepository gymRepository,
-            ITrainingRepository trainingRepository,
-            IExerciseRepository exerciseRepository,
-            IExerciseScoreRepository exerciseScoreRepository,
-            ITrainingExerciseScoreRepository trainingExerciseScoreRepository,
-            ICommandDispatcher commandDispatcher,
-            IEloRegistryRepository eloRepository,
-            IRankService rankService,
-            IUnitOfWork unitOfWork,
-            IReadOnlyCollection<IExerciseEloCalculator> exerciseEloCalculators)
-        {
-            UserRepository = userRepository;
-            GymRepository = gymRepository;
-            TrainingRepository = trainingRepository;
-            ExerciseRepository = exerciseRepository;
-            ExerciseScoreRepository = exerciseScoreRepository;
-            TrainingExerciseScoreRepository = trainingExerciseScoreRepository;
-            CommandDispatcher = commandDispatcher;
-            EloRepository = eloRepository;
-            RankService = rankService;
-            UnitOfWork = unitOfWork;
-            ExerciseEloCalculators = exerciseEloCalculators;
-        }
-
-        public IUserRepository UserRepository { get; }
-        public IGymRepository GymRepository { get; }
-        public ITrainingRepository TrainingRepository { get; }
-        public IExerciseRepository ExerciseRepository { get; }
-        public IExerciseScoreRepository ExerciseScoreRepository { get; }
-        public ITrainingExerciseScoreRepository TrainingExerciseScoreRepository { get; }
-        public ICommandDispatcher CommandDispatcher { get; }
-        public IEloRegistryRepository EloRepository { get; }
-        public IRankService RankService { get; }
-        public IUnitOfWork UnitOfWork { get; }
-        public IReadOnlyCollection<IExerciseEloCalculator> ExerciseEloCalculators { get; }
+        public IReadOnlyList<RankDefinition> GetRanks() => [new() { Name = "Junior 1", NeedElo = 0 }];
+        public RankDefinition GetCurrentRank(Elo elo) => new() { Name = "Junior 1", NeedElo = 0 };
+        public RankDefinition? GetNextRank(string currentRankName) => new RankDefinition { Name = "Junior 2", NeedElo = 1001 };
     }
 }

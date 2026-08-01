@@ -1,0 +1,7 @@
+using System.Text.Json;
+using LgymApi.Application.Coaching.Contracts.BackgroundCommands;
+using LgymApi.Application.Coaching.Contracts.Notifications;
+using LgymApi.Application.Identity.Contracts.Accounts;
+using LgymApi.Application.Platform.Contracts.Serialization;
+namespace LgymApi.Application.Coaching.Contracts.Notifications { public sealed record RelationshipEndedPreparation(string TrainerId,string TraineeId,string? TrainerName,string? TrainerEmail,string? TrainerCulture,string? TrainerZone,string? TraineeName,string? TraineeEmail,string? TraineeCulture,string? TraineeZone); public interface IRelationshipEndedPreparationPort { Task<RelationshipEndedPreparation> PrepareAsync(string json,CancellationToken ct=default); } }
+namespace LgymApi.Application.Coaching.Notifications { internal sealed class RelationshipEndedPreparationPort(IAccountReadService accounts):IRelationshipEndedPreparationPort { public async Task<RelationshipEndedPreparation> PrepareAsync(string json,CancellationToken ct=default) { var command=JsonSerializer.Deserialize<TrainerRelationshipEndedInAppNotificationCommand>(json,SharedSerializationOptions.Current)??throw new InvalidOperationException(); var trainee=await accounts.GetByIdAsync(command.TraineeId,ct); var trainer=await accounts.GetByIdAsync(command.TrainerId,ct); return new(command.TrainerId.ToString(),command.TraineeId.ToString(),trainer?.Name,trainer?.Email,trainer?.PreferredLanguage,trainer?.PreferredTimeZone,trainee?.Name,trainee?.Email,trainee?.PreferredLanguage,trainee?.PreferredTimeZone); } } }

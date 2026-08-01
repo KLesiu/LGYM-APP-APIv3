@@ -17,7 +17,7 @@ public sealed class EloRegistryTests : IntegrationTestBase
             email: "elo@example.com",
             password: "password123");
 
-        Client.DefaultRequestHeaders.Authorization = 
+        Client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
         var response = await Client.GetAsync($"/api/userInfo/{userId}/getUserEloPoints");
@@ -37,7 +37,7 @@ public sealed class EloRegistryTests : IntegrationTestBase
             email: "chart@example.com",
             password: "password123");
 
-        Client.DefaultRequestHeaders.Authorization = 
+        Client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
         var response = await Client.GetAsync($"/api/eloRegistry/{userId}/getEloRegistryChart");
@@ -48,6 +48,15 @@ public sealed class EloRegistryTests : IntegrationTestBase
         body.Should().NotBeNull();
         body.Should().HaveCountGreaterThanOrEqualTo(1);
         body![0].Value.Should().Be(1000);
+        Id<LgymApi.Domain.Entities.EloRegistry>.TryParse(body[0].Id, out var parsedId).Should().BeTrue();
+        parsedId.ToString().Should().Be(body[0].Id);
+
+        var repeatResponse = await Client.GetAsync($"/api/eloRegistry/{userId}/getEloRegistryChart");
+        repeatResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var repeatBody = await repeatResponse.Content.ReadFromJsonAsync<List<EloChartEntry>>();
+        repeatBody.Should().NotBeNull();
+        repeatBody!.Select(entry => entry.Id).Should().Equal(body.Select(entry => entry.Id));
+        TestContext.Progress.WriteLine(System.Text.Json.JsonSerializer.Serialize(body));
     }
 
     [Test]
@@ -58,7 +67,7 @@ public sealed class EloRegistryTests : IntegrationTestBase
             email: "auth@example.com",
             password: "password123");
 
-        Client.DefaultRequestHeaders.Authorization = 
+        Client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
         var (otherUserId, _) = await RegisterUserViaEndpointAsync(
@@ -79,7 +88,7 @@ public sealed class EloRegistryTests : IntegrationTestBase
             email: "auth2@example.com",
             password: "password123");
 
-        Client.DefaultRequestHeaders.Authorization = 
+        Client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
         var response = await Client.GetAsync("/api/eloRegistry/invalid-guid/getEloRegistryChart");
@@ -95,7 +104,7 @@ public sealed class EloRegistryTests : IntegrationTestBase
             email: "elopoints@example.com",
             password: "password123");
 
-        Client.DefaultRequestHeaders.Authorization = 
+        Client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
         var response = await Client.GetAsync($"/api/userInfo/{userId}/getUserEloPoints");
@@ -115,7 +124,7 @@ public sealed class EloRegistryTests : IntegrationTestBase
             email: "auth3@example.com",
             password: "password123");
 
-        Client.DefaultRequestHeaders.Authorization = 
+        Client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
         var nonExistentId = Domain.ValueObjects.Id<object>.New();
@@ -151,7 +160,7 @@ public sealed class EloRegistryTests : IntegrationTestBase
             email: "token@example.com",
             password: "password123");
 
-        Client.DefaultRequestHeaders.Authorization = 
+        Client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
         var response = await Client.GetAsync("/api/checkToken");

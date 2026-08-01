@@ -1,10 +1,12 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using Microsoft.EntityFrameworkCore;
 using UserEntity = LgymApi.Domain.Entities.User;
 
 namespace LgymApi.IntegrationTests;
@@ -278,6 +280,53 @@ public sealed class MeasurementsTests : IntegrationTestBase
 
         var historyResponse = await Client.GetFromJsonAsync<MeasurementsHistoryResponse>($"/api/measurements/{userId}/getHistory");
         historyResponse!.Measurements.Should().HaveCount(3);
+    }
+
+    [Test]
+    public async Task GetMeasurementDetail_UsesLegacyColonRouteAndEnforcesOwnership()
+    {
+        var owner = await SeedUserAsync(name: "measurement-owner", email: "measurement-owner@example.com");
+        var otherUser = await SeedUserAsync(name: "measurement-other", email: "measurement-other@example.com");
+        SetAuthorizationHeader(owner.Id);
+
+        var addResponse = await Client.PostAsJsonAsync("/api/measurements/add", new
+        {
+            bodyPart = BodyParts.BodyWeight.ToString(),
+            value = 75.5,
+            unit = MeasurementUnits.Kilograms.ToString()
+        });
+        addResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var db = GetDbContext();
+        var measurementId = await db.Measurements
+            .Where(measurement => measurement.UserId == owner.Id)
+            .Select(measurement => measurement.Id)
+            .SingleAsync();
+
+        SetAuthorizationHeader(otherUser.Id);
+        var forbiddenResponse = await Client.GetAsync($"/api/measurements:/{measurementId}/getMeasurementDetail");
+        forbiddenResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        SetAuthorizationHeader(owner.Id);
+        var detailResponse = await Client.GetAsync($"/api/measurements:/{measurementId}/getMeasurementDetail");
+        detailResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var detailJson = JsonDocument.Parse(await detailResponse.Content.ReadAsStringAsync());
+        detailJson.RootElement.GetProperty("user").GetString().Should().Be(owner.Id.ToString());
+        detailJson.RootElement.GetProperty("value").GetDouble().Should().Be(75.5);
+        detailJson.RootElement.GetProperty("bodyPart").GetProperty("id").GetString().Should().Be(BodyParts.BodyWeight.ToString());
+        detailJson.RootElement.GetProperty("unit").GetProperty("id").GetString().Should().Be(MeasurementUnits.Kilograms.ToString());
+    }
+
+    [Test]
+    public async Task GetMeasurementDetail_WithMalformedId_ReturnsBadRequest()
+    {
+        var user = await SeedUserAsync(name: "measurement-invalid-id", email: "measurement-invalid-id@example.com");
+        SetAuthorizationHeader(user.Id);
+
+        var response = await Client.GetAsync("/api/measurements:/not-a-guid/getMeasurementDetail");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     private async Task AddMeasurementAsync(BodyParts bodyPart, double value, MeasurementUnits unit)

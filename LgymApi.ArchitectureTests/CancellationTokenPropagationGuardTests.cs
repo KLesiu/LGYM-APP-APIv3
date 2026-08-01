@@ -93,7 +93,7 @@ public sealed class CancellationTokenPropagationGuardTests
                         continue;
                     }
 
-                    if (ContainsCancellationArgument(invocation))
+                    if (ContainsCancellationArgument(invocation) || IsPostClaimPushRecoveryInvocation(invocation))
                     {
                         continue;
                     }
@@ -108,6 +108,26 @@ public sealed class CancellationTokenPropagationGuardTests
             Is.Empty,
             "Async service methods must accept CancellationToken and propagate it to repositories/unit of work. Violations count: " + violations.Count + Environment.NewLine +
             string.Join(Environment.NewLine, violations.Select(v => v.ToString())));
+    }
+
+    [Test]
+    public void PostClaimPushRecoveryException_Should_Only_Allow_The_Explicit_Recovery_Save()
+    {
+        var recoveryInvocation = GetSingleInvocation("""
+            class PushNotificationDeliveryService
+            {
+                private Task RecoverFromPostClaimFailureAsync() => _unitOfWork.SaveChangesAsync(CancellationToken.None);
+            }
+            """);
+        var processInvocation = GetSingleInvocation("""
+            class PushNotificationDeliveryService
+            {
+                public Task ProcessAsync() => _pushNotificationMessageRepository.FindByIdAsync(id, CancellationToken.None);
+            }
+            """);
+
+        Assert.That(IsPostClaimPushRecoveryInvocation(recoveryInvocation), Is.True);
+        Assert.That(IsPostClaimPushRecoveryInvocation(processInvocation), Is.False);
     }
 
     private static bool IsServiceAsyncCall(InvocationExpressionSyntax invocation)
@@ -211,6 +231,40 @@ public sealed class CancellationTokenPropagationGuardTests
         }
 
         return argumentList.Arguments.Any(argument => IsCancellationTokenNone(argument.Expression));
+    }
+
+    private static bool IsPostClaimPushRecoveryInvocation(InvocationExpressionSyntax invocation)
+    {
+        if (!invocation.ArgumentList.Arguments.Any(argument => IsCancellationTokenNone(argument.Expression)))
+        {
+            return false;
+        }
+
+        if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess
+            || memberAccess.Expression is not IdentifierNameSyntax receiver)
+        {
+            return false;
+        }
+
+        var containingMethod = invocation.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+        var containingClass = invocation.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+        if (containingClass?.Identifier.ValueText != "PushNotificationDeliveryService"
+            || containingMethod?.Identifier.ValueText != "RecoverFromPostClaimFailureAsync")
+        {
+            return false;
+        }
+
+        return (receiver.Identifier.ValueText == "_unitOfWork" && memberAccess.Name.Identifier.ValueText == "SaveChangesAsync")
+            || (receiver.Identifier.ValueText == "_pushNotificationMessageRepository" && memberAccess.Name.Identifier.ValueText == "FindByIdAsync");
+    }
+
+    private static InvocationExpressionSyntax GetSingleInvocation(string source)
+    {
+        return CSharpSyntaxTree.ParseText(source, CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest))
+            .GetRoot()
+            .DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Single();
     }
 
     private static bool IsNamedCancellationToken(ArgumentSyntax argument)

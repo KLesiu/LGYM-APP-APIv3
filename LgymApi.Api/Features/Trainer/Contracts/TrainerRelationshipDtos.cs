@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
 using LgymApi.Api.Interfaces;
+using LgymApi.Application.Coaching.Relationships.TrainerDashboard;
 using LgymApi.Application.Pagination;
-using LgymApi.Application.Features.TrainerRelationships.Models;
 
 namespace LgymApi.Api.Features.Trainer.Contracts;
 

@@ -1,6 +1,7 @@
 using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Auth.Contracts;
 using LgymApi.Application.ExternalAuth;
+using LgymApi.Application.Features.EloRegistry;
 using LgymApi.Application.Mapping.Core;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,11 +13,13 @@ namespace LgymApi.Api.Features.Auth.Controllers;
 public sealed class AuthController : ControllerBase
 {
     private readonly IExternalAuthService _externalAuthService;
+    private readonly IEloRegistryService _eloRegistryService;
     private readonly IMapper _mapper;
 
-    public AuthController(IExternalAuthService externalAuthService, IMapper mapper)
+    public AuthController(IExternalAuthService externalAuthService, IEloRegistryService eloRegistryService, IMapper mapper)
     {
         _externalAuthService = externalAuthService;
+        _eloRegistryService = eloRegistryService;
         _mapper = mapper;
     }
 
@@ -31,6 +34,7 @@ public sealed class AuthController : ControllerBase
             return result.ToActionResult();
         }
 
+        await _eloRegistryService.PopulateLatestEloAsync(result.Value.User, cancellationToken);
         var mapped = _mapper.Map<LgymApi.Application.Features.User.Models.LoginResult, LgymApi.Api.Features.User.Contracts.LoginResponseDto>(result.Value);
         return Ok(mapped);
     }

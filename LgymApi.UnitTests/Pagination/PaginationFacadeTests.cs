@@ -1,6 +1,6 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Pagination;
 using NUnit.Framework;
 
@@ -36,7 +36,7 @@ public sealed class PaginationFacadeTests
         parameters[1].ParameterType.Should().Be(typeof(FilterInput));
         parameters[2].ParameterType.Should().Be(typeof(CancellationToken));
 
-        typeof(FilterInput).Assembly.GetReferencedAssemblies()
+        typeof(LgymApi.Application.ServiceCollectionExtensions).Assembly.GetReferencedAssemblies()
             .Select(x => x.Name)
             .Should().NotContain(name => name != null && name.Contains("Gridify", StringComparison.OrdinalIgnoreCase));
     }

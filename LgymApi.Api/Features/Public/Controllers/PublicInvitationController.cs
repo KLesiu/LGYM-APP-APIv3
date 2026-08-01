@@ -1,6 +1,6 @@
 using LgymApi.Api.Features.Public.Contracts;
+using LgymApi.Application.Coaching.Invitations.PublicStatus;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Application.Repositories;
 using LgymApi.Domain.ValueObjects;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,14 +13,12 @@ namespace LgymApi.Api.Features.Public.Controllers;
 [Route("api/invitations")]
 public sealed class PublicInvitationController : ControllerBase
 {
-    private readonly ITrainerRelationshipRepository _trainerRelationshipRepository;
-    private readonly IUserRepository _userRepository;
+    private readonly IPublicInvitationStatusUseCase _getInvitationStatus;
     private readonly IMapper _mapper;
 
-    public PublicInvitationController(ITrainerRelationshipRepository trainerRelationshipRepository, IUserRepository userRepository, IMapper mapper)
+    public PublicInvitationController(IPublicInvitationStatusUseCase getInvitationStatus, IMapper mapper)
     {
-        _trainerRelationshipRepository = trainerRelationshipRepository;
-        _userRepository = userRepository;
+        _getInvitationStatus = getInvitationStatus;
         _mapper = mapper;
     }
 
@@ -39,18 +37,12 @@ public sealed class PublicInvitationController : ControllerBase
             return NotFound();
         }
 
-        var invitation = await _trainerRelationshipRepository.FindInvitationByIdWithCodeAsync(parsedId, code, cancellationToken);
-        if (invitation == null)
+        var result = await _getInvitationStatus.ExecuteAsync(new PublicInvitationStatusQuery(parsedId, code), cancellationToken);
+        if (result.IsFailure)
         {
             return NotFound();
         }
 
-        bool userExists = invitation.TraineeId != null;
-        if (!userExists && !string.IsNullOrWhiteSpace(invitation.InviteeEmail))
-        {
-            userExists = await _userRepository.FindByEmailAsync(invitation.InviteeEmail, cancellationToken) != null;
-        }
-
-        return Ok(_mapper.Map<(string Status, bool UserExists), PublicInvitationStatusDto>((invitation.Status.ToString(), userExists)));
+        return Ok(_mapper.Map<PublicInvitationStatusReadModel, PublicInvitationStatusDto>(result.Value));
     }
 }

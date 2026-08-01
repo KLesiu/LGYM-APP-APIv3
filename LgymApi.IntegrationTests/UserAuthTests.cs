@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
 using LgymApi.BackgroundWorker.Common.Notifications;
-using LgymApi.BackgroundWorker.Common.Serialization;
+using LgymApi.Application.Platform.Contracts.Serialization;
 using LgymApi.Domain.Notifications;
 using LgymApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -65,7 +65,7 @@ public sealed class UserAuthTests : IntegrationTestBase
         SetIdempotencyKey("test-register-bob-en");
         var response = await Client.PostAsJsonAsync("/api/register", request);
         ClearIdempotencyKey();
-        
+
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         await ProcessPendingCommandsAsync();

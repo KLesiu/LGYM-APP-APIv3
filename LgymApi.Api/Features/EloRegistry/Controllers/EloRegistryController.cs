@@ -7,6 +7,7 @@ using LgymApi.Application.Features.EloRegistry;
 using LgymApi.Application.Features.EloRegistry.Models;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LgymApi.Api.Features.EloRegistry.Controllers;
@@ -30,9 +31,9 @@ public sealed class EloRegistryController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetEloRegistryChart([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
-        var result = await _eloRegistryService.GetChartAsync(userId, cancellationToken);
-        
+        var accountId = ParseRouteAccountIdForCurrentAccount(id);
+        var result = await _eloRegistryService.GetChartAsync(accountId, cancellationToken);
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -40,5 +41,18 @@ public sealed class EloRegistryController : ControllerBase
 
         var mapped = _mapper.MapList<EloRegistryChartEntry, EloRegistryBaseChartDto>(result.Value);
         return Ok(mapped);
+    }
+
+    private Id<AccountReference> ParseRouteAccountIdForCurrentAccount(string routeAccountId)
+    {
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
+        if (currentAccount is null || currentAccount.Id.IsEmpty ||
+            !Id<AccountReference>.TryParse(routeAccountId, out var parsedAccountId) ||
+            parsedAccountId != currentAccount.Id)
+        {
+            throw new UnauthorizedAccessException(Messages.Forbidden);
+        }
+
+        return parsedAccountId;
     }
 }

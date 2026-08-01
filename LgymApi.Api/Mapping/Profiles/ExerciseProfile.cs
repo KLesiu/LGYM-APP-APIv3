@@ -2,14 +2,15 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Enum.Contracts;
 using LgymApi.Api.Features.Exercise.Contracts;
-using LgymApi.Api.Features.Enum;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.Features.Exercise.Models;
 using LgymApi.Application.Mapping.Core;
+using LgymApi.Application.WorkoutProgress.ProgressData.Models;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using UserEntity = LgymApi.Domain.Entities.User;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.Api.Mapping.Profiles;
 
@@ -18,7 +19,7 @@ public sealed class ExerciseProfile : IMappingProfile
     internal static class Keys
     {
         internal static readonly ContextKey<IReadOnlyDictionary<Id<Exercise>, string>> Translations = new("Exercise.Translations");
-        internal static readonly ContextKey<Id<UserEntity>> UserId = new("Exercise.UserId");
+        internal static readonly ContextKey<Id<AccountReference>> UserId = new("Exercise.UserId");
     }
 
     public void Configure(MappingConfiguration configuration)
@@ -49,7 +50,7 @@ public sealed class ExerciseProfile : IMappingProfile
             source.Description,
             source.Image));
 
-        configuration.CreateMap<Exercise, ExerciseResponseDto>((source, context) =>
+        configuration.CreateMap<ProgressExerciseReadModel, ExerciseResponseDto>((source, context) =>
         {
             var name = source.Name;
 
@@ -66,18 +67,34 @@ public sealed class ExerciseProfile : IMappingProfile
             {
                 Id = source.Id.ToString(),
                 Name = name,
-                BodyPart = source.BodyPart.ToLookup(),
-                EloFormula = context!.Map<EnumLookupDto, LookupItemVm>(source.EloFormula.ToLookup()),
+                BodyPart = context!.Map<BodyParts, EnumLookupDto>(source.BodyPart),
+                EloFormula = source.EloFormula == null ? null : context.Map<EnumLookupDto, LookupItemVm>(context.Map<ExerciseEloFormula, EnumLookupDto>(source.EloFormula.Value)),
                 Description = source.Description,
                 Image = source.Image,
                 UserId = source.UserId?.ToString()
             };
         });
 
+        configuration.CreateMap<Exercise, ExerciseResponseDto>((source, context) =>
+        {
+            var name = source.Name;
+            if (source.UserId is null)
+            {
+                var translations = context?.Get(Keys.Translations);
+                if (translations != null && translations.TryGetValue(source.Id, out var translatedName)) name = translatedName;
+            }
+            return new ExerciseResponseDto
+            {
+                Id = source.Id.ToString(), Name = name, BodyPart = context!.Map<BodyParts, EnumLookupDto>(source.BodyPart),
+                EloFormula = context.Map<EnumLookupDto, LookupItemVm>(context.Map<ExerciseEloFormula, EnumLookupDto>(source.EloFormula)),
+                Description = source.Description, Image = source.Image, UserId = source.UserId?.ToString()
+            };
+        });
+
         configuration.CreateMap<SeriesScoreResult, SeriesScoreWithGymDto>((source, context) => new SeriesScoreWithGymDto
         {
             Series = source.Series,
-            Score = source.Score == null ? null : context!.Map<ExerciseScore, ScoreWithGymDto>(source.Score)
+            Score = source.Score == null ? null : context!.Map<WorkoutExerciseScoreReadModel, ScoreWithGymDto>(source.Score)
         });
 
         configuration.CreateMap<LastExerciseScoresResult, LastExerciseScoresResponseDto>((source, context) => new LastExerciseScoresResponseDto
@@ -90,7 +107,7 @@ public sealed class ExerciseProfile : IMappingProfile
         configuration.CreateMap<SeriesScoreResult, SeriesScoreDto>((source, context) => new SeriesScoreDto
         {
             Series = source.Series,
-            Score = source.Score == null ? null : context!.Map<ExerciseScore, ScoreDto>(source.Score)
+            Score = source.Score == null ? null : context!.Map<WorkoutExerciseScoreReadModel, ScoreDto>(source.Score)
         });
 
         configuration.CreateMap<ExerciseTrainingHistoryItem, ExerciseTrainingHistoryItemDto>((source, context) => new ExerciseTrainingHistoryItemDto

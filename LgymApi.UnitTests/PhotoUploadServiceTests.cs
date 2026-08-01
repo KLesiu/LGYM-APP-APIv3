@@ -1,8 +1,11 @@
 using FluentAssertions;
 using LgymApi.Application.Abstractions.Storage;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Reporting.Errors;
+using LgymApi.Application.Features.Reporting;
 using LgymApi.Application.Features.Reporting.Models;
 using LgymApi.Application.Repositories;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
@@ -61,11 +64,18 @@ public sealed class PhotoUploadServiceTests
             .Returns("https://storage.example.com/signed-upload-url");
 
         var unitOfWork = Substitute.For<IUnitOfWork>();
+        var uploadInitTracker = Substitute.For<IReportPhotoPersistence>();
+        PendingPhotoUpload? recordedSession = null;
+        uploadInitTracker.RecordUploadInitAsync(
+                Arg.Do<PendingPhotoUpload>(session => recordedSession = session),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
 
         var service = PhotoServiceTestFactory.CreateService(
             findRequestById: (_, _) => Task.FromResult<ReportRequest?>(request),
             photoStorageProvider: storageProvider,
-            unitOfWork: unitOfWork);
+            unitOfWork: unitOfWork,
+            photoUploadInitTracker: uploadInitTracker);
 
         var result = await service.InitiatePhotoUploadAsync(currentUser, new InitiatePhotoUploadCommand
         {
@@ -76,6 +86,14 @@ public sealed class PhotoUploadServiceTests
         });
 
         result.IsSuccess.Should().BeTrue();
+        recordedSession.Should().NotBeNull();
+        recordedSession!.StorageKey.Should().Be(result.Value.StorageKey);
+        recordedSession.InitiatedByAccountId.Should().Be(currentUser.Id);
+        recordedSession.OwnerAccountId.Should().Be(ReportingTestData.AccountId(traineeId));
+        recordedSession.ReportRequestId.Should().Be(requestId);
+        recordedSession.ViewType.Should().Be(PhotoViewType.Front.ToString());
+        recordedSession.DeclaredContentType.Should().Be("image/jpeg");
+        recordedSession.DeclaredSizeBytes.Should().Be(5_242_880);
         await unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -87,16 +105,14 @@ public sealed class PhotoUploadServiceTests
         var requestId = Id<ReportRequest>.New();
         var trainer = PhotoServiceTestFactory.CreateUser(trainerId, "trainer@example.com");
         var request = PhotoServiceTestFactory.CreateReportRequest(requestId, traineeId);
-        var link = new TrainerTraineeLink { Id = Id<TrainerTraineeLink>.New(), TrainerId = trainerId, TraineeId = traineeId };
-
         var storageProvider = Substitute.For<IPhotoStorageProvider>();
         storageProvider.GenerateSignedUploadUrlAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns("https://storage.example.com/signed-upload-url");
 
         var service = PhotoServiceTestFactory.CreateService(
             findRequestById: (_, _) => Task.FromResult<ReportRequest?>(request),
-            userHasRole: (_, _, _) => Task.FromResult(true),
-            hasTrainerTraineeLink: (tId, trainee, _) => Task.FromResult(tId == trainerId && trainee == traineeId ? link : null),
+            relationshipAccess: (currentTrainerId, currentTraineeId, _) => Task.FromResult(
+                currentTrainerId == trainerId && currentTraineeId == traineeId),
             photoStorageProvider: storageProvider);
 
         var result = await service.InitiatePhotoUploadAsync(trainer, new InitiatePhotoUploadCommand
@@ -123,8 +139,7 @@ public sealed class PhotoUploadServiceTests
 
         var service = PhotoServiceTestFactory.CreateService(
             findRequestById: (_, _) => Task.FromResult<ReportRequest?>(request),
-            userHasRole: (_, _, _) => Task.FromResult(true),
-            hasTrainerTraineeLink: (_, _, _) => Task.FromResult<TrainerTraineeLink?>(null));
+            relationshipAccess: (_, _, _) => Task.FromResult(false));
 
         var result = await service.InitiatePhotoUploadAsync(trainer, new InitiatePhotoUploadCommand
         {
@@ -306,13 +321,13 @@ public sealed class PhotoUploadServiceTests
         var storageProvider = Substitute.For<IPhotoStorageProvider>();
         storageProvider.GenerateSignedUploadUrlAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns("https://storage.example.com/signed-upload-url");
-        var reportingRepository = Substitute.For<IReportingRepository>();
-        reportingRepository.FindRequestByIdAsync(requestId, Arg.Any<CancellationToken>()).Returns(request);
-        reportingRepository.GetActivePhotoStorageBytesAsync(Arg.Any<CancellationToken>()).Returns(long.MaxValue);
+        var reportingRepository = Substitute.For<IReportPhotoPersistence>();
+        reportingRepository.GetActiveStorageBytesAsync(Arg.Any<CancellationToken>()).Returns(long.MaxValue);
 
         var service = PhotoServiceTestFactory.CreateService(
             photoStorageProvider: storageProvider,
             reportingRepository: reportingRepository,
+            findRequestById: (_, _) => Task.FromResult<ReportRequest?>(request),
             photoStorageOptions: new LgymApi.Application.Options.PhotoStorageOptions { Provider = "CloudflareR2" });
 
         var result = await service.InitiatePhotoUploadAsync(currentUser, new InitiatePhotoUploadCommand

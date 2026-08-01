@@ -1,49 +1,34 @@
-using LgymApi.BackgroundWorker.Common.Commands;
-using LgymApi.Application.Repositories;
-using LgymApi.Domain.Notifications;
-using LgymApi.Resources;
-using Microsoft.Extensions.Logging;
-using NotificationsApp = global::LgymApi.Application.Notifications;
+using System.Text.Json;
+using LgymApi.Application.Coaching.Contracts.BackgroundCommands;
+using LgymApi.Application.Coaching.Contracts.Notifications;
+using LgymApi.Application.Notifications.Contracts.InApp;
+using LgymApi.Application.Platform.Contracts.Serialization;
+using LgymApi.BackgroundWorker.Actions.Contracts;
 
 namespace LgymApi.BackgroundWorker.Actions;
 
-public sealed class TrainerInvitationCreatedInAppNotificationCommandHandler : global::LgymApi.BackgroundWorker.Common.IBackgroundAction<TrainerInvitationCreatedInAppNotificationCommand>
+public sealed class TrainerInvitationCreatedInAppNotificationCommandHandler(
+    ITrainerInvitationCreatedInAppPreparationPort preparationPort,
+    ITrainerInvitationCreatedInAppDeliveryPort deliveryPort) : IBackgroundAction<TrainerInvitationCreatedInAppNotificationCommand>
 {
-    private readonly NotificationsApp.IInAppNotificationService _notificationService;
-    private readonly IUserRepository _userRepository;
-    private readonly ILogger<TrainerInvitationCreatedInAppNotificationCommandHandler> _logger;
-
-    public TrainerInvitationCreatedInAppNotificationCommandHandler(
-        NotificationsApp.IInAppNotificationService notificationService,
-        IUserRepository userRepository,
-        ILogger<TrainerInvitationCreatedInAppNotificationCommandHandler> logger)
-    {
-        _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
-        _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
-
     public async Task ExecuteAsync(TrainerInvitationCreatedInAppNotificationCommand command, CancellationToken cancellationToken = default)
     {
-        var trainer = await _userRepository.FindByIdAsync(command.TrainerId, cancellationToken);
-        var trainerName = string.IsNullOrWhiteSpace(trainer?.Name) ? Messages.GenericTrainerDisplayName : trainer.Name;
-
-        var input = new NotificationsApp.Models.CreateInAppNotificationInput(
-            command.TraineeId,
-            command.TrainerId,
-            $"trainer-invitation:{command.InvitationId}:sent",
-            false,
-            string.Format(Messages.TrainerInvitationCreatedNotification, trainerName),
-            $"/trainers/invitations/{command.InvitationId}",
-            InAppNotificationTypes.InvitationSent);
-
-        var result = await _notificationService.CreateAsync(input, cancellationToken);
-        if (result.IsFailure)
+        var preparation = await preparationPort.PrepareAsync(JsonSerializer.Serialize(command, SharedSerializationOptions.Current), cancellationToken);
+        if (preparation is null)
         {
-            _logger.LogError(
-                "Failed to create invitation-sent notification for trainee {TraineeId}: {Error}",
-                command.TraineeId,
-                result.Error);
+            return;
         }
+
+        await deliveryPort.DeliverAsync(new TrainerInvitationCreatedInAppDeliveryRequest(
+            preparation.InvitationId,
+            preparation.TrainerId,
+            preparation.TraineeId,
+            preparation.InviteeEmail,
+            preparation.InvitationCode,
+            preparation.ExpiresAt,
+            preparation.TrainerName,
+            preparation.TrainerEmail,
+            preparation.TrainerCultureName,
+            preparation.TrainerTimeZone), cancellationToken);
     }
 }

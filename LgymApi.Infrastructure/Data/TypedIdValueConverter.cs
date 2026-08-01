@@ -47,9 +47,9 @@ public sealed class TypedIdValueConverter<TEntity> : ValueConverter<Id<TEntity>,
     {
         try
         {
-            var comparerProp = this.GetType().BaseType?.GetProperty("ConverterValueComparer", 
+            var comparerProp = this.GetType().BaseType?.GetProperty("ConverterValueComparer",
                 System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.IgnoreCase | System.Reflection.BindingFlags.Instance);
-            
+
             if (comparerProp?.CanWrite == true)
             {
                 comparerProp.SetValue(this, new IdValueComparer<TEntity>());

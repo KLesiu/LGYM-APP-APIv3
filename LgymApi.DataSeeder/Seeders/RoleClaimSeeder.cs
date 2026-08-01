@@ -2,7 +2,7 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
-using LgymApi.Infrastructure.Data.SeedData;
+using LgymApi.Identity.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace LgymApi.DataSeeder.Seeders;
@@ -32,29 +32,29 @@ public sealed class RoleClaimSeeder : IEntitySeeder
         {
             new()
             {
-                Id = (LgymApi.Domain.ValueObjects.Id<RoleClaim>)RoleSeedDataConfiguration.AdminAccessClaimSeedId,
-                RoleId = (LgymApi.Domain.ValueObjects.Id<Role>)RoleSeedDataConfiguration.AdminRoleSeedId,
+                Id = ParseSeedId<RoleClaim>(IdentitySeedIds.AdminAccessClaim),
+                RoleId = ParseSeedId<Role>(IdentitySeedIds.AdminRole),
                 ClaimType = AuthConstants.PermissionClaimType,
                 ClaimValue = AuthConstants.Permissions.AdminAccess
             },
             new()
             {
-                Id = (LgymApi.Domain.ValueObjects.Id<RoleClaim>)RoleSeedDataConfiguration.ManageUserRolesClaimSeedId,
-                RoleId = (LgymApi.Domain.ValueObjects.Id<Role>)RoleSeedDataConfiguration.AdminRoleSeedId,
+                Id = ParseSeedId<RoleClaim>(IdentitySeedIds.ManageUserRolesClaim),
+                RoleId = ParseSeedId<Role>(IdentitySeedIds.AdminRole),
                 ClaimType = AuthConstants.PermissionClaimType,
                 ClaimValue = AuthConstants.Permissions.ManageUserRoles
             },
             new()
             {
-                Id = (LgymApi.Domain.ValueObjects.Id<RoleClaim>)RoleSeedDataConfiguration.ManageAppConfigClaimSeedId,
-                RoleId = (LgymApi.Domain.ValueObjects.Id<Role>)RoleSeedDataConfiguration.AdminRoleSeedId,
+                Id = ParseSeedId<RoleClaim>(IdentitySeedIds.ManageAppConfigClaim),
+                RoleId = ParseSeedId<Role>(IdentitySeedIds.AdminRole),
                 ClaimType = AuthConstants.PermissionClaimType,
                 ClaimValue = AuthConstants.Permissions.ManageAppConfig
             },
             new()
             {
-                Id = (LgymApi.Domain.ValueObjects.Id<RoleClaim>)RoleSeedDataConfiguration.ManageGlobalExercisesClaimSeedId,
-                RoleId = (LgymApi.Domain.ValueObjects.Id<Role>)RoleSeedDataConfiguration.AdminRoleSeedId,
+                Id = ParseSeedId<RoleClaim>(IdentitySeedIds.ManageGlobalExercisesClaim),
+                RoleId = ParseSeedId<Role>(IdentitySeedIds.AdminRole),
                 ClaimType = AuthConstants.PermissionClaimType,
                 ClaimValue = AuthConstants.Permissions.ManageGlobalExercises
             }
@@ -80,5 +80,12 @@ public sealed class RoleClaimSeeder : IEntitySeeder
         }
 
         SeedOperationConsole.Done("role claims");
+    }
+
+    private static Id<TEntity> ParseSeedId<TEntity>(string value)
+    {
+        return Id<TEntity>.TryParse(value, out var id)
+            ? id
+            : throw new InvalidOperationException($"Invalid Identity seed ID '{value}'.");
     }
 }

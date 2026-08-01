@@ -41,22 +41,22 @@ public sealed class ResetPasswordRequestValidatorTests
         result.Errors.Should().Contain(x => x.PropertyName == "Token");
     }
 
-     [Test]
-     public void Validate_Fails_WhenNewPasswordIsTooShort()
-     {
-         var validator = new ResetPasswordRequestValidator();
-         var request = new ResetPasswordRequest
-         {
-             Token = "valid-token",
-             NewPassword = "pass",
-             ConfirmPassword = "pass"
-         };
+    [Test]
+    public void Validate_Fails_WhenNewPasswordIsTooShort()
+    {
+        var validator = new ResetPasswordRequestValidator();
+        var request = new ResetPasswordRequest
+        {
+            Token = "valid-token",
+            NewPassword = "pass",
+            ConfirmPassword = "pass"
+        };
 
-         var result = validator.Validate(request);
+        var result = validator.Validate(request);
 
-         result.IsValid.Should().BeFalse();
-         result.Errors.Should().Contain(x => x.PropertyName == "NewPassword");
-     }
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == "NewPassword");
+    }
 
     [Test]
     public void Validate_Fails_WhenConfirmPasswordDoesNotMatch()

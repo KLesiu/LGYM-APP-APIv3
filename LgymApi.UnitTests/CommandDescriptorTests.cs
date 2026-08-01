@@ -1,241 +1,115 @@
 using FluentAssertions;
-using LgymApi.BackgroundWorker.Common;
+using LgymApi.BackgroundWorker.Runtime;
 using NUnit.Framework;
 
 namespace LgymApi.UnitTests;
 
-/// <summary>
-/// Tests for CommandDescriptor policy: exact-type matching, serialization round-trip,
-/// and rejection of polymorphic matching (no IsAssignableFrom).
-/// </summary>
 [TestFixture]
 public sealed class CommandDescriptorTests
 {
-     [Test]
-     public void Constructor_WithValidType_StoresTypeFullName()
-     {
-         // Arrange
-         var testType = typeof(string);
-
-         // Act
-         var descriptor = new CommandDescriptor(testType);
-
-         // Assert
-         descriptor.TypeFullName.Should().Be(testType.FullName);
-         descriptor.CommandType.Should().Be(testType);
-     }
-
-     [Test]
-     public void Constructor_WithNullType_ThrowsArgumentNullException()
-     {
-         // Act & Assert
-         var action = () => new CommandDescriptor(null!);
-         var ex = action.Should().Throw<ArgumentNullException>().Which;
-         ex.ParamName.Should().Be("commandType");
-     }
-
-
-    [Test]
-    public void FromPersistedType_WithValidTypeFullName_ReturnsDescriptor()
+    [TestCaseSource(typeof(LegacyCommandContractManifest), nameof(LegacyCommandContractManifest.CommandCases))]
+    public void Constructor_StoresKnownRuntimeTypeAndCanonicalId(LegacyCommandContract contract)
     {
-        // Arrange
-        var typeFullName = "System.String";
+        var registry = CommandContractRegistry.CreateDefault();
+        var runtimeType = GetApplicationRuntimeType(contract);
+        var descriptor = new CommandDescriptor(registry, runtimeType);
 
-        // Act
-        var descriptor = CommandDescriptor.FromPersistedType(typeFullName);
-
-        // Assert
-        descriptor.TypeFullName.Should().Be(typeFullName);
+        descriptor.CanonicalId.Should().Be(contract.CanonicalId);
+        descriptor.RuntimeType.Should().Be(runtimeType);
     }
 
     [Test]
-    public void FromPersistedType_WithNullOrEmpty_ThrowsArgumentException()
+    public void Constructor_WithNullType_ThrowsArgumentNullException()
     {
-        // Act & Assert
-        var action1 = () => CommandDescriptor.FromPersistedType(null!);
-        var action2 = () => CommandDescriptor.FromPersistedType("");
-        var action3 = () => CommandDescriptor.FromPersistedType("   ");
-        
-        action1.Should().Throw<ArgumentException>();
-        action2.Should().Throw<ArgumentException>();
-        action3.Should().Throw<ArgumentException>();
+        var registry = CommandContractRegistry.CreateDefault();
+        var action = () => new CommandDescriptor(registry, null!);
+
+        action.Should().Throw<ArgumentNullException>().Which.ParamName.Should().Be("runtimeType");
+    }
+
+    [TestCaseSource(typeof(LegacyCommandContractManifest), nameof(LegacyCommandContractManifest.CommandCases))]
+    public void FromPersistedId_StoresKnownCanonicalId(LegacyCommandContract contract)
+    {
+        var registry = CommandContractRegistry.CreateDefault();
+        var descriptor = CommandDescriptor.FromPersistedId(registry, contract.CanonicalId);
+
+        descriptor.CanonicalId.Should().Be(contract.CanonicalId);
+        descriptor.RuntimeType.Should().Be(GetApplicationRuntimeType(contract));
     }
 
     [Test]
-    public void IsExactTypeMatch_WithSameType_ReturnsTrue()
+    public void FromPersistedId_WithNullOrWhitespace_ThrowsArgumentException()
     {
-        // Arrange
-        var descriptor1 = new CommandDescriptor(typeof(string));
-        var descriptor2 = new CommandDescriptor(typeof(string));
+        var registry = CommandContractRegistry.CreateDefault();
+        var nullAction = () => CommandDescriptor.FromPersistedId(registry, null!);
+        var emptyAction = () => CommandDescriptor.FromPersistedId(registry, "");
+        var whitespaceAction = () => CommandDescriptor.FromPersistedId(registry, "   ");
 
-        // Act
-        var result = descriptor1.IsExactTypeMatch(descriptor2);
-
-        // Assert
-        result.Should().BeTrue();
+        nullAction.Should().Throw<ArgumentException>();
+        emptyAction.Should().Throw<ArgumentException>();
+        whitespaceAction.Should().Throw<ArgumentException>();
     }
 
     [Test]
-    public void IsExactTypeMatch_WithDifferentTypes_ReturnsFalse()
+    public void IsExactTypeMatch_UsesKnownCanonicalIdsOnly()
     {
-        // Arrange
-        var descriptor1 = new CommandDescriptor(typeof(string));
-        var descriptor2 = new CommandDescriptor(typeof(int));
+        var firstContract = LegacyCommandContractManifest.All[0];
+        var secondContract = LegacyCommandContractManifest.All[1];
+        var registry = CommandContractRegistry.CreateDefault();
+        var firstDescriptor = new CommandDescriptor(registry, GetApplicationRuntimeType(firstContract));
+        var sameDescriptor = CommandDescriptor.FromPersistedId(registry, firstContract.FutureClrNameReadAlias);
+        var differentDescriptor = new CommandDescriptor(registry, GetApplicationRuntimeType(secondContract));
 
-        // Act
-        var result = descriptor1.IsExactTypeMatch(descriptor2);
+        firstDescriptor.Should().Be(sameDescriptor);
+        firstDescriptor.Should().NotBe(differentDescriptor);
+        firstDescriptor.Equals(null).Should().BeFalse();
+    }
 
-        // Assert
-        result.Should().BeFalse();
+    [TestCaseSource(typeof(LegacyCommandContractManifest), nameof(LegacyCommandContractManifest.CommandCases))]
+    public void ResolveCommandType_ReadsKnownCanonicalId(LegacyCommandContract contract)
+    {
+        var registry = CommandContractRegistry.CreateDefault();
+
+        CommandDescriptor.FromPersistedId(registry, contract.CanonicalId).RuntimeType
+            .Should().Be(GetApplicationRuntimeType(contract));
     }
 
     [Test]
-    public void IsExactTypeMatch_WithNull_ReturnsFalse()
+    public void ResolveCommandType_WithUnknownId_ThrowsInvalidOperationException()
     {
-        // Arrange
-        var descriptor = new CommandDescriptor(typeof(string));
+        const string unknownId = "NonExistent.Command";
+        var registry = CommandContractRegistry.CreateDefault();
+        var action = () => CommandDescriptor.FromPersistedId(registry, unknownId);
 
-        // Act
-        var result = descriptor.IsExactTypeMatch(null!);
-
-        // Assert
-        result.Should().BeFalse();
+        action.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*{unknownId}*");
     }
 
     [Test]
-    public void IsExactTypeMatch_WithBaseAndDerivedType_ReturnsFalse_NoPolymorphicMatching()
+    public void ResolveCommandType_WithNullOrWhitespace_ThrowsArgumentException()
     {
-        // Arrange
-        var baseDescriptor = new CommandDescriptor(typeof(object));
-        var derivedDescriptor = new CommandDescriptor(typeof(string));
+        var registry = CommandContractRegistry.CreateDefault();
+        var nullAction = () => CommandDescriptor.FromPersistedId(registry, null!);
+        var emptyAction = () => CommandDescriptor.FromPersistedId(registry, "");
+        var whitespaceAction = () => CommandDescriptor.FromPersistedId(registry, "   ");
 
-        // Act
-        var result = baseDescriptor.IsExactTypeMatch(derivedDescriptor);
-
-        // Assert - Ensure no polymorphic matching (no IsAssignableFrom behavior)
-        result.Should().BeFalse();
+        nullAction.Should().Throw<ArgumentException>();
+        emptyAction.Should().Throw<ArgumentException>();
+        whitespaceAction.Should().Throw<ArgumentException>();
     }
 
-    [Test]
-    public void ResolveCommandType_WithValidTypeFullName_ReturnsType()
+    [TestCaseSource(typeof(LegacyCommandContractManifest), nameof(LegacyCommandContractManifest.CommandCases))]
+    public void PersistenceRoundTrip_PreservesKnownCommandIdentity(LegacyCommandContract contract)
     {
-        // Arrange
-        var typeFullName = typeof(string).FullName!;
+        var registry = CommandContractRegistry.CreateDefault();
+        var originalDescriptor = new CommandDescriptor(registry, GetApplicationRuntimeType(contract));
+        var restoredDescriptor = CommandDescriptor.FromPersistedId(registry, originalDescriptor.CanonicalId);
 
-        // Act
-        var resolvedType = CommandDescriptor.ResolveCommandType(typeFullName);
-
-        // Assert
-        resolvedType.Should().Be(typeof(string));
+        restoredDescriptor.RuntimeType.Should().Be(GetApplicationRuntimeType(contract));
+        restoredDescriptor.Should().Be(originalDescriptor);
+        restoredDescriptor.GetHashCode().Should().Be(originalDescriptor.GetHashCode());
+        restoredDescriptor.ToString().Should().Be(contract.CanonicalId);
     }
 
-    [Test]
-    public void ResolveCommandType_WithInvalidTypeFullName_ThrowsInvalidOperationException()
-    {
-        // Arrange
-        var invalidTypeFullName = "NonExistent.Type.That.Does.Not.Exist";
-
-        // Act & Assert
-        var action = () => CommandDescriptor.ResolveCommandType(invalidTypeFullName);
-        var ex = action.Should().Throw<InvalidOperationException>().Which;
-        ex.Message.Should().Contain("Cannot resolve command type");
-        ex.Message.Should().Contain(invalidTypeFullName);
-    }
-
-    [Test]
-    public void ResolveCommandType_WithNullOrEmpty_ThrowsArgumentException()
-    {
-        // Act & Assert
-        var action1 = () => CommandDescriptor.ResolveCommandType(null!);
-        var action2 = () => CommandDescriptor.ResolveCommandType("");
-        var action3 = () => CommandDescriptor.ResolveCommandType("   ");
-        
-        action1.Should().Throw<ArgumentException>();
-        action2.Should().Throw<ArgumentException>();
-        action3.Should().Throw<ArgumentException>();
-    }
-
-    [Test]
-    public void RoundTrip_Serialization_PreservesTypeIdentity()
-    {
-        // Arrange
-        var originalType = typeof(List<string>);
-        var originalDescriptor = new CommandDescriptor(originalType);
-
-        // Act - persist type full name, then recreate descriptor
-        var persistedTypeFullName = originalDescriptor.TypeFullName;
-        var restoredDescriptor = CommandDescriptor.FromPersistedType(persistedTypeFullName);
-        var resolvedType = CommandDescriptor.ResolveCommandType(restoredDescriptor.TypeFullName);
-
-        // Assert
-        resolvedType.Should().Be(originalType);
-        restoredDescriptor.IsExactTypeMatch(originalDescriptor).Should().BeTrue();
-    }
-
-    [Test]
-    public void Equals_WithSameType_ReturnsTrue()
-    {
-        // Arrange
-        var descriptor1 = new CommandDescriptor(typeof(string));
-        var descriptor2 = new CommandDescriptor(typeof(string));
-
-        // Act & Assert
-        descriptor1.Equals(descriptor2).Should().BeTrue();
-        (descriptor1 == descriptor2).Should().BeFalse(); // No operator overload, so reference equality
-    }
-
-    [Test]
-    public void Equals_WithDifferentType_ReturnsFalse()
-    {
-        // Arrange
-        var descriptor1 = new CommandDescriptor(typeof(string));
-        var descriptor2 = new CommandDescriptor(typeof(int));
-
-        // Act & Assert
-        descriptor1.Equals(descriptor2).Should().BeFalse();
-    }
-
-    [Test]
-    public void GetHashCode_WithSameType_ReturnsSameHash()
-    {
-        // Arrange
-        var descriptor1 = new CommandDescriptor(typeof(string));
-        var descriptor2 = new CommandDescriptor(typeof(string));
-
-        // Act & Assert
-        descriptor1.GetHashCode().Should().Be(descriptor2.GetHashCode());
-    }
-
-    [Test]
-    public void ToString_ReturnsTypeFullName()
-    {
-        // Arrange
-        var descriptor = new CommandDescriptor(typeof(string));
-
-        // Act
-        var result = descriptor.ToString();
-
-        // Assert
-        result.Should().Be(typeof(string).FullName);
-    }
-
-    [Test]
-    public void ExactTypeMatching_DoesNotApplyIsAssignableFrom_DespiteInheritance()
-    {
-        // Arrange
-        var baseDescriptor = new CommandDescriptor(typeof(ArgumentException));
-        var derivedDescriptor = new CommandDescriptor(typeof(ArgumentNullException));
-
-        // Note: ArgumentNullException IS AssignableFrom to ArgumentException,
-        // but CommandDescriptor must NOT use that rule.
-
-        // Act
-        var result = baseDescriptor.IsExactTypeMatch(derivedDescriptor);
-
-        // Assert - Confirm exact-type-only matching
-        result.Should().BeFalse();
-
-        // Verify that base class assignment would normally work
-        typeof(ArgumentException).IsAssignableFrom(typeof(ArgumentNullException)).Should().BeTrue();
-    }
+    private static Type GetApplicationRuntimeType(LegacyCommandContract contract) => contract.CommandType;
 }

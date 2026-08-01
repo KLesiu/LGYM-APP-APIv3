@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
 using LgymApi.Api.Features.Tutorial.Contracts;
-using LgymApi.BackgroundWorker.Common.Serialization;
+using LgymApi.Application.Platform.Contracts.Serialization;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
@@ -41,7 +41,7 @@ public sealed class TutorialIntegrationTests : IntegrationTestBase
         SetIdempotencyKey("test-register-tutorial-user");
         var registerResponse = await Client.PostAsJsonAsync("/api/register", registerRequest);
         ClearIdempotencyKey();
-        
+
         registerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Get user ID from database and initialize tutorial

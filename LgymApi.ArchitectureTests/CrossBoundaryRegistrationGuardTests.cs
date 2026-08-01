@@ -17,21 +17,18 @@ public sealed class CrossBoundaryRegistrationGuardTests
     [Test]
     public void CrossBoundary_Registrations_Should_Not_Use_Application_Implementations_In_Infrastructure()
     {
-        var repoRoot = ResolveRepositoryRoot();
-        var infrastructureServiceExtensionsPath = Path.Combine(repoRoot, "LgymApi.Infrastructure", "ServiceCollectionExtensions.cs");
+        var parseOptions = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
+        var infrastructureFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Infrastructure");
+        var serviceExtensionFiles = infrastructureFiles
+            .Where(path => Path.GetFileName(path).EndsWith("ServiceCollectionExtensions.cs", StringComparison.Ordinal))
+            .ToList();
 
         Assert.That(
-            File.Exists(infrastructureServiceExtensionsPath),
-            Is.True,
-            $"Infrastructure ServiceCollectionExtensions file '{infrastructureServiceExtensionsPath}' not found.");
+            serviceExtensionFiles,
+            Is.Not.Empty,
+            "No Infrastructure ServiceCollectionExtensions files found for the cross-boundary guard test.");
 
-        var parseOptions = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
-        var serviceExtensionsTree = CSharpSyntaxTree.ParseText(
-            File.ReadAllText(infrastructureServiceExtensionsPath),
-            parseOptions,
-            infrastructureServiceExtensionsPath);
-
-        var violations = ExtractCrossBoundaryViolations(serviceExtensionsTree)
+        var violations = CollectCrossBoundaryViolations(serviceExtensionFiles, parseOptions)
             .OrderBy(violation => violation.LineNumber)
             .ThenBy(violation => violation.InterfaceType, StringComparer.Ordinal)
             .ToList();
@@ -43,43 +40,47 @@ public sealed class CrossBoundaryRegistrationGuardTests
             string.Join(Environment.NewLine, violations.Select(violation => violation.ToString())));
     }
 
-    private static IEnumerable<CrossBoundaryViolation> ExtractCrossBoundaryViolations(SyntaxTree serviceExtensionsTree)
+    private static IEnumerable<CrossBoundaryViolation> CollectCrossBoundaryViolations(IEnumerable<string> serviceExtensionFiles, CSharpParseOptions parseOptions)
     {
-        var root = serviceExtensionsTree.GetCompilationUnitRoot();
-
-        foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        foreach (var file in serviceExtensionFiles)
         {
-            if (invocation.Expression is not MemberAccessExpressionSyntax { Name: GenericNameSyntax genericName })
+            var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(file), parseOptions, file);
+            var root = tree.GetCompilationUnitRoot();
+
+            foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
             {
-                continue;
+                if (invocation.Expression is not MemberAccessExpressionSyntax { Name: GenericNameSyntax genericName })
+                {
+                    continue;
+                }
+
+                if (!ValidRegistrationMethods.Contains(genericName.Identifier.ValueText))
+                {
+                    continue;
+                }
+
+                if (genericName.TypeArgumentList.Arguments.Count != 2)
+                {
+                    continue;
+                }
+
+                var interfaceType = NormalizeType(genericName.TypeArgumentList.Arguments[0]);
+                var implementationType = NormalizeType(genericName.TypeArgumentList.Arguments[1]);
+
+                if (!implementationType.StartsWith("LgymApi.Application.", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var lineSpan = invocation.GetLocation().GetLineSpan();
+                var lineNumber = lineSpan.StartLinePosition.Line + 1;
+
+                yield return new CrossBoundaryViolation(
+                    file,
+                    lineNumber,
+                    interfaceType,
+                    implementationType);
             }
-
-            if (!ValidRegistrationMethods.Contains(genericName.Identifier.ValueText))
-            {
-                continue;
-            }
-
-            if (genericName.TypeArgumentList.Arguments.Count != 2)
-            {
-                continue;
-            }
-
-            var interfaceType = NormalizeType(genericName.TypeArgumentList.Arguments[0]);
-            var implementationType = NormalizeType(genericName.TypeArgumentList.Arguments[1]);
-
-            if (!implementationType.StartsWith("LgymApi.Application.", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var lineSpan = invocation.GetLocation().GetLineSpan();
-            var lineNumber = lineSpan.StartLinePosition.Line + 1;
-
-            yield return new CrossBoundaryViolation(
-                serviceExtensionsTree.FilePath,
-                lineNumber,
-                interfaceType,
-                implementationType);
         }
     }
 
@@ -89,22 +90,6 @@ public sealed class CrossBoundaryRegistrationGuardTests
             .ToString()
             .Replace("global::", string.Empty, StringComparison.Ordinal)
             .Replace(" ", string.Empty, StringComparison.Ordinal);
-    }
-
-    private static string ResolveRepositoryRoot()
-    {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current != null)
-        {
-            if (File.Exists(Path.Combine(current.FullName, "LgymApi.sln")))
-            {
-                return current.FullName;
-            }
-
-            current = current.Parent;
-        }
-
-        throw new InvalidOperationException("Unable to locate repository root.");
     }
 
     private sealed record CrossBoundaryViolation(string FilePath, int LineNumber, string InterfaceType, string ImplementationType)

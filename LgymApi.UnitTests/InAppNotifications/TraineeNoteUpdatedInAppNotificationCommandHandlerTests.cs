@@ -1,20 +1,13 @@
-using System.Globalization;
-using FluentAssertions;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
-using LgymApi.Application.Features.AdminManagement.Models;
-using LgymApi.Application.Models;
-using LgymApi.Application.Notifications;
-using LgymApi.Application.Notifications.Models;
-using LgymApi.Application.Options;
-using LgymApi.Application.Pagination;
-using LgymApi.Application.Repositories;
+using System.Text.Json;
+using LgymApi.Application.Coaching.Contracts.BackgroundCommands;
+using LgymApi.Application.Coaching.Contracts.Notifications;
+using LgymApi.Application.Notifications.Contracts.InApp;
+using LgymApi.Application.Platform.Contracts.Serialization;
 using LgymApi.BackgroundWorker.Actions;
-using LgymApi.BackgroundWorker.Common.Commands;
 using LgymApi.Domain.Entities;
-using LgymApi.Domain.Notifications;
 using LgymApi.Domain.ValueObjects;
-using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using NUnit.Framework;
 
 namespace LgymApi.UnitTests.InAppNotifications;
 
@@ -22,91 +15,49 @@ namespace LgymApi.UnitTests.InAppNotifications;
 public sealed class TraineeNoteUpdatedInAppNotificationCommandHandlerTests
 {
     [Test]
-    public async Task ExecuteAsync_UsesFallbackNamesAndNoteNotificationContract()
+    public async Task ExecuteAsync_ForwardsCanonicalJsonAndScalarFacts()
     {
-        var previousCulture = CultureInfo.CurrentUICulture;
-        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("pl-PL");
-
-        try
+        var command = new TraineeNoteUpdatedInAppNotificationCommand
         {
-            var notificationService = new FakeNotificationService(Result<InAppNotificationResult, AppError>.Success(CreateResult()));
-            var traineeId = Id<User>.New();
-            var noteId = Id<TraineeNote>.New();
-            var trainee = new User { Id = traineeId, Name = "Trainee", Email = "trainee@example.com", PreferredLanguage = "pl-PL" };
-            var handler = new TraineeNoteUpdatedInAppNotificationCommandHandler(
-                notificationService,
-                new FakeUserRepository(trainee),
-                new AppDefaultsOptions { PreferredLanguage = "en" },
-                NullLogger<TraineeNoteUpdatedInAppNotificationCommandHandler>.Instance);
+            TraineeNoteId = Id<TraineeNote>.New(),
+            TraineeId = Id<User>.New(),
+            TrainerId = Id<User>.New(),
+            NoteTitle = "   ",
+            TriggeredAt = new DateTimeOffset(2026, 6, 26, 0, 30, 0, TimeSpan.Zero)
+        };
+        var preparationPort = Substitute.For<ITraineeNoteUpdatedInAppPreparationPort>();
+        var deliveryPort = Substitute.For<ITraineeNoteUpdatedInAppDeliveryPort>();
+        preparationPort.PrepareAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(
+            new TraineeNoteUpdatedInAppPreparation(
+                command.TraineeNoteId.ToString(), command.TraineeId.ToString(), command.TrainerId.ToString(),
+                command.NoteTitle, command.TriggeredAt, null, null, null, null,
+                "Trainee", "trainee@example.com", "pl-PL", "Europe/Warsaw"));
+        var handler = new TraineeNoteUpdatedInAppNotificationCommandHandler(preparationPort, deliveryPort);
+        using var cancellation = new CancellationTokenSource();
 
-            await handler.ExecuteAsync(new TraineeNoteUpdatedInAppNotificationCommand
-            {
-                TraineeNoteId = noteId,
-                TraineeId = traineeId,
-                TrainerId = Id<User>.New(),
-                NoteTitle = "   ",
-                TriggeredAt = new DateTimeOffset(2026, 6, 26, 0, 30, 0, TimeSpan.Zero)
-            });
+        await handler.ExecuteAsync(command, cancellation.Token);
 
-            notificationService.Calls.Should().Be(1);
-            notificationService.LastInput.Should().NotBeNull();
-            notificationService.LastInput!.DeliveryKey.Should().Be($"trainee-note:{noteId}:2026-06-26T00:30:00.0000000+00:00");
-            notificationService.LastInput.Type.Should().Be(InAppNotificationTypes.TraineeNoteUpdated);
-            notificationService.LastInput.Message.Should().Contain(LgymApi.Resources.Messages.GenericTrainerDisplayName);
-            notificationService.LastInput.Message.Should().Contain(LgymApi.Resources.Messages.GenericTrainerNoteDisplayName);
-            notificationService.LastInput.RedirectUrl.Should().Be($"/trainer/notes/{noteId}");
-        }
-        finally
-        {
-            CultureInfo.CurrentUICulture = previousCulture;
-        }
+        await preparationPort.Received(1).PrepareAsync(
+            Arg.Is<string>(payload => IsEquivalentCommand(payload, command)),
+            cancellation.Token);
+        await deliveryPort.Received(1).DeliverAsync(
+            Arg.Is<TraineeNoteUpdatedInAppDeliveryRequest>(request =>
+                request.TraineeNoteId == command.TraineeNoteId.ToString()
+                && request.TraineeId == command.TraineeId.ToString()
+                && request.TrainerId == command.TrainerId.ToString()
+                && request.NoteTitle == command.NoteTitle
+                && request.TriggeredAt == command.TriggeredAt),
+            cancellation.Token);
     }
 
-    private static InAppNotificationResult CreateResult()
-        => new(Id<InAppNotification>.New(), Id<User>.New(), "message", null, false, InAppNotificationTypes.TraineeNoteUpdated, false, null, DateTimeOffset.UtcNow);
-
-    private sealed class FakeNotificationService : IInAppNotificationService
+    private static bool IsEquivalentCommand(string payload, TraineeNoteUpdatedInAppNotificationCommand command)
     {
-        private readonly Result<InAppNotificationResult, AppError> _result;
-
-        public FakeNotificationService(Result<InAppNotificationResult, AppError> result) => _result = result;
-
-        public int Calls { get; private set; }
-        public CreateInAppNotificationInput? LastInput { get; private set; }
-
-        public Task<Result<InAppNotificationResult, AppError>> CreateAsync(CreateInAppNotificationInput input, CancellationToken cancellationToken = default)
-        {
-            Calls++;
-            LastInput = input;
-            return Task.FromResult(_result);
-        }
-
-        public Task<Result<PagedResult<InAppNotificationResult>, AppError>> GetForUserAsync(Id<User> userId, CursorPaginationQuery query, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<Result<Unit, AppError>> MarkAsReadAsync(Id<InAppNotification> notificationId, Id<User> requestingUserId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<Result<Unit, AppError>> MarkAllAsReadAsync(Id<User> userId, DateTimeOffset? before, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<Result<int, AppError>> GetUnreadCountAsync(Id<User> userId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-    }
-
-    private sealed class FakeUserRepository : IUserRepository
-    {
-        private readonly Dictionary<Id<User>, User> _users;
-
-        public FakeUserRepository(params User[] users)
-        {
-            _users = users.ToDictionary(user => user.Id);
-        }
-
-        public Task<User?> FindByIdAsync(Id<User> id, CancellationToken cancellationToken = default)
-            => Task.FromResult(_users.TryGetValue(id, out var user) ? user : null);
-
-        public Task<User?> FindByIdIncludingDeletedAsync(Id<User> id, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<User?> FindByIdWithRolesAsync(Id<User> id, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<User?> FindByNameAsync(string name, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<User?> FindByEmailAsync(Email email, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<User?> FindByNameOrEmailAsync(string name, string email, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<List<UserRankingEntry>> GetRankingAsync(CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task AddAsync(User user, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task UpdateAsync(User user, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<Pagination<UserResult>> GetUsersPaginatedAsync(FilterInput filterInput, bool includeDeleted, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        var deserialized = JsonSerializer.Deserialize<TraineeNoteUpdatedInAppNotificationCommand>(payload, SharedSerializationOptions.Current);
+        return deserialized is not null
+            && deserialized.TraineeNoteId == command.TraineeNoteId
+            && deserialized.TraineeId == command.TraineeId
+            && deserialized.TrainerId == command.TrainerId
+            && deserialized.NoteTitle == command.NoteTitle
+            && deserialized.TriggeredAt == command.TriggeredAt;
     }
 }

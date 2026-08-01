@@ -1,10 +1,28 @@
 using FluentAssertions;
-using LgymApi.BackgroundWorker.Common;
+using LgymApi.Application.Platform.Contracts.BackgroundCommands;
+using LgymApi.BackgroundWorker.Actions.Contracts;
 using NUnit.Framework;
+using System.Reflection;
 
 [TestFixture]
 public sealed class BackgroundActionContractTests
 {
+    private const string ApplicationActionCommandTypeName =
+        "LgymApi.Application.Platform.Contracts.BackgroundCommands.IActionCommand";
+
+    [Test]
+    public void ApplicationIActionCommand_IsExactPublicMarkerInterface()
+    {
+        var type = GetPlatformType(ApplicationActionCommandTypeName);
+
+        type.IsPublic.Should().BeTrue();
+        type.IsInterface.Should().BeTrue();
+        type.IsGenericType.Should().BeFalse();
+        type.GetInterfaces().Should().BeEmpty();
+        type.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
+            .Should().BeEmpty();
+    }
+
     [Test]
     public void IActionCommand_IsMarkerInterface()
     {
@@ -21,7 +39,7 @@ public sealed class BackgroundActionContractTests
         // Verify IBackgroundAction<TCommand> requires TCommand to implement IActionCommand
         var type = typeof(IBackgroundAction<>);
         var typeParams = type.GetGenericArguments();
-        
+
         typeParams.Should().HaveCount(1);
         var constraint = typeParams[0].GetGenericParameterConstraints();
         constraint.Should().Contain(typeof(IActionCommand));
@@ -33,10 +51,10 @@ public sealed class BackgroundActionContractTests
         // Verify ExecuteAsync method signature
         var type = typeof(IBackgroundAction<>);
         var method = type.GetMethod("ExecuteAsync");
-        
+
         method.Should().NotBeNull();
         method.ReturnType.Should().Be(typeof(Task));
-        
+
         var parameters = method.GetParameters();
         parameters.Should().HaveCount(2);
         parameters[0].Name.Should().Be("command");
@@ -49,7 +67,7 @@ public sealed class BackgroundActionContractTests
     {
         // Arrange & Act
         var command = new TestCommand();
-        
+
         // Assert
         command.Should().BeAssignableTo<IActionCommand>();
     }
@@ -59,7 +77,7 @@ public sealed class BackgroundActionContractTests
     {
         // Arrange & Act
         var handler = new TestActionHandler();
-        
+
         // Assert
         handler.Should().BeAssignableTo<IBackgroundAction<TestCommand>>();
     }
@@ -100,7 +118,7 @@ public sealed class BackgroundActionContractTests
         // Verify strong typing prevents mixing incompatible handlers and commands
         var testHandler = new TestActionHandler();
         var anotherHandler = new AnotherTestActionHandler();
-        
+
         testHandler.Should().BeAssignableTo<IBackgroundAction<TestCommand>>();
         anotherHandler.Should().BeAssignableTo<IBackgroundAction<AnotherTestCommand>>();
     }
@@ -112,7 +130,7 @@ public sealed class BackgroundActionContractTests
         // This test verifies the constraint is properly defined at runtime
         var type = typeof(IBackgroundAction<>);
         var constraint = type.GetGenericArguments()[0].GetGenericParameterConstraints();
-        
+
         constraint.Should().Contain(typeof(IActionCommand));
     }
 
@@ -144,5 +162,12 @@ public sealed class BackgroundActionContractTests
         {
             return Task.CompletedTask;
         }
+    }
+
+    private static Type GetPlatformType(string metadataName)
+    {
+        var type = typeof(IActionCommand).Assembly.GetType(metadataName);
+        type.Should().NotBeNull($"{metadataName} must be defined by the Platform assembly");
+        return type!;
     }
 }

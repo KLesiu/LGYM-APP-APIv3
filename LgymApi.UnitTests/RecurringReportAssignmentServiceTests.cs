@@ -1,16 +1,18 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Reporting.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Reporting;
 using LgymApi.Application.Features.Reporting.Models;
 using LgymApi.Application.Repositories;
-using LgymApi.BackgroundWorker.Common;
-using LgymApi.BackgroundWorker.Common.Commands;
+using LgymApi.Application.Platform.Contracts.BackgroundCommands;
+using LgymApi.Application.Reporting.Contracts.BackgroundCommands;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
-using LgymApi.Infrastructure.Repositories;
+using LgymApi.Infrastructure.Repositories.Reporting;
 using LgymApi.Infrastructure.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using NSubstitute;
@@ -33,7 +35,7 @@ public sealed class RecurringReportAssignmentServiceTests
 
         var service = CreateService(db, trainer.Id, traineeId, ownsTrainee: true);
 
-        var result = await service.CreateAsync(trainer, traineeId, new UpsertRecurringReportAssignmentCommand
+        var result = await service.CreateAsync(ReportingTestData.Account(trainer.Id, true), ReportingTestData.AccountId(traineeId), new UpsertRecurringReportAssignmentCommand
         {
             TemplateId = template.Id,
             IntervalValue = 1,
@@ -59,7 +61,7 @@ public sealed class RecurringReportAssignmentServiceTests
 
         var service = CreateService(db, trainer.Id, traineeId, ownsTrainee: false);
 
-        var result = await service.CreateAsync(trainer, traineeId, new UpsertRecurringReportAssignmentCommand
+        var result = await service.CreateAsync(ReportingTestData.Account(trainer.Id, true), ReportingTestData.AccountId(traineeId), new UpsertRecurringReportAssignmentCommand
         {
             TemplateId = template.Id,
             IntervalValue = 1,
@@ -69,6 +71,46 @@ public sealed class RecurringReportAssignmentServiceTests
 
         result.IsFailure.Should().BeTrue();
         db.RecurringReportAssignments.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task PauseAsync_WhenTrainerNoLongerOwnsTrainee_ReturnsNotFoundWithoutMutatingAssignment()
+    {
+        await using var db = CreateDbContext("recurring-pause-not-owned");
+        var trainer = CreateUser();
+        var traineeId = Id<User>.New();
+        var template = CreateTemplate(trainer.Id);
+        var assignment = CreateAssignment(trainer.Id, traineeId, template.Id);
+        db.ReportTemplates.Add(template);
+        db.RecurringReportAssignments.Add(assignment);
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db, trainer.Id, traineeId, ownsTrainee: false);
+        var result = await service.PauseAsync(ReportingTestData.Account(trainer.Id, true), ReportingTestData.AccountId(traineeId), assignment.Id);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<ReportingNotFoundError>();
+        db.RecurringReportAssignments.Single().IsActive.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task PauseAsync_WhenCallerIsNotTrainer_ReturnsForbiddenWithoutMutatingAssignment()
+    {
+        await using var db = CreateDbContext("recurring-pause-not-trainer");
+        var caller = CreateUser();
+        var traineeId = Id<User>.New();
+        var template = CreateTemplate(caller.Id);
+        var assignment = CreateAssignment(caller.Id, traineeId, template.Id);
+        db.ReportTemplates.Add(template);
+        db.RecurringReportAssignments.Add(assignment);
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db, caller.Id, traineeId, ownsTrainee: true, isTrainer: false);
+        var result = await service.PauseAsync(ReportingTestData.Account(caller.Id), ReportingTestData.AccountId(traineeId), assignment.Id);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<ReportingForbiddenError>();
+        db.RecurringReportAssignments.Single().IsActive.Should().BeTrue();
     }
 
     [Test]
@@ -266,7 +308,7 @@ public sealed class RecurringReportAssignmentServiceTests
         var service = CreateService(db, trainer.Id, traineeId, ownsTrainee: true);
         var startsAt = DateTimeOffset.UtcNow.AddDays(2);
 
-        var result = await service.UpdateAsync(trainer, traineeId, assignment.Id, new UpsertRecurringReportAssignmentCommand
+        var result = await service.UpdateAsync(ReportingTestData.Account(trainer.Id, true), ReportingTestData.AccountId(traineeId), assignment.Id, new UpsertRecurringReportAssignmentCommand
         {
             TemplateId = newTemplate.Id,
             IntervalValue = 2,
@@ -298,10 +340,10 @@ public sealed class RecurringReportAssignmentServiceTests
 
         var service = CreateService(db, trainer.Id, traineeId, ownsTrainee: true);
 
-        (await service.PauseAsync(trainer, traineeId, assignment.Id)).IsSuccess.Should().BeTrue();
+        (await service.PauseAsync(ReportingTestData.Account(trainer.Id, true), ReportingTestData.AccountId(traineeId), assignment.Id)).IsSuccess.Should().BeTrue();
         db.RecurringReportAssignments.Single().IsActive.Should().BeFalse();
 
-        (await service.ResumeAsync(trainer, traineeId, assignment.Id)).IsSuccess.Should().BeTrue();
+        (await service.ResumeAsync(ReportingTestData.Account(trainer.Id, true), ReportingTestData.AccountId(traineeId), assignment.Id)).IsSuccess.Should().BeTrue();
         db.RecurringReportAssignments.Single().IsActive.Should().BeTrue();
     }
 
@@ -319,7 +361,7 @@ public sealed class RecurringReportAssignmentServiceTests
 
         var service = CreateService(db, trainer.Id, traineeId, ownsTrainee: true);
 
-        var result = await service.DeleteAsync(trainer, traineeId, assignment.Id);
+        var result = await service.DeleteAsync(ReportingTestData.Account(trainer.Id, true), ReportingTestData.AccountId(traineeId), assignment.Id);
 
         result.IsSuccess.Should().BeTrue();
         var stored = db.RecurringReportAssignments.IgnoreQueryFilters().Single();
@@ -355,7 +397,7 @@ public sealed class RecurringReportAssignmentServiceTests
 
         var service = CreateService(db, trainer.Id, traineeId, ownsTrainee: true);
 
-        var result = await service.UpdateAsync(trainer, traineeId, assignment.Id, new UpsertRecurringReportAssignmentCommand
+        var result = await service.UpdateAsync(ReportingTestData.Account(trainer.Id, true), ReportingTestData.AccountId(traineeId), assignment.Id, new UpsertRecurringReportAssignmentCommand
         {
             TemplateId = template.Id,
             IntervalValue = 2,
@@ -373,26 +415,22 @@ public sealed class RecurringReportAssignmentServiceTests
         Id<User> trainerId,
         Id<User> traineeId,
         bool ownsTrainee,
-        ICommandDispatcher? commandDispatcher = null)
+        ICommandDispatcher? commandDispatcher = null,
+        bool isTrainer = true)
     {
-        var roleRepository = Substitute.For<IRoleRepository>();
-        roleRepository.UserHasRoleAsync(trainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(true);
+        var relationshipAccess = Substitute.For<IReportingRelationshipAccessPersistence>();
+        relationshipAccess
+            .GetAccessAsync(ReportingTestData.AccountId(trainerId), ReportingTestData.AccountId(traineeId), Arg.Any<CancellationToken>())
+            .Returns(new ReportingRelationshipAccessFact(ownsTrainee));
 
-        var trainerRelationshipRepository = Substitute.For<ITrainerRelationshipRepository>();
-        trainerRelationshipRepository
-            .FindActiveLinkByTrainerAndTraineeAsync(trainerId, traineeId, Arg.Any<CancellationToken>())
-            .Returns(ownsTrainee
-                ? new TrainerTraineeLink { Id = Id<TrainerTraineeLink>.New(), TrainerId = trainerId, TraineeId = traineeId }
-                : null);
-
-        return new RecurringReportAssignmentService(new RecurringReportAssignmentServiceDependencies(
-            roleRepository,
-            trainerRelationshipRepository,
-            new ReportingRepository(db),
-            new RecurringReportAssignmentRepository(db),
+        return new RecurringReportAssignmentService(
+            new ReportTemplatePersistenceRepository(db),
+            new ReportRequestSubmissionPersistenceRepository(db),
+            new RecurringReportAssignmentPersistenceRepository(db),
+            relationshipAccess,
+            ReportingTestData.Mapper(),
             commandDispatcher ?? Substitute.For<ICommandDispatcher>(),
-            new EfUnitOfWork(db)));
+            new EfUnitOfWork(db));
     }
 
     private static AppDbContext CreateDbContext(string name)

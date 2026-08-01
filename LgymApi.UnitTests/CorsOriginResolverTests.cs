@@ -21,27 +21,27 @@ public sealed class CorsOriginResolverTests
         "https://admin.example.com"
     ];
 
-     [Test]
-     public void ResolveAllowedOrigins_InDevelopmentWithoutConfiguredOrigins_ReturnsFallbackOrigins()
-     {
-         var result = CorsOriginResolver.ResolveAllowedOrigins(null, isDevelopment: true);
+    [Test]
+    public void ResolveAllowedOrigins_InDevelopmentWithoutConfiguredOrigins_ReturnsFallbackOrigins()
+    {
+        var result = CorsOriginResolver.ResolveAllowedOrigins(null, isDevelopment: true);
 
-         result.Should().Equal(ExpectedDevelopmentOrigins);
-     }
+        result.Should().Equal(ExpectedDevelopmentOrigins);
+    }
 
-     [Test]
-     public void ResolveAllowedOrigins_InProductionWithoutConfiguredOrigins_ReturnsEmpty()
-     {
-         var result = CorsOriginResolver.ResolveAllowedOrigins(Array.Empty<string>(), isDevelopment: false);
+    [Test]
+    public void ResolveAllowedOrigins_InProductionWithoutConfiguredOrigins_ReturnsEmpty()
+    {
+        var result = CorsOriginResolver.ResolveAllowedOrigins(Array.Empty<string>(), isDevelopment: false);
 
-         result.Should().BeEmpty();
-     }
+        result.Should().BeEmpty();
+    }
 
-     [Test]
-     public void ResolveAllowedOrigins_TrimsAndDeduplicatesConfiguredOrigins()
-     {
-         var configuredOrigins = new[]
-         {
+    [Test]
+    public void ResolveAllowedOrigins_TrimsAndDeduplicatesConfiguredOrigins()
+    {
+        var configuredOrigins = new[]
+        {
              " https://app.example.com ",
              "https://app.example.com",
              "",
@@ -49,8 +49,8 @@ public sealed class CorsOriginResolverTests
              "https://admin.example.com"
          };
 
-         var result = CorsOriginResolver.ResolveAllowedOrigins(configuredOrigins, isDevelopment: true);
+        var result = CorsOriginResolver.ResolveAllowedOrigins(configuredOrigins, isDevelopment: true);
 
-         result.Should().Equal(ExpectedNormalizedConfiguredOrigins);
-     }
+        result.Should().Equal(ExpectedNormalizedConfiguredOrigins);
+    }
 }

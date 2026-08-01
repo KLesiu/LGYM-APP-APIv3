@@ -49,7 +49,7 @@ public sealed class FeatureLocationExclusivityGuardTests
                 }
 
                 var filePath = tree.FilePath;
-                if (IsTestPath(filePath) || IsContractsPath(filePath))
+                if (IsContractsPath(filePath))
                 {
                     continue;
                 }
@@ -101,7 +101,7 @@ public sealed class FeatureLocationExclusivityGuardTests
                 }
 
                 var filePath = tree.FilePath;
-                if (IsTestPath(filePath) || IsControllersPath(filePath))
+                if (IsControllersPath(filePath))
                 {
                     continue;
                 }
@@ -153,7 +153,7 @@ public sealed class FeatureLocationExclusivityGuardTests
                 }
 
                 var filePath = tree.FilePath;
-                if (IsTestPath(filePath) || IsValidationPath(filePath))
+                if (IsValidationPath(filePath))
                 {
                     continue;
                 }
@@ -173,30 +173,11 @@ public sealed class FeatureLocationExclusivityGuardTests
 
     private static (string RepoRoot, CSharpCompilation Compilation, IReadOnlyList<SyntaxTree> SyntaxTrees) PrepareCompilation()
     {
-        var repoRoot = ResolveRepositoryRoot();
-        var apiRoot = Path.Combine(repoRoot, "LgymApi.Api");
-        var parseOptions = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
+        var result = ArchitectureTestHelpers.PrepareCompilation("LgymApi.Api");
 
-        Assert.That(Directory.Exists(apiRoot), Is.True, $"Api project directory '{apiRoot}' does not exist.");
+        Assert.That(result.SyntaxTrees, Is.Not.Empty, "No production API source files found for the feature location guard test.");
 
-        var sourceFiles = Directory
-            .EnumerateFiles(apiRoot, "*.cs", SearchOption.AllDirectories)
-            .Where(path => !IsInBuildArtifacts(path))
-            .ToList();
-
-        Assert.That(sourceFiles, Is.Not.Empty, $"No source files found in '{apiRoot}'.");
-
-        var syntaxTrees = sourceFiles
-            .Select(path => CSharpSyntaxTree.ParseText(File.ReadAllText(path), options: parseOptions, path: path))
-            .ToList();
-
-        var compilation = CSharpCompilation.Create(
-            "FeatureLocationExclusivityGuard",
-            syntaxTrees,
-            ResolveMetadataReferences(),
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-        return (repoRoot, compilation, syntaxTrees);
+        return result;
     }
 
     private static bool ImplementsDtoInterface(INamedTypeSymbol typeSymbol, INamedTypeSymbol idtoSymbol, INamedTypeSymbol resultDtoSymbol)
@@ -248,71 +229,17 @@ public sealed class FeatureLocationExclusivityGuardTests
 
     private static bool IsContractsPath(string path)
     {
-        var normalized = Normalize(path);
-        return normalized.Contains("/features/", StringComparison.OrdinalIgnoreCase)
-            && normalized.Contains("/contracts/", StringComparison.OrdinalIgnoreCase);
+        return ArchitectureTestHelpers.IsApiFeatureLeafFilePath(path, "Contracts");
     }
 
     private static bool IsControllersPath(string path)
     {
-        var normalized = Normalize(path);
-        return normalized.Contains("/features/", StringComparison.OrdinalIgnoreCase)
-            && normalized.Contains("/controllers/", StringComparison.OrdinalIgnoreCase);
+        return ArchitectureTestHelpers.IsApiFeatureLeafFilePath(path, "Controllers");
     }
 
     private static bool IsValidationPath(string path)
     {
-        var normalized = Normalize(path);
-        return normalized.Contains("/features/", StringComparison.OrdinalIgnoreCase)
-            && normalized.Contains("/validation/", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsTestPath(string path)
-    {
-        var normalized = Normalize(path);
-        return normalized.Contains("/tests/", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains("/unittests/", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains("/architecturetests/", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string Normalize(string path)
-    {
-        return path.Replace('\\', '/');
-    }
-
-    private static List<MetadataReference> ResolveMetadataReferences()
-    {
-        return AppDomain.CurrentDomain
-            .GetAssemblies()
-            .Where(assembly => !assembly.IsDynamic)
-            .Select(assembly => assembly.Location)
-            .Where(location => !string.IsNullOrWhiteSpace(location) && File.Exists(location))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Select(location => (MetadataReference)MetadataReference.CreateFromFile(location))
-            .ToList();
-    }
-
-    private static string ResolveRepositoryRoot()
-    {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current != null)
-        {
-            if (File.Exists(Path.Combine(current.FullName, "LgymApi.sln")))
-            {
-                return current.FullName;
-            }
-
-            current = current.Parent;
-        }
-
-        throw new InvalidOperationException("Unable to locate repository root.");
-    }
-
-    private static bool IsInBuildArtifacts(string path)
-    {
-        var normalized = Normalize(path);
-        return normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase);
+        return ArchitectureTestHelpers.IsApiFeatureLeafFilePath(path, "Validation");
     }
 
     private sealed record Violation(string File, int Line, string TypeName)

@@ -38,7 +38,7 @@ public sealed class ControllerActionCancellationTokenGuardTests
             {
                 foreach (var method in controllerClass.Members.OfType<MethodDeclarationSyntax>())
                 {
-                    if (!method.Modifiers.Any(m => m.Kind() == SyntaxKind.PublicKeyword))
+                    if (!method.Modifiers.Any(m => Microsoft.CodeAnalysis.CSharpExtensions.IsKind(m, SyntaxKind.PublicKeyword)))
                     {
                         continue;
                     }

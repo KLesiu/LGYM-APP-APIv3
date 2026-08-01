@@ -9,15 +9,6 @@ internal static class InfrastructureMappingRegistration
 {
     internal static void RegisterAll(MapperRegistry registry)
     {
-        registry.Register<TrainerRelationshipRepository.DashboardTraineeProjection>(
-        [
-            new FieldMapping { FieldName = "id", MemberName = "Id", AllowSort = true, AllowFilter = false },
-            new FieldMapping { FieldName = "name", MemberName = "Name", AllowSort = true, AllowFilter = true },
-            new FieldMapping { FieldName = "email", MemberName = "Email", AllowSort = true, AllowFilter = true },
-            new FieldMapping { FieldName = "createdAt", MemberName = "CreatedAt", AllowSort = true, AllowFilter = false },
-            new FieldMapping { FieldName = "statusOrder", MemberName = "StatusOrder", AllowSort = true, AllowFilter = false }
-        ]);
-
         registry.Register<UserRepository.AdminUserProjection>(
         [
             new FieldMapping { FieldName = "id", MemberName = "Id", AllowSort = true, AllowFilter = false },
@@ -47,7 +38,7 @@ internal static class InfrastructureMappingRegistration
             new FieldMapping { FieldName = "createdAt", MemberName = "CreatedAt", AllowSort = true, AllowFilter = false }
         ]);
 
-        registry.Register<LgymApi.Application.Features.TrainerRelationships.Models.TrainerInvitationResult>(
+        registry.Register<LgymApi.Application.Coaching.Invitations.Models.InvitationReadModel>(
         [
             new FieldMapping { FieldName = "id", MemberName = "Id", AllowSort = true, AllowFilter = false },
             new FieldMapping { FieldName = "status", MemberName = "Status", AllowSort = true, AllowFilter = true },
@@ -56,6 +47,14 @@ internal static class InfrastructureMappingRegistration
             new FieldMapping { FieldName = "inviteeEmail", MemberName = "InviteeEmail", AllowSort = true, AllowFilter = true },
             new FieldMapping { FieldName = "traineeName", MemberName = "TraineeName", AllowSort = true, AllowFilter = true },
             new FieldMapping { FieldName = "traineeEmail", MemberName = "TraineeEmail", AllowSort = true, AllowFilter = true }
+        ]);
+        registry.Register<LgymApi.Application.Coaching.Relationships.TrainerDashboard.TrainerDashboardTraineeReadModel>(
+        [
+            new FieldMapping { FieldName = "id", MemberName = "Id", AllowSort = true, AllowFilter = false },
+            new FieldMapping { FieldName = "name", MemberName = "Name", AllowSort = true, AllowFilter = true },
+            new FieldMapping { FieldName = "email", MemberName = "Email", AllowSort = true, AllowFilter = true },
+            new FieldMapping { FieldName = "createdAt", MemberName = "CreatedAt", AllowSort = true, AllowFilter = false },
+            new FieldMapping { FieldName = "statusOrder", MemberName = "StatusOrder", AllowSort = true, AllowFilter = false }
         ]);
     }
 }

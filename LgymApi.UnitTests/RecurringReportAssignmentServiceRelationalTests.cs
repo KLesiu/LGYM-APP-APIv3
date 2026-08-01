@@ -1,13 +1,14 @@
 using FluentAssertions;
 using LgymApi.Application.Features.Reporting;
 using LgymApi.Application.Repositories;
-using LgymApi.BackgroundWorker.Common;
-using LgymApi.BackgroundWorker.Common.Commands;
+using LgymApi.Application.Platform.Contracts.BackgroundCommands;
+using LgymApi.Application.Reporting.Contracts.BackgroundCommands;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
-using LgymApi.Infrastructure.Repositories;
+using LgymApi.Infrastructure.Repositories.Reporting;
 using LgymApi.Infrastructure.UnitOfWork;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -111,9 +112,67 @@ public sealed class RecurringReportAssignmentServiceRelationalTests
 
         await commandDispatcher.Received(1).EnqueueAsync(Arg.Is<ReportRequestCreatedInAppNotificationCommand>(command =>
             command.RequestId == nextRequest.Id
-            && command.TraineeId == storedAssignment.TraineeId
-            && command.TrainerId == storedAssignment.TrainerId
+            && command.TraineeId == storedAssignment.TraineeId.Rebind<LgymApi.Identity.Contracts.AccountReference>()
+            && command.TrainerId == storedAssignment.TrainerId.Rebind<LgymApi.Identity.Contracts.AccountReference>()
             && command.TemplateName == "Weekly check-in"));
+    }
+
+    [Test]
+    public async Task ProcessDueAssignmentsAsync_DeactivatesAssignment_WhenTemplateWasDeleted_WithoutCreatingRequest_OnSqlite()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        var assignmentId = Id<RecurringReportAssignment>.New();
+
+        await using (var setupDb = new AppDbContext(options))
+        {
+            await setupDb.Database.EnsureCreatedAsync();
+
+            var trainer = CreateUser("trainer@example.com", "Trainer");
+            var trainee = CreateUser("trainee@example.com", "Trainee");
+            var template = CreateTemplate(trainer.Id);
+            template.IsDeleted = true;
+            var assignment = new RecurringReportAssignment
+            {
+                Id = assignmentId,
+                TrainerId = trainer.Id,
+                TraineeId = trainee.Id,
+                TemplateId = template.Id,
+                Template = template,
+                IntervalValue = 1,
+                IntervalUnit = RecurringReportIntervalUnit.Week,
+                StartsAt = DateTimeOffset.UtcNow.AddDays(-20),
+                IsActive = true,
+                NextEligibleAt = DateTimeOffset.UtcNow.AddDays(-1)
+            };
+
+            await setupDb.Users.AddRangeAsync(trainer, trainee);
+            await setupDb.ReportTemplates.AddAsync(template);
+            await setupDb.RecurringReportAssignments.AddAsync(assignment);
+            await setupDb.SaveChangesAsync();
+        }
+
+        var commandDispatcher = Substitute.For<ICommandDispatcher>();
+
+        await using (var actDb = new AppDbContext(options))
+        {
+            var service = CreateService(actDb, commandDispatcher);
+            await service.ProcessDueAssignmentsAsync();
+        }
+
+        await using var assertDb = new AppDbContext(options);
+        var storedAssignment = await assertDb.RecurringReportAssignments
+            .IgnoreQueryFilters()
+            .SingleAsync(assignment => assignment.Id == assignmentId);
+
+        storedAssignment.IsActive.Should().BeFalse();
+        (await assertDb.ReportRequests.CountAsync()).Should().Be(0);
+        await commandDispatcher.DidNotReceiveWithAnyArgs().EnqueueAsync(Arg.Any<ReportRequestCreatedInAppNotificationCommand>());
     }
 
     [Test]
@@ -129,10 +188,10 @@ public sealed class RecurringReportAssignmentServiceRelationalTests
     {
         // Arrange
         var collection = new List<int> { 10, 20, 30 };
-        
+
         // Act
         var firstElement = collection.First();
-        
+
         // Assert
         firstElement.Should().Be(10);
         firstElement.Should().NotBe(20); // Ensure we're not getting the wrong element
@@ -140,16 +199,16 @@ public sealed class RecurringReportAssignmentServiceRelationalTests
 
     private static RecurringReportAssignmentService CreateService(AppDbContext db, ICommandDispatcher commandDispatcher)
     {
-        var roleRepository = Substitute.For<IRoleRepository>();
-        var trainerRelationshipRepository = Substitute.For<ITrainerRelationshipRepository>();
+        var relationshipAccess = Substitute.For<IReportingRelationshipAccessPersistence>();
 
-        return new RecurringReportAssignmentService(new RecurringReportAssignmentServiceDependencies(
-            roleRepository,
-            trainerRelationshipRepository,
-            new ReportingRepository(db),
-            new RecurringReportAssignmentRepository(db),
+        return new RecurringReportAssignmentService(
+            new ReportTemplatePersistenceRepository(db),
+            new ReportRequestSubmissionPersistenceRepository(db),
+            new RecurringReportAssignmentPersistenceRepository(db),
+            relationshipAccess,
+            ReportingTestData.Mapper(),
             commandDispatcher,
-            new EfUnitOfWork(db)));
+            new EfUnitOfWork(db));
     }
 
     private static User CreateUser(string email, string name)

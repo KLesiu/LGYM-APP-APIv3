@@ -38,10 +38,10 @@ public sealed class PlanSeeder : IEntitySeeder
                 continue;
             }
 
-             var plan = new Plan
-             {
-                 Id = Id<Plan>.New(),
-                 UserId = user.Id,
+            var plan = new Plan
+            {
+                Id = Id<Plan>.New(),
+                UserId = user.Id,
                 Name = "Push Pull Legs",
                 IsActive = true
             };

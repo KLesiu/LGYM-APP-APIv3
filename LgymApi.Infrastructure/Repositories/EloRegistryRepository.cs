@@ -20,6 +20,19 @@ public sealed class EloRegistryRepository : IEloRegistryRepository
         return _dbContext.EloRegistries.AddAsync(registry, cancellationToken).AsTask();
     }
 
+    public Task CreateInitialForUserAsync(Id<User> userId, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.EloRegistries.AddAsync(
+            new EloRegistry
+            {
+                Id = Id<EloRegistry>.New(),
+                UserId = userId,
+                Date = DateTimeOffset.UtcNow,
+                Elo = 1000
+            },
+            cancellationToken).AsTask();
+    }
+
     public Task<int?> GetLatestEloAsync(Id<User> userId, CancellationToken cancellationToken = default)
     {
         return _dbContext.EloRegistries

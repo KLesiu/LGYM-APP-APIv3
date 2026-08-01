@@ -13,13 +13,19 @@ gyms, measurements, records, scores, and application configuration.
 
 ## Solution structure
 
-- `LgymApi.Api` - HTTP API layer (controllers, DTOs, validation, middleware, mapping profiles).
-- `LgymApi.BackgroundWorker` - background job implementations (Hangfire jobs/schedulers) in a separate project.
-- `LgymApi.Application` - use-case orchestration and business services.
-- `LgymApi.Domain` - domain entities and core model.
-- `LgymApi.Infrastructure` - EF Core persistence, repositories, Unit of Work, migrations.
-- `LgymApi.UnitTests` / `LgymApi.IntegrationTests` - automated tests.
+The solution has 18 projects and 90 direct project references. The authoritative graph, dependency-first order, and forbidden complement are in `docs/modular-monolith/issue-380-project-reference-graph.md`.
+
+- `LgymApi.Api` is the HTTP host and composition root.
+- `LgymApi.Application` contains the remaining Reporting, Workout & Progress, Coaching, and Nutrition use cases.
+- `LgymApi.Platform`, `LgymApi.Identity`, `LgymApi.TrainingPlanning`, and `LgymApi.Notifications` are stable module assemblies with small public facades and internal implementations.
+- `LgymApi.Domain` contains entities, enums, IDs, and security constants.
+- `LgymApi.Infrastructure` owns the shared EF runtime: one `AppDbContext`, one migration stream, the Unit of Work, Hangfire persistence, and module persistence bridges.
+- `LgymApi.BackgroundWorker` executes durable jobs and selects no-op or Hangfire schedulers. `LgymApi.BackgroundWorker.Common` is the closed persisted-job and email-wire seam.
+- `LgymApi.Resources` and `LgymApi.Resources.Generator` provide localized resources and their analyzer.
+- `LgymApi.DataSeeder`, `LgymApi.DataSeeder.Tests`, `LgymApi.UnitTests`, `LgymApi.IntegrationTests`, `LgymApi.ArchitectureTests`, and `LgymApi.TestUtils` provide bootstrap and verification support.
 - Project-level docs live next to each `.csproj` as `<ProjectName>.md`.
+
+For contributor workflow, use the [module contribution guide](docs/MODULE_CONTRIBUTION_GUIDE.md) and [architecture overview](docs/ARCHITECTURE.md). [ADR-007](docs/adr/007-final-modular-monolith-compatibility-commitments.md) records final compatibility commitments, while [issue-395 verification](docs/modular-monolith/issue-395-final-verification.md) records the Todo 22 same-SHA evidence workflow. [New modules usage notes](docs/NEW_MODULES_USAGE.md) cover feature and API usage, not contribution workflow.
 
 ## Requirements
 
@@ -386,8 +392,18 @@ Important limitation:
 - Application services define commit timing (`IUnitOfWork.SaveChangesAsync`) at use-case boundaries.
 - Multi-step write flows use explicit `IUnitOfWork` transactions in services.
 - Read-only queries should prefer `AsNoTracking()` unless tracking is required.
+- The production application has one `AppDbContext`, one PostgreSQL database, and one migration stream. Each persisted entity still has one module owner. See `docs/modular-monolith/issue-376-ownership-map.md`; the executable source is `LgymApi.ArchitectureTests/PersistedEntityOwnershipCatalog.cs`.
+- Known internal entity IDs use `Id<T>` and PostgreSQL `uuid` columns. API JSON UUID values remain strings. Only `PushNotificationMessage.EntityId` and `PushEventPayload.EntityId` are polymorphic string ID exceptions.
+
+### PostgreSQL integration runner
+
+The runner needs Docker, or an admin connection supplied through `-ConnectionString`. It scopes `LGYM_TEST_POSTGRES` to the test process, checks non-empty TRX counters, removes its Docker container, and the test fixture drops its leased `lgym_it_*` database.
+
+```powershell
+pwsh -File scripts/run-postgresql-integration-tests.ps1
+```
 
 ## Notes
 
 - Password verification uses legacy `passport-local-mongoose` PBKDF2 settings (sha256, 25000 iterations, keylen 512, hex).
-- In PostgreSQL all IDs are GUIDs; API responses return `_id` as string GUID values.
+- Known internal entity IDs use `Id<T>`; EF Core stores their provider values as PostgreSQL `uuid`, while API responses transport UUID values such as `_id` as strings. The only polymorphic string ID exceptions are `PushNotificationMessage.EntityId` and `PushEventPayload.EntityId`.

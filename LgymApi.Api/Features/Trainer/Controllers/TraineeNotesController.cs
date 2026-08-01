@@ -2,8 +2,8 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Features.TraineeNotes;
-using LgymApi.Application.Features.TraineeNotes.Models;
+using LgymApi.Application.Coaching.TraineeNotes.Models;
+using LgymApi.Application.Coaching.ApiAdapters;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
 using LgymApi.Resources;
@@ -17,12 +17,14 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 [Authorize]
 public sealed class TraineeNotesController : ControllerBase
 {
-    private readonly ITraineeNoteService _traineeNoteService;
+    private readonly ITraineeNotesApiPort _notes;
     private readonly IMapper _mapper;
 
-    public TraineeNotesController(ITraineeNoteService traineeNoteService, IMapper mapper)
+    public TraineeNotesController(
+        ITraineeNotesApiPort notes,
+        IMapper mapper)
     {
-        _traineeNoteService = traineeNoteService;
+        _notes = notes;
         _mapper = mapper;
     }
 
@@ -30,9 +32,8 @@ public sealed class TraineeNotesController : ControllerBase
     [ProducesResponseType(typeof(List<TraineeNoteDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetVisibleNotes(CancellationToken cancellationToken = default)
     {
-        var trainee = HttpContext.GetCurrentUser();
-        var result = await _traineeNoteService.GetVisibleNotesAsync(trainee!, cancellationToken);
-        return result.IsFailure ? result.ToActionResult() : Ok(_mapper.MapList<TraineeNoteResult, TraineeNoteDto>(result.Value));
+        var result = await _notes.GetVisibleNotesAsync(HttpContext.GetAuthenticatedAccountContext()!, cancellationToken);
+        return result.IsFailure ? result.ToActionResult() : Ok(_mapper.MapList<TraineeNoteReadModel, TraineeNoteDto>(result.Value));
     }
 
     [HttpGet("notes/{noteId}")]
@@ -44,8 +45,7 @@ public sealed class TraineeNotesController : ControllerBase
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var trainee = HttpContext.GetCurrentUser();
-        var result = await _traineeNoteService.GetVisibleNoteAsync(trainee!, parsedNoteId, cancellationToken);
-        return result.IsFailure ? result.ToActionResult() : Ok(_mapper.Map<TraineeNoteResult, TraineeNoteDto>(result.Value));
+        var result = await _notes.GetVisibleNoteAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedNoteId, cancellationToken);
+        return result.IsFailure ? result.ToActionResult() : Ok(_mapper.Map<TraineeNoteReadModel, TraineeNoteDto>(result.Value));
     }
 }

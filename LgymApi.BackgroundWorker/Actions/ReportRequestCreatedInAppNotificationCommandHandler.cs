@@ -1,46 +1,23 @@
-using LgymApi.Application.Options;
-using LgymApi.Application.Repositories;
-using LgymApi.BackgroundWorker.Common.Commands;
-using LgymApi.Domain.Notifications;
-using Microsoft.Extensions.Logging;
-using NotificationsApp = global::LgymApi.Application.Notifications;
+using LgymApi.Application.Reporting.Contracts.BackgroundCommands;
+using LgymApi.BackgroundWorker.Actions.Contracts;
+using LgymApi.Application.Notifications.Contracts.InApp;
+using LgymApi.Application.Platform.Contracts.Serialization;
+using System.Text.Json;
 
 namespace LgymApi.BackgroundWorker.Actions;
 
-public sealed class ReportRequestCreatedInAppNotificationCommandHandler : global::LgymApi.BackgroundWorker.Common.IBackgroundAction<ReportRequestCreatedInAppNotificationCommand>
+public sealed partial class ReportRequestCreatedInAppNotificationCommandHandler : IBackgroundAction<ReportRequestCreatedInAppNotificationCommand>
 {
-    private readonly NotificationsApp.IInAppNotificationService _notificationService;
-    private readonly IUserRepository _userRepository;
-    private readonly AppDefaultsOptions _appDefaultsOptions;
-    private readonly ILogger<ReportRequestCreatedInAppNotificationCommandHandler> _logger;
+    private readonly IReportRequestCreatedActionExecutionPort _executionPort;
 
     public ReportRequestCreatedInAppNotificationCommandHandler(
-        NotificationsApp.IInAppNotificationService notificationService,
-        IUserRepository userRepository,
-        AppDefaultsOptions appDefaultsOptions,
-        ILogger<ReportRequestCreatedInAppNotificationCommandHandler> logger)
+        IReportRequestCreatedActionExecutionPort executionPort)
     {
-        _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
-        _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
-        _appDefaultsOptions = appDefaultsOptions ?? throw new ArgumentNullException(nameof(appDefaultsOptions));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _executionPort = executionPort ?? throw new ArgumentNullException(nameof(executionPort));
     }
 
     public async Task ExecuteAsync(ReportRequestCreatedInAppNotificationCommand command, CancellationToken cancellationToken = default)
     {
-        await LocalizedReportNotificationDispatcher.DispatchAsync(
-            _notificationService,
-            _userRepository,
-            _appDefaultsOptions,
-            _logger,
-            command.TraineeId,
-            command.TrainerId,
-            command.TemplateName,
-            $"report-request:{command.RequestId}:created",
-            $"/trainer/report-requests/{command.RequestId}",
-            InAppNotificationTypes.ReportRequestReceived,
-            () => global::LgymApi.Resources.Messages.TrainerReportRequestReceived,
-            "report-request",
-            cancellationToken);
+        await _executionPort.ExecuteAsync(JsonSerializer.Serialize(command, SharedSerializationOptions.Current), cancellationToken);
     }
 }

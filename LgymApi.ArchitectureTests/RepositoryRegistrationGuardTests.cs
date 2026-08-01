@@ -17,25 +17,67 @@ public sealed class RepositoryRegistrationGuardTests
     [Test]
     public void Repositories_Should_Be_Registered_In_Infrastructure_ServiceCollection()
     {
-        var repoRoot = ResolveRepositoryRoot();
-        var repositoriesRoot = Path.Combine(repoRoot, "LgymApi.Infrastructure", "Repositories");
-        var serviceExtensionsPath = Path.Combine(repoRoot, "LgymApi.Infrastructure", "ServiceCollectionExtensions.cs");
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(Directory.Exists(repositoriesRoot), Is.True, $"Repositories root '{repositoriesRoot}' not found.");
-            Assert.That(File.Exists(serviceExtensionsPath), Is.True, $"Infrastructure ServiceCollectionExtensions file '{serviceExtensionsPath}' not found.");
-        });
-
         var parseOptions = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
-        var repositoryFiles = Directory
-            .EnumerateFiles(repositoriesRoot, "*.cs", SearchOption.AllDirectories)
-            .Where(path => !IsInBuildArtifacts(path))
+        var infrastructureFiles = ArchitectureTestHelpers.EnumerateProjectSourceFiles("LgymApi.Infrastructure");
+        var repositoryFiles = infrastructureFiles
+            .Where(path => Path.GetFileName(path).EndsWith("Repository.cs", StringComparison.Ordinal))
+            .ToList();
+        var serviceExtensionFiles = infrastructureFiles
+            .Where(path => Path.GetFileName(path).EndsWith("ServiceCollectionExtensions.cs", StringComparison.Ordinal))
             .ToList();
 
         Assert.That(repositoryFiles, Is.Not.Empty, "No repository files found for DI guard test.");
+        Assert.That(serviceExtensionFiles, Is.Not.Empty, "No Infrastructure ServiceCollectionExtensions files found for the DI guard test.");
 
-        var repositoryDeclarations = new List<RepositoryDeclaration>();
+        var repositoryDeclarations = CollectRepositoryDeclarations(repositoryFiles, parseOptions);
+        var registrations = CollectRegistrations(serviceExtensionFiles, parseOptions);
+
+        Assert.That(repositoryDeclarations, Is.Not.Empty, "No concrete repositories detected.");
+        Assert.That(registrations, Is.Not.Empty, "No repository registrations detected in module-owned helper files.");
+
+        var rootRegistrations = registrations
+            .Where(registration => registration.Module is null)
+            .ToList();
+
+        Assert.That(
+            rootRegistrations,
+            Is.Empty,
+            "Repository registrations must live in module-owned ServiceCollectionExtensions files, not the project-root composition shim." + Environment.NewLine +
+            string.Join(Environment.NewLine, rootRegistrations.Select(registration => registration.ToString())));
+
+        var duplicateRegistrations = registrations
+            .GroupBy(registration => new { registration.Interface, registration.Implementation })
+            .Where(group => group.Count() > 1)
+            .Select(group => group.First())
+            .OrderBy(registration => registration.Interface, StringComparer.Ordinal)
+            .ThenBy(registration => registration.Implementation, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.That(
+            duplicateRegistrations,
+            Is.Empty,
+            "Duplicate repository registrations were found across module-owned helper files." + Environment.NewLine +
+            string.Join(Environment.NewLine, duplicateRegistrations.Select(registration => registration.ToString())));
+
+        var missing = repositoryDeclarations
+            .Where(declaration => !registrations.Any(registration =>
+                registration.Interface == declaration.Interface &&
+                registration.Implementation == declaration.Implementation))
+            .OrderBy(declaration => declaration.Interface, StringComparer.Ordinal)
+            .ThenBy(declaration => declaration.Implementation, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.That(
+            missing,
+            Is.Empty,
+            "Every repository must be registered in Infrastructure ServiceCollectionExtensions." + Environment.NewLine +
+            string.Join(Environment.NewLine, missing.Select(m => m.ToString())));
+    }
+
+    private static List<RepositoryDeclaration> CollectRepositoryDeclarations(IEnumerable<string> repositoryFiles, CSharpParseOptions parseOptions)
+    {
+        var declarations = new List<RepositoryDeclaration>();
+
         foreach (var file in repositoryFiles)
         {
             var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(file), parseOptions, file);
@@ -54,25 +96,58 @@ public sealed class RepositoryRegistrationGuardTests
                     continue;
                 }
 
-                repositoryDeclarations.Add(new RepositoryDeclaration(interfaceName, typeDeclaration.Identifier.ValueText));
+                declarations.Add(new RepositoryDeclaration(interfaceName, typeDeclaration.Identifier.ValueText, file));
             }
         }
 
-        Assert.That(repositoryDeclarations, Is.Not.Empty, "No concrete repositories detected.");
+        return declarations;
+    }
 
-        var serviceExtensionsTree = CSharpSyntaxTree.ParseText(File.ReadAllText(serviceExtensionsPath), parseOptions, serviceExtensionsPath);
-        var registrations = ExtractRegistrations(serviceExtensionsTree);
+    private static List<InfrastructureRegistration> CollectRegistrations(IEnumerable<string> serviceExtensionFiles, CSharpParseOptions parseOptions)
+    {
+        var registrations = new List<InfrastructureRegistration>();
 
-        var missing = repositoryDeclarations
-            .Where(declaration => !registrations.Contains(declaration))
-            .OrderBy(declaration => declaration.Interface, StringComparer.Ordinal)
-            .ToList();
+        foreach (var file in serviceExtensionFiles)
+        {
+            var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(file), parseOptions, file);
+            var root = tree.GetCompilationUnitRoot();
+            var module = ArchitectureTestHelpers.GetServiceCollectionModuleName(file);
 
-        Assert.That(
-            missing,
-            Is.Empty,
-            "Every repository must be registered in Infrastructure ServiceCollectionExtensions." + Environment.NewLine +
-            string.Join(Environment.NewLine, missing.Select(m => m.ToString())));
+            foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                if (invocation.Expression is not MemberAccessExpressionSyntax { Name: GenericNameSyntax genericName })
+                {
+                    continue;
+                }
+
+                if (!ValidRegistrationMethods.Contains(genericName.Identifier.ValueText))
+                {
+                    continue;
+                }
+
+                if (genericName.TypeArgumentList.Arguments.Count >= 2)
+                {
+                    registrations.Add(new InfrastructureRegistration(
+                        NormalizeType(genericName.TypeArgumentList.Arguments[0]),
+                        NormalizeType(genericName.TypeArgumentList.Arguments[1]),
+                        module,
+                        file));
+                    continue;
+                }
+
+                if (genericName.TypeArgumentList.Arguments.Count == 1)
+                {
+                    var interfaceType = NormalizeType(genericName.TypeArgumentList.Arguments[0]);
+                    var factoryImplementation = ExtractFactoryImplementation(invocation);
+                    if (factoryImplementation != null)
+                    {
+                        registrations.Add(new InfrastructureRegistration(interfaceType, factoryImplementation, module, file));
+                    }
+                }
+            }
+        }
+
+        return registrations;
     }
 
     private static bool IsConcreteRepository(ClassDeclarationSyntax typeDeclaration)
@@ -104,47 +179,6 @@ public sealed class RepositoryRegistrationGuardTests
         return null;
     }
 
-    private static HashSet<RepositoryDeclaration> ExtractRegistrations(SyntaxTree serviceExtensionsTree)
-    {
-        var registrations = new HashSet<RepositoryDeclaration>();
-        var root = serviceExtensionsTree.GetCompilationUnitRoot();
-
-        foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
-        {
-            if (invocation.Expression is not MemberAccessExpressionSyntax { Name: GenericNameSyntax genericName })
-            {
-                continue;
-            }
-
-            if (!ValidRegistrationMethods.Contains(genericName.Identifier.ValueText))
-            {
-                continue;
-            }
-
-            // Handle standard registration: AddScoped<IInterface, Implementation>()
-            if (genericName.TypeArgumentList.Arguments.Count >= 2)
-            {
-                var interfaceType = NormalizeType(genericName.TypeArgumentList.Arguments[0]);
-                var implementationType = NormalizeType(genericName.TypeArgumentList.Arguments[1]);
-
-                registrations.Add(new RepositoryDeclaration(interfaceType, implementationType));
-            }
-            // Handle factory registration: AddScoped<IInterface>(sp => new Implementation(...))
-            else if (genericName.TypeArgumentList.Arguments.Count == 1 && invocation.ArgumentList.Arguments.Count >= 1)
-            {
-                var interfaceType = NormalizeType(genericName.TypeArgumentList.Arguments[0]);
-                // For factory registrations the concrete type is created inside the lambda.
-                // Extract it from the `new Implementation(...)` expression when present so the
-                // registration matches the concrete repository declaration. Fall back to a
-                // placeholder when the concrete type cannot be resolved statically.
-                var implementationType = ExtractFactoryImplementation(invocation) ?? "<factory>";
-                registrations.Add(new RepositoryDeclaration(interfaceType, implementationType));
-            }
-        }
-
-        return registrations;
-    }
-
     private static string NormalizeType(TypeSyntax typeSyntax)
     {
         return typeSyntax
@@ -162,30 +196,13 @@ public sealed class RepositoryRegistrationGuardTests
         return objectCreation == null ? null : NormalizeType(objectCreation.Type);
     }
 
-    private static bool IsInBuildArtifacts(string path)
+    private sealed record RepositoryDeclaration(string Interface, string Implementation, string SourceFile)
     {
-        var normalized = path.Replace('\\', '/');
-        return normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase) || normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase);
+        public override string ToString() => $"{SourceFile}: {Interface} -> {Implementation}";
     }
 
-    private static string ResolveRepositoryRoot()
+    private sealed record InfrastructureRegistration(string Interface, string Implementation, string? Module, string SourceFile)
     {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current != null)
-        {
-            if (File.Exists(Path.Combine(current.FullName, "LgymApi.sln")))
-            {
-                return current.FullName;
-            }
-
-            current = current.Parent;
-        }
-
-        throw new InvalidOperationException("Unable to locate repository root.");
-    }
-
-    private sealed record RepositoryDeclaration(string Interface, string Implementation)
-    {
-        public override string ToString() => $"Missing repository registration: {Interface} -> {Implementation}";
+        public override string ToString() => $"{SourceFile} [{Module ?? "root"}]: {Interface} -> {Implementation}";
     }
 }

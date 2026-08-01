@@ -18,7 +18,7 @@ public sealed class HttpResponseParityTestHarness
         HttpStatusCode expectedStatusCode,
         string? because = null)
     {
-        response.StatusCode.Should().Be(expectedStatusCode, 
+        response.StatusCode.Should().Be(expectedStatusCode,
             because ?? $"Expected status {expectedStatusCode} for success response");
     }
 
@@ -31,12 +31,12 @@ public sealed class HttpResponseParityTestHarness
         string? expectedMessageContent = null,
         string? because = null)
     {
-        response.StatusCode.Should().Be(expectedStatusCode, 
+        response.StatusCode.Should().Be(expectedStatusCode,
             because ?? $"Expected status {expectedStatusCode} for error response");
 
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
-        
+
         json.RootElement.TryGetProperty("msg", out var msgField)
             .Should().BeTrue("error response must contain 'msg' field in ResponseMessageDto format");
 
@@ -48,7 +48,7 @@ public sealed class HttpResponseParityTestHarness
 
         if (!string.IsNullOrEmpty(expectedMessageContent))
         {
-            message.Should().Contain(expectedMessageContent, 
+            message.Should().Contain(expectedMessageContent,
                 $"error message should contain '{expectedMessageContent}'");
         }
     }
@@ -62,7 +62,7 @@ public sealed class HttpResponseParityTestHarness
         Action<JsonElement>? payloadAssertions = null,
         string? because = null)
     {
-        response.StatusCode.Should().Be(expectedStatusCode, 
+        response.StatusCode.Should().Be(expectedStatusCode,
             because ?? $"Expected status {expectedStatusCode} for error with payload");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -115,14 +115,14 @@ public sealed class HttpResponseParityTestHarness
         HttpStatusCode expectedStatusCode,
         string? because = null)
     {
-        oldResponse.StatusCode.Should().Be(expectedStatusCode, 
+        oldResponse.StatusCode.Should().Be(expectedStatusCode,
             because ?? "old endpoint status code should match expectation");
         newResponse.StatusCode.Should().Be(expectedStatusCode,
             because ?? "new endpoint status code should match old endpoint");
 
         var oldContent = await oldResponse.Content.ReadAsStringAsync();
         var newContent = await newResponse.Content.ReadAsStringAsync();
-        
+
         var oldJson = JsonDocument.Parse(oldContent);
         var newJson = JsonDocument.Parse(newContent);
 
@@ -149,7 +149,7 @@ public sealed class HttpResponseParityTestHarness
         IEnumerable<string> requiredFieldNames,
         string? because = null)
     {
-        successResponse.StatusCode.Should().Be(expectedStatusCode, 
+        successResponse.StatusCode.Should().Be(expectedStatusCode,
             because ?? $"Expected status {expectedStatusCode}");
 
         var content = await successResponse.Content.ReadAsStringAsync();
@@ -173,12 +173,12 @@ public sealed class HttpResponseParityTestHarness
         var oldJson = JsonDocument.Parse(oldResponseContent);
         var newJson = JsonDocument.Parse(newResponseContent);
 
-        var oldNormalized = JsonSerializer.Serialize(oldJson.RootElement, 
+        var oldNormalized = JsonSerializer.Serialize(oldJson.RootElement,
             new JsonSerializerOptions { WriteIndented = false });
-        var newNormalized = JsonSerializer.Serialize(newJson.RootElement, 
+        var newNormalized = JsonSerializer.Serialize(newJson.RootElement,
             new JsonSerializerOptions { WriteIndented = false });
 
-        oldNormalized.Should().Be(newNormalized, 
+        oldNormalized.Should().Be(newNormalized,
             because ?? "error response content should be identical between old and new implementations");
     }
 }

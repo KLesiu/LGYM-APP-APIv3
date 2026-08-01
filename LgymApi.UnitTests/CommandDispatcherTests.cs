@@ -1,11 +1,18 @@
 using LgymApi.Application.Repositories;
+using LgymApi.Application.Coaching.Contracts.BackgroundCommands;
+using LgymApi.Application.Identity.Contracts.BackgroundCommands;
+using LgymApi.Application.Nutrition.Contracts.BackgroundCommands;
+using LgymApi.Application.Platform.Contracts.BackgroundCommands;
+using LgymApi.Application.Reporting.Contracts.BackgroundCommands;
+using LgymApi.Application.WorkoutProgress.Contracts.BackgroundCommands;
 using LgymApi.BackgroundWorker;
-using LgymApi.BackgroundWorker.Common;
-using LgymApi.BackgroundWorker.Common.Commands;
+using LgymApi.BackgroundWorker.Actions.Contracts;
+using LgymApi.BackgroundWorker.Runtime;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
-using LgymApi.Infrastructure.Data;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -24,6 +31,7 @@ public sealed class CommandDispatcherTests
     private FakeCommandEnvelopeRepository _repository = null!;
     private FakeUnitOfWork _unitOfWork = null!;
     private Microsoft.Extensions.DependencyInjection.ServiceProvider _serviceProvider = null!;
+    private CommandContractRegistry _commandContractRegistry = null!;
     private FakeLogger _logger = null!;
 
     [SetUp]
@@ -31,7 +39,9 @@ public sealed class CommandDispatcherTests
     {
         _repository = new FakeCommandEnvelopeRepository();
         _unitOfWork = new FakeUnitOfWork();
+        _repository.UnitOfWork = _unitOfWork;
         _logger = new FakeLogger();
+        _commandContractRegistry = CommandContractRegistry.CreateDefault();
     }
 
     [TearDown]
@@ -52,10 +62,9 @@ public sealed class CommandDispatcherTests
         _serviceProvider = services.BuildServiceProvider();
 
         var dispatcher = new CommandDispatcher(
-            _serviceProvider,
+            CreateActionResolver(),
+            _commandContractRegistry,
             _repository,
-            _unitOfWork,
-            CreateTestDbContext(),
             _logger);
 
         // Act - Enqueue the same command 100 times
@@ -64,7 +73,7 @@ public sealed class CommandDispatcherTests
         {
             var cmd = new InvitationAcceptedCommand { InvitationId = invitationId };
             await dispatcher.EnqueueAsync(cmd);
-            
+
             // Get the correlation ID from the repository
             var envelopes = _repository.GetAllEnvelopes();
             var lastEnvelope = envelopes.LastOrDefault();
@@ -92,10 +101,9 @@ public sealed class CommandDispatcherTests
         _serviceProvider = services.BuildServiceProvider();
 
         var dispatcher = new CommandDispatcher(
-            _serviceProvider,
+            CreateActionResolver(),
+            _commandContractRegistry,
             _repository,
-            _unitOfWork,
-            CreateTestDbContext(),
             _logger);
 
         // Act - Enqueue commands with different InvitationIds
@@ -123,10 +131,9 @@ public sealed class CommandDispatcherTests
         _serviceProvider = services.BuildServiceProvider();
 
         var dispatcher = new CommandDispatcher(
-            _serviceProvider,
+            CreateActionResolver(),
+            _commandContractRegistry,
             _repository,
-            _unitOfWork,
-            CreateTestDbContext(),
             _logger);
 
         // Act - Create two separate command instances with the same InvitationId
@@ -155,10 +162,9 @@ public sealed class CommandDispatcherTests
         _unitOfWork.SaveChangesException = CreateDuplicateEnvelopeDbUpdateException();
 
         var dispatcher = new CommandDispatcher(
-            _serviceProvider,
+            CreateActionResolver(),
+            _commandContractRegistry,
             _repository,
-            _unitOfWork,
-            CreateTestDbContext(),
             _logger);
 
         var command = new InvitationAcceptedCommand { InvitationId = invitationId };
@@ -186,10 +192,9 @@ public sealed class CommandDispatcherTests
         _unitOfWork.SaveChangesException = new DbUpdateException("boom", new InvalidOperationException("not postgres"));
 
         var dispatcher = new CommandDispatcher(
-            _serviceProvider,
+            CreateActionResolver(),
+            _commandContractRegistry,
             _repository,
-            _unitOfWork,
-            CreateTestDbContext(),
             _logger);
 
         var command = new InvitationAcceptedCommand { InvitationId = invitationId };
@@ -218,10 +223,9 @@ public sealed class CommandDispatcherTests
         _unitOfWork.SaveChangesException = CreateDuplicateEnvelopeDbUpdateException();
 
         var dispatcher = new CommandDispatcher(
-            _serviceProvider,
+            CreateActionResolver(),
+            _commandContractRegistry,
             _repository,
-            _unitOfWork,
-            CreateTestDbContext(),
             _logger);
 
         var command = new InvitationAcceptedCommand { InvitationId = invitationId };
@@ -234,6 +238,69 @@ public sealed class CommandDispatcherTests
         _unitOfWork.SaveCallCount.Should().Be(1);
     }
 
+    [TestCaseSource(typeof(LegacyCommandContractManifest), nameof(LegacyCommandContractManifest.CommandCases))]
+    public async Task EnqueueAsync_PersistsLegacyGoldenVector(LegacyCommandContract contract)
+    {
+        // Given
+        var services = new ServiceCollection();
+        services.AddSingleton<ILogger<CommandDispatcher>>(_ => _logger);
+        services.AddScoped(typeof(IBackgroundAction<>), typeof(LegacyNoOpBackgroundAction<>));
+        _serviceProvider = services.BuildServiceProvider();
+        var dispatcher = new CommandDispatcher(
+            CreateActionResolver(),
+            _commandContractRegistry,
+            _repository,
+            _logger);
+
+        // When
+        await EnqueueLegacyCommandAsync(dispatcher, contract.Command);
+        var envelope = _repository.GetAllEnvelopes().Single();
+        var actual = new PersistedCommandVector(
+            envelope.CommandTypeFullName,
+            envelope.PayloadJson,
+            $"{envelope.CommandTypeFullName}|{envelope.PayloadJson}",
+            envelope.CorrelationId.ToString());
+
+        // Then
+        actual.Should().Be(new PersistedCommandVector(
+            contract.CanonicalId,
+            contract.PayloadJson,
+            contract.CorrelationInput,
+            contract.CorrelationId));
+    }
+
+    private static Task EnqueueLegacyCommandAsync(CommandDispatcher dispatcher, IActionCommand command) => command switch
+    {
+        UserRegisteredCommand typedCommand => dispatcher.EnqueueAsync(typedCommand),
+        TrainingCompletedCommand typedCommand => dispatcher.EnqueueAsync(typedCommand),
+        InvitationCreatedCommand typedCommand => dispatcher.EnqueueAsync(typedCommand),
+        InvitationAcceptedCommand typedCommand => dispatcher.EnqueueAsync(typedCommand),
+        InvitationRevokedCommand typedCommand => dispatcher.EnqueueAsync(typedCommand),
+        DietPlanUpdatedInAppNotificationCommand typedCommand => dispatcher.EnqueueAsync(typedCommand),
+        TraineeNoteUpdatedInAppNotificationCommand typedCommand => dispatcher.EnqueueAsync(typedCommand),
+        ReportSubmissionCreatedInAppNotificationCommand typedCommand => dispatcher.EnqueueAsync(typedCommand),
+        ReportSubmissionAcceptedProgressCommand typedCommand => dispatcher.EnqueueAsync(typedCommand),
+        ReportRequestCreatedInAppNotificationCommand typedCommand => dispatcher.EnqueueAsync(typedCommand),
+        ReportFeedbackAddedInAppNotificationCommand typedCommand => dispatcher.EnqueueAsync(typedCommand),
+        TrainerInvitationAcceptedInAppNotificationCommand typedCommand => dispatcher.EnqueueAsync(typedCommand),
+        TrainerInvitationCreatedInAppNotificationCommand typedCommand => dispatcher.EnqueueAsync(typedCommand),
+        TrainerInvitationRejectedInAppNotificationCommand typedCommand => dispatcher.EnqueueAsync(typedCommand),
+        TrainerRelationshipEndedInAppNotificationCommand typedCommand => dispatcher.EnqueueAsync(typedCommand),
+        _ => throw new ArgumentOutOfRangeException(nameof(command), command.GetType(), "Command is absent from the legacy manifest.")
+    };
+
+    private sealed record PersistedCommandVector(
+        string CanonicalId,
+        string PayloadJson,
+        string CorrelationInput,
+        string CorrelationId);
+
+    private sealed class LegacyNoOpBackgroundAction<TCommand> : IBackgroundAction<TCommand>
+        where TCommand : IActionCommand
+    {
+        public Task ExecuteAsync(TCommand command, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
     // Test handler
     private sealed class FakeInvitationAcceptedHandler : IBackgroundAction<InvitationAcceptedCommand>
     {
@@ -244,9 +311,10 @@ public sealed class CommandDispatcherTests
     }
 
     // Fake implementations
-    private sealed class FakeCommandEnvelopeRepository : ICommandEnvelopeRepository
+    private sealed class FakeCommandEnvelopeRepository : ICommandEnvelopeRepository, ICommandEnvelopeRuntime
     {
         private readonly Dictionary<Id<CommandEnvelope>, CommandEnvelope> _envelopes = new();
+        public FakeUnitOfWork UnitOfWork { private get; set; } = null!;
         public int UpdateCallCount { get; private set; }
         public bool ReturnNullOnFindByCorrelationId { get; set; }
 
@@ -287,6 +355,8 @@ public sealed class CommandDispatcherTests
             return Task.CompletedTask;
         }
 
+        public void Detach(CommandEnvelope envelope) { }
+
         public Task<CommandEnvelope> AddOrGetExistingAsync(CommandEnvelope envelope, CancellationToken cancellationToken = default)
         {
             var existing = _envelopes.Values.FirstOrDefault(e => e.CorrelationId == envelope.CorrelationId);
@@ -294,9 +364,68 @@ public sealed class CommandDispatcherTests
             {
                 return Task.FromResult(existing);
             }
-            
+
             _envelopes[envelope.Id] = envelope;
             return Task.FromResult(envelope);
+        }
+
+        public async Task<CommandEnvelopeReceipt> PersistAsync(CommandEnvelopeRequest request, CancellationToken cancellationToken = default)
+        {
+            var envelope = CreateEnvelope(request);
+            var winner = await AddOrGetExistingAsync(envelope, cancellationToken);
+            if (!ReferenceEquals(winner, envelope))
+            {
+                return new CommandEnvelopeReceipt(winner.Id.ToString(), true);
+            }
+
+            try
+            {
+                await UnitOfWork.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException exception) when (exception.InnerException is PostgresException postgres
+                && postgres.SqlState == PostgresErrorCodes.UniqueViolation
+                && postgres.ConstraintName == "IX_CommandEnvelopes_CorrelationId")
+            {
+                Detach(envelope);
+                var existing = await FindByCorrelationIdAsync(envelope.CorrelationId, cancellationToken);
+                if (existing is null)
+                {
+                    throw;
+                }
+
+                return new CommandEnvelopeReceipt(existing.Id.ToString(), true);
+            }
+
+            return new CommandEnvelopeReceipt(envelope.Id.ToString(), false);
+        }
+
+        public async Task<CommandEnvelopeReceipt> StageAsync(CommandEnvelopeRequest request, CancellationToken cancellationToken = default)
+        {
+            var envelope = CreateEnvelope(request);
+            var winner = await AddOrGetExistingAsync(envelope, cancellationToken);
+            return new CommandEnvelopeReceipt(winner.Id.ToString(), !ReferenceEquals(winner, envelope));
+        }
+
+        public Task<CommandEnvelopeStart> BeginAsync(string envelopeId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<CommandEnvelopeFinalization> FinalizeAsync(string envelopeId, int attemptNumber, IReadOnlyList<CommandHandlerResult> results, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task RecordFaultAsync(string envelopeId, string reason, string errorMessage, string errorDetails, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task RecordCancellationAsync(string envelopeId) => throw new NotSupportedException();
+
+        private static CommandEnvelope CreateEnvelope(CommandEnvelopeRequest request)
+        {
+            var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{request.CommandId}|{request.PayloadJson}"));
+            return new CommandEnvelope
+            {
+                Id = Id<CommandEnvelope>.New(),
+                CorrelationId = Id<CorrelationScope>.FromBytes(hash[..16]),
+                CommandTypeFullName = request.CommandId,
+                PayloadJson = request.PayloadJson,
+                Status = ActionExecutionStatus.Pending,
+                NextAttemptAt = DateTimeOffset.UtcNow
+            };
         }
 
         public Task<List<CommandEnvelope>> GetPendingUndispatchedAsync(CancellationToken cancellationToken = default)
@@ -316,7 +445,7 @@ public sealed class CommandDispatcherTests
             var toDelete = _envelopes.Values
                 .Where(e => e.Status == ActionExecutionStatus.Completed && e.CompletedAt.HasValue && e.CompletedAt < cutoffDate)
                 .ToList();
-            
+
             var count = toDelete.Count;
             foreach (var e in toDelete)
             {
@@ -351,12 +480,8 @@ public sealed class CommandDispatcherTests
         public void DetachEntity<TEntity>(TEntity entity) where TEntity : class { }
     }
 
-    private AppDbContext CreateTestDbContext()
-    {
-        return new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase("TestDb_" + Id<CommandEnvelope>.New().ToString())
-            .Options);
-    }
+    private IBackgroundActionResolver CreateActionResolver() =>
+        new BackgroundActionResolver(_serviceProvider.GetRequiredService<IServiceScopeFactory>());
 
     private static DbUpdateException CreateDuplicateEnvelopeDbUpdateException()
     {

@@ -1,11 +1,10 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Repositories;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using InAppNotificationService = global::LgymApi.Application.Notifications.InAppNotificationService;
-using IInAppNotificationServiceDependencies = global::LgymApi.Application.Notifications.IInAppNotificationServiceDependencies;
 using IInAppNotificationRepository = global::LgymApi.Application.Notifications.IInAppNotificationRepository;
 using IInAppNotificationPushPublisher = global::LgymApi.Application.Notifications.IInAppNotificationPushPublisher;
 using INotificationEventBridge = global::LgymApi.Application.Notifications.INotificationEventBridge;
@@ -21,6 +20,19 @@ namespace LgymApi.UnitTests.InAppNotifications;
 [TestFixture]
 public sealed class InAppNotificationServiceTests
 {
+    [Test]
+    public void InAppNotificationService_UsesTheFourDirectDeliveryCollaborators()
+    {
+        var constructor = typeof(InAppNotificationService).GetConstructors().Should().ContainSingle().Which;
+
+        constructor.GetParameters().Select(parameter => parameter.ParameterType).Should().Equal(
+            typeof(IInAppNotificationRepository),
+            typeof(IUnitOfWork),
+            typeof(IInAppNotificationPushPublisher),
+            typeof(INotificationEventBridge),
+            typeof(Microsoft.Extensions.Logging.ILogger<InAppNotificationService>));
+    }
+
     [Test]
     public async Task CreateAsync_ValidInput_ReturnsSuccess()
     {
@@ -224,19 +236,19 @@ public sealed class InAppNotificationServiceTests
         result.Error.Should().BeOfType<InAppNotificationNotFoundError>();
     }
 
-     [Test]
-     public async Task MarkAsReadAsync_AlreadyRead_ReturnsSuccessIdempotent()
-     {
-         var repo = new FakeInAppNotificationRepository();
-         var userId = Id<User>.New();
-         var notification = AddNotification(repo, userId, "Already read");
-         notification.IsRead = true;
+    [Test]
+    public async Task MarkAsReadAsync_AlreadyRead_ReturnsSuccessIdempotent()
+    {
+        var repo = new FakeInAppNotificationRepository();
+        var userId = Id<User>.New();
+        var notification = AddNotification(repo, userId, "Already read");
+        notification.IsRead = true;
 
-         var service = CreateService(repository: repo);
+        var service = CreateService(repository: repo);
 
-         var result = await service.MarkAsReadAsync(notification.Id, userId);
+        var result = await service.MarkAsReadAsync(notification.Id, userId);
 
-         result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.Should().BeTrue();
     }
 
     [Test]
@@ -336,12 +348,12 @@ public sealed class InAppNotificationServiceTests
         FakePushPublisher? pushPublisher = null,
         FakeNotificationEventBridge? notificationEventBridge = null)
     {
-        var deps = new TestDependencies(
+        return new InAppNotificationService(
             repository ?? new FakeInAppNotificationRepository(),
             unitOfWork ?? new FakeUnitOfWork(),
             pushPublisher ?? new FakePushPublisher(),
-            notificationEventBridge ?? new FakeNotificationEventBridge());
-        return new InAppNotificationService(deps, NullLogger<InAppNotificationService>.Instance);
+            notificationEventBridge ?? new FakeNotificationEventBridge(),
+            NullLogger<InAppNotificationService>.Instance);
     }
 
     private static InAppNotification AddNotification(
@@ -370,26 +382,6 @@ public sealed class InAppNotificationServiceTests
     #endregion
 
     #region Fakes
-
-    private sealed class TestDependencies : IInAppNotificationServiceDependencies
-    {
-        public IInAppNotificationRepository InAppNotificationRepository { get; }
-        public IUnitOfWork UnitOfWork { get; }
-        public IInAppNotificationPushPublisher PushPublisher { get; }
-        public INotificationEventBridge NotificationEventBridge { get; }
-
-        public TestDependencies(
-            IInAppNotificationRepository repository,
-            IUnitOfWork unitOfWork,
-            IInAppNotificationPushPublisher pushPublisher,
-            INotificationEventBridge notificationEventBridge)
-        {
-            InAppNotificationRepository = repository;
-            UnitOfWork = unitOfWork;
-            PushPublisher = pushPublisher;
-            NotificationEventBridge = notificationEventBridge;
-        }
-    }
 
     internal sealed class FakeInAppNotificationRepository : IInAppNotificationRepository
     {

@@ -49,7 +49,7 @@ public sealed class HttpContextRequestAbortedBanGuardTests
                         continue;
                     }
 
-                    if (!method.Modifiers.Any(m => m.Kind() == SyntaxKind.PublicKeyword))
+                    if (!method.Modifiers.Any(m => Microsoft.CodeAnalysis.CSharpExtensions.IsKind(m, SyntaxKind.PublicKeyword)))
                     {
                         continue;
                     }

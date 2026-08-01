@@ -4,13 +4,15 @@ using FluentValidation.TestHelper;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Features.Trainer.Validation;
 using LgymApi.Application.Abstractions.Storage;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Reporting.Errors;
 using LgymApi.Application.Features.Reporting;
 using LgymApi.Application.Features.Reporting.Models;
 using LgymApi.Application.Options;
 using LgymApi.Application.Repositories;
-using LgymApi.BackgroundWorker.Common;
-using LgymApi.BackgroundWorker.Common.Commands;
+using LgymApi.Application.Platform.Contracts.BackgroundCommands;
+using LgymApi.Application.Reporting.Contracts.BackgroundCommands;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
@@ -602,8 +604,8 @@ public sealed class ReportingServiceTests
 
         result.IsSuccess.Should().BeTrue();
         await commandDispatcher.Received(1).EnqueueAsync(Arg.Is<ReportSubmissionCreatedInAppNotificationCommand>(queued =>
-            queued.TrainerId == trainerId
-            && queued.TraineeId == traineeId
+            queued.TrainerId == trainerId.Rebind<LgymApi.Identity.Contracts.AccountReference>()
+            && queued.TraineeId == traineeId.Rebind<LgymApi.Identity.Contracts.AccountReference>()
             && queued.TemplateName == "Weekly check-in"
             && !queued.SubmissionId.IsEmpty));
     }
@@ -784,7 +786,15 @@ public sealed class ReportingServiceTests
         submission.TrainerOverallComment = "old";
         submission.TrainerFeedbackAddedAt = DateTimeOffset.UtcNow.AddDays(-1);
         submission.TrainerFieldCommentsJson = "{\"feedback\":\"old\"}";
-        var assignment = new RecurringReportAssignment { Id = Id<RecurringReportAssignment>.New(), NextEligibleAt = DateTimeOffset.UtcNow.AddDays(2) };
+        var assignment = new RecurringReportAssignment
+        {
+            Id = Id<RecurringReportAssignment>.New(),
+            TrainerId = request.TrainerId,
+            TraineeId = traineeId,
+            TemplateId = request.TemplateId,
+            Template = request.Template,
+            NextEligibleAt = DateTimeOffset.UtcNow.AddDays(2)
+        };
         var commandDispatcher = Substitute.For<ICommandDispatcher>();
         var service = CreateReportingService(
             findSubmissionByIdForTrainer: (_, _, _, _) => Task.FromResult<ReportSubmission?>(submission),
@@ -839,6 +849,10 @@ public sealed class ReportingServiceTests
         var assignment = new RecurringReportAssignment
         {
             Id = Id<RecurringReportAssignment>.New(),
+            TrainerId = request.TrainerId,
+            TraineeId = traineeId,
+            TemplateId = request.TemplateId,
+            Template = request.Template,
             IntervalValue = 2,
             IntervalUnit = RecurringReportIntervalUnit.Week
         };
@@ -897,13 +911,50 @@ public sealed class ReportingServiceTests
     public async Task UpdateTrainerFeedbackAsync_WhenOwnershipFails_ReturnsFailure()
     {
         var trainerId = Id<User>.New();
-        var result = await CreateReportingService(userHasTrainerRole: false).UpdateTrainerFeedbackAsync(
+        var submissionLookupCalled = false;
+        var service = CreateReportingService(
+            findSubmissionByIdForTrainer: (_, _, _, _) =>
+            {
+                submissionLookupCalled = true;
+                return Task.FromResult<ReportSubmission?>(null);
+            },
+            userHasTrainerRole: false);
+
+        var result = await service.UpdateTrainerFeedbackAsync(
             CreateUser(trainerId),
             Id<User>.New(),
             Id<ReportSubmission>.New(),
             new UpdateReportSubmissionFeedbackCommand());
 
         result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<ReportingForbiddenError>();
+        submissionLookupCalled.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task UpdateTrainerFeedbackAsync_WhenTrainerDoesNotOwnTrainee_ReturnsNotFoundWithoutReadingSubmission()
+    {
+        var trainerId = Id<User>.New();
+        var traineeId = Id<User>.New();
+        var submissionLookupCalled = false;
+        var service = CreateReportingService(
+            findSubmissionByIdForTrainer: (_, _, _, _) =>
+            {
+                submissionLookupCalled = true;
+                return Task.FromResult<ReportSubmission?>(null);
+            },
+            userHasTrainerRole: true,
+            hasActiveTrainerLink: false);
+
+        var result = await service.UpdateTrainerFeedbackAsync(
+            CreateUser(trainerId),
+            traineeId,
+            Id<ReportSubmission>.New(),
+            new UpdateReportSubmissionFeedbackCommand());
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<ReportingNotFoundError>();
+        submissionLookupCalled.Should().BeFalse();
     }
 
     [Test]
@@ -997,6 +1048,25 @@ public sealed class ReportingServiceTests
     }
 
     [Test]
+    public async Task MarkTrainerFeedbackAsReadAsync_WhenSubmissionBelongsToAnotherTrainee_ReturnsNotFound()
+    {
+        var currentTrainee = CreateUser(Id<User>.New());
+        var queriedTraineeId = Id<User>.Empty;
+        var service = CreateReportingService(
+            findSubmissionByIdForTrainee: (_, traineeId, _) =>
+            {
+                queriedTraineeId = traineeId;
+                return Task.FromResult<ReportSubmission?>(null);
+            });
+
+        var result = await service.MarkTrainerFeedbackAsReadAsync(currentTrainee, Id<ReportSubmission>.New());
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<ReportingNotFoundError>();
+        queriedTraineeId.Should().Be(currentTrainee.Id);
+    }
+
+    [Test]
     public async Task MarkTrainerFeedbackAsReadAsync_WhenFeedbackNotAdded_ReturnsFailure()
     {
         var traineeId = Id<User>.New();
@@ -1017,6 +1087,26 @@ public sealed class ReportingServiceTests
         var result = await CreateReportingService(userHasTrainerRole: false).GetTraineeSubmissionsAsync(CreateUser(Id<User>.New()), Id<User>.New());
 
         result.IsFailure.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task GetTraineeSubmissionsAsync_WhenTrainerDoesNotOwnTrainee_ReturnsNotFoundWithoutReadingSubmissions()
+    {
+        var submissionsLookupCalled = false;
+        var service = CreateReportingService(
+            getSubmissionsByTrainerAndTrainee: (_, _, _) =>
+            {
+                submissionsLookupCalled = true;
+                return Task.FromResult(new List<ReportSubmission>());
+            },
+            userHasTrainerRole: true,
+            hasActiveTrainerLink: false);
+
+        var result = await service.GetTraineeSubmissionsAsync(CreateUser(Id<User>.New()), Id<User>.New());
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<ReportingNotFoundError>();
+        submissionsLookupCalled.Should().BeFalse();
     }
 
     [Test]
@@ -1200,7 +1290,7 @@ public sealed class ReportingServiceTests
     private static ReportingService CreateReportingService(
         Func<Id<ReportRequest>, CancellationToken, Task<ReportRequest?>>? findRequestById = null,
         Func<Id<ReportRequest>, CancellationToken, Task<List<Photo>>>? getPhotosByRequestId = null,
-        Func<ReportSubmission, CancellationToken, Task>? addSubmission = null,
+        Func<NewReportSubmissionPersistenceModel, CancellationToken, Task>? addSubmission = null,
         Func<Id<ReportSubmission>, Id<User>, Id<User>, CancellationToken, Task<ReportSubmission?>>? findSubmissionByIdForTrainer = null,
         Func<Id<ReportSubmission>, Id<User>, CancellationToken, Task<ReportSubmission?>>? findSubmissionByIdForTrainee = null,
         Func<Id<User>, Id<User>, CancellationToken, Task<List<ReportSubmission>>>? getSubmissionsByTrainerAndTrainee = null,
@@ -1211,85 +1301,202 @@ public sealed class ReportingServiceTests
         bool userHasTrainerRole = false,
         bool hasActiveTrainerLink = false)
     {
-        var repository = Substitute.For<IReportingRepository>();
+        var templatePersistence = Substitute.For<IReportTemplatePersistence>();
+        var requestSubmissionPersistence = Substitute.For<IReportRequestSubmissionPersistence>();
+        var recurringAssignmentPersistence = Substitute.For<IRecurringReportAssignmentPersistence>();
+        var photoPersistence = Substitute.For<IReportPhotoPersistence>();
+        var relationshipAccessPersistence = Substitute.For<IReportingRelationshipAccessPersistence>();
+        ReportRequest? loadedRequest = null;
+        ReportSubmission? loadedSubmission = null;
+        RecurringReportAssignment? loadedAssignment = null;
         unitOfWork ??= Substitute.For<IUnitOfWork>();
         commandDispatcher ??= Substitute.For<ICommandDispatcher>();
 
         if (findRequestById != null)
         {
-            repository.FindRequestByIdAsync(Arg.Any<Id<ReportRequest>>(), Arg.Any<CancellationToken>())
-                .Returns(args => findRequestById((Id<ReportRequest>)args[0], (CancellationToken)args[1]));
+            requestSubmissionPersistence.FindRequestByIdAsync(Arg.Any<Id<ReportRequest>>(), Arg.Any<CancellationToken>())
+                .Returns(async args =>
+                {
+                    loadedRequest = await findRequestById((Id<ReportRequest>)args[0], (CancellationToken)args[1]);
+                    return loadedRequest is null ? null : ReportingTestData.Request(loadedRequest);
+                });
         }
+
+        requestSubmissionPersistence.SetRequestExpiredAsync(Arg.Any<Id<ReportRequest>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (loadedRequest is not null)
+                {
+                    loadedRequest.Status = ReportRequestStatus.Expired;
+                }
+
+                return Task.CompletedTask;
+            });
+        requestSubmissionPersistence.SetRequestSubmittedAsync(
+                Arg.Any<Id<ReportRequest>>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<CancellationToken>())
+            .Returns(args =>
+            {
+                if (loadedRequest is not null)
+                {
+                    loadedRequest.Status = ReportRequestStatus.Submitted;
+                    loadedRequest.SubmittedAt = (DateTimeOffset)args[1];
+                }
+
+                return Task.CompletedTask;
+            });
 
         if (getPhotosByRequestId != null)
         {
-            repository.GetPhotosByRequestIdAsync(Arg.Any<Id<ReportRequest>>(), Arg.Any<CancellationToken>())
-                .Returns(args => getPhotosByRequestId((Id<ReportRequest>)args[0], (CancellationToken)args[1]));
+            photoPersistence.ListByRequestAsync(Arg.Any<Id<ReportRequest>>(), Arg.Any<CancellationToken>())
+                .Returns(args => MapPhotoModelsAsync(
+                    getPhotosByRequestId,
+                    (Id<ReportRequest>)args[0],
+                    (CancellationToken)args[1]));
         }
 
         if (addSubmission != null)
         {
-            repository.AddSubmissionAsync(Arg.Any<ReportSubmission>(), Arg.Any<CancellationToken>())
-                .Returns(args => addSubmission((ReportSubmission)args[0], (CancellationToken)args[1]));
+            requestSubmissionPersistence.AddSubmissionAsync(Arg.Any<NewReportSubmissionPersistenceModel>(), Arg.Any<CancellationToken>())
+                .Returns(args => addSubmission((NewReportSubmissionPersistenceModel)args[0], (CancellationToken)args[1]));
         }
 
         if (findSubmissionByIdForTrainer != null)
         {
-            repository.FindSubmissionByIdForTrainerAsync(Arg.Any<Id<ReportSubmission>>(), Arg.Any<Id<User>>(), Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
-                .Returns(args => findSubmissionByIdForTrainer((Id<ReportSubmission>)args[0], (Id<User>)args[1], (Id<User>)args[2], (CancellationToken)args[3]));
+            requestSubmissionPersistence.FindSubmissionForTrainerAsync(Arg.Any<Id<ReportSubmission>>(), Arg.Any<Id<LgymApi.Identity.Contracts.AccountReference>>(), Arg.Any<Id<LgymApi.Identity.Contracts.AccountReference>>(), Arg.Any<CancellationToken>())
+                .Returns(async args =>
+                {
+                    loadedSubmission = await findSubmissionByIdForTrainer(
+                        (Id<ReportSubmission>)args[0],
+                        ((Id<LgymApi.Identity.Contracts.AccountReference>)args[1]).Rebind<User>(),
+                        ((Id<LgymApi.Identity.Contracts.AccountReference>)args[2]).Rebind<User>(),
+                        (CancellationToken)args[3]);
+                    return loadedSubmission is null ? null : ReportingTestData.Submission(loadedSubmission);
+                });
         }
 
         if (findSubmissionByIdForTrainee != null)
         {
-            repository.FindSubmissionByIdForTraineeAsync(Arg.Any<Id<ReportSubmission>>(), Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
-                .Returns(args => findSubmissionByIdForTrainee((Id<ReportSubmission>)args[0], (Id<User>)args[1], (CancellationToken)args[2]));
+            requestSubmissionPersistence.FindSubmissionForTraineeAsync(Arg.Any<Id<ReportSubmission>>(), Arg.Any<Id<LgymApi.Identity.Contracts.AccountReference>>(), Arg.Any<CancellationToken>())
+                .Returns(async args =>
+                {
+                    loadedSubmission = await findSubmissionByIdForTrainee(
+                        (Id<ReportSubmission>)args[0],
+                        ((Id<LgymApi.Identity.Contracts.AccountReference>)args[1]).Rebind<User>(),
+                        (CancellationToken)args[2]);
+                    return loadedSubmission is null ? null : ReportingTestData.Submission(loadedSubmission);
+                });
         }
 
         if (getSubmissionsByTrainerAndTrainee != null)
         {
-            repository.GetSubmissionsByTrainerAndTraineeAsync(Arg.Any<Id<User>>(), Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
-                .Returns(args => getSubmissionsByTrainerAndTrainee((Id<User>)args[0], (Id<User>)args[1], (CancellationToken)args[2]));
+            requestSubmissionPersistence.ListSubmissionsByTrainerAndTraineeAsync(Arg.Any<Id<LgymApi.Identity.Contracts.AccountReference>>(), Arg.Any<Id<LgymApi.Identity.Contracts.AccountReference>>(), Arg.Any<CancellationToken>())
+                .Returns(args => MapSubmissionModelsAsync(
+                    getSubmissionsByTrainerAndTrainee,
+                    ((Id<LgymApi.Identity.Contracts.AccountReference>)args[0]).Rebind<User>(),
+                    ((Id<LgymApi.Identity.Contracts.AccountReference>)args[1]).Rebind<User>(),
+                    (CancellationToken)args[2]));
         }
 
         if (getSubmissionsByTrainee != null)
         {
-            repository.GetSubmissionsByTraineeAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
-                .Returns(args => getSubmissionsByTrainee((Id<User>)args[0], (CancellationToken)args[1]));
+            requestSubmissionPersistence.ListSubmissionsByTraineeAsync(Arg.Any<Id<LgymApi.Identity.Contracts.AccountReference>>(), Arg.Any<CancellationToken>())
+                .Returns(args => MapSubmissionModelsAsync(
+                    getSubmissionsByTrainee,
+                    ((Id<LgymApi.Identity.Contracts.AccountReference>)args[0]).Rebind<User>(),
+                    (CancellationToken)args[1]));
         }
 
-        var uploadInitTracker = Substitute.For<IPhotoUploadInitTracker>();
-        uploadInitTracker.CountRecentUploadInitsAsync(Arg.Any<Id<User>>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+        photoPersistence.CountRecentUploadInitsAsync(Arg.Any<Id<LgymApi.Identity.Contracts.AccountReference>>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
             .Returns(0);
-        var reportSubmissionMeasurementWriter = Substitute.For<IReportSubmissionMeasurementWriter>();
-        var roleRepository = Substitute.For<IRoleRepository>();
-        roleRepository.UserHasRoleAsync(Arg.Any<Id<User>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(userHasTrainerRole);
-        var trainerRelationshipRepository = Substitute.For<ITrainerRelationshipRepository>();
-        trainerRelationshipRepository.FindActiveLinkByTrainerAndTraineeAsync(Arg.Any<Id<User>>(), Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
-            .Returns(hasActiveTrainerLink ? new TrainerTraineeLink { Id = Id<TrainerTraineeLink>.New(), TrainerId = Id<User>.New(), TraineeId = Id<User>.New() } : null);
-        var recurringRepository = Substitute.For<IRecurringReportAssignmentRepository>();
+        var commandOutboxWriter = Substitute.For<ICommandOutboxWriter>();
+        commandOutboxWriter.StageAsync(Arg.Any<ReportSubmissionAcceptedProgressCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new CommandEnvelopeStageResult(null, false)));
+        relationshipAccessPersistence.GetAccessAsync(
+                Arg.Any<Id<LgymApi.Identity.Contracts.AccountReference>>(),
+                Arg.Any<Id<LgymApi.Identity.Contracts.AccountReference>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ReportingRelationshipAccessFact(hasActiveTrainerLink));
 
         if (recurringAssignmentByRequestId != null)
         {
-            recurringRepository.FindByCurrentReportRequestIdAsync(Arg.Any<Id<ReportRequest>>(), Arg.Any<CancellationToken>())
-                .Returns(args => recurringAssignmentByRequestId((Id<ReportRequest>)args[0], (CancellationToken)args[1]));
+            recurringAssignmentPersistence.FindByCurrentRequestAsync(Arg.Any<Id<ReportRequest>>(), Arg.Any<CancellationToken>())
+                .Returns(async args =>
+                {
+                    loadedAssignment = await recurringAssignmentByRequestId((Id<ReportRequest>)args[0], (CancellationToken)args[1]);
+                    return loadedAssignment is null ? null : ReportingTestData.Assignment(loadedAssignment);
+                });
         }
 
-        var dependencies = Substitute.For<IReportingServiceDependencies>();
-        dependencies.ReportingRepository.Returns(repository);
-        dependencies.UnitOfWork.Returns(unitOfWork);
-        dependencies.CommandDispatcher.Returns(commandDispatcher);
-        dependencies.ReportSubmissionMeasurementWriter.Returns(reportSubmissionMeasurementWriter);
-        dependencies.RoleRepository.Returns(roleRepository);
-        dependencies.TrainerRelationshipRepository.Returns(trainerRelationshipRepository);
-        dependencies.RecurringReportAssignmentRepository.Returns(recurringRepository);
-        dependencies.PhotoStorageProvider.Returns(Substitute.For<IPhotoStorageProvider>());
-        dependencies.PhotoUploadInitTracker.Returns(uploadInitTracker);
-        dependencies.Logger.Returns(Substitute.For<ILogger<ReportingService>>());
-        dependencies.PhotoStorageOptions.Returns(new PhotoStorageOptions());
+        requestSubmissionPersistence.UpdateFeedbackAsync(
+                Arg.Any<Id<ReportSubmission>>(),
+                Arg.Any<ReportSubmissionFeedbackUpdatePersistenceModel>(),
+                Arg.Any<CancellationToken>())
+            .Returns(args =>
+            {
+                if (loadedSubmission is not null)
+                {
+                    var update = (ReportSubmissionFeedbackUpdatePersistenceModel)args[1];
+                    loadedSubmission.TrainerOverallComment = update.TrainerOverallComment;
+                    loadedSubmission.TrainerFieldCommentsJson = update.TrainerFieldCommentsJson;
+                    loadedSubmission.TrainerFeedbackAddedAt = update.TrainerFeedbackAddedAt;
+                    loadedSubmission.TrainerFeedbackReadAt = update.TrainerFeedbackReadAt;
+                }
 
-        return new ReportingService(dependencies);
+                return Task.CompletedTask;
+            });
+        recurringAssignmentPersistence.UpdateAsync(
+                Arg.Any<Id<RecurringReportAssignment>>(),
+                Arg.Any<RecurringReportAssignmentUpdatePersistenceModel>(),
+                Arg.Any<CancellationToken>())
+            .Returns(args =>
+            {
+                if (loadedAssignment is not null)
+                {
+                    var update = (RecurringReportAssignmentUpdatePersistenceModel)args[1];
+                    loadedAssignment.NextEligibleAt = update.NextEligibleAt;
+                }
+
+                return Task.CompletedTask;
+            });
+
+        var service = new ReportingService(
+            templatePersistence,
+            requestSubmissionPersistence,
+            recurringAssignmentPersistence,
+            photoPersistence,
+            relationshipAccessPersistence,
+            new ReportSubmissionAcceptedProgressCommandFactory(),
+            commandDispatcher,
+            commandOutboxWriter,
+            unitOfWork,
+            Substitute.For<IPhotoStorageProvider>(),
+            ReportingTestData.Mapper(),
+            Substitute.For<ILogger<ReportingService>>(),
+            new PhotoStorageOptions());
+        ReportingServiceTestExtensions.RegisterTrainerRole(service, userHasTrainerRole);
+        return service;
     }
+
+    private static async Task<IReadOnlyList<ReportPhotoPersistenceModel>> MapPhotoModelsAsync(
+        Func<Id<ReportRequest>, CancellationToken, Task<List<Photo>>> source,
+        Id<ReportRequest> requestId,
+        CancellationToken cancellationToken)
+        => (await source(requestId, cancellationToken)).Select(ReportingTestData.Photo).ToList();
+
+    private static async Task<IReadOnlyList<ReportSubmissionPersistenceModel>> MapSubmissionModelsAsync(
+        Func<Id<User>, Id<User>, CancellationToken, Task<List<ReportSubmission>>> source,
+        Id<User> trainerId,
+        Id<User> traineeId,
+        CancellationToken cancellationToken)
+        => (await source(trainerId, traineeId, cancellationToken)).Select(ReportingTestData.Submission).ToList();
+
+    private static async Task<IReadOnlyList<ReportSubmissionPersistenceModel>> MapSubmissionModelsAsync(
+        Func<Id<User>, CancellationToken, Task<List<ReportSubmission>>> source,
+        Id<User> traineeId,
+        CancellationToken cancellationToken)
+        => (await source(traineeId, cancellationToken)).Select(ReportingTestData.Submission).ToList();
 
     #endregion
 }

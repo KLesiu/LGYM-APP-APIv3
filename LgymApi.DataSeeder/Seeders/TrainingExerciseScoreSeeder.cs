@@ -45,21 +45,21 @@ public sealed class TrainingExerciseScoreSeeder : IEntitySeeder
                 index++;
                 continue;
             }
-            
+
             // Initialize per-training counter if not exists
             if (!trainingOrderMap.ContainsKey(training.Id))
             {
                 trainingOrderMap[training.Id] = 0;
             }
-            
-             var entry = new TrainingExerciseScore
-             {
-                 Id = Id<TrainingExerciseScore>.New(),
-                 TrainingId = training.Id,
+
+            var entry = new TrainingExerciseScore
+            {
+                Id = Id<TrainingExerciseScore>.New(),
+                TrainingId = training.Id,
                 ExerciseScoreId = score.Id,
                 Order = trainingOrderMap[training.Id]
             };
-            
+
             trainingOrderMap[training.Id]++;
             await context.TrainingExerciseScores.AddAsync(entry, cancellationToken);
             seedContext.TrainingExerciseScores.Add(entry);

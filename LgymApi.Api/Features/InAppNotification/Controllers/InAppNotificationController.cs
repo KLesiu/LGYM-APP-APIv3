@@ -3,11 +3,9 @@ using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.InAppNotification.Contracts;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Domain.Entities;
-using LgymApi.Application.Notifications;
 using LgymApi.Application.Notifications.Models;
+using LgymApi.Notifications.ApiAdapters;
 using NotificationEntity = global::LgymApi.Domain.Entities.InAppNotification;
-using InAppNotificationServiceContract = global::LgymApi.Application.Notifications.IInAppNotificationService;
 using LgymApi.Resources;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,10 +15,10 @@ namespace LgymApi.Api.Features.InAppNotification.Controllers;
 [Route("api")]
 public sealed class InAppNotificationController : ControllerBase
 {
-    private readonly InAppNotificationServiceContract _notificationService;
+    private readonly IInAppNotificationApiAdapter _notificationService;
     private readonly IMapper _mapper;
 
-    public InAppNotificationController(InAppNotificationServiceContract notificationService, IMapper mapper)
+    public InAppNotificationController(IInAppNotificationApiAdapter notificationService, IMapper mapper)
     {
         _notificationService = notificationService;
         _mapper = mapper;
@@ -34,9 +32,9 @@ public sealed class InAppNotificationController : ControllerBase
         [FromQuery] GetNotificationsQueryDto query,
         CancellationToken cancellationToken = default)
     {
-        var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
+        var accountId = HttpContext.ParseRouteAccountIdForCurrentAccount(id);
         var cursorQuery = _mapper.Map<GetNotificationsQueryDto, CursorPaginationQuery>(query);
-        var result = await _notificationService.GetForUserAsync(userId, cursorQuery, cancellationToken);
+        var result = await _notificationService.GetForAccountAsync(accountId, cursorQuery, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -55,9 +53,9 @@ public sealed class InAppNotificationController : ControllerBase
         [FromRoute] string notificationId,
         CancellationToken cancellationToken = default)
     {
-        var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
+        var accountId = HttpContext.ParseRouteAccountIdForCurrentAccount(id);
         var notifId = notificationId.ToIdOrEmpty<NotificationEntity>();
-        var result = await _notificationService.MarkAsReadAsync(notifId, userId, cancellationToken);
+        var result = await _notificationService.MarkAsReadAsync(notifId, accountId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -74,8 +72,8 @@ public sealed class InAppNotificationController : ControllerBase
         [FromQuery] DateTimeOffset? before,
         CancellationToken cancellationToken = default)
     {
-        var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
-        var result = await _notificationService.MarkAllAsReadAsync(userId, before, cancellationToken);
+        var accountId = HttpContext.ParseRouteAccountIdForCurrentAccount(id);
+        var result = await _notificationService.MarkAllAsReadAsync(accountId, before, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -89,8 +87,8 @@ public sealed class InAppNotificationController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetUnreadCount([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
-        var result = await _notificationService.GetUnreadCountAsync(userId, cancellationToken);
+        var accountId = HttpContext.ParseRouteAccountIdForCurrentAccount(id);
+        var result = await _notificationService.GetUnreadCountAsync(accountId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();

@@ -19,17 +19,25 @@ public sealed class UnitOfWorkCommittedDispatchTests
     [Test]
     public async Task SaveChangesAsync_DispatchesCommittedIntents_AfterPersistenceSucceeds()
     {
+        var databaseName = $"uow-dispatch-{Id<UnitOfWorkCommittedDispatchTests>.New()}";
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase($"uow-dispatch-{Id<UnitOfWorkCommittedDispatchTests>.New()}")
+            .UseInMemoryDatabase(databaseName)
             .Options;
 
         await using var dbContext = new AppDbContext(options);
-        var dispatcher = new RecordingCommittedIntentDispatcher();
+        var envelopeId = Id<CommandEnvelope>.New();
+        var persistedBeforeDispatch = false;
+        var dispatcher = new RecordingCommittedIntentDispatcher(async () =>
+        {
+            await using var verificationContext = new AppDbContext(options);
+            persistedBeforeDispatch = await verificationContext.CommandEnvelopes
+                .AnyAsync(envelope => envelope.Id == envelopeId);
+        });
         var unitOfWork = new EfUnitOfWork(dbContext, dispatcher, NullLogger<EfUnitOfWork>.Instance);
 
         dbContext.CommandEnvelopes.Add(new CommandEnvelope
         {
-            Id = Id<CommandEnvelope>.New(),
+            Id = envelopeId,
             CorrelationId = Id<CorrelationScope>.New(),
             CommandTypeFullName = "Test.Command",
             PayloadJson = "{}",
@@ -39,6 +47,7 @@ public sealed class UnitOfWorkCommittedDispatchTests
         await unitOfWork.SaveChangesAsync();
 
         dispatcher.CallCount.Should().Be(1);
+        persistedBeforeDispatch.Should().BeTrue();
     }
 
     [Test]
@@ -54,7 +63,7 @@ public sealed class UnitOfWorkCommittedDispatchTests
 
         var action = async () => await transaction.CommitAsync();
         await action.Should().NotThrowAsync();
-        
+
         dbTransaction.CommitCalls.Should().Be(1);
         dispatcher.CallCount.Should().Be(1);
     }
@@ -71,6 +80,35 @@ public sealed class UnitOfWorkCommittedDispatchTests
         var transaction = await unitOfWork.BeginTransactionAsync();
 
         transaction.GetType().Name.Should().Be("NoOpUnitOfWorkTransaction");
+    }
+
+    [Test]
+    public async Task NoOpTransaction_RollbackClearsUncommittedChangesButCannotUndoSavedChanges()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase($"uow-noop-rollback-{Id<UnitOfWorkCommittedDispatchTests>.New()}")
+            .Options;
+        var savedEnvelopeId = Id<CommandEnvelope>.New();
+
+        await using (var dbContext = new AppDbContext(options))
+        {
+            var unitOfWork = new EfUnitOfWork(dbContext);
+            await using (var uncommittedTransaction = await unitOfWork.BeginTransactionAsync())
+            {
+                dbContext.CommandEnvelopes.Add(CreateEnvelope(Id<CommandEnvelope>.New(), "Uncommitted.Command"));
+                await uncommittedTransaction.RollbackAsync();
+            }
+
+            dbContext.ChangeTracker.Entries().Should().BeEmpty();
+
+            await using var savedTransaction = await unitOfWork.BeginTransactionAsync();
+            dbContext.CommandEnvelopes.Add(CreateEnvelope(savedEnvelopeId, "Saved.Command"));
+            await unitOfWork.SaveChangesAsync();
+            await savedTransaction.RollbackAsync();
+        }
+
+        await using var verificationContext = new AppDbContext(options);
+        verificationContext.CommandEnvelopes.Should().ContainSingle(envelope => envelope.Id == savedEnvelopeId);
     }
 
     [Test]
@@ -129,14 +167,26 @@ public sealed class UnitOfWorkCommittedDispatchTests
         dispatcher.CallCount.Should().Be(1);
     }
 
-    private sealed class RecordingCommittedIntentDispatcher : ICommittedIntentDispatcher
+    private static CommandEnvelope CreateEnvelope(Id<CommandEnvelope> id, string commandType) => new()
+    {
+        Id = id,
+        CorrelationId = Id<CorrelationScope>.New(),
+        CommandTypeFullName = commandType,
+        PayloadJson = "{}",
+        Status = ActionExecutionStatus.Pending
+    };
+
+    private sealed class RecordingCommittedIntentDispatcher(Func<Task>? onDispatch = null) : ICommittedIntentDispatcher
     {
         public int CallCount { get; private set; }
 
-        public Task DispatchCommittedIntentsAsync(CancellationToken cancellationToken = default)
+        public async Task DispatchCommittedIntentsAsync(CancellationToken cancellationToken = default)
         {
             CallCount += 1;
-            return Task.CompletedTask;
+            if (onDispatch is not null)
+            {
+                await onDispatch();
+            }
         }
     }
 

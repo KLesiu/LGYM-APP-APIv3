@@ -37,39 +37,39 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
         // Arrange: Create mixed command envelopes
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         var pendingUndispatched = new CommandEnvelope
         {
             Id = Id<CommandEnvelope>.New(),
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             Status = ActionExecutionStatus.Pending,
             DispatchedAt = null  // Key: not dispatched
         };
-        
+
         var pendingDispatched = new CommandEnvelope
         {
             Id = Id<CommandEnvelope>.New(),
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             Status = ActionExecutionStatus.Pending,
             DispatchedAt = DateTimeOffset.UtcNow  // Dispatched but still Pending
         };
-        
+
         var completed = new CommandEnvelope
         {
             Id = Id<CommandEnvelope>.New(),
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             Status = ActionExecutionStatus.Completed,
             DispatchedAt = null
         };
-        
+
         var failed = new CommandEnvelope
         {
             Id = Id<CommandEnvelope>.New(),
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             Status = ActionExecutionStatus.Failed,
             DispatchedAt = null
         };
-        
+
         await db.CommandEnvelopes.AddAsync(pendingUndispatched);
         await db.CommandEnvelopes.AddAsync(pendingDispatched);
         await db.CommandEnvelopes.AddAsync(completed);
@@ -92,30 +92,30 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
         // Arrange
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         var failed1 = new CommandEnvelope
         {
             Id = Id<CommandEnvelope>.New(),
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             Status = ActionExecutionStatus.Failed,
             LastAttemptAt = DateTimeOffset.UtcNow.AddMinutes(-1)
         };
-        
+
         var failed2 = new CommandEnvelope
         {
             Id = Id<CommandEnvelope>.New(),
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.TrainingCompletedCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.TrainingCompletedCommand",
             Status = ActionExecutionStatus.Failed,
             LastAttemptAt = DateTimeOffset.UtcNow.AddMinutes(-5)
         };
-        
+
         var completed = new CommandEnvelope
         {
             Id = Id<CommandEnvelope>.New(),
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             Status = ActionExecutionStatus.Completed
         };
-        
+
         await db.CommandEnvelopes.AddAsync(failed1);
         await db.CommandEnvelopes.AddAsync(failed2);
         await db.CommandEnvelopes.AddAsync(completed);
@@ -137,22 +137,22 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
         // Arrange
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         var deadLettered = new CommandEnvelope
         {
             Id = Id<CommandEnvelope>.New(),
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             Status = ActionExecutionStatus.DeadLettered,
             LastAttemptAt = DateTimeOffset.UtcNow
         };
-        
+
         var failed = new CommandEnvelope
         {
             Id = Id<CommandEnvelope>.New(),
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             Status = ActionExecutionStatus.Failed
         };
-        
+
         await db.CommandEnvelopes.AddAsync(deadLettered);
         await db.CommandEnvelopes.AddAsync(failed);
         await db.SaveChangesAsync();
@@ -172,7 +172,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
         // Arrange
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         // Create 3 Pending, 2 Failed, 1 DeadLettered, 2 Completed
         for (int i = 0; i < 3; i++)
         {
@@ -181,11 +181,11 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
                 Id = Id<CommandEnvelope>.New(),
                 CorrelationId = Id<CorrelationScope>.New(),
                 PayloadJson = "{}",
-                CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+                CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
                 Status = ActionExecutionStatus.Pending
             });
         }
-        
+
         for (int i = 0; i < 2; i++)
         {
             await db.CommandEnvelopes.AddAsync(new CommandEnvelope
@@ -193,20 +193,20 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
                 Id = Id<CommandEnvelope>.New(),
                 CorrelationId = Id<CorrelationScope>.New(),
                 PayloadJson = "{}",
-                CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+                CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
                 Status = ActionExecutionStatus.Failed
             });
         }
-        
+
         await db.CommandEnvelopes.AddAsync(new CommandEnvelope
         {
             Id = Id<CommandEnvelope>.New(),
             CorrelationId = Id<CorrelationScope>.New(),
             PayloadJson = "{}",
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             Status = ActionExecutionStatus.DeadLettered
         });
-        
+
         for (int i = 0; i < 2; i++)
         {
             await db.CommandEnvelopes.AddAsync(new CommandEnvelope
@@ -214,11 +214,11 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
                 Id = Id<CommandEnvelope>.New(),
                 CorrelationId = Id<CorrelationScope>.New(),
                 PayloadJson = "{}",
-                CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+                CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
                 Status = ActionExecutionStatus.Completed
             });
         }
-        
+
         await db.SaveChangesAsync();
 
         // Act & Assert
@@ -240,7 +240,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var correlationId = Id<CorrelationScope>.New();
-        
+
         var pendingUndispatched = new NotificationMessage
         {
             Id = Id<NotificationMessage>.New(),
@@ -252,7 +252,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             Status = EmailNotificationStatus.Pending,
             DispatchedAt = null
         };
-        
+
         var pendingDispatched = new NotificationMessage
         {
             Id = Id<NotificationMessage>.New(),
@@ -264,7 +264,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             Status = EmailNotificationStatus.Pending,
             DispatchedAt = DateTimeOffset.UtcNow
         };
-        
+
         var sent = new NotificationMessage
         {
             Id = Id<NotificationMessage>.New(),
@@ -275,7 +275,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             PayloadJson = "{}",
             Status = EmailNotificationStatus.Sent
         };
-        
+
         await db.NotificationMessages.AddAsync(pendingUndispatched);
         await db.NotificationMessages.AddAsync(pendingDispatched);
         await db.NotificationMessages.AddAsync(sent);
@@ -297,7 +297,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
         // Arrange
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         var deadLettered = new NotificationMessage
         {
             Id = Id<NotificationMessage>.New(),
@@ -310,7 +310,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             IsDeadLettered = true,
             DeadLetterReason = "Invalid recipient"
         };
-        
+
         var failed = new NotificationMessage
         {
             Id = Id<NotificationMessage>.New(),
@@ -322,7 +322,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             Status = EmailNotificationStatus.Failed,
             IsDeadLettered = false
         };
-        
+
         await db.NotificationMessages.AddAsync(deadLettered);
         await db.NotificationMessages.AddAsync(failed);
         await db.SaveChangesAsync();
@@ -342,7 +342,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
         // Arrange
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         // In-progress: ResponseStatusCode < 100 (typically 0)
         var inProgress1 = new ApiIdempotencyRecord
         {
@@ -352,7 +352,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             RequestFingerprint = "fingerprint-1",
             ResponseStatusCode = 0  // In-progress marker
         };
-        
+
         var inProgress2 = new ApiIdempotencyRecord
         {
             Id = Id<ApiIdempotencyRecord>.New(),
@@ -361,7 +361,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             RequestFingerprint = "fingerprint-2",
             ResponseStatusCode = 0  // In-progress marker
         };
-        
+
         var completed = new ApiIdempotencyRecord
         {
             Id = Id<ApiIdempotencyRecord>.New(),
@@ -370,7 +370,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             RequestFingerprint = "fingerprint-3",
             ResponseStatusCode = 200  // Completed
         };
-        
+
         await db.ApiIdempotencyRecords.AddAsync(inProgress1);
         await db.ApiIdempotencyRecords.AddAsync(inProgress2);
         await db.ApiIdempotencyRecords.AddAsync(completed);
@@ -389,7 +389,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
         // Arrange
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
+
         for (int i = 0; i < 5; i++)
         {
             await db.ApiIdempotencyRecords.AddAsync(new ApiIdempotencyRecord
@@ -401,7 +401,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
                 ResponseStatusCode = 200
             });
         }
-        
+
         for (int i = 0; i < 3; i++)
         {
             await db.ApiIdempotencyRecords.AddAsync(new ApiIdempotencyRecord
@@ -413,7 +413,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
                 ResponseStatusCode = 409
             });
         }
-        
+
         for (int i = 0; i < 2; i++)
         {
             await db.ApiIdempotencyRecords.AddAsync(new ApiIdempotencyRecord
@@ -425,7 +425,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
                 ResponseStatusCode = 400
             });
         }
-        
+
         await db.SaveChangesAsync();
 
         // Act & Assert
@@ -445,64 +445,64 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var cutoffTime = DateTimeOffset.UtcNow.AddDays(-7);
-        
+
         // Old completed (should be deleted)
         var oldCompleted1 = new CommandEnvelope
         {
             Id = Id<CommandEnvelope>.New(),
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             Status = ActionExecutionStatus.Completed,
             CompletedAt = cutoffTime.AddDays(-1)
         };
-        
+
         var oldCompleted2 = new CommandEnvelope
         {
             Id = Id<CommandEnvelope>.New(),
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.TrainingCompletedCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.TrainingCompletedCommand",
             Status = ActionExecutionStatus.Completed,
             CompletedAt = cutoffTime.AddDays(-10)
         };
-        
+
         // Recent completed (should NOT be deleted)
         var recentCompleted = new CommandEnvelope
         {
             Id = Id<CommandEnvelope>.New(),
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             Status = ActionExecutionStatus.Completed,
             CompletedAt = cutoffTime.AddDays(1)
         };
-        
+
         // Old but not completed (should NOT be deleted)
         var oldFailed = new CommandEnvelope
         {
             Id = Id<CommandEnvelope>.New(),
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             Status = ActionExecutionStatus.Failed,
             CompletedAt = cutoffTime.AddDays(-5)
         };
-        
+
         var oldPending = new CommandEnvelope
         {
             Id = Id<CommandEnvelope>.New(),
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             Status = ActionExecutionStatus.Pending,
             CompletedAt = null
         };
-        
+
         await db.CommandEnvelopes.AddAsync(oldCompleted1);
         await db.CommandEnvelopes.AddAsync(oldCompleted2);
         await db.CommandEnvelopes.AddAsync(recentCompleted);
         await db.CommandEnvelopes.AddAsync(oldFailed);
         await db.CommandEnvelopes.AddAsync(oldPending);
         await db.SaveChangesAsync();
-        
+
         // Act
         using var actScope = Factory.Services.CreateScope();
         var unitOfWork = actScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var repository = actScope.ServiceProvider.GetRequiredService<ICommandEnvelopeRepository>();
         var deleteCount = await repository.DeleteCompletedOlderThanAsync(cutoffTime);
         await unitOfWork.SaveChangesAsync();
-        
+
         // Assert
         deleteCount.Should().Be(2, "two old completed envelopes should be deleted");
         // Refresh context to see persisted changes
@@ -524,7 +524,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var cutoffTime = DateTimeOffset.UtcNow.AddDays(-30);
-        
+
         // Old sent (should be deleted)
         var oldSent1 = new NotificationMessage
         {
@@ -537,7 +537,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             Status = EmailNotificationStatus.Sent,
             SentAt = cutoffTime.AddDays(-5)
         };
-        
+
         var oldSent2 = new NotificationMessage
         {
             Id = Id<NotificationMessage>.New(),
@@ -549,7 +549,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             Status = EmailNotificationStatus.Sent,
             SentAt = cutoffTime.AddDays(-45)
         };
-        
+
         // Recent sent (should NOT be deleted)
         var recentSent = new NotificationMessage
         {
@@ -562,7 +562,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             Status = EmailNotificationStatus.Sent,
             SentAt = cutoffTime.AddDays(10)
         };
-        
+
         // Old but not sent (should NOT be deleted)
         var oldPending = new NotificationMessage
         {
@@ -575,7 +575,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             Status = EmailNotificationStatus.Pending,
             SentAt = null
         };
-        
+
         var oldFailed = new NotificationMessage
         {
             Id = Id<NotificationMessage>.New(),
@@ -587,21 +587,21 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             Status = EmailNotificationStatus.Failed,
             SentAt = null
         };
-        
+
         await db.NotificationMessages.AddAsync(oldSent1);
         await db.NotificationMessages.AddAsync(oldSent2);
         await db.NotificationMessages.AddAsync(recentSent);
         await db.NotificationMessages.AddAsync(oldPending);
         await db.NotificationMessages.AddAsync(oldFailed);
         await db.SaveChangesAsync();
-        
+
         // Act
         using var actScope = Factory.Services.CreateScope();
         var unitOfWork = actScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var repository = actScope.ServiceProvider.GetRequiredService<IEmailNotificationLogRepository>();
         var deleteCount = await repository.DeleteSentOlderThanAsync(cutoffTime);
         await unitOfWork.SaveChangesAsync();
-        
+
         // Assert
         deleteCount.Should().Be(2, "two old sent notifications should be deleted");
         // Refresh context to see persisted changes
@@ -623,7 +623,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var cutoffTime = DateTimeOffset.UtcNow.AddDays(-14);
-        
+
         // Old records (should be deleted) - includes both completed and in-progress
         var oldCompleted = new ApiIdempotencyRecord
         {
@@ -634,7 +634,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             ResponseStatusCode = 200,
             ProcessedAt = cutoffTime.AddDays(-5)
         };
-        
+
         var oldFailed = new ApiIdempotencyRecord
         {
             Id = Id<ApiIdempotencyRecord>.New(),
@@ -644,7 +644,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             ResponseStatusCode = 500,
             ProcessedAt = cutoffTime.AddDays(-20)
         };
-        
+
         // Recent records (should NOT be deleted) - both completed and in-progress
         var recentCompleted = new ApiIdempotencyRecord
         {
@@ -655,7 +655,7 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             ResponseStatusCode = 201,
             ProcessedAt = cutoffTime.AddDays(5)
         };
-        
+
         var recentInProgress = new ApiIdempotencyRecord
         {
             Id = Id<ApiIdempotencyRecord>.New(),
@@ -665,20 +665,20 @@ public class ReliabilityObservabilityTests : IntegrationTestBase
             ResponseStatusCode = 0,  // In-progress marker
             ProcessedAt = cutoffTime.AddDays(2)
         };
-        
+
         await db.ApiIdempotencyRecords.AddAsync(oldCompleted);
         await db.ApiIdempotencyRecords.AddAsync(oldFailed);
         await db.ApiIdempotencyRecords.AddAsync(recentCompleted);
         await db.ApiIdempotencyRecords.AddAsync(recentInProgress);
         await db.SaveChangesAsync();
-        
+
         // Act
         using var actScope = Factory.Services.CreateScope();
         var unitOfWork = actScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var repository = actScope.ServiceProvider.GetRequiredService<IApiIdempotencyRecordRepository>();
         var deleteCount = await repository.DeleteOlderThanAsync(cutoffTime);
         await unitOfWork.SaveChangesAsync();
-        
+
         // Assert
         deleteCount.Should().Be(2, "two old idempotency records should be deleted");
         // Refresh context to see persisted changes

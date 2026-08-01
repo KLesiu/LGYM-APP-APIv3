@@ -1,9 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\LgymApi.BackgroundWorker.Common\LgymApi.BackgroundWorker.Common.csproj" />
     <ProjectReference Include="..\LgymApi.Domain\LgymApi.Domain.csproj" />
+    <ProjectReference Include="..\LgymApi.Identity\LgymApi.Identity.csproj" />
+    <ProjectReference Include="..\LgymApi.Platform\LgymApi.Platform.csproj" />
     <ProjectReference Include="..\LgymApi.Resources\LgymApi.Resources.csproj" />
+    <ProjectReference Include="..\LgymApi.TrainingPlanning\LgymApi.TrainingPlanning.csproj" />
   </ItemGroup>
 
   <ItemGroup>

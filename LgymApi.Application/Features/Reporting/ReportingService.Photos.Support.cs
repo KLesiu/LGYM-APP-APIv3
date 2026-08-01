@@ -1,21 +1,24 @@
 using LgymApi.Application.Abstractions.Storage;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.Reporting.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Reporting.Models;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.Extensions.Logging;
-using UserEntity = LgymApi.Domain.Entities.User;
 
 namespace LgymApi.Application.Features.Reporting;
 
 public sealed partial class ReportingService
 {
     private async Task<Result<Unit, AppError>> ValidatePhotoAccessAsync(
-        UserEntity currentUser,
-        Id<UserEntity> traineeId,
+        AuthenticatedAccountContext currentUser,
+        Id<AccountReference> traineeId,
         CancellationToken cancellationToken)
     {
         if (currentUser.Id == traineeId)
@@ -23,18 +26,14 @@ public sealed partial class ReportingService
             return Result<Unit, AppError>.Success(Unit.Value);
         }
 
-        var isTrainer = await _roleRepository.UserHasRoleAsync(currentUser.Id, Domain.Security.AuthConstants.Roles.Trainer, cancellationToken);
-        if (!isTrainer)
+        var trainerCheck = EnsureTrainer(currentUser);
+        if (trainerCheck.IsFailure)
         {
             return Result<Unit, AppError>.Failure(new ReportingForbiddenError(Messages.TrainerRoleRequired));
         }
 
-        var link = await _trainerRelationshipRepository.FindActiveLinkByTrainerAndTraineeAsync(
-            currentUser.Id,
-            traineeId,
-            cancellationToken);
-
-        if (link == null)
+        var access = await _relationshipAccessPersistence.GetAccessAsync(currentUser.Id, traineeId, cancellationToken);
+        if (!access.HasActiveRelationship)
         {
             return Result<Unit, AppError>.Failure(new ReportingNotFoundError(Messages.DidntFind));
         }
@@ -43,7 +42,7 @@ public sealed partial class ReportingService
     }
 
     private static string GenerateStorageKey(
-        Id<UserEntity> traineeId,
+        Id<AccountReference> traineeId,
         Id<ReportRequest> reportRequestId,
         string viewType,
         string fileExtension)
@@ -56,7 +55,7 @@ public sealed partial class ReportingService
     }
 
     private static string BuildStorageKeyPrefix(
-        Id<UserEntity> traineeId,
+        Id<AccountReference> traineeId,
         Id<ReportRequest> reportRequestId,
         string viewType)
     {
@@ -100,24 +99,24 @@ public sealed partial class ReportingService
     }
 
     private async Task<Result<Unit, AppError>> ValidateDeveloperLimitsAsync(
-        Id<UserEntity> currentUserId,
+        Id<AccountReference> currentUserId,
         CancellationToken cancellationToken)
     {
-        var totalBytes = await _reportingRepository.GetActivePhotoStorageBytesAsync(cancellationToken);
+        var totalBytes = await _photoPersistence.GetActiveStorageBytesAsync(cancellationToken);
         if (totalBytes >= _photoStorageOptions.DevMaxTotalBytes)
         {
             return Result<Unit, AppError>.Failure(new InvalidReportingError("Development photo storage byte limit reached"));
         }
 
         var startOfDayUtc = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero);
-        var uploadsToday = await _reportingRepository.CountPhotosCreatedSinceAsync(startOfDayUtc, cancellationToken);
+        var uploadsToday = await _photoPersistence.CountCreatedSinceAsync(startOfDayUtc, cancellationToken);
         if (uploadsToday >= _photoStorageOptions.DevMaxUploadsPerDay)
         {
             return Result<Unit, AppError>.Failure(new InvalidReportingError("Development daily photo upload limit reached"));
         }
 
         var perUserWindowStart = DateTimeOffset.UtcNow.AddHours(-1);
-        var recentUploadInits = await _photoUploadInitTracker.CountRecentUploadInitsAsync(currentUserId, perUserWindowStart, cancellationToken);
+        var recentUploadInits = await _photoPersistence.CountRecentUploadInitsAsync(currentUserId, perUserWindowStart, cancellationToken);
         if (recentUploadInits >= _photoStorageOptions.DevMaxUploadInitPerUserPerHour)
         {
             return Result<Unit, AppError>.Failure(new InvalidReportingError("Development upload-init hourly limit reached"));
@@ -129,7 +128,7 @@ public sealed partial class ReportingService
     private bool ShouldEnforceDevelopmentPhotoLimits()
         => string.Equals(_photoStorageOptions.Provider, "Local", StringComparison.OrdinalIgnoreCase);
 
-    private static Result<Unit, AppError> EnsureRequestAllowsPhotoUpload(ReportRequest request)
+    private static Result<Unit, AppError> EnsureRequestAllowsPhotoUpload(ReportRequestPersistenceModel request)
         => request.Status is ReportRequestStatus.Pending or ReportRequestStatus.Expired
             ? Result<Unit, AppError>.Success(Unit.Value)
             : Result<Unit, AppError>.Failure(new InvalidReportingError(Messages.ReportRequestNotPending));
@@ -186,15 +185,15 @@ public sealed partial class ReportingService
     }
 
     private Result<Unit, AppError> ValidatePendingUpload(
-        UserEntity currentUser,
+        AuthenticatedAccountContext currentUser,
         CompletePhotoUploadCommand command,
-        Id<UserEntity> ownerUserId,
+        Id<AccountReference> ownerUserId,
         string parsedViewType,
         PendingPhotoUpload pendingUpload)
     {
         if (!string.Equals(pendingUpload.StorageKey, command.StorageKey, StringComparison.Ordinal)
-            || pendingUpload.InitiatedByUserId != currentUser.Id
-            || pendingUpload.OwnerUserId != ownerUserId
+            || pendingUpload.InitiatedByAccountId != currentUser.Id
+            || pendingUpload.OwnerAccountId != ownerUserId
             || pendingUpload.ReportRequestId != command.ReportRequestId
             || !string.Equals(pendingUpload.ViewType, parsedViewType, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(pendingUpload.DeclaredContentType, command.MimeType, StringComparison.OrdinalIgnoreCase)
@@ -217,9 +216,9 @@ public sealed partial class ReportingService
     }
 
     private Result<Unit, AppError> EnsureStorageKeyHasExpectedPrefix(
-        UserEntity currentUser,
+        AuthenticatedAccountContext currentUser,
         string storageKey,
-        Id<UserEntity> traineeId,
+        Id<AccountReference> traineeId,
         Id<ReportRequest> reportRequestId,
         string parsedViewType)
     {

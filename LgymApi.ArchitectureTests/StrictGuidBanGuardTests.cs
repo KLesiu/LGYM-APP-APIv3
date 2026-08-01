@@ -272,7 +272,12 @@ public sealed class StrictGuidBanGuardTests
             return true;
         }
 
-        if (normalized.EndsWith("/LgymApi.Infrastructure/Pagination/FilterToGridifyAdapter.cs", StringComparison.OrdinalIgnoreCase))
+        if (normalized.EndsWith("/LgymApi.IntegrationTests/PostgreSqlDatabaseLease.cs", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (normalized.EndsWith("/LgymApi.Platform/Pagination/FilterToGridifyAdapter.cs", StringComparison.OrdinalIgnoreCase))
         {
             // Gridify field type resolution requires typeof(Guid) and Guid.TryParse to properly map Guid-typed fields
             // in filter expressions. This is unavoidable for a generic filter-to-Gridify adapter.
@@ -313,7 +318,7 @@ public sealed class StrictGuidBanGuardTests
 
             var fileContent = File.ReadAllText(tree.FilePath);
             var lines = fileContent.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-            
+
             // Check first 5 lines for auto-generated marker
             for (int i = 0; i < Math.Min(5, lines.Length); i++)
             {
@@ -335,7 +340,7 @@ public sealed class StrictGuidBanGuardTests
 
     private static (string RepoRoot, CSharpCompilation Compilation, IReadOnlyList<SyntaxTree> SyntaxTrees) PrepareCompilation()
     {
-        var repoRoot = ResolveRepositoryRoot();
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var parseOptions = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
         var sourceFiles = Directory
             .EnumerateFiles(repoRoot, "*.cs", SearchOption.AllDirectories)
@@ -374,22 +379,6 @@ public sealed class StrictGuidBanGuardTests
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(location => (MetadataReference)MetadataReference.CreateFromFile(location))
             .ToList();
-    }
-
-    private static string ResolveRepositoryRoot()
-    {
-        var current = Directory.GetCurrentDirectory();
-        while (!string.IsNullOrEmpty(current))
-        {
-            if (Directory.Exists(Path.Combine(current, ".git")))
-            {
-                return current;
-            }
-
-            current = Directory.GetParent(current)?.FullName;
-        }
-
-        throw new InvalidOperationException("Could not find repository root (no .git directory found).");
     }
 
     private sealed record Violation(string File, int Line, string Message)

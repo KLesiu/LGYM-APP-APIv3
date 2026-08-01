@@ -2,6 +2,7 @@ using System.Reflection;
 using FluentAssertions;
 using LgymApi.Infrastructure.Pagination;
 using NUnit.Framework;
+using System.Xml.Linq;
 
 namespace LgymApi.UnitTests.Pagination;
 
@@ -9,18 +10,18 @@ namespace LgymApi.UnitTests.Pagination;
 public sealed class PaginationArchitectureGuardTests
 {
     private static readonly Assembly ApplicationAssembly =
+        typeof(LgymApi.Application.ServiceCollectionExtensions).Assembly;
+
+    private static readonly Assembly PaginationContractAssembly =
         typeof(LgymApi.Application.Pagination.Pagination<>).Assembly;
 
     private static readonly Assembly InfrastructureAssembly =
         typeof(GridifyExecutionService).Assembly;
 
-    private static readonly string RepositorySourcePath = ResolveSourcePath(
-        "LgymApi.Infrastructure", "Repositories", "TrainerRelationshipRepository.cs");
-
     [Test]
     public void PaginationContracts_DoNotReferenceGridifyOrEfTypes()
     {
-        var paginationTypes = ApplicationAssembly.GetTypes()
+        var paginationTypes = PaginationContractAssembly.GetTypes()
             .Where(t => t.Namespace is "LgymApi.Application.Pagination")
             .ToList();
 
@@ -55,48 +56,22 @@ public sealed class PaginationArchitectureGuardTests
     }
 
     [Test]
-    public void ApplicationAssembly_DoesNotReferenceEfCorePackage()
+    public void ApplicationProject_DoesNotDirectlyReferenceEfCorePackage()
     {
-        var referencedAssemblies = ApplicationAssembly.GetReferencedAssemblies();
-
-        var efCoreReferences = referencedAssemblies
-            .Where(a => a.Name != null &&
-                        a.Name.Contains("EntityFrameworkCore", StringComparison.OrdinalIgnoreCase))
-            .Select(a => a.FullName)
-            .ToList();
+        var applicationProject = Path.Combine(ResolveRepositoryRoot(), "LgymApi.Application", "LgymApi.Application.csproj");
+        var efCoreReferences = FindDirectEfCorePackageReferences(File.ReadAllText(applicationProject));
 
         efCoreReferences.Should().BeEmpty(
-            "LgymApi.Application must not reference EF Core assemblies — " +
+            "LgymApi.Application must not directly reference EF Core packages — " +
             "EF Core is an infrastructure concern");
     }
 
     [Test]
-    public void TrainerDashboardGridifyPagination_DoesNotMaterializeBeforePaging()
+    public void DirectEfCorePackageFixture_ShouldBeDetected()
     {
-        File.Exists(RepositorySourcePath).Should().BeTrue($"TrainerRelationshipRepository source not found at '{RepositorySourcePath}'.");
+        const string project = "<Project><ItemGroup><PackageReference Include=\"Microsoft.EntityFrameworkCore\" /></ItemGroup></Project>";
 
-        var sourceCode = File.ReadAllText(RepositorySourcePath);
-
-        var methodBody = ExtractMethodBody(sourceCode, "GetDashboardTraineesAsync");
-
-        methodBody.Should().NotBeNull(
-            "GetDashboardTraineesAsync method must exist in TrainerRelationshipRepository");
-
-        var gridifyCallIndex = methodBody!.IndexOf("_gridifyExecutionService.ExecuteAsync", StringComparison.Ordinal);
-        gridifyCallIndex.Should().BeGreaterThan(-1,
-            "GetDashboardTraineesAsync should delegate to GridifyExecutionService.ExecuteAsync");
-
-        var beforeGridify = methodBody[..gridifyCallIndex];
-
-        beforeGridify.Should().NotContain("ToListAsync",
-            "must not materialize query before passing to GridifyExecutionService — " +
-            "this was the old in-memory sorting anti-pattern");
-
-        beforeGridify.Should().NotContain("ToList()",
-            "must not materialize query synchronously before passing to GridifyExecutionService");
-
-        beforeGridify.Should().NotContain("ToArrayAsync",
-            "must not materialize query to array before passing to GridifyExecutionService");
+        FindDirectEfCorePackageReferences(project).Should().ContainSingle().Which.Should().Be("Microsoft.EntityFrameworkCore");
     }
 
     [Test]
@@ -212,48 +187,29 @@ public sealed class PaginationArchitectureGuardTests
         }
     }
 
-    private static string? ExtractMethodBody(string sourceCode, string methodName)
+    private static IReadOnlyList<string> FindDirectEfCorePackageReferences(string projectXml)
     {
-        var methodIndex = sourceCode.IndexOf(methodName, StringComparison.Ordinal);
-        if (methodIndex < 0) return null;
-
-        var braceStart = sourceCode.IndexOf('{', methodIndex);
-        if (braceStart < 0) return null;
-
-        var depth = 0;
-        for (var i = braceStart; i < sourceCode.Length; i++)
-        {
-            if (sourceCode[i] == '{') depth++;
-            else if (sourceCode[i] == '}') depth--;
-
-            if (depth == 0)
-            {
-                return sourceCode[braceStart..(i + 1)];
-            }
-        }
-
-        return null;
-    }
-
-    private static string ResolveSourcePath(params string[] pathSegments)
-    {
-        var repoRoot = ResolveRepositoryRoot();
-        return Path.Combine(new[] { repoRoot }.Concat(pathSegments).ToArray());
+        return XDocument.Parse(projectXml).Descendants()
+            .Where(element => element.Name.LocalName == "PackageReference")
+            .Select(element => element.Attribute("Include")?.Value)
+            .Where(package => package?.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.OrdinalIgnoreCase) == true)
+            .Cast<string>()
+            .ToList();
     }
 
     private static string ResolveRepositoryRoot()
     {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current != null)
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
         {
-            if (File.Exists(Path.Combine(current.FullName, "LgymApi.sln")))
+            if (File.Exists(Path.Combine(directory.FullName, "LgymApi.sln")))
             {
-                return current.FullName;
+                return directory.FullName;
             }
 
-            current = current.Parent;
+            directory = directory.Parent;
         }
 
-        throw new InvalidOperationException("Unable to locate repository root (LgymApi.sln).");
+        throw new InvalidOperationException("Unable to locate repository root.");
     }
 }

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
 using LgymApi.Domain.Entities;
@@ -231,10 +232,32 @@ public sealed partial class TrainerEmailInvitationTests : IntegrationTestBase
         var response = await Client.GetAsync($"/api/invitations/{invitationId}?code=CODE001VALID");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        body.RootElement.EnumerateObject().Select(property => property.Name)
+            .Should().BeEquivalentTo(["status", "userExists"]);
+        body.RootElement.GetProperty("status").GetString().Should().Be("Pending");
+        body.RootElement.GetProperty("userExists").GetBoolean().Should().BeFalse();
+    }
+
+    [Test]
+    public async Task GetInvitationStatus_WithBoundTrainee_ReturnsUserExistsWithoutInviteeEmailAccount()
+    {
+        var trainer = await SeedTrainerAsync("trainer-public-bound", "trainer-public-bound@example.com");
+        var trainee = await SeedUserAsync("bound-user", "bound-user@example.com", "password123");
+        var invitationId = await SeedInvitationAsync(
+            trainer.Id,
+            "unresolved-bound-email@example.com",
+            status: TrainerInvitationStatus.Accepted,
+            code: "BOUND001CODE",
+            traineeId: trainee.Id);
+
+        var response = await Client.GetAsync($"/api/invitations/{invitationId}?code=BOUND001CODE");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<PublicInvitationStatusResponse>();
         body.Should().NotBeNull();
-        body!.Status.Should().Be("Pending");
-        body.UserExists.Should().BeFalse();
+        body!.Status.Should().Be("Accepted");
+        body.UserExists.Should().BeTrue();
     }
 
     [Test]
@@ -262,6 +285,10 @@ public sealed partial class TrainerEmailInvitationTests : IntegrationTestBase
         var response = await Client.GetAsync($"/api/invitations/{invitationId}?code=WRONGCODE");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        body.RootElement.GetProperty("title").GetString().Should().Be("Not Found");
+        body.RootElement.GetProperty("status").GetInt32().Should().Be((int)HttpStatusCode.NotFound);
+        body.RootElement.TryGetProperty("msg", out _).Should().BeFalse();
     }
 
     [Test]
@@ -338,7 +365,8 @@ public sealed partial class TrainerEmailInvitationTests : IntegrationTestBase
         TrainerInvitationStatus status,
         string code,
         DateTimeOffset? expiresAt = null,
-        DateTimeOffset? respondedAt = null)
+        DateTimeOffset? respondedAt = null,
+        Id<User>? traineeId = null)
     {
         var invitationId = Id<TrainerInvitation>.New();
         using var scope = Factory.Services.CreateScope();
@@ -348,7 +376,7 @@ public sealed partial class TrainerEmailInvitationTests : IntegrationTestBase
             Id = invitationId,
             TrainerId = trainerId,
             InviteeEmail = inviteeEmail,
-            TraineeId = null,
+            TraineeId = traineeId,
             Code = code,
             Status = status,
             ExpiresAt = expiresAt ?? DateTimeOffset.UtcNow.AddDays(7),

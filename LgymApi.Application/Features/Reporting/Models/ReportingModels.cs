@@ -1,5 +1,6 @@
 using System.Text.Json;
 using LgymApi.Domain.Enums;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.Application.Features.Reporting.Models;
 
@@ -41,7 +42,7 @@ public sealed class UpdateReportSubmissionFeedbackCommand
 public sealed class ReportTemplateResult
 {
     public LgymApi.Domain.ValueObjects.Id<LgymApi.Domain.Entities.ReportTemplate> Id { get; set; }
-    public LgymApi.Domain.ValueObjects.Id<LgymApi.Domain.Entities.User> TrainerId { get; set; }
+    public LgymApi.Domain.ValueObjects.Id<AccountReference> TrainerId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
@@ -61,8 +62,8 @@ public sealed class ReportTemplateFieldResult
 public sealed class ReportRequestResult
 {
     public LgymApi.Domain.ValueObjects.Id<LgymApi.Domain.Entities.ReportRequest> Id { get; set; }
-    public LgymApi.Domain.ValueObjects.Id<LgymApi.Domain.Entities.User> TrainerId { get; set; }
-    public LgymApi.Domain.ValueObjects.Id<LgymApi.Domain.Entities.User> TraineeId { get; set; }
+    public LgymApi.Domain.ValueObjects.Id<AccountReference> TrainerId { get; set; }
+    public LgymApi.Domain.ValueObjects.Id<AccountReference> TraineeId { get; set; }
     public LgymApi.Domain.ValueObjects.Id<LgymApi.Domain.Entities.ReportTemplate> TemplateId { get; set; }
     public ReportRequestStatus Status { get; set; }
     public DateTimeOffset? DueAt { get; set; }
@@ -76,7 +77,7 @@ public sealed class ReportSubmissionResult
 {
     public LgymApi.Domain.ValueObjects.Id<LgymApi.Domain.Entities.ReportSubmission> Id { get; set; }
     public LgymApi.Domain.ValueObjects.Id<LgymApi.Domain.Entities.ReportRequest> ReportRequestId { get; set; }
-    public LgymApi.Domain.ValueObjects.Id<LgymApi.Domain.Entities.User> TraineeId { get; set; }
+    public LgymApi.Domain.ValueObjects.Id<AccountReference> TraineeId { get; set; }
     public DateTimeOffset SubmittedAt { get; set; }
     public Dictionary<string, JsonElement> Answers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public string? TrainerOverallComment { get; set; }
@@ -125,7 +126,7 @@ public sealed class CompletePhotoUploadResult
 
 public sealed class GetPhotoHistoryCommand
 {
-    public LgymApi.Domain.ValueObjects.Id<LgymApi.Domain.Entities.User>? TraineeId { get; set; }
+    public LgymApi.Domain.ValueObjects.Id<AccountReference>? TraineeId { get; set; }
     public LgymApi.Domain.ValueObjects.Id<LgymApi.Domain.Entities.ReportRequest>? RequestId { get; set; }
 }
 

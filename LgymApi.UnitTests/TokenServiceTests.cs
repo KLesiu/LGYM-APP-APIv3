@@ -40,7 +40,7 @@ public sealed class TokenServiceTests
         token.Should().NotBeNullOrEmpty();
 
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
-        
+
         jwt.Claims.Any(c => c.Type == "sub" && c.Value == userId.ToString()).Should().BeTrue();
         jwt.Claims.Any(c => c.Type == AuthConstants.ClaimNames.UserId && c.Value == userId.ToString()).Should().BeTrue();
         jwt.Claims.Any(c => c.Type == AuthConstants.ClaimNames.SessionId && c.Value == sessionId.ToString()).Should().BeTrue();

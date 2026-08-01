@@ -1,17 +1,15 @@
-using LgymApi.BackgroundWorker.Common.Push;
-using LgymApi.Domain.Entities;
-using LgymApi.Domain.ValueObjects;
+using LgymApi.Application.Notifications.Contracts.Push;
 
 namespace LgymApi.BackgroundWorker.Services;
 
 public sealed class NoOpPushBackgroundScheduler : IPushBackgroundScheduler
 {
-    public string? Enqueue(Id<PushNotificationMessage> notificationId)
+    public string? Enqueue(string notificationId)
     {
         return null;
     }
 
-    public string? ScheduleRetry(Id<PushNotificationMessage> notificationId, TimeSpan delay)
+    public string? ScheduleRetry(string notificationId, TimeSpan delay)
     {
         return null;
     }

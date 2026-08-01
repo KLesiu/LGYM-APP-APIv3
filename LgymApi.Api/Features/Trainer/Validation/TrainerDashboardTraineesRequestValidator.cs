@@ -1,6 +1,6 @@
 using FluentValidation;
 using LgymApi.Api.Features.Trainer.Contracts;
-using LgymApi.Application.Features.TrainerRelationships.Models;
+using LgymApi.Application.Coaching.Relationships.TrainerDashboard;
 using LgymApi.Resources;
 
 namespace LgymApi.Api.Features.Trainer.Validation;

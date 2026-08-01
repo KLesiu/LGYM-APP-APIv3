@@ -4,6 +4,7 @@ using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
 using LgymApi.Application.Features.Reporting.Models;
 using LgymApi.Domain.Entities;
+using LgymApi.Identity.Contracts;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
 using Microsoft.AspNetCore.Mvc;
@@ -17,7 +18,7 @@ public sealed partial class TrainerReportingController
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateRecurringReportAssignment([FromRoute] string traineeId, [FromBody] UpsertRecurringReportAssignmentRequest request, CancellationToken cancellationToken = default)
     {
-        if (!Id<LgymApi.Domain.Entities.User>.TryParse(traineeId, out var parsedTraineeId))
+        if (!Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId))
         {
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.UserIdRequired));
         }
@@ -27,8 +28,7 @@ public sealed partial class TrainerReportingController
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _recurringReportAssignmentService.CreateAsync(trainer!, parsedTraineeId, new UpsertRecurringReportAssignmentCommand
+        var result = await _recurringAssignments.CreateAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTraineeId, new UpsertRecurringReportAssignmentCommand
         {
             TemplateId = parsedTemplateId,
             IntervalValue = request.IntervalValue,
@@ -51,13 +51,12 @@ public sealed partial class TrainerReportingController
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetRecurringReportAssignments([FromRoute] string traineeId, CancellationToken cancellationToken = default)
     {
-        if (!Id<LgymApi.Domain.Entities.User>.TryParse(traineeId, out var parsedTraineeId))
+        if (!Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId))
         {
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.UserIdRequired));
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _recurringReportAssignmentService.GetForTraineeAsync(trainer!, parsedTraineeId, cancellationToken);
+        var result = await _recurringAssignments.GetAllAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTraineeId, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -72,7 +71,7 @@ public sealed partial class TrainerReportingController
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> UpdateRecurringReportAssignment([FromRoute] string traineeId, [FromRoute] string id, [FromBody] UpsertRecurringReportAssignmentRequest request, CancellationToken cancellationToken = default)
     {
-        if (!Id<LgymApi.Domain.Entities.User>.TryParse(traineeId, out var parsedTraineeId))
+        if (!Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId))
         {
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.UserIdRequired));
         }
@@ -82,8 +81,7 @@ public sealed partial class TrainerReportingController
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _recurringReportAssignmentService.UpdateAsync(trainer!, parsedTraineeId, parsedAssignmentId, new UpsertRecurringReportAssignmentCommand
+        var result = await _recurringAssignments.UpdateAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTraineeId, parsedAssignmentId, new UpsertRecurringReportAssignmentCommand
         {
             TemplateId = parsedTemplateId,
             IntervalValue = request.IntervalValue,
@@ -106,7 +104,7 @@ public sealed partial class TrainerReportingController
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> PauseRecurringReportAssignment([FromRoute] string traineeId, [FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        if (!Id<LgymApi.Domain.Entities.User>.TryParse(traineeId, out var parsedTraineeId))
+        if (!Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId))
         {
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.UserIdRequired));
         }
@@ -116,8 +114,7 @@ public sealed partial class TrainerReportingController
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _recurringReportAssignmentService.PauseAsync(trainer!, parsedTraineeId, parsedAssignmentId, cancellationToken);
+        var result = await _recurringAssignments.PauseAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTraineeId, parsedAssignmentId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -131,7 +128,7 @@ public sealed partial class TrainerReportingController
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ResumeRecurringReportAssignment([FromRoute] string traineeId, [FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        if (!Id<LgymApi.Domain.Entities.User>.TryParse(traineeId, out var parsedTraineeId))
+        if (!Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId))
         {
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.UserIdRequired));
         }
@@ -141,8 +138,7 @@ public sealed partial class TrainerReportingController
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _recurringReportAssignmentService.ResumeAsync(trainer!, parsedTraineeId, parsedAssignmentId, cancellationToken);
+        var result = await _recurringAssignments.ResumeAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTraineeId, parsedAssignmentId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -156,7 +152,7 @@ public sealed partial class TrainerReportingController
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> DeleteRecurringReportAssignment([FromRoute] string traineeId, [FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        if (!Id<LgymApi.Domain.Entities.User>.TryParse(traineeId, out var parsedTraineeId))
+        if (!Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId))
         {
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.UserIdRequired));
         }
@@ -166,8 +162,7 @@ public sealed partial class TrainerReportingController
             return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _recurringReportAssignmentService.DeleteAsync(trainer!, parsedTraineeId, parsedAssignmentId, cancellationToken);
+        var result = await _recurringAssignments.DeleteAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTraineeId, parsedAssignmentId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();

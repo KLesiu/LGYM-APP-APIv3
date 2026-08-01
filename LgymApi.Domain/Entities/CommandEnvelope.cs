@@ -24,8 +24,8 @@ public sealed class CommandEnvelope : EntityBase<CommandEnvelope>
     public string PayloadJson { get; set; } = string.Empty;
 
     /// <summary>
-    /// CLR type FullName of the command for exact-type resolution.
-    /// Stored as durable string to survive app restarts.
+    /// Canonical durable command ID used for exact command resolution.
+    /// The legacy property and column name are retained for persistence compatibility.
     /// </summary>
     public string CommandTypeFullName { get; set; } = string.Empty;
 

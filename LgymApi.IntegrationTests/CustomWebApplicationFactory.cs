@@ -1,12 +1,11 @@
 using LgymApi.Infrastructure.Data;
-using LgymApi.BackgroundWorker.Common.Notifications;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.TestUtils;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace LgymApi.IntegrationTests;
@@ -16,6 +15,8 @@ namespace LgymApi.IntegrationTests;
 /// </summary>
 public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 {
+    private readonly InMemoryDatabaseRoot _databaseRoot = new();
+
     /// <summary>
     /// Gets a unique database name for this test instance.
     /// </summary>
@@ -24,6 +25,8 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
     /// Gets the test email sender instance for capturing outbound emails during tests.
     /// </summary>
     public TestEmailSender EmailSender { get; } = new();
+
+    public TestPushProviderSender PushSender { get; } = new();
 
     /// <summary>
     /// The JWT signing key used for generating test tokens during integration tests.
@@ -42,25 +45,15 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
         });
         builder.ConfigureServices(services =>
         {
-            var descriptorsToRemove = services
-                .Where(d => d.ServiceType == typeof(DbContextOptions<AppDbContext>)
-                         || d.ServiceType == typeof(AppDbContext)
-                         || d.ServiceType.FullName?.Contains("EntityFrameworkCore") == true)
-                .ToList();
-
-            foreach (var descriptor in descriptorsToRemove)
-            {
-                services.Remove(descriptor);
-            }
+            RemoveAppDbContextRegistrations(services);
 
             services.AddDbContext<AppDbContext>(options =>
             {
-                options.UseInMemoryDatabase(DatabaseName);
+                options.UseInMemoryDatabase(DatabaseName, _databaseRoot);
                 options.EnableSensitiveDataLogging();
             });
 
-            services.RemoveAll<IEmailSender>();
-            services.AddSingleton<IEmailSender>(EmailSender);
+            IntegrationHostServiceOverrides.ReplaceExternalEffects(services, EmailSender, PushSender);
 
             using var serviceProvider = services.BuildServiceProvider();
             using var scope = serviceProvider.CreateScope();
@@ -80,4 +73,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
         builder.UseSetting("Email:TemplateRootPath", Path.Combine(AppContext.BaseDirectory, "EmailTemplates"));
         builder.UseSetting("Email:DefaultCulture", "en-US");
     }
+
+    internal static void RemoveAppDbContextRegistrations(IServiceCollection services)
+        => IntegrationHostServiceOverrides.RemoveAppDbContextRegistrations(services);
 }

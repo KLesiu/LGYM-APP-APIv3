@@ -95,10 +95,10 @@ public sealed class TypedIdEfTests : IntegrationTestBase
     {
         // Arrange
         using var dbContext = CreateTestDbContext();
-        
+
         var testId = Id<TestEntity>.New();
         var entity = new TestEntity { Id = testId, Name = "Find Test Entity" };
-        
+
         await dbContext.TestEntities.AddAsync(entity);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
@@ -120,11 +120,11 @@ public sealed class TypedIdEfTests : IntegrationTestBase
     {
         // Arrange
         using var dbContext = CreateTestDbContext();
-        
+
         var targetId = Id<TestEntity>.New();
         var entity1 = new TestEntity { Id = targetId, Name = "Target Entity" };
         var entity2 = new TestEntity { Id = Id<TestEntity>.New(), Name = "Other Entity" };
-        
+
         await dbContext.TestEntities.AddRangeAsync(entity1, entity2);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
@@ -148,15 +148,15 @@ public sealed class TypedIdEfTests : IntegrationTestBase
     {
         // Arrange
         using var dbContext = CreateTestDbContext();
-        
+
         var id1 = Id<TestEntity>.New();
         var id2 = Id<TestEntity>.New();
         var id3 = Id<TestEntity>.New();
-        
+
         var entity1 = new TestEntity { Id = id1, Name = "Entity A" };
         var entity2 = new TestEntity { Id = id2, Name = "Entity B" };
         var entity3 = new TestEntity { Id = id3, Name = "Entity C" };
-        
+
         await dbContext.TestEntities.AddRangeAsync(entity1, entity2, entity3);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
@@ -185,7 +185,7 @@ public sealed class TypedIdEfTests : IntegrationTestBase
     {
         // Arrange
         using var dbContext = CreateTestDbContext();
-        
+
         var testId = Id<TestEntity>.New();
         var entity = new TestEntity
         {
@@ -217,10 +217,10 @@ public sealed class TypedIdEfTests : IntegrationTestBase
     {
         // Arrange
         using var dbContext = CreateTestDbContext();
-        
+
         var relatedId = Id<RelatedEntity>.New();
         var related = new RelatedEntity { Id = relatedId, Value = "Related Value" };
-        
+
         var testId = Id<TestEntity>.New();
         var entity = new TestEntity
         {

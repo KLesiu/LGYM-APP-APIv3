@@ -2,12 +2,13 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Features.TraineeNotes;
-using LgymApi.Application.Features.TraineeNotes.Models;
+using LgymApi.Application.Coaching.ApiAdapters;
+using LgymApi.Application.Coaching.TraineeNotes.Models;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using LgymApi.Resources;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -19,12 +20,14 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 [Authorize(Policy = AuthConstants.Policies.TrainerAccess)]
 public sealed class TrainerTraineeNotesController : ControllerBase
 {
-    private readonly ITraineeNoteService _traineeNoteService;
+    private readonly ITrainerTraineeNotesApiPort _notes;
     private readonly IMapper _mapper;
 
-    public TrainerTraineeNotesController(ITraineeNoteService traineeNoteService, IMapper mapper)
+    public TrainerTraineeNotesController(
+        ITrainerTraineeNotesApiPort notes,
+        IMapper mapper)
     {
-        _traineeNoteService = traineeNoteService;
+        _notes = notes;
         _mapper = mapper;
     }
 
@@ -32,20 +35,18 @@ public sealed class TrainerTraineeNotesController : ControllerBase
     [ProducesResponseType(typeof(List<TraineeNoteDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetNotes([FromRoute] string traineeId, CancellationToken cancellationToken = default)
     {
-        Id<LgymApi.Domain.Entities.User>.TryParse(traineeId, out var parsedTraineeId);
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _traineeNoteService.GetTrainerNotesAsync(trainer!, parsedTraineeId, cancellationToken);
-        return result.IsFailure ? result.ToActionResult() : Ok(_mapper.MapList<TraineeNoteResult, TraineeNoteDto>(result.Value));
+        Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId);
+        var result = await _notes.GetNotesAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTraineeId, cancellationToken);
+        return result.IsFailure ? result.ToActionResult() : Ok(_mapper.MapList<TraineeNoteReadModel, TraineeNoteDto>(result.Value));
     }
 
     [HttpPost("trainees/{traineeId}/notes")]
     [ProducesResponseType(typeof(TraineeNoteDto), StatusCodes.Status201Created)]
     public async Task<IActionResult> CreateNote([FromRoute] string traineeId, [FromBody] UpsertTraineeNoteRequest request, CancellationToken cancellationToken = default)
     {
-        Id<LgymApi.Domain.Entities.User>.TryParse(traineeId, out var parsedTraineeId);
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _traineeNoteService.CreateTrainerNoteAsync(trainer!, parsedTraineeId, MapCommand(request), cancellationToken);
-        return result.IsFailure ? result.ToActionResult() : StatusCode(StatusCodes.Status201Created, _mapper.Map<TraineeNoteResult, TraineeNoteDto>(result.Value));
+        Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId);
+        var result = await _notes.CreateAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTraineeId, new TraineeNoteUpsertData(request.Title, request.Content, request.VisibleToTrainee, request.IsPinned), cancellationToken);
+        return result.IsFailure ? result.ToActionResult() : StatusCode(StatusCodes.Status201Created, _mapper.Map<TraineeNoteReadModel, TraineeNoteDto>(result.Value));
     }
 
     [HttpPost("trainees/{traineeId}/notes/{noteId}/update")]
@@ -57,9 +58,8 @@ public sealed class TrainerTraineeNotesController : ControllerBase
             return errorResult!;
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _traineeNoteService.UpdateTrainerNoteAsync(trainer!, parsedTraineeId, parsedNoteId, MapCommand(request), cancellationToken);
-        return result.IsFailure ? result.ToActionResult() : Ok(_mapper.Map<TraineeNoteResult, TraineeNoteDto>(result.Value));
+        var result = await _notes.UpdateAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTraineeId, parsedNoteId, new TraineeNoteUpsertData(request.Title, request.Content, request.VisibleToTrainee, request.IsPinned), cancellationToken);
+        return result.IsFailure ? result.ToActionResult() : Ok(_mapper.Map<TraineeNoteReadModel, TraineeNoteDto>(result.Value));
     }
 
     [HttpPost("trainees/{traineeId}/notes/{noteId}/delete")]
@@ -71,8 +71,7 @@ public sealed class TrainerTraineeNotesController : ControllerBase
             return errorResult!;
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _traineeNoteService.DeleteTrainerNoteAsync(trainer!, parsedTraineeId, parsedNoteId, cancellationToken);
+        var result = await _notes.DeleteAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTraineeId, parsedNoteId, cancellationToken);
         return result.IsFailure ? result.ToActionResult() : Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Deleted));
     }
 
@@ -85,23 +84,14 @@ public sealed class TrainerTraineeNotesController : ControllerBase
             return errorResult!;
         }
 
-        var trainer = HttpContext.GetCurrentUser();
-        var result = await _traineeNoteService.GetTrainerNoteHistoryAsync(trainer!, parsedTraineeId, parsedNoteId, cancellationToken);
-        return result.IsFailure ? result.ToActionResult() : Ok(_mapper.MapList<TraineeNoteHistoryResult, TraineeNoteHistoryDto>(result.Value));
+        var result = await _notes.GetHistoryAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTraineeId, parsedNoteId, cancellationToken);
+        return result.IsFailure ? result.ToActionResult() : Ok(_mapper.MapList<TraineeNoteHistoryReadModel, TraineeNoteHistoryDto>(result.Value));
     }
 
-    private static UpsertTraineeNoteCommand MapCommand(UpsertTraineeNoteRequest request) => new()
-    {
-        Title = request.Title,
-        Content = request.Content,
-        VisibleToTrainee = request.VisibleToTrainee,
-        IsPinned = request.IsPinned,
-    };
-
-    private bool TryParseIds(string traineeId, string noteId, out Id<LgymApi.Domain.Entities.User> parsedTraineeId, out Id<TraineeNote> parsedNoteId, out IActionResult? errorResult)
+    private bool TryParseIds(string traineeId, string noteId, out Id<AccountReference> parsedTraineeId, out Id<TraineeNote> parsedNoteId, out IActionResult? errorResult)
     {
         errorResult = null;
-        if (!Id<LgymApi.Domain.Entities.User>.TryParse(traineeId, out parsedTraineeId))
+        if (!Id<AccountReference>.TryParse(traineeId, out parsedTraineeId))
         {
             parsedNoteId = default;
             errorResult = BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.UserIdRequired));

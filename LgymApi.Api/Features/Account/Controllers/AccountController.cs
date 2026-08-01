@@ -1,8 +1,11 @@
 using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Account.Contracts;
 using LgymApi.Api.Features.Common.Contracts;
-using LgymApi.Application.ExternalAuth;
+using LgymApi.Api.Middleware;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Application.Mapping.Core;
+using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -13,12 +16,12 @@ namespace LgymApi.Api.Features.Account.Controllers;
 [Authorize]
 public sealed class AccountController : ControllerBase
 {
-    private readonly IAccountLinkingService _accountLinkingService;
+    private readonly IAccountExternalLoginApiAdapter _accountExternalLoginApiAdapter;
     private readonly IMapper _mapper;
 
-    public AccountController(IAccountLinkingService accountLinkingService, IMapper mapper)
+    public AccountController(IAccountExternalLoginApiAdapter accountExternalLoginApiAdapter, IMapper mapper)
     {
-        _accountLinkingService = accountLinkingService;
+        _accountExternalLoginApiAdapter = accountExternalLoginApiAdapter;
         _mapper = mapper;
     }
 
@@ -27,10 +30,7 @@ public sealed class AccountController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> LinkGoogle([FromBody] LinkGoogleRequest request, CancellationToken cancellationToken = default)
     {
-        // validation (FluentValidation will run automatically when configured)
-        var userId = LgymApi.Api.Middleware.HttpContextExtensions.GetCurrentUserId(HttpContext);
-
-        var result = await _accountLinkingService.LinkGoogleAsync(userId, request.IdToken, request.AccessToken, cancellationToken);
+        var result = await _accountExternalLoginApiAdapter.LinkGoogleAsync(GetCurrentAccountId(), request.IdToken, request.AccessToken, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -44,9 +44,7 @@ public sealed class AccountController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> UnlinkGoogle(CancellationToken cancellationToken = default)
     {
-        var userId = LgymApi.Api.Middleware.HttpContextExtensions.GetCurrentUserId(HttpContext);
-
-        var result = await _accountLinkingService.UnlinkGoogleAsync(userId, cancellationToken);
+        var result = await _accountExternalLoginApiAdapter.UnlinkGoogleAsync(GetCurrentAccountId(), cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -59,14 +57,16 @@ public sealed class AccountController : ControllerBase
     [ProducesResponseType(typeof(ExternalLoginDto[]), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetExternalLogins(CancellationToken cancellationToken = default)
     {
-        var userId = LgymApi.Api.Middleware.HttpContextExtensions.GetCurrentUserId(HttpContext);
-        var result = await _accountLinkingService.GetExternalLoginsAsync(userId, cancellationToken);
+        var result = await _accountExternalLoginApiAdapter.GetExternalLoginsAsync(GetCurrentAccountId(), cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
 
-        var mapped = _mapper.MapList<LgymApi.Application.ExternalAuth.ExternalLoginInfo, ExternalLoginDto>(result.Value);
+        var mapped = _mapper.MapList<ExternalLoginProjection, ExternalLoginDto>(result.Value);
         return Ok(mapped);
     }
+
+    private Id<AccountReference> GetCurrentAccountId()
+        => HttpContext.GetAuthenticatedAccountContext()?.Id ?? Id<AccountReference>.Empty;
 }

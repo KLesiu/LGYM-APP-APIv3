@@ -1,8 +1,10 @@
+using LgymApi.Domain.ValueObjects;
+
 namespace LgymApi.Application.Features.EloRegistry.Models;
 
 public sealed class EloRegistryChartEntry
 {
-    public string Id { get; init; } = string.Empty;
+    public Id<LgymApi.Domain.Entities.EloRegistry> Id { get; init; }
     public int Value { get; init; }
     public string Date { get; init; } = string.Empty;
 }

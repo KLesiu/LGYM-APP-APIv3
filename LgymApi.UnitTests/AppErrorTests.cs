@@ -1,5 +1,5 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
 using NUnit.Framework;
 
 namespace LgymApi.UnitTests;

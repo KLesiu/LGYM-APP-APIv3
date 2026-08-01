@@ -22,6 +22,30 @@ namespace LgymApi.IntegrationTests.Pagination;
 public sealed class TrainerDashboardGridifyPaginationTests : IntegrationTestBase
 {
     [Test]
+    public async Task TrainerDashboardGridifyPagination_DefaultSortPagesTheEnrichedRowSet()
+    {
+        // Arrange
+        var trainer = await SeedTrainerAsync("trainer-grid-baseline", "trainer-grid-baseline@example.com");
+        var linkedAt = new DateTimeOffset(2026, 7, 22, 8, 0, 0, TimeSpan.Zero);
+        await SeedDashboardTraineeAsync(trainer.Id, "Alpha baseline", "alpha-baseline@example.com", linked: true, linkedAt: linkedAt);
+        await SeedDashboardTraineeAsync(trainer.Id, "Bravo baseline", "bravo-baseline@example.com", invited: true, invitationStatus: TrainerInvitationStatus.Pending, invitationExpiresAt: linkedAt.AddDays(2));
+        var charlie = await SeedDashboardTraineeAsync(trainer.Id, "Charlie baseline", "charlie-baseline@example.com", linked: true, linkedAt: linkedAt.AddDays(1));
+        SetAuthorizationHeader(trainer.Id);
+
+        // Act
+        var response = await Client.GetAsync("/api/trainer/trainees?page=2&pageSize=2");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await ParseDashboardResponseAsync(response);
+        body.GetProperty("page").GetInt32().Should().Be(2);
+        body.GetProperty("pageSize").GetInt32().Should().Be(2);
+        body.GetProperty("total").GetInt32().Should().Be(3);
+        body.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("_id").GetString()).Should().Equal(charlie.Id.ToString());
+    }
+
+    [Test]
     public async Task TrainerDashboardGridifyPagination_ReturnsCorrectPageAndTotal()
     {
         // Arrange
@@ -196,6 +220,206 @@ public sealed class TrainerDashboardGridifyPaginationTests : IntegrationTestBase
 
         var body = await ParseDashboardResponseAsync(response);
         body.GetProperty("items").EnumerateArray().Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task TrainerDashboardGridifyPagination_UsesLatestInvitationTieBreakForAConsistentExpiredStatus()
+    {
+        // Arrange
+        var trainer = await SeedTrainerAsync("trainer-grid-latest", "trainer-grid-latest@example.com");
+        var trainee = await SeedUserAsync(name: "Latest invitation trainee", email: "latest-invitation@example.com", password: "password123");
+        var createdAt = new DateTimeOffset(2025, 1, 1, 12, 0, 0, TimeSpan.Zero);
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.TrainerInvitations.AddRange(
+                new TrainerInvitation
+                {
+                    Id = new Id<TrainerInvitation>(new Guid("10000000-0000-0000-0000-000000000001")),
+                    TrainerId = trainer.Id,
+                    TraineeId = trainee.Id,
+                    InviteeEmail = trainee.Email,
+                    Code = "LATEST-PENDING",
+                    Status = TrainerInvitationStatus.Pending,
+                    ExpiresAt = new DateTimeOffset(2030, 1, 1, 12, 0, 0, TimeSpan.Zero),
+                    CreatedAt = createdAt,
+                    UpdatedAt = createdAt
+                },
+                new TrainerInvitation
+                {
+                    Id = new Id<TrainerInvitation>(new Guid("f0000000-0000-0000-0000-000000000001")),
+                    TrainerId = trainer.Id,
+                    TraineeId = trainee.Id,
+                    InviteeEmail = trainee.Email,
+                    Code = "LATEST-EXPIRED",
+                    Status = TrainerInvitationStatus.Pending,
+                    ExpiresAt = new DateTimeOffset(2020, 1, 1, 12, 0, 0, TimeSpan.Zero),
+                    CreatedAt = createdAt,
+                    UpdatedAt = createdAt
+                });
+            await db.SaveChangesAsync();
+        }
+
+        SetAuthorizationHeader(trainer.Id);
+
+        // Act
+        var response = await Client.GetAsync("/api/trainer/trainees?status=InvitationExpired&page=1&pageSize=10");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await ParseDashboardResponseAsync(response);
+        body.GetProperty("total").GetInt32().Should().Be(1);
+        var item = body.GetProperty("items").EnumerateArray().Should().ContainSingle().Subject;
+        item.GetProperty("_id").GetString().Should().Be(trainee.Id.ToString());
+        item.GetProperty("status").GetString().Should().Be("InvitationExpired");
+        item.GetProperty("hasPendingInvitation").GetBoolean().Should().BeFalse();
+        item.GetProperty("hasExpiredInvitation").GetBoolean().Should().BeTrue();
+    }
+
+    [Test]
+    public async Task TrainerDashboardGridifyPagination_ExcludesDeletedAndMissingProfilesBeforeMixedCaseSearchAndPaging()
+    {
+        // Arrange
+        var trainer = await SeedTrainerAsync("trainer-grid-enriched", "trainer-grid-enriched@example.com");
+        var matchingByName = await SeedUserAsync(name: "Alpha MIXED profile", email: "alpha@example.com", password: "password123");
+        var matchingByEmail = await SeedUserAsync(name: "Zulu profile", email: "zulu.MIXED@example.com", password: "password123");
+        var deleted = await SeedUserAsync(name: "Aardvark MIXED deleted", email: "deleted@example.com", password: "password123");
+        var linkedAt = new DateTimeOffset(2025, 2, 2, 8, 0, 0, TimeSpan.Zero);
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var deletedProfile = await db.Users.SingleAsync(user => user.Id == deleted.Id);
+            deletedProfile.IsDeleted = true;
+            db.TrainerTraineeLinks.AddRange(
+                new TrainerTraineeLink
+                {
+                    Id = new Id<TrainerTraineeLink>(new Guid("20000000-0000-0000-0000-000000000001")),
+                    TrainerId = trainer.Id,
+                    TraineeId = matchingByName.Id,
+                    CreatedAt = linkedAt,
+                    UpdatedAt = linkedAt
+                },
+                new TrainerTraineeLink
+                {
+                    Id = new Id<TrainerTraineeLink>(new Guid("20000000-0000-0000-0000-000000000002")),
+                    TrainerId = trainer.Id,
+                    TraineeId = matchingByEmail.Id,
+                    CreatedAt = linkedAt,
+                    UpdatedAt = linkedAt
+                },
+                new TrainerTraineeLink
+                {
+                    Id = new Id<TrainerTraineeLink>(new Guid("20000000-0000-0000-0000-000000000003")),
+                    TrainerId = trainer.Id,
+                    TraineeId = deleted.Id,
+                    CreatedAt = linkedAt,
+                    UpdatedAt = linkedAt
+                },
+                new TrainerTraineeLink
+                {
+                    Id = new Id<TrainerTraineeLink>(new Guid("20000000-0000-0000-0000-000000000004")),
+                    TrainerId = trainer.Id,
+                    TraineeId = new Id<User>(new Guid("30000000-0000-0000-0000-000000000001")),
+                    CreatedAt = linkedAt,
+                    UpdatedAt = linkedAt
+                });
+            await db.SaveChangesAsync();
+        }
+
+        SetAuthorizationHeader(trainer.Id);
+
+        // Act
+        var response = await Client.GetAsync("/api/trainer/trainees?search=mIxEd&sortBy=name&sortDirection=asc&page=2&pageSize=1");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await ParseDashboardResponseAsync(response);
+        body.GetProperty("total").GetInt32().Should().Be(2);
+        body.GetProperty("items").EnumerateArray().Should().ContainSingle(item => item.GetProperty("_id").GetString() == matchingByEmail.Id.ToString());
+    }
+
+    [Test]
+    public async Task TrainerDashboardGridifyPagination_UsesStatusAliasDefaultNameAndIdTieBreaks()
+    {
+        // Arrange
+        var trainer = await SeedTrainerAsync("trainer-grid-alias", "trainer-grid-alias@example.com");
+        var firstDuplicate = await SeedUserAsync(name: "Duplicate profile", email: "duplicate-one@example.com", password: "password123");
+        var secondDuplicate = await SeedUserAsync(name: "Duplicate profile", email: "duplicate-two@example.com", password: "password123");
+        var pending = await SeedUserAsync(name: "Pending profile", email: "pending-profile@example.com", password: "password123");
+        var expired = await SeedUserAsync(name: "Expired profile", email: "expired-profile@example.com", password: "password123");
+        var createdAt = new DateTimeOffset(2025, 3, 3, 8, 0, 0, TimeSpan.Zero);
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.TrainerTraineeLinks.AddRange(
+                new TrainerTraineeLink
+                {
+                    Id = new Id<TrainerTraineeLink>(new Guid("40000000-0000-0000-0000-000000000001")),
+                    TrainerId = trainer.Id,
+                    TraineeId = firstDuplicate.Id,
+                    CreatedAt = createdAt,
+                    UpdatedAt = createdAt
+                },
+                new TrainerTraineeLink
+                {
+                    Id = new Id<TrainerTraineeLink>(new Guid("40000000-0000-0000-0000-000000000002")),
+                    TrainerId = trainer.Id,
+                    TraineeId = secondDuplicate.Id,
+                    CreatedAt = createdAt,
+                    UpdatedAt = createdAt
+                });
+            db.TrainerInvitations.AddRange(
+                new TrainerInvitation
+                {
+                    Id = new Id<TrainerInvitation>(new Guid("50000000-0000-0000-0000-000000000001")),
+                    TrainerId = trainer.Id,
+                    TraineeId = pending.Id,
+                    InviteeEmail = pending.Email,
+                    Code = "STATUS-PENDING",
+                    Status = TrainerInvitationStatus.Pending,
+                    ExpiresAt = new DateTimeOffset(2030, 3, 3, 8, 0, 0, TimeSpan.Zero),
+                    CreatedAt = createdAt,
+                    UpdatedAt = createdAt
+                },
+                new TrainerInvitation
+                {
+                    Id = new Id<TrainerInvitation>(new Guid("50000000-0000-0000-0000-000000000002")),
+                    TrainerId = trainer.Id,
+                    TraineeId = expired.Id,
+                    InviteeEmail = expired.Email,
+                    Code = "STATUS-EXPIRED",
+                    Status = TrainerInvitationStatus.Pending,
+                    ExpiresAt = new DateTimeOffset(2020, 3, 3, 8, 0, 0, TimeSpan.Zero),
+                    CreatedAt = createdAt,
+                    UpdatedAt = createdAt
+                });
+            await db.SaveChangesAsync();
+        }
+
+        SetAuthorizationHeader(trainer.Id);
+
+        // Act
+        var defaultResponse = await Client.GetAsync("/api/trainer/trainees?page=1&pageSize=2");
+        var statusResponse = await Client.GetAsync("/api/trainer/trainees?sortBy=status&sortDirection=asc&page=1&pageSize=10");
+
+        // Assert
+        defaultResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        statusResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var defaultBody = await ParseDashboardResponseAsync(defaultResponse);
+        var duplicateIds = new[] { firstDuplicate, secondDuplicate }
+            .OrderBy(user => user.Id)
+            .Select(user => user.Id.ToString());
+        defaultBody.GetProperty("items").EnumerateArray().Select(item => item.GetProperty("_id").GetString()).Should().Equal(duplicateIds);
+
+        var statusBody = await ParseDashboardResponseAsync(statusResponse);
+        statusBody.GetProperty("items").EnumerateArray().Select(item => item.GetProperty("status").GetString())
+            .Should().Equal("Linked", "Linked", "InvitationPending", "InvitationExpired");
     }
 
     private async Task<User> SeedTrainerAsync(string name, string email)

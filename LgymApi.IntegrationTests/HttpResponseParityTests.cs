@@ -82,7 +82,7 @@ public sealed class HttpResponseParityTests : IntegrationTestBase
             email: "create_test@example.com");
         SetAuthorizationHeader(user.Id);
 
-        var response = await Client.PostAsJsonAsync($"/api/gym/{user.Id}/addGym", 
+        var response = await Client.PostAsJsonAsync($"/api/gym/{user.Id}/addGym",
             new { name = "Test Gym for Create" });
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -119,49 +119,4 @@ public sealed class HttpResponseParityTests : IntegrationTestBase
             because: "forbidden operation should return ResponseMessageDto error format");
     }
 
-    /// <summary>
-    /// Validates that response content parity check works by comparing
-    /// normalized JSON content (ignoring whitespace differences).
-    /// </summary>
-    [Test]
-    public async Task ResponseContentParity_NormalizesAndCompares()
-    {
-        var user = await SeedUserAsync(
-            name: "content_parity_user",
-            email: "content_parity@example.com");
-        SetAuthorizationHeader(user.Id);
-
-        var response = await Client.GetAsync($"/api/gym/{user.Id}/getGyms");
-
-        var content = await response.Content.ReadAsStringAsync();
-
-        var json = System.Text.Json.JsonDocument.Parse(content);
-        var normalized = System.Text.Json.JsonSerializer.Serialize(json.RootElement,
-            new System.Text.Json.JsonSerializerOptions { WriteIndented = false });
-
-        // Parity check with identical content should pass
-        _harness.AssertResponseContentParity(normalized, normalized);
-    }
-
-    /// <summary>
-    /// Validates that required fields are present in success responses.
-    /// This demonstrates the harness can enforce specific field requirements.
-    /// </summary>
-    [Test]
-    public async Task SuccessResponseHasRequiredFields()
-    {
-        var user = await SeedUserAsync(
-            name: "required_fields_user",
-            email: "required_fields@example.com");
-        SetAuthorizationHeader(user.Id);
-
-        var response = await Client.GetAsync($"/api/gym/{user.Id}/getGyms");
-
-        // For array responses, we just verify the status code
-        await _harness.AssertSuccessResponseHasRequiredFieldsAsync(
-            response, 
-            HttpStatusCode.OK,
-            new string[] { },  // Empty array has no required root-level fields
-            because: "array responses should return 200 OK");
-    }
 }

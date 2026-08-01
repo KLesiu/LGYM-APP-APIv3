@@ -1,18 +1,25 @@
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Reporting.Models;
-using LgymApi.BackgroundWorker.Common.Commands;
+using LgymApi.Application.Reporting.Contracts.BackgroundCommands;
+using LgymApi.Application.Reporting.Errors;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using LgymApi.Resources;
-using UserEntity = LgymApi.Domain.Entities.User;
 
 namespace LgymApi.Application.Features.Reporting;
 
 public sealed partial class ReportingService : IReportingService
 {
-    public async Task<Result<ReportRequestResult, AppError>> CreateReportRequestAsync(UserEntity currentTrainer, Id<UserEntity> traineeId, CreateReportRequestCommand command, CancellationToken cancellationToken = default)
+    public async Task<Result<ReportRequestResult, AppError>> CreateReportRequestAsync(
+        AuthenticatedAccountContext currentTrainer,
+        Id<AccountReference> traineeId,
+        CreateReportRequestCommand command,
+        CancellationToken cancellationToken = default)
     {
         var ownershipCheck = await EnsureTrainerOwnsTraineeAsync(currentTrainer, traineeId, cancellationToken);
         if (ownershipCheck.IsFailure)
@@ -31,19 +38,19 @@ public sealed partial class ReportingService : IReportingService
             return Result<ReportRequestResult, AppError>.Failure(templateResult.Error);
         }
 
-        var request = new ReportRequest
-        {
-            Id = Id<ReportRequest>.New(),
-            TrainerId = currentTrainer.Id,
-            TraineeId = traineeId,
-            TemplateId = templateResult.Value.Id,
-            Status = ReportRequestStatus.Pending,
-            DueAt = NormalizeDueAt(command.DueAt),
-            Note = string.IsNullOrWhiteSpace(command.Note) ? null : command.Note.Trim()
-        };
+        var request = new NewReportRequestPersistenceModel(
+            Id<ReportRequest>.New(),
+            currentTrainer.Id,
+            traineeId,
+            templateResult.Value.Id,
+            null,
+            ReportRequestStatus.Pending,
+            NormalizeDueAt(command.DueAt),
+            null,
+            string.IsNullOrWhiteSpace(command.Note) ? null : command.Note.Trim(),
+            DateTimeOffset.UtcNow);
 
-        await _reportingRepository.AddRequestAsync(request, cancellationToken);
-        // Queue notification before commit so the worker dispatch stays bound to the same unit of work.
+        await _requestSubmissionPersistence.AddRequestAsync(request, cancellationToken);
         await _commandDispatcher.EnqueueAsync(new ReportRequestCreatedInAppNotificationCommand
         {
             RequestId = request.Id,
@@ -53,64 +60,62 @@ public sealed partial class ReportingService : IReportingService
         });
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        request.Template = templateResult.Value;
-        return Result<ReportRequestResult, AppError>.Success(MapRequest(request));
+        return Result<ReportRequestResult, AppError>.Success(
+            _mapper.Map<ReportRequestPersistenceModel, ReportRequestResult>(ToPersistenceModel(request, templateResult.Value)));
     }
 
-    public async Task<Result<List<ReportRequestResult>, AppError>> GetPendingRequestsForTraineeAsync(UserEntity currentTrainee, CancellationToken cancellationToken = default)
+    public async Task<Result<List<ReportRequestResult>, AppError>> GetPendingRequestsForTraineeAsync(
+        AuthenticatedAccountContext currentTrainee,
+        CancellationToken cancellationToken = default)
     {
-        var requests = await _reportingRepository.GetPendingOrExpiredRequestsByTraineeIdAsync(currentTrainee.Id, cancellationToken);
+        var requests = await _requestSubmissionPersistence.ListPendingOrExpiredByTraineeAsync(currentTrainee.Id, cancellationToken);
         var now = DateTimeOffset.UtcNow;
-        var hasUpdates = false;
+        var expiredIds = requests
+            .Where(request => IsRequestExpired(request.DueAt, now))
+            .Select(request => request.Id)
+            .ToList();
 
-        foreach (var request in requests)
+        foreach (var requestId in expiredIds)
         {
-            if (IsRequestExpired(request.DueAt, now))
-            {
-                request.Status = ReportRequestStatus.Expired;
-                hasUpdates = true;
-            }
+            await _requestSubmissionPersistence.SetRequestExpiredAsync(requestId, cancellationToken);
         }
 
-        if (hasUpdates)
+        if (expiredIds.Count > 0)
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
-            requests = await _reportingRepository.GetPendingOrExpiredRequestsByTraineeIdAsync(currentTrainee.Id, cancellationToken);
+            requests = await _requestSubmissionPersistence.ListPendingOrExpiredByTraineeAsync(currentTrainee.Id, cancellationToken);
         }
 
-        return Result<List<ReportRequestResult>, AppError>.Success(requests.Select(MapRequest).ToList());
+        return Result<List<ReportRequestResult>, AppError>.Success(
+            _mapper.MapList<ReportRequestPersistenceModel, ReportRequestResult>(requests));
     }
 
-    private static ReportRequestResult MapRequest(ReportRequest request)
-    {
-        return new ReportRequestResult
-        {
-            Id = request.Id,
-            TrainerId = request.TrainerId,
-            TraineeId = request.TraineeId,
-            TemplateId = request.TemplateId,
-            Status = request.Status,
-            DueAt = request.DueAt,
-            Note = request.Note,
-            CreatedAt = request.CreatedAt,
-            SubmittedAt = request.SubmittedAt,
-            Template = MapTemplate(request.Template)
-        };
-    }
+    private static ReportRequestPersistenceModel ToPersistenceModel(
+        NewReportRequestPersistenceModel request,
+        ReportTemplatePersistenceModel template)
+        => new(
+            request.Id,
+            request.TrainerId,
+            request.TraineeId,
+            request.TemplateId,
+            request.RecurringReportAssignmentId,
+            request.Status,
+            request.DueAt,
+            request.SubmittedAt,
+            request.Note,
+            request.CreatedAt,
+            false,
+            template,
+            null);
 
     private static DateTimeOffset? NormalizeDueAt(DateTimeOffset? dueAt)
     {
-        if (!dueAt.HasValue)
+        if (!dueAt.HasValue || dueAt.Value.TimeOfDay != TimeSpan.Zero)
         {
-            return null;
+            return dueAt;
         }
 
         var value = dueAt.Value;
-        if (value.TimeOfDay != TimeSpan.Zero)
-        {
-            return value;
-        }
-
         return new DateTimeOffset(value.Year, value.Month, value.Day, 0, 0, 0, value.Offset)
             .AddDays(1)
             .AddTicks(-1);

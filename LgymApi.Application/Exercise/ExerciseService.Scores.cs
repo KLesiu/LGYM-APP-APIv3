@@ -1,10 +1,10 @@
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.WorkoutProgress.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Exercise.Models;
-using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using LgymApi.Resources;
-using UserEntity = LgymApi.Domain.Entities.User;
 
 namespace LgymApi.Application.Features.Exercise;
 
@@ -14,12 +14,12 @@ public sealed partial class ExerciseService : IExerciseService
     {
         var (routeUserId, currentUserId, exerciseId, series, gymId, exerciseName) = input;
 
-         if (routeUserId.IsEmpty || currentUserId.IsEmpty || exerciseId.IsEmpty)
-         {
-             return Result<LastExerciseScoresResult, AppError>.Failure(new InvalidExerciseError(Messages.InvalidId));
-         }
+        if (routeUserId.IsEmpty || currentUserId.IsEmpty || exerciseId.IsEmpty)
+        {
+            return Result<LastExerciseScoresResult, AppError>.Failure(new InvalidExerciseError(Messages.InvalidId));
+        }
 
-        var latestScores = await _exerciseScoreRepository.GetLatestByUserExerciseSeriesAsync(
+        var latestScores = await _exerciseScoreRepository.GetLatestByAccountExerciseSeriesAsync(
             currentUserId,
             exerciseId,
             gymId,
@@ -35,7 +35,7 @@ public sealed partial class ExerciseService : IExerciseService
             seriesScores.Add(new SeriesScoreResult
             {
                 Series = i,
-                Score = score
+            Score = score == null ? null : MapScore(score)
             });
         }
 
@@ -47,7 +47,7 @@ public sealed partial class ExerciseService : IExerciseService
         });
     }
 
-    public async Task<Result<List<ExerciseTrainingHistoryItem>, AppError>> GetExerciseScoresFromTrainingByExerciseAsync(Id<UserEntity> currentUserId, Id<Domain.Entities.Exercise> exerciseId, CancellationToken cancellationToken = default)
+    public async Task<Result<List<ExerciseTrainingHistoryItem>, AppError>> GetExerciseScoresFromTrainingByExerciseAsync(Id<AccountReference> currentUserId, Id<Domain.Entities.Exercise> exerciseId, CancellationToken cancellationToken = default)
     {
         if (currentUserId.IsEmpty || exerciseId.IsEmpty)
         {
@@ -60,12 +60,19 @@ public sealed partial class ExerciseService : IExerciseService
             return Result<List<ExerciseTrainingHistoryItem>, AppError>.Failure(new ExerciseNotFoundError(Messages.DidntFind));
         }
 
-        var scores = await _exerciseScoreRepository.GetByUserAndExerciseAsync((Id<UserEntity>)currentUserId, exerciseId, cancellationToken);
+        var scores = await _exerciseScoreRepository.GetByAccountAndExerciseAsync(currentUserId, exerciseId, cancellationToken);
+        var planDays = await _planDayReferences.GetByIdsAsync(
+            scores
+                .Where(score => score.Training?.Gym != null)
+                .Select(score => score.Training!.TypePlanDayId)
+                .ToList(),
+            cancellationToken);
+        var planDaysById = planDays.ToDictionary(planDay => planDay.PlanDayId);
 
-        var tempMap = new Dictionary<Id<LgymApi.Domain.Entities.Training>, (DateTimeOffset Date, string GymName, string TrainingName, List<(int Series, ExerciseScore Score)> RawScores, int MaxSeries)>();
+        var tempMap = new Dictionary<Id<LgymApi.Domain.Entities.Training>, (DateTimeOffset Date, string GymName, string TrainingName, List<(int Series, WorkoutProgress.Persistence.WorkoutExerciseScorePersistenceModel Score)> RawScores, int MaxSeries)>();
         foreach (var score in scores)
         {
-            if (score.Training?.Gym == null || score.Training.PlanDay == null)
+            if (score.Training?.Gym == null || !planDaysById.TryGetValue(score.Training.TypePlanDayId, out var planDay) || !planDay.Exists || planDay.IsDeleted)
             {
                 continue;
             }
@@ -73,7 +80,7 @@ public sealed partial class ExerciseService : IExerciseService
             var trainingId = score.Training.Id;
             if (!tempMap.TryGetValue(trainingId, out var entry))
             {
-                entry = (score.Training.CreatedAt, score.Training.Gym.Name, score.Training.PlanDay.Name, new List<(int, ExerciseScore)>(), 0);
+                entry = (score.Training.CreatedAt, score.Training.Gym.Name, planDay.Name, new List<(int, WorkoutProgress.Persistence.WorkoutExerciseScorePersistenceModel)>(), 0);
             }
 
             entry.RawScores.Add((score.Series, score));
@@ -92,7 +99,7 @@ public sealed partial class ExerciseService : IExerciseService
             for (var i = 1; i <= entry.MaxSeries; i++)
             {
                 scoreMap.TryGetValue(i, out var score);
-                seriesScores.Add(new SeriesScoreResult { Series = i, Score = score });
+                seriesScores.Add(new SeriesScoreResult { Series = i, Score = score == null ? null : MapScore(score) });
             }
 
             result.Add(new ExerciseTrainingHistoryItem

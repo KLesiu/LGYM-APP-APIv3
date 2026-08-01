@@ -1,13 +1,11 @@
 using LgymApi.Application.Features.AdminManagement.Models;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.PasswordReset;
+using LgymApi.Application.Features.PasswordReset.Contracts;
 using LgymApi.Application.Models;
 using LgymApi.Application.Pagination;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Services;
-using LgymApi.BackgroundWorker.Common;
-using LgymApi.BackgroundWorker.Common.Notifications;
-using LgymApi.BackgroundWorker.Common.Notifications.Models;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Services;
@@ -29,7 +27,8 @@ public sealed class PasswordResetServiceTests
         var unitOfWork = new FakeUnitOfWork();
         var service = CreateService(userRepository, tokenRepository, emailScheduler, unitOfWork);
 
-        var result = await service.RequestPasswordResetAsync("test@example.com", "en", CancellationToken.None);
+        using var cancellationSource = new CancellationTokenSource();
+        var result = await service.RequestPasswordResetAsync("test@example.com", "en", cancellationSource.Token);
 
         result.IsSuccess.Should().BeTrue();
         tokenRepository.Added.Should().HaveCount(1);
@@ -37,10 +36,35 @@ public sealed class PasswordResetServiceTests
         tokenRepository.Added[0].IsUsed.Should().BeFalse();
         (tokenRepository.Added[0].ExpiresAt > DateTimeOffset.UtcNow).Should().BeTrue();
         (tokenRepository.Added[0].ExpiresAt <= DateTimeOffset.UtcNow.AddMinutes(31)).Should().BeTrue();
-        emailScheduler.ScheduledPayloads.Should().HaveCount(1);
-        emailScheduler.ScheduledPayloads[0].UserId.Should().Be(user.Id);
-        emailScheduler.ScheduledPayloads[0].RecipientEmail.Should().Be("test@example.com");
+        emailScheduler.ScheduledRequests.Should().ContainSingle();
+        var scheduledRequest = emailScheduler.ScheduledRequests[0];
+        scheduledRequest.UserId.Should().Be(user.Id);
+        scheduledRequest.TokenId.Should().Be(tokenRepository.Added[0].Id);
+        scheduledRequest.UserName.Should().Be(user.Name);
+        scheduledRequest.RecipientEmail.Should().Be("test@example.com");
+        scheduledRequest.ResetToken.Should().HaveLength(64);
+        scheduledRequest.ResetUrl.Should().BeEmpty();
+        scheduledRequest.CultureName.Should().Be("en");
+        emailScheduler.CancellationToken.Should().Be(cancellationSource.Token);
+        typeof(PasswordResetService).GetConstructors().Should().ContainSingle()
+            .Which.GetParameters()[4].ParameterType.Should().Be(typeof(IPasswordRecoveryEmailScheduler));
         unitOfWork.SaveChangesCalls.Should().Be(1);
+    }
+
+    [Test]
+    public async Task RequestPasswordReset_WithValidEmail_LeavesResetUrlEmpty()
+    {
+        var userRepository = new FakeUserRepository { ExistingByEmail = CreateTestUser("reset-url@example.com") };
+        var tokenRepository = new FakePasswordResetTokenRepository();
+        var emailScheduler = new FakePasswordRecoveryEmailScheduler();
+        var unitOfWork = new FakeUnitOfWork();
+        var service = CreateService(userRepository, tokenRepository, emailScheduler, unitOfWork);
+
+        var result = await service.RequestPasswordResetAsync("reset-url@example.com", "en-US", CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        emailScheduler.ScheduledRequests.Should().ContainSingle();
+        emailScheduler.ScheduledRequests[0].ResetUrl.Should().BeEmpty();
     }
 
     [Test]
@@ -56,7 +80,7 @@ public sealed class PasswordResetServiceTests
 
         result.IsSuccess.Should().BeTrue();
         tokenRepository.Added.Should().BeEmpty();
-        emailScheduler.ScheduledPayloads.Should().BeEmpty();
+        emailScheduler.ScheduledRequests.Should().BeEmpty();
         unitOfWork.SaveChangesCalls.Should().Be(0);
     }
 
@@ -75,7 +99,7 @@ public sealed class PasswordResetServiceTests
 
         result.IsSuccess.Should().BeTrue();
         tokenRepository.Added.Should().BeEmpty();
-        emailScheduler.ScheduledPayloads.Should().BeEmpty();
+        emailScheduler.ScheduledRequests.Should().BeEmpty();
         unitOfWork.SaveChangesCalls.Should().Be(0);
     }
 
@@ -134,11 +158,11 @@ public sealed class PasswordResetServiceTests
         await service.RequestPasswordResetAsync("test@example.com", "en", CancellationToken.None);
 
         var addedToken = tokenRepository.Added[0];
-        var scheduledPayload = emailScheduler.ScheduledPayloads[0];
+        var scheduledRequest = emailScheduler.ScheduledRequests[0];
 
-        addedToken.TokenHash.Should().NotBe(scheduledPayload.ResetToken);
+        addedToken.TokenHash.Should().NotBe(scheduledRequest.ResetToken);
         addedToken.TokenHash.Should().HaveLength(64); // SHA-256 hex output
-        scheduledPayload.ResetToken.Should().HaveLength(64); // 32 bytes as hex
+        scheduledRequest.ResetToken.Should().HaveLength(64); // 32 bytes as hex
     }
 
     [Test]
@@ -287,6 +311,26 @@ public sealed class PasswordResetServiceTests
         sessionStore.RevokedAllUserIds.Should().Contain(user.Id);
     }
 
+    [Test]
+    public async Task RequestPasswordReset_WhenPersistenceFails_DoesNotScheduleEmail()
+    {
+        var user = CreateTestUser("persistence-failure@example.com");
+        var userRepository = new FakeUserRepository { ExistingByEmail = user };
+        var tokenRepository = new FakePasswordResetTokenRepository();
+        var emailScheduler = new FakePasswordRecoveryEmailScheduler();
+        var persistenceFailure = new InvalidOperationException("Password reset persistence failed.");
+        var unitOfWork = new FakeUnitOfWork { SaveChangesException = persistenceFailure };
+        var service = CreateService(userRepository, tokenRepository, emailScheduler, unitOfWork);
+
+        var action = () => service.RequestPasswordResetAsync(user.Email.Value, "en", CancellationToken.None);
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .Where(exception => ReferenceEquals(exception, persistenceFailure));
+        tokenRepository.Added.Should().ContainSingle();
+        emailScheduler.ScheduledRequests.Should().BeEmpty();
+        unitOfWork.SaveChangesCalls.Should().Be(1);
+    }
+
     private static User CreateTestUser(string email)
     {
         return new User
@@ -315,7 +359,7 @@ public sealed class PasswordResetServiceTests
     {
         var actualTokenRepository = tokenRepository ?? new FakePasswordResetTokenRepository();
 
-        var dependencies = new PasswordResetServiceDependencies(
+        return new PasswordResetService(
             userRepository ?? new FakeUserRepository(),
             actualTokenRepository,
             new PasswordResetTokenGenerationService(actualTokenRepository),
@@ -323,8 +367,6 @@ public sealed class PasswordResetServiceTests
             emailScheduler ?? new FakePasswordRecoveryEmailScheduler(),
             sessionStore ?? new FakeUserSessionStore(),
             unitOfWork ?? new FakeUnitOfWork());
-
-        return new PasswordResetService(dependencies);
     }
 
     private sealed class FakeUserRepository : IUserRepository
@@ -408,13 +450,15 @@ public sealed class PasswordResetServiceTests
         }
     }
 
-    private sealed class FakePasswordRecoveryEmailScheduler : IEmailScheduler<PasswordRecoveryEmailPayload>
+    private sealed class FakePasswordRecoveryEmailScheduler : IPasswordRecoveryEmailScheduler
     {
-        public List<PasswordRecoveryEmailPayload> ScheduledPayloads { get; } = new();
+        public List<PasswordRecoveryEmailRequest> ScheduledRequests { get; } = new();
+        public CancellationToken CancellationToken { get; private set; }
 
-        public Task ScheduleAsync(PasswordRecoveryEmailPayload payload, CancellationToken cancellationToken = default)
+        public Task ScheduleAsync(PasswordRecoveryEmailRequest request, CancellationToken cancellationToken = default)
         {
-            ScheduledPayloads.Add(payload);
+            ScheduledRequests.Add(request);
+            CancellationToken = cancellationToken;
             return Task.CompletedTask;
         }
     }
@@ -422,11 +466,14 @@ public sealed class PasswordResetServiceTests
     private sealed class FakeUnitOfWork : IUnitOfWork
     {
         public int SaveChangesCalls { get; private set; }
+        public Exception? SaveChangesException { get; init; }
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             SaveChangesCalls += 1;
-            return Task.FromResult(1);
+            return SaveChangesException is null
+                ? Task.FromResult(1)
+                : Task.FromException<int>(SaveChangesException);
         }
 
         public Task<IUnitOfWorkTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)

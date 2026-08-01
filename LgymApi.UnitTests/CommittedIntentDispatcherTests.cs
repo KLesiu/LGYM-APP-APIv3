@@ -230,14 +230,19 @@ public sealed class CommittedIntentDispatcherTests
         public List<Id<CommandEnvelope>> Enqueued { get; } = new();
         public bool ThrowOnEnqueue { get; set; }
 
-        public string? Enqueue(Id<CommandEnvelope> actionMessageId)
+        public string? Enqueue(string actionMessageId)
         {
             if (ThrowOnEnqueue)
             {
                 throw new InvalidOperationException("Scheduler unavailable");
             }
 
-            Enqueued.Add(actionMessageId);
+            if (!Id<CommandEnvelope>.TryParse(actionMessageId, out var parsedActionMessageId))
+            {
+                throw new FormatException("Action message ID must be a valid ID.");
+            }
+
+            Enqueued.Add(parsedActionMessageId);
             return "job-id";
         }
     }
@@ -247,14 +252,19 @@ public sealed class CommittedIntentDispatcherTests
         public List<Id<NotificationMessage>> Enqueued { get; } = new();
         public bool ThrowOnEnqueue { get; set; }
 
-        public string? Enqueue(Id<NotificationMessage> notificationId)
+        public string? Enqueue(string notificationId)
         {
             if (ThrowOnEnqueue)
             {
                 throw new InvalidOperationException("Scheduler unavailable");
             }
 
-            Enqueued.Add(notificationId);
+            if (!Id<NotificationMessage>.TryParse(notificationId, out var parsedNotificationId))
+            {
+                throw new FormatException("Notification ID must be a valid ID.");
+            }
+
+            Enqueued.Add(parsedNotificationId);
             return "job-id";
         }
     }

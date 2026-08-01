@@ -48,6 +48,13 @@ public sealed class EfExecuteUpdateUsageTests
             return true;
         }
 
+        if (relativePath.Equals(
+                Path.Combine("LgymApi.Notifications", "Persistence", "NotificationStageUpdateExtensions.cs"),
+                StringComparison.Ordinal))
+        {
+            return true;
+        }
+
         return relativePath.Contains($"{separator}bin{separator}")
             || relativePath.Contains($"{separator}obj{separator}");
     }

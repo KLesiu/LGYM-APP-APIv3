@@ -28,7 +28,7 @@ public sealed class ReliabilityCrashWindowTests : IntegrationTestBase
         {
             Id = Id<CommandEnvelope>.New(),
             CorrelationId = correlationId,
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             PayloadJson = "{\"UserId\":\"00000000-0000-0000-0000-000000000001\",\"Email\":\"crash-test@example.com\"}",
             Status = ActionExecutionStatus.Pending,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
@@ -59,7 +59,7 @@ public sealed class ReliabilityCrashWindowTests : IntegrationTestBase
             recovered.Should().NotBeNull();
             recovered!.DispatchedAt.Should().NotBeNull("recovery job should set DispatchedAt");
             recovered.SchedulerJobId.Should().NotBeNullOrEmpty("recovery job should assign scheduler job ID");
-            recovered.Status.Should().Be(ActionExecutionStatus.Pending, 
+            recovered.Status.Should().Be(ActionExecutionStatus.Pending,
                 "envelope should remain Pending until background worker processes it");
         }
     }
@@ -221,7 +221,7 @@ public sealed class ReliabilityCrashWindowTests : IntegrationTestBase
         {
             Id = Id<CommandEnvelope>.New(),
             CorrelationId = correlationId,
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             PayloadJson = "{\"UserId\":\"00000000-0000-0000-0000-000000000002\",\"Email\":\"already-dispatched@example.com\"}",
             Status = ActionExecutionStatus.Pending,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
@@ -253,7 +253,7 @@ public sealed class ReliabilityCrashWindowTests : IntegrationTestBase
             var unchanged = await db.CommandEnvelopes.FindAsync(envelope.Id);
 
             unchanged.Should().NotBeNull();
-            unchanged!.DispatchedAt.Should().Be(originalDispatchedAt, 
+            unchanged!.DispatchedAt.Should().Be(originalDispatchedAt,
                 "recovery should skip already-dispatched envelopes");
             unchanged.SchedulerJobId.Should().Be(originalJobId,
                 "recovery should not overwrite existing scheduler job ID");
@@ -269,7 +269,7 @@ public sealed class ReliabilityCrashWindowTests : IntegrationTestBase
         {
             Id = Id<CommandEnvelope>.New(),
             CorrelationId = correlationId,
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             PayloadJson = "{\"UserId\":\"00000000-0000-0000-0000-000000000003\",\"Email\":\"processing@example.com\"}",
             Status = ActionExecutionStatus.Processing,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
@@ -312,7 +312,7 @@ public sealed class ReliabilityCrashWindowTests : IntegrationTestBase
         {
             Id = Id<CommandEnvelope>.New(),
             CorrelationId = correlationId,
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             PayloadJson = "{\"UserId\":\"00000000-0000-0000-0000-000000000005\",\"Email\":\"stale-processing@example.com\"}",
             Status = ActionExecutionStatus.Processing,
             CreatedAt = DateTimeOffset.UtcNow.AddHours(-1).AddMinutes(-5),
@@ -358,7 +358,7 @@ public sealed class ReliabilityCrashWindowTests : IntegrationTestBase
         {
             Id = Id<CommandEnvelope>.New(),
             CorrelationId = correlationId,
-            CommandTypeFullName = "LgymApi.BackgroundWorker.Actions.UserRegisteredCommand",
+            CommandTypeFullName = "LgymApi.BackgroundWorker.Common.Commands.UserRegisteredCommand",
             PayloadJson = "{\"UserId\":\"00000000-0000-0000-0000-000000000004\",\"Email\":\"completed@example.com\"}",
             Status = ActionExecutionStatus.Completed,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-10),

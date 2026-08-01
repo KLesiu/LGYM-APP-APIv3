@@ -1,7 +1,8 @@
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Security;
+using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
-using LgymApi.Infrastructure.Data.SeedData;
+using LgymApi.Identity.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace LgymApi.DataSeeder.Seeders;
@@ -28,25 +29,25 @@ public sealed class RoleSeeder : IEntitySeeder
         {
             new()
             {
-                Id = (LgymApi.Domain.ValueObjects.Id<Role>)RoleSeedDataConfiguration.UserRoleSeedId,
+                Id = ParseSeedId<Role>(IdentitySeedIds.UserRole),
                 Name = AuthConstants.Roles.User,
                 Description = "Default role for all users"
             },
             new()
             {
-                Id = (LgymApi.Domain.ValueObjects.Id<Role>)RoleSeedDataConfiguration.AdminRoleSeedId,
+                Id = ParseSeedId<Role>(IdentitySeedIds.AdminRole),
                 Name = AuthConstants.Roles.Admin,
                 Description = "Administrative privileges"
             },
             new()
             {
-                Id = (LgymApi.Domain.ValueObjects.Id<Role>)RoleSeedDataConfiguration.TesterRoleSeedId,
+                Id = ParseSeedId<Role>(IdentitySeedIds.TesterRole),
                 Name = AuthConstants.Roles.Tester,
                 Description = "Excluded from ranking"
             },
             new()
             {
-                Id = (LgymApi.Domain.ValueObjects.Id<Role>)RoleSeedDataConfiguration.TrainerRoleSeedId,
+                Id = ParseSeedId<Role>(IdentitySeedIds.TrainerRole),
                 Name = AuthConstants.Roles.Trainer,
                 Description = "Trainer role for coach-facing APIs"
             }
@@ -72,5 +73,12 @@ public sealed class RoleSeeder : IEntitySeeder
         }
 
         SeedOperationConsole.Done("roles");
+    }
+
+    private static Id<TEntity> ParseSeedId<TEntity>(string value)
+    {
+        return Id<TEntity>.TryParse(value, out var id)
+            ? id
+            : throw new InvalidOperationException($"Invalid Identity seed ID '{value}'.");
     }
 }

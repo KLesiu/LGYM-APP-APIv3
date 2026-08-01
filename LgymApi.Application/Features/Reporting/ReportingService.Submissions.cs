@@ -1,45 +1,55 @@
 using System.Text.Json;
-using System.Globalization;
-using LgymApi.Application.Common.Errors;
-using LgymApi.Application.Common.Results;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Reporting.Models;
-using LgymApi.BackgroundWorker.Common.Commands;
+using LgymApi.Application.Reporting.Contracts.BackgroundCommands;
+using LgymApi.Application.Reporting.Errors;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using LgymApi.Resources;
-using UserEntity = LgymApi.Domain.Entities.User;
 
 namespace LgymApi.Application.Features.Reporting;
 
 public sealed partial class ReportingService : IReportingService
 {
-    public async Task<Result<ReportSubmissionResult, AppError>> SubmitReportRequestAsync(UserEntity currentTrainee, Id<ReportRequest> requestId, SubmitReportRequestCommand command, CancellationToken cancellationToken = default)
+    public async Task<Result<ReportSubmissionResult, AppError>> SubmitReportRequestAsync(
+        AuthenticatedAccountContext currentTrainee,
+        Id<ReportRequest> requestId,
+        SubmitReportRequestCommand command,
+        CancellationToken cancellationToken = default)
     {
         if (requestId.IsEmpty || command.Answers == null)
         {
             return Result<ReportSubmissionResult, AppError>.Failure(new InvalidReportingError(Messages.FieldRequired));
         }
 
-        var request = await _reportingRepository.FindRequestByIdAsync(requestId, cancellationToken);
+        var request = await _requestSubmissionPersistence.FindRequestByIdAsync(requestId, cancellationToken);
         if (request == null || request.TraineeId != currentTrainee.Id)
         {
             return Result<ReportSubmissionResult, AppError>.Failure(new ReportingNotFoundError(Messages.DidntFind));
         }
 
-        if (request.Status != ReportRequestStatus.Pending && request.Status != ReportRequestStatus.Expired)
+        if (request.Status is not (ReportRequestStatus.Pending or ReportRequestStatus.Expired))
         {
             return Result<ReportSubmissionResult, AppError>.Failure(new InvalidReportingError(Messages.ReportRequestNotPending));
         }
 
         if (request.Status == ReportRequestStatus.Pending && IsRequestExpired(request.DueAt, DateTimeOffset.UtcNow))
         {
-            request.Status = ReportRequestStatus.Expired;
+            await _requestSubmissionPersistence.SetRequestExpiredAsync(request.Id, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            request = request with { Status = ReportRequestStatus.Expired };
         }
 
         var normalizedAnswers = NormalizeAnswers(command.Answers);
-        var validationResult = ValidateAnswersAgainstTemplate(request.Template, normalizedAnswers);
+        var validationAnswers = _reportSubmissionAcceptedProgressCommandFactory.FilterInvalidMeasurementAnswers(
+            request.Template,
+            normalizedAnswers);
+        var validationResult = ValidateAnswersAgainstTemplate(request.Template, validationAnswers);
         if (validationResult.IsFailure)
         {
             return Result<ReportSubmissionResult, AppError>.Failure(validationResult.Error);
@@ -52,25 +62,27 @@ public sealed partial class ReportingService : IReportingService
         }
 
         var submittedAtUtc = DateTimeOffset.UtcNow;
+        var submission = new NewReportSubmissionPersistenceModel(
+            Id<ReportSubmission>.New(),
+            request.Id,
+            currentTrainee.Id,
+            JsonSerializer.Serialize(normalizedAnswers),
+            submittedAtUtc);
 
-        var submission = new ReportSubmission
-        {
-            Id = Id<ReportSubmission>.New(),
-            ReportRequestId = request.Id,
-            TraineeId = currentTrainee.Id,
-            PayloadJson = JsonSerializer.Serialize(normalizedAnswers)
-        };
+        await _requestSubmissionPersistence.AddSubmissionAsync(submission, cancellationToken);
+        await _requestSubmissionPersistence.SetRequestSubmittedAsync(request.Id, submittedAtUtc, cancellationToken);
 
-        request.SubmittedAt = submittedAtUtc;
-        request.Status = ReportRequestStatus.Submitted;
-
-        await _reportingRepository.AddSubmissionAsync(submission, cancellationToken);
-        await _reportSubmissionMeasurementWriter.StageMeasurementsAsync(
-            currentTrainee,
+        var acceptedProgressCommand = _reportSubmissionAcceptedProgressCommandFactory.Create(
             request.Template,
             normalizedAnswers,
-            submittedAtUtc,
-            cancellationToken);
+            submission.Id,
+            request.Id,
+            currentTrainee.Id,
+            submittedAtUtc);
+        if (acceptedProgressCommand != null)
+        {
+            await _commandOutboxWriter.StageAsync(acceptedProgressCommand, cancellationToken);
+        }
 
         try
         {
@@ -81,8 +93,6 @@ public sealed partial class ReportingService : IReportingService
             return Result<ReportSubmissionResult, AppError>.Failure(new InvalidReportingError(Messages.ReportRequestNotPending));
         }
 
-        submission.ReportRequest = request;
-
         await _commandDispatcher.EnqueueAsync(new ReportSubmissionCreatedInAppNotificationCommand
         {
             SubmissionId = submission.Id,
@@ -91,10 +101,17 @@ public sealed partial class ReportingService : IReportingService
             TemplateName = request.Template.Name
         });
 
-        return Result<ReportSubmissionResult, AppError>.Success(MapSubmission(submission));
+        var submittedRequest = request with { Status = ReportRequestStatus.Submitted, SubmittedAt = submittedAtUtc };
+        return Result<ReportSubmissionResult, AppError>.Success(
+            MapSubmission(ToPersistenceModel(submission, submittedRequest)));
     }
 
-    public async Task<Result<ReportSubmissionResult, AppError>> UpdateTrainerFeedbackAsync(UserEntity currentTrainer, Id<UserEntity> traineeId, Id<ReportSubmission> submissionId, UpdateReportSubmissionFeedbackCommand command, CancellationToken cancellationToken = default)
+    public async Task<Result<ReportSubmissionResult, AppError>> UpdateTrainerFeedbackAsync(
+        AuthenticatedAccountContext currentTrainer,
+        Id<AccountReference> traineeId,
+        Id<ReportSubmission> submissionId,
+        UpdateReportSubmissionFeedbackCommand command,
+        CancellationToken cancellationToken = default)
     {
         var ownershipCheck = await EnsureTrainerOwnsTraineeAsync(currentTrainer, traineeId, cancellationToken);
         if (ownershipCheck.IsFailure)
@@ -107,7 +124,11 @@ public sealed partial class ReportingService : IReportingService
             return Result<ReportSubmissionResult, AppError>.Failure(new InvalidReportingError(Messages.FieldRequired));
         }
 
-        var submission = await _reportingRepository.FindSubmissionByIdForTrainerAsync(submissionId, currentTrainer.Id, traineeId, cancellationToken);
+        var submission = await _requestSubmissionPersistence.FindSubmissionForTrainerAsync(
+            submissionId,
+            currentTrainer.Id,
+            traineeId,
+            cancellationToken);
         if (submission == null)
         {
             return Result<ReportSubmissionResult, AppError>.Failure(new ReportingNotFoundError(Messages.DidntFind));
@@ -120,29 +141,36 @@ public sealed partial class ReportingService : IReportingService
             return Result<ReportSubmissionResult, AppError>.Failure(validationResult.Error);
         }
 
-        var previousOverallComment = submission.TrainerOverallComment;
-        var previousFieldCommentsJson = submission.TrainerFieldCommentsJson;
-
-        submission.TrainerOverallComment = string.IsNullOrWhiteSpace(command.TrainerOverallComment)
+        var overallComment = string.IsNullOrWhiteSpace(command.TrainerOverallComment)
             ? null
             : command.TrainerOverallComment.Trim();
-        submission.TrainerFieldCommentsJson = normalizedFieldComments.Count == 0
+        var fieldCommentsJson = normalizedFieldComments.Count == 0
             ? null
             : JsonSerializer.Serialize(normalizedFieldComments);
-
-        var feedbackChanged = !string.Equals(previousOverallComment, submission.TrainerOverallComment, StringComparison.Ordinal)
-            || !string.Equals(previousFieldCommentsJson, submission.TrainerFieldCommentsJson, StringComparison.Ordinal);
-        var hasFeedback = submission.TrainerOverallComment != null || normalizedFieldComments.Count > 0;
+        var feedbackChanged = !string.Equals(submission.TrainerOverallComment, overallComment, StringComparison.Ordinal)
+            || !string.Equals(submission.TrainerFieldCommentsJson, fieldCommentsJson, StringComparison.Ordinal);
+        var hasFeedback = overallComment != null || normalizedFieldComments.Count > 0;
+        var feedbackAddedAt = feedbackChanged && hasFeedback ? DateTimeOffset.UtcNow : feedbackChanged ? null : submission.TrainerFeedbackAddedAt;
+        var feedbackReadAt = feedbackChanged ? null : submission.TrainerFeedbackReadAt;
 
         if (feedbackChanged)
         {
-            submission.TrainerFeedbackAddedAt = hasFeedback ? DateTimeOffset.UtcNow : null;
-            submission.TrainerFeedbackReadAt = null;
+            await _requestSubmissionPersistence.UpdateFeedbackAsync(
+                submission.Id,
+                new ReportSubmissionFeedbackUpdatePersistenceModel(
+                    overallComment,
+                    fieldCommentsJson,
+                    feedbackAddedAt,
+                    feedbackReadAt),
+                cancellationToken);
 
-            var assignment = await _recurringReportAssignmentRepository.FindByCurrentReportRequestIdAsync(submission.ReportRequestId, cancellationToken);
+            var assignment = await _recurringAssignmentPersistence.FindByCurrentRequestAsync(submission.ReportRequestId, cancellationToken);
             if (assignment != null)
             {
-                assignment.NextEligibleAt = null;
+                await _recurringAssignmentPersistence.UpdateAsync(
+                    assignment.Id,
+                    ToUpdateModel(assignment with { NextEligibleAt = null }),
+                    cancellationToken);
             }
         }
 
@@ -154,25 +182,35 @@ public sealed partial class ReportingService : IReportingService
                 TraineeId = traineeId,
                 TrainerId = currentTrainer.Id,
                 TemplateName = submission.ReportRequest.Template.Name,
-                // Include a timestamp so distinct feedback saves are not deduplicated
-                // by the command envelope hash when they target the same submission.
-                TriggeredAt = DateTimeOffset.UtcNow,
+                TriggeredAt = DateTimeOffset.UtcNow
             });
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return Result<ReportSubmissionResult, AppError>.Success(MapSubmission(submission));
+        return Result<ReportSubmissionResult, AppError>.Success(MapSubmission(submission with
+        {
+            TrainerOverallComment = overallComment,
+            TrainerFieldCommentsJson = fieldCommentsJson,
+            TrainerFeedbackAddedAt = feedbackAddedAt,
+            TrainerFeedbackReadAt = feedbackReadAt
+        }));
     }
 
-    public async Task<Result<ReportSubmissionResult, AppError>> MarkTrainerFeedbackAsReadAsync(UserEntity currentTrainee, Id<ReportSubmission> submissionId, CancellationToken cancellationToken = default)
+    public async Task<Result<ReportSubmissionResult, AppError>> MarkTrainerFeedbackAsReadAsync(
+        AuthenticatedAccountContext currentTrainee,
+        Id<ReportSubmission> submissionId,
+        CancellationToken cancellationToken = default)
     {
         if (submissionId.IsEmpty)
         {
             return Result<ReportSubmissionResult, AppError>.Failure(new InvalidReportingError(Messages.FieldRequired));
         }
 
-        var submission = await _reportingRepository.FindSubmissionByIdForTraineeAsync(submissionId, currentTrainee.Id, cancellationToken);
+        var submission = await _requestSubmissionPersistence.FindSubmissionForTraineeAsync(
+            submissionId,
+            currentTrainee.Id,
+            cancellationToken);
         if (submission == null)
         {
             return Result<ReportSubmissionResult, AppError>.Failure(new ReportingNotFoundError(Messages.DidntFind));
@@ -183,39 +221,35 @@ public sealed partial class ReportingService : IReportingService
             return Result<ReportSubmissionResult, AppError>.Failure(new InvalidReportingError(Messages.DidntFind));
         }
 
-        if (!submission.TrainerFeedbackReadAt.HasValue)
+        if (submission.TrainerFeedbackReadAt.HasValue)
         {
-            var readAt = DateTimeOffset.UtcNow;
-            submission.TrainerFeedbackReadAt = readAt;
-
-            var assignment = await _recurringReportAssignmentRepository.FindByCurrentReportRequestIdAsync(submission.ReportRequestId, cancellationToken);
-            if (assignment != null)
-            {
-                assignment.NextEligibleAt = CalculateNextEligibleAt(readAt, assignment.IntervalValue, assignment.IntervalUnit);
-            }
-
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            return Result<ReportSubmissionResult, AppError>.Success(MapSubmission(submission));
         }
 
-        return Result<ReportSubmissionResult, AppError>.Success(MapSubmission(submission));
-    }
+        var readAt = DateTimeOffset.UtcNow;
+        await _requestSubmissionPersistence.UpdateFeedbackAsync(
+            submission.Id,
+            new ReportSubmissionFeedbackUpdatePersistenceModel(
+                submission.TrainerOverallComment,
+                submission.TrainerFieldCommentsJson,
+                submission.TrainerFeedbackAddedAt,
+                readAt),
+            cancellationToken);
 
-    public async Task<Result<List<ReportSubmissionResult>, AppError>> GetTraineeSubmissionsAsync(UserEntity currentTrainer, Id<UserEntity> traineeId, CancellationToken cancellationToken = default)
-    {
-        var ownershipCheck = await EnsureTrainerOwnsTraineeAsync(currentTrainer, traineeId, cancellationToken);
-        if (ownershipCheck.IsFailure)
+        var assignment = await _recurringAssignmentPersistence.FindByCurrentRequestAsync(submission.ReportRequestId, cancellationToken);
+        if (assignment != null)
         {
-            return Result<List<ReportSubmissionResult>, AppError>.Failure(ownershipCheck.Error);
+            await _recurringAssignmentPersistence.UpdateAsync(
+                assignment.Id,
+                ToUpdateModel(assignment with
+                {
+                    NextEligibleAt = CalculateNextEligibleAt(readAt, assignment.IntervalValue, assignment.IntervalUnit)
+                }),
+                cancellationToken);
         }
 
-        var submissions = await _reportingRepository.GetSubmissionsByTrainerAndTraineeAsync(currentTrainer.Id, traineeId, cancellationToken);
-        return Result<List<ReportSubmissionResult>, AppError>.Success(submissions.Select(MapSubmission).ToList());
-    }
-
-    public async Task<Result<List<ReportSubmissionResult>, AppError>> GetOwnSubmissionsAsync(UserEntity currentTrainee, CancellationToken cancellationToken = default)
-    {
-        var submissions = await _reportingRepository.GetSubmissionsByTraineeAsync(currentTrainee.Id, cancellationToken);
-        return Result<List<ReportSubmissionResult>, AppError>.Success(submissions.Select(MapSubmission).ToList());
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return Result<ReportSubmissionResult, AppError>.Success(MapSubmission(submission with { TrainerFeedbackReadAt = readAt }));
     }
 
 }

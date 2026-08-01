@@ -7,6 +7,7 @@ using LgymApi.Application.Features.ExerciseScores;
 using LgymApi.Application.Features.ExerciseScores.Models;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LgymApi.Api.Features.ExerciseScores.Controllers;
@@ -30,10 +31,10 @@ public sealed class ExerciseScoresController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetExerciseScoresChartData([FromRoute] string id, [FromBody] ExerciseScoresChartRequestDto request, CancellationToken cancellationToken = default)
     {
-        var userId = HttpContext.ParseRouteUserIdForCurrentUser(id);
+        var accountId = ParseRouteAccountIdForCurrentAccount(id);
         Id<LgymApi.Domain.Entities.Exercise>.TryParse(request.ExerciseId, out var parsedExerciseId);
-        var result = await _exerciseScoresService.GetExerciseScoresChartDataAsync(userId, parsedExerciseId, cancellationToken);
-        
+        var result = await _exerciseScoresService.GetExerciseScoresChartDataAsync(accountId, parsedExerciseId, cancellationToken);
+
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -41,5 +42,18 @@ public sealed class ExerciseScoresController : ControllerBase
 
         var mapped = _mapper.MapList<ExerciseScoresChartData, ExerciseScoresChartDataDto>(result.Value);
         return Ok(mapped);
+    }
+
+    private Id<AccountReference> ParseRouteAccountIdForCurrentAccount(string routeAccountId)
+    {
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
+        if (currentAccount is null || currentAccount.Id.IsEmpty ||
+            !Id<AccountReference>.TryParse(routeAccountId, out var parsedAccountId) ||
+            parsedAccountId != currentAccount.Id)
+        {
+            throw new UnauthorizedAccessException(Messages.Forbidden);
+        }
+
+        return parsedAccountId;
     }
 }

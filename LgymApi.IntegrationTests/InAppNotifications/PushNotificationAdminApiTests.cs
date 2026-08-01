@@ -6,6 +6,7 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.Notifications;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
+using LgymApi.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -33,7 +34,7 @@ public sealed class PushNotificationAdminApiTests : IntegrationTestBase
                 linkedNotification.Id.ToString(),
                 "/notifications"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
         body.Should().NotBeNull();
         body!.Message.Should().Be("Push test event queued");
@@ -69,11 +70,37 @@ public sealed class PushNotificationAdminApiTests : IntegrationTestBase
                 null));
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        body.Should().NotBeNull();
+        body!.Message.Should().Be(CompatibilityResourceMessage.InCulture("en", () => Messages.Unauthorized));
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var count = await db.PushNotificationMessages.CountAsync(x => x.EventId == "event-admin-test-2");
         count.Should().Be(0);
+    }
+
+    [Test]
+    public async Task EnqueueTestEvent_WithoutAuthorization_ReturnsUnauthorized()
+    {
+        var response = await PostAsJsonWithApiOptionsAsync(
+            "/api/internal/push/test-event",
+            new EnqueueTestPushEventHttpRequest(
+                Id<User>.New().ToString(),
+                "internal.test.push",
+                "event-admin-test-anonymous",
+                null,
+                null,
+                null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        body.Should().NotBeNull();
+        body!.Message.Should().Be(CompatibilityResourceMessage.InCulture("en", () => Messages.InvalidToken));
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        (await db.PushNotificationMessages.CountAsync(x => x.EventId == "event-admin-test-anonymous")).Should().Be(0);
     }
 
     private async Task<InAppNotification> SeedNotificationAsync(Id<User> recipientId, string message)

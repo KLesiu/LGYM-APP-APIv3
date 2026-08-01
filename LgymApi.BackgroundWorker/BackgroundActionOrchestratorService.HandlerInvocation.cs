@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
-using LgymApi.BackgroundWorker.Common;
-using Microsoft.Extensions.DependencyInjection;
+using LgymApi.BackgroundWorker.Actions.Contracts;
+using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using Microsoft.Extensions.Logging;
 
 namespace LgymApi.BackgroundWorker;
@@ -10,7 +10,7 @@ public sealed partial class BackgroundActionOrchestratorService
 {
     // Delegate type for cached handler invocation
     private delegate Task HandlerInvoker(object handler, object command, CancellationToken cancellationToken);
-    
+
     // Cache compiled invokers per command type (setup-time reflection, execution-time cached delegates)
     private static readonly ConcurrentDictionary<Type, HandlerInvoker> _invokerCache = new();
 
@@ -19,24 +19,18 @@ public sealed partial class BackgroundActionOrchestratorService
     /// Resolves handler instance from scope to ensure isolated scoped dependencies.
     /// Returns execution result with success flag and error details.
     /// </summary>
-    private async Task<HandlerExecutionResult> ExecuteHandlerInIsolatedScopeAsync(
-        Type handlerType,
+    private async Task<CommandHandlerResult> ExecuteHandlerInIsolatedScopeAsync(
         object command,
         Type commandType,
+        string canonicalCommandId,
         string expectedHandlerTypeName,
         CancellationToken cancellationToken)
     {
         var resolvedHandlerTypeName = expectedHandlerTypeName;
         try
         {
-            // Create isolated scope for this handler
-            using var scope = _serviceProvider.CreateScope();
-
-            // Resolve handler instance from this scope (ensures isolated scoped dependencies)
-            var handlers = scope.ServiceProvider.GetServices(handlerType).ToList();
-            var handler = handlers.FirstOrDefault(h => h?.GetType().FullName == expectedHandlerTypeName)
-                ?? throw new InvalidOperationException(
-                    $"Handler with type '{expectedHandlerTypeName}' not found in execution scope. Available handlers: [{string.Join(", ", handlers.Select(h => h?.GetType().FullName ?? "null"))}]");
+            using var scope = _backgroundActionResolver.CreateScope(commandType);
+            var handler = scope.ResolveHandler(expectedHandlerTypeName);
             resolvedHandlerTypeName = handler.GetType().FullName ?? expectedHandlerTypeName;
 
             // Get or create cached invoker delegate for this command type
@@ -62,15 +56,15 @@ public sealed partial class BackgroundActionOrchestratorService
             await invoker(handler, command, cancellationToken);
 
             _logger.LogInformation(
-                "Handler {HandlerType} executed successfully for command {CommandType}.",
+                "Handler {HandlerType} executed successfully for command {CommandId}.",
                 resolvedHandlerTypeName,
-                commandType.FullName);
+                canonicalCommandId);
 
-            return new HandlerExecutionResult
-            {
-                Success = true,
-                HandlerTypeName = resolvedHandlerTypeName
-            };
+            return new CommandHandlerResult(true, resolvedHandlerTypeName, null, null);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -78,17 +72,34 @@ public sealed partial class BackgroundActionOrchestratorService
             var inner = ex;
 
             _logger.LogError(ex,
-                "Handler {HandlerType} failed for command {CommandType}.",
+                "Handler {HandlerType} failed for command {CommandId}.",
                 resolvedHandlerTypeName,
-                commandType.FullName);
+                canonicalCommandId);
 
-            return new HandlerExecutionResult
-            {
-                Success = false,
-                ErrorMessage = $"{resolvedHandlerTypeName}: {inner.Message}",
-                HandlerTypeName = resolvedHandlerTypeName,
-                ErrorDetails = inner.ToString() // Full exception with stack trace
-            };
+            return new CommandHandlerResult(false, resolvedHandlerTypeName, $"{resolvedHandlerTypeName}: {inner.Message}", inner.ToString());
         }
+    }
+
+    private async Task<CommandHandlerResult[]> ExecuteHandlersAsync(
+        object command,
+        Type commandType,
+        string canonicalCommandId,
+        IReadOnlyList<string> handlerTypeNames,
+        CancellationToken cancellationToken)
+    {
+        using var semaphore = new SemaphoreSlim(MaxDegreeOfParallelism);
+        var executions = handlerTypeNames.Select(async handlerTypeName =>
+        {
+            await semaphore.WaitAsync(cancellationToken);
+            try
+            {
+                return await ExecuteHandlerInIsolatedScopeAsync(command, commandType, canonicalCommandId, handlerTypeName, cancellationToken);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+        return await Task.WhenAll(executions);
     }
 }

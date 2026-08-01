@@ -1,4 +1,6 @@
-# New modules usage guide
+# Feature and API usage notes
+
+This document covers feature and product API usage. For the contributor workflow, see the [module contribution guide](MODULE_CONTRIBUTION_GUIDE.md). Its examples do not authorize creating a project, context, database, schema, migration, or project-reference edge.
 
 ## 1. Report photo module
 

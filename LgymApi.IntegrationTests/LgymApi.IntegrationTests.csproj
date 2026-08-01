@@ -14,6 +14,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="NUnit" />
     <PackageReference Include="NUnit3TestAdapter" />
@@ -21,12 +22,21 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LgymApi.Api\LgymApi.Api.csproj" />
+    <ProjectReference Include="..\LgymApi.Application\LgymApi.Application.csproj" />
+    <ProjectReference Include="..\LgymApi.BackgroundWorker\LgymApi.BackgroundWorker.csproj" />
+    <ProjectReference Include="..\LgymApi.BackgroundWorker.Common\LgymApi.BackgroundWorker.Common.csproj" />
+    <ProjectReference Include="..\LgymApi.Domain\LgymApi.Domain.csproj" />
+    <ProjectReference Include="..\LgymApi.Identity\LgymApi.Identity.csproj" />
     <ProjectReference Include="..\LgymApi.Infrastructure\LgymApi.Infrastructure.csproj" />
+    <ProjectReference Include="..\LgymApi.Notifications\LgymApi.Notifications.csproj" />
+    <ProjectReference Include="..\LgymApi.Platform\LgymApi.Platform.csproj" />
+    <ProjectReference Include="..\LgymApi.Resources\LgymApi.Resources.csproj" />
     <ProjectReference Include="..\LgymApi.TestUtils\LgymApi.TestUtils.csproj" />
+    <ProjectReference Include="..\LgymApi.TrainingPlanning\LgymApi.TrainingPlanning.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="..\LgymApi.Infrastructure\EmailTemplates\**\*.email">
+    <Content Include="..\LgymApi.Notifications\EmailTemplates\**\*.email">
       <Link>EmailTemplates\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

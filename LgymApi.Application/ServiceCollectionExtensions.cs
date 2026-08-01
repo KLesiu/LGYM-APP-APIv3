@@ -1,91 +1,21 @@
-using LgymApi.Application.Features.AdminManagement;
-using LgymApi.Application.Features.AdminManagement;
-using LgymApi.Application.AppConfig;
-using LgymApi.Application.Features.DietPlans;
-using LgymApi.Application.Features.EloRegistry;
-using LgymApi.Application.Features.Enum;
-using LgymApi.Application.Features.Exercise;
-using LgymApi.Application.Features.ExerciseScores;
-using LgymApi.Application.Features.Gym;
-using LgymApi.Application.Features.MainRecords;
-using LgymApi.Application.Features.Measurements;
-using LgymApi.Application.Features.PasswordReset;
-using LgymApi.Application.Features.Plan;
-using LgymApi.Application.Features.PlanDay;
-using LgymApi.Application.Notifications;
-using LgymApi.Application.Features.Reporting;
-using LgymApi.Application.Features.Role;
-using LgymApi.Application.Features.Supplementation;
-using LgymApi.Application.Features.Training;
-using LgymApi.Application.Common.Training.Elo;
-using LgymApi.Application.Features.TraineeNotes;
-using LgymApi.Application.Features.TrainerRelationships;
-using LgymApi.Application.Features.User;
-using LgymApi.Application.Features.Tutorial;
-using LgymApi.Application.ExternalAuth;
-using LgymApi.Application.Services;
-using LgymApi.Application.Units;
-using LgymApi.Domain.Enums;
+using LgymApi.Application.Coaching;
+using LgymApi.Application.Nutrition;
+using LgymApi.Application.Reporting;
+using LgymApi.Application.WorkoutProgress;
+using LgymApi.Application.Platform.BackgroundCommands;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LgymApi.Application;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    public static IServiceCollection AddApplication(this IServiceCollection services)
     {
-        services.AddScoped<IAdminUserService, AdminUserService>();
-        services.AddScoped<IAppConfigService, AppConfigService>();
-        services.AddScoped<IDietPlanService, DietPlanService>();
-        services.AddScoped<IEloRegistryService, EloRegistryService>();
-        services.AddScoped<IEnumService, EnumService>();
-        services.AddScoped<IExerciseService, ExerciseService>();
-        services.AddScoped<IExerciseScoresService, ExerciseScoresService>();
-        services.AddScoped<IGymService, GymService>();
-        services.AddScoped<IMainRecordsServiceDependencies, MainRecordsServiceDependencies>();
-        services.AddScoped<IMainRecordsService, MainRecordsService>();
-        services.AddScoped<IMeasurementsServiceDependencies, MeasurementsServiceDependencies>();
-        services.AddScoped<IMeasurementsService, MeasurementsService>();
-        services.AddScoped<IInAppNotificationServiceDependencies, InAppNotificationServiceDependencies>();
-        services.AddScoped<IInAppNotificationService, InAppNotificationService>();
-        services.AddScoped<IPushNotificationService, PushNotificationService>();
-        services.AddScoped<IStalePushInstallationCleanupService, StalePushInstallationCleanupService>();
-        services.AddScoped<INotificationEventBridge, NotificationEventBridge>();
-        services.AddScoped<PasswordResetServiceDependencies>();
-        services.AddScoped<IPasswordResetTokenGenerationService, PasswordResetTokenGenerationService>();
-        services.AddScoped<IPasswordResetService, PasswordResetService>();
-        services.AddScoped<IPlanService, PlanService>();
-        services.AddScoped<IPlanDayServiceDependencies, PlanDayServiceDependencies>();
-        services.AddScoped<IPlanDayService, PlanDayService>();
-        services.AddScoped<IRankService, RankService>();
-        services.AddScoped<IAccountLinkingService, AccountLinkingService>();
-        services.AddScoped<IExternalAuthService, ExternalAuthService>();
-        services.AddScoped<IGoogleUserRegistrar, GoogleUserRegistrar>();
-        services.AddScoped<ILoginResultBuilder, LoginResultBuilder>();
-        services.AddScoped<IReportingServiceDependencies, ReportingServiceDependencies>();
-        services.AddScoped<IReportSubmissionMeasurementWriter, ReportSubmissionMeasurementWriter>();
-        services.AddScoped<IReportingService, ReportingService>();
-        services.AddScoped<IRecurringReportAssignmentServiceDependencies, RecurringReportAssignmentServiceDependencies>();
-        services.AddScoped<IRecurringReportAssignmentService, RecurringReportAssignmentService>();
-        services.AddScoped<IExpiredPhotoUploadCleanupService, ExpiredPhotoUploadCleanupService>();
-        services.AddScoped<IRoleService, RoleService>();
-        services.AddScoped<ISupplementationService, SupplementationService>();
-        services.AddScoped<ITraineeNoteService, TraineeNoteService>();
-        services.AddScoped<ITrainingServiceDependencies, TrainingServiceDependencies>();
-        services.AddScoped<ITrainingService, TrainingService>();
-        services.AddScoped<IExerciseEloCalculator, StandardExerciseEloCalculator>();
-        services.AddScoped<IExerciseEloCalculator, StrengthWeightedExerciseEloCalculator>();
-        services.AddScoped<IExerciseEloCalculator, VolumeWeightedExerciseEloCalculator>();
-        services.AddScoped<IExerciseEloCalculator, PullupWeightedExerciseEloCalculator>();
-        services.AddScoped<ITrainerRelationshipServiceDependencies, TrainerRelationshipServiceDependencies>();
-        services.AddScoped<ITrainerRelationshipService, TrainerRelationshipService>();
-        services.AddScoped<IUserServiceDependencies, UserServiceDependencies>();
-        services.AddScoped<IUserService, UserService>();
-        services.AddScoped<ITutorialService, TutorialService>();
-        services.AddSingleton<ILinearUnitStrategy<WeightUnits>, WeightLinearUnitStrategy>();
-        services.AddSingleton<IUnitConverter<WeightUnits>, LinearUnitConverter<WeightUnits>>();
-        services.AddSingleton<ILinearUnitStrategy<HeightUnits>, HeightLinearUnitStrategy>();
-        services.AddSingleton<IUnitConverter<HeightUnits>, LinearUnitConverter<HeightUnits>>();
+        services.AddCommandEnvelopeRuntime();
+        services.AddReportingModule();
+        services.AddWorkoutAndProgressModule();
+        services.AddCoachingModule();
+        services.AddNutritionModule();
 
         return services;
     }

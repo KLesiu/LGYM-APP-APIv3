@@ -45,7 +45,7 @@ public sealed class ApiIdempotencyMiddleware
             {
                 message = "Idempotency key is required.",
                 code = "IDEMPOTENCY_KEY_REQUIRED"
-            });
+            }, context.RequestAborted);
             return;
         }
 
@@ -57,7 +57,7 @@ public sealed class ApiIdempotencyMiddleware
             {
                 message = "Idempotency key is required.",
                 code = "IDEMPOTENCY_KEY_REQUIRED"
-            });
+            }, context.RequestAborted);
             return;
         }
 
@@ -102,7 +102,7 @@ public sealed class ApiIdempotencyMiddleware
                 {
                     message = "Idempotency key reused with different request payload.",
                     code = "IDEMPOTENCY_KEY_FINGERPRINT_MISMATCH"
-                });
+                }, context.RequestAborted);
                 return;
             }
         }
@@ -161,19 +161,20 @@ public sealed class ApiIdempotencyMiddleware
     {
         var method = context.Request.Method;
         var routeTemplate = metadata.RouteTemplate;
-        
+
         string callerScope;
         if (metadata.ScopeSource == ApiIdempotencyScopeSource.AuthenticatedUser)
         {
-            var user = context.Items["User"] as User;
-            callerScope = user?.Id.ToString() ?? "anonymous";
+            callerScope = context.GetCurrentAccountId().IsEmpty
+                ? "anonymous"
+                : context.GetCurrentAccountId().ToString();
         }
         else // NormalizedEmail
         {
             context.Request.EnableBuffering();
             context.Request.Body.Position = 0;
             using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
-            var bodyText = await reader.ReadToEndAsync();
+            var bodyText = await reader.ReadToEndAsync(context.RequestAborted);
             context.Request.Body.Position = 0;
 
             var bodyJson = JsonDocument.Parse(bodyText);
@@ -188,9 +189,9 @@ public sealed class ApiIdempotencyMiddleware
     {
         context.Request.EnableBuffering();
         context.Request.Body.Position = 0;
-        
+
         using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
-        var bodyText = await reader.ReadToEndAsync();
+        var bodyText = await reader.ReadToEndAsync(context.RequestAborted);
         context.Request.Body.Position = 0;
 
         // Canonicalize JSON body
@@ -200,9 +201,9 @@ public sealed class ApiIdempotencyMiddleware
             try
             {
                 var jsonDoc = JsonDocument.Parse(bodyText);
-                canonicalBody = JsonSerializer.Serialize(jsonDoc, new JsonSerializerOptions 
-                { 
-                    WriteIndented = false 
+                canonicalBody = JsonSerializer.Serialize(jsonDoc, new JsonSerializerOptions
+                {
+                    WriteIndented = false
                 });
             }
             catch
@@ -212,7 +213,7 @@ public sealed class ApiIdempotencyMiddleware
         }
 
         // Route params
-        var routeParams = string.Join("&", 
+        var routeParams = string.Join("&",
             context.Request.RouteValues
                 .OrderBy(kv => kv.Key)
                 .Select(kv => $"{kv.Key}={kv.Value}"));

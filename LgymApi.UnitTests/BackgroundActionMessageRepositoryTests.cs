@@ -4,6 +4,7 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Repositories;
+using LgymApi.Platform.Persistence;
 using Microsoft.EntityFrameworkCore;
 using NUnit.Framework;
 
@@ -25,7 +26,7 @@ public sealed class BackgroundActionMessageRepositoryTests
             .Options;
 
         await using var dbContext = new AppDbContext(options);
-        var repository = new CommandEnvelopeRepository(dbContext);
+        var repository = new CommandEnvelopeRepository(dbContext, new NonDuplicateFailureClassifier());
 
         var envelope = new CommandEnvelope
         {
@@ -57,7 +58,7 @@ public sealed class BackgroundActionMessageRepositoryTests
             .Options;
 
         await using var dbContext = new AppDbContext(options);
-        var repository = new CommandEnvelopeRepository(dbContext);
+        var repository = new CommandEnvelopeRepository(dbContext, new NonDuplicateFailureClassifier());
 
         var envelope = new CommandEnvelope
         {
@@ -89,13 +90,13 @@ public sealed class BackgroundActionMessageRepositoryTests
             .Options;
 
         await using var dbContext = new AppDbContext(options);
-        var repository = new CommandEnvelopeRepository(dbContext);
+        var repository = new CommandEnvelopeRepository(dbContext, new NonDuplicateFailureClassifier());
 
-         // Act
-         var found = await repository.FindByIdAsync(Id<CommandEnvelope>.New());
+        // Act
+        var found = await repository.FindByIdAsync(Id<CommandEnvelope>.New());
 
-         // Assert
-         found.Should().BeNull();
+        // Assert
+        found.Should().BeNull();
     }
 
     [Test]
@@ -107,7 +108,7 @@ public sealed class BackgroundActionMessageRepositoryTests
             .Options;
 
         await using var dbContext = new AppDbContext(options);
-        var repository = new CommandEnvelopeRepository(dbContext);
+        var repository = new CommandEnvelopeRepository(dbContext, new NonDuplicateFailureClassifier());
 
         var correlationId = Id<CorrelationScope>.New();
         var envelope = new CommandEnvelope
@@ -126,9 +127,9 @@ public sealed class BackgroundActionMessageRepositoryTests
         // Act
         var found = await repository.FindByCorrelationIdAsync(correlationId);
 
-         // Assert
-         found.Should().NotBeNull();
-         found.CorrelationId.Should().Be(correlationId);
+        // Assert
+        found.Should().NotBeNull();
+        found.CorrelationId.Should().Be(correlationId);
     }
 
     [Test]
@@ -140,61 +141,61 @@ public sealed class BackgroundActionMessageRepositoryTests
             .Options;
 
         await using var dbContext = new AppDbContext(options);
-        var repository = new CommandEnvelopeRepository(dbContext);
+        var repository = new CommandEnvelopeRepository(dbContext, new NonDuplicateFailureClassifier());
 
-         // Act
-         var found = await repository.FindByCorrelationIdAsync(Id<CorrelationScope>.New());
+        // Act
+        var found = await repository.FindByCorrelationIdAsync(Id<CorrelationScope>.New());
 
-         // Assert
-         found.Should().BeNull();
+        // Assert
+        found.Should().BeNull();
     }
 
-      [Test]
-      public async Task CommandEnvelope_GetPendingRetriesAsync_ReturnsFailedEnvelopesReadyForRetry()
-      {
-          // Arrange
-          var options = new DbContextOptionsBuilder<AppDbContext>()
-              .UseInMemoryDatabase($"command-envelope-repo-{Id<CommandEnvelope>.New():N}")
-              .Options;
+    [Test]
+    public async Task CommandEnvelope_GetPendingRetriesAsync_ReturnsFailedEnvelopesReadyForRetry()
+    {
+        // Arrange
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase($"command-envelope-repo-{Id<CommandEnvelope>.New():N}")
+            .Options;
 
-          await using var dbContext = new AppDbContext(options);
-          var repository = new CommandEnvelopeRepository(dbContext);
+        await using var dbContext = new AppDbContext(options);
+        var repository = new CommandEnvelopeRepository(dbContext, new NonDuplicateFailureClassifier());
 
-          var readyForRetry = new CommandEnvelope
-          {
-              Id = Domain.ValueObjects.Id<CommandEnvelope>.New(),
-              CorrelationId = Id<CorrelationScope>.New(),
-              CommandTypeFullName = "TestNamespace.TestCommand, TestAssembly",
-              PayloadJson = "{}",
-              Status = ActionExecutionStatus.Failed,
-              CreatedAt = DateTimeOffset.UtcNow.AddHours(-2),
-              UpdatedAt = DateTimeOffset.UtcNow,
-              NextAttemptAt = DateTimeOffset.UtcNow.AddMinutes(-5)
-          };
+        var readyForRetry = new CommandEnvelope
+        {
+            Id = Domain.ValueObjects.Id<CommandEnvelope>.New(),
+            CorrelationId = Id<CorrelationScope>.New(),
+            CommandTypeFullName = "TestNamespace.TestCommand, TestAssembly",
+            PayloadJson = "{}",
+            Status = ActionExecutionStatus.Failed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-2),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            NextAttemptAt = DateTimeOffset.UtcNow.AddMinutes(-5)
+        };
 
-          var notYetReady = new CommandEnvelope
-          {
-              Id = Domain.ValueObjects.Id<CommandEnvelope>.New(),
-              CorrelationId = Id<CorrelationScope>.New(),
-              CommandTypeFullName = "TestNamespace.TestCommand, TestAssembly",
-              PayloadJson = "{}",
-              Status = ActionExecutionStatus.Failed,
-              CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
-              UpdatedAt = DateTimeOffset.UtcNow,
-              NextAttemptAt = DateTimeOffset.UtcNow.AddMinutes(30)
-          };
+        var notYetReady = new CommandEnvelope
+        {
+            Id = Domain.ValueObjects.Id<CommandEnvelope>.New(),
+            CorrelationId = Id<CorrelationScope>.New(),
+            CommandTypeFullName = "TestNamespace.TestCommand, TestAssembly",
+            PayloadJson = "{}",
+            Status = ActionExecutionStatus.Failed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            NextAttemptAt = DateTimeOffset.UtcNow.AddMinutes(30)
+        };
 
-          var succeeded = new CommandEnvelope
-          {
-              Id = Domain.ValueObjects.Id<CommandEnvelope>.New(),
-              CorrelationId = Id<CorrelationScope>.New(),
-              CommandTypeFullName = "TestNamespace.TestCommand, TestAssembly",
-              PayloadJson = "{}",
-              Status = ActionExecutionStatus.Completed,
-              CreatedAt = DateTimeOffset.UtcNow.AddHours(-3),
-              UpdatedAt = DateTimeOffset.UtcNow,
-              CompletedAt = DateTimeOffset.UtcNow.AddHours(-2)
-          };
+        var succeeded = new CommandEnvelope
+        {
+            Id = Domain.ValueObjects.Id<CommandEnvelope>.New(),
+            CorrelationId = Id<CorrelationScope>.New(),
+            CommandTypeFullName = "TestNamespace.TestCommand, TestAssembly",
+            PayloadJson = "{}",
+            Status = ActionExecutionStatus.Completed,
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-3),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow.AddHours(-2)
+        };
 
         await repository.AddAsync(readyForRetry);
         await repository.AddAsync(notYetReady);
@@ -204,9 +205,9 @@ public sealed class BackgroundActionMessageRepositoryTests
         // Act
         var pending = await repository.GetPendingRetriesAsync();
 
-         // Assert
-         pending.Should().HaveCount(1);
-         pending.First().Id.Should().Be(readyForRetry.Id);
+        // Assert
+        pending.Should().HaveCount(1);
+        pending.First().Id.Should().Be(readyForRetry.Id);
     }
 
     [Test]
@@ -218,7 +219,7 @@ public sealed class BackgroundActionMessageRepositoryTests
             .Options;
 
         await using var dbContext = new AppDbContext(options);
-        var repository = new CommandEnvelopeRepository(dbContext);
+        var repository = new CommandEnvelopeRepository(dbContext, new NonDuplicateFailureClassifier());
 
         var envelope = new CommandEnvelope
         {
@@ -241,11 +242,16 @@ public sealed class BackgroundActionMessageRepositoryTests
         await repository.UpdateAsync(envelope);
         await dbContext.SaveChangesAsync();
 
-         // Assert
-         var updated = await dbContext.CommandEnvelopes.FindAsync(envelope.Id);
-         updated.Should().NotBeNull();
-         updated.Status.Should().Be(ActionExecutionStatus.Completed);
-         updated.CompletedAt.Should().NotBeNull();
+        // Assert
+        var updated = await dbContext.CommandEnvelopes.FindAsync(envelope.Id);
+        updated.Should().NotBeNull();
+        updated.Status.Should().Be(ActionExecutionStatus.Completed);
+        updated.CompletedAt.Should().NotBeNull();
     }
 
-    }
+}
+
+internal sealed class NonDuplicateFailureClassifier : ICommandEnvelopeDuplicateFailureClassifier
+{
+    public bool IsDuplicateCorrelationFailure(Exception commitFailure) => false;
+}

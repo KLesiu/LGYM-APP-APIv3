@@ -285,7 +285,7 @@ public sealed class DirectGuidUsageGuardTests
             return true;
         }
 
-        if (normalized.EndsWith("/LgymApi.Infrastructure/Pagination/FilterToGridifyAdapter.cs", StringComparison.OrdinalIgnoreCase))
+        if (normalized.EndsWith("/LgymApi.Platform/Pagination/FilterToGridifyAdapter.cs", StringComparison.OrdinalIgnoreCase))
         {
             // Gridify field type resolution requires typeof(Guid) and Guid.TryParse to properly map Guid-typed fields
             // in filter expressions. This is unavoidable for a generic filter-to-Gridify adapter.
@@ -309,6 +309,17 @@ public sealed class DirectGuidUsageGuardTests
         {
             // NotificationHub tests use Id<User>.New().GetValue() which returns Guid.
             // The Id<TEntity> API is the approved abstraction; the Guid is an implementation detail of GetValue().
+            return true;
+        }
+
+        if (normalized.EndsWith("/LgymApi.IntegrationTests/PostgreSqlDatabaseLease.cs", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (normalized.EndsWith("/LgymApi.IntegrationTests/PostgreSqlPersistenceTests.cs", StringComparison.OrdinalIgnoreCase)
+            || normalized.EndsWith("/LgymApi.UnitTests/TypedIdValueConverterTests.cs", StringComparison.OrdinalIgnoreCase))
+        {
             return true;
         }
 

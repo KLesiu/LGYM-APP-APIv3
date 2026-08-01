@@ -1,12 +1,88 @@
 using FluentAssertions;
-using LgymApi.BackgroundWorker.Common;
+using LgymApi.Application.Platform.Contracts.BackgroundCommands;
 using NUnit.Framework;
+using System.Reflection;
 
 namespace LgymApi.UnitTests;
 
 [TestFixture]
 public sealed class DispatcherContractTests
 {
+    private const string PlatformBackgroundCommandsNamespace =
+        "LgymApi.Application.Platform.Contracts.BackgroundCommands";
+    private const string ApplicationActionCommandTypeName =
+        $"{PlatformBackgroundCommandsNamespace}.IActionCommand";
+    private const string ApplicationCommandDispatcherTypeName =
+        $"{PlatformBackgroundCommandsNamespace}.ICommandDispatcher";
+    private const string ApplicationCommandOutboxWriterTypeName =
+        $"{PlatformBackgroundCommandsNamespace}.ICommandOutboxWriter";
+    private const string CommandEnvelopeStageResultTypeName =
+        $"{PlatformBackgroundCommandsNamespace}.CommandEnvelopeStageResult";
+
+    [Test]
+    public void PlatformICommandDispatcher_HasExactLegacyPublicShape()
+    {
+        var actionCommandType = GetApplicationType(ApplicationActionCommandTypeName);
+        var dispatcherType = GetApplicationType(ApplicationCommandDispatcherTypeName);
+        var methods = dispatcherType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+
+        dispatcherType.IsPublic.Should().BeTrue();
+        dispatcherType.IsInterface.Should().BeTrue();
+        dispatcherType.IsGenericType.Should().BeFalse();
+        dispatcherType.GetInterfaces().Should().BeEmpty();
+        dispatcherType.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Should().BeEmpty();
+        dispatcherType.GetEvents(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Should().BeEmpty();
+        methods.Should().ContainSingle();
+
+        var method = methods.Single();
+        method.Name.Should().Be("EnqueueAsync");
+        method.IsGenericMethodDefinition.Should().BeTrue();
+        method.ReturnType.Should().Be(typeof(Task));
+        method.GetParameters().Should().ContainSingle();
+
+        var genericParameter = method.GetGenericArguments().Should().ContainSingle().Subject;
+        genericParameter.GenericParameterAttributes.Should().Be(GenericParameterAttributes.ReferenceTypeConstraint);
+        genericParameter.GetGenericParameterConstraints().Should().Equal(actionCommandType);
+
+        var commandParameter = method.GetParameters().Single();
+        commandParameter.Name.Should().Be("command");
+        commandParameter.ParameterType.Should().Be(genericParameter);
+        commandParameter.IsOptional.Should().BeFalse();
+    }
+
+    [Test]
+    public void ApplicationPlatformCommandPorts_DoNotExposeWorkerOrHangfireTypes()
+    {
+        var platformAssembly = typeof(ICommandDispatcher).Assembly;
+        var portTypes = platformAssembly.GetExportedTypes()
+            .Where(type => type.Namespace == PlatformBackgroundCommandsNamespace)
+            .OrderBy(type => type.Name)
+            .ToArray();
+
+        portTypes.Select(type => type.FullName).Should().Equal(
+            "LgymApi.Application.Platform.Contracts.BackgroundCommands.CommandEnvelopeFinalization",
+            "LgymApi.Application.Platform.Contracts.BackgroundCommands.CommandEnvelopeReceipt",
+            "LgymApi.Application.Platform.Contracts.BackgroundCommands.CommandEnvelopeRequest",
+            CommandEnvelopeStageResultTypeName,
+            "LgymApi.Application.Platform.Contracts.BackgroundCommands.CommandEnvelopeStart",
+            "LgymApi.Application.Platform.Contracts.BackgroundCommands.CommandHandlerResult",
+            ApplicationActionCommandTypeName,
+            ApplicationCommandDispatcherTypeName,
+            "LgymApi.Application.Platform.Contracts.BackgroundCommands.ICommandEnvelopeRuntime",
+            ApplicationCommandOutboxWriterTypeName);
+
+        var exposedSignatureTypes = portTypes
+            .SelectMany(GetExposedSignatureTypes)
+            .Select(type => type.FullName ?? type.Name)
+            .ToArray();
+
+        exposedSignatureTypes.Should().NotContain(name =>
+            name.Contains("Hangfire", StringComparison.Ordinal)
+            || name.Contains("LgymApi.BackgroundWorker", StringComparison.Ordinal));
+    }
+
     [Test]
     public void ICommandDispatcher_EnqueueTypedCommand_ExposesTypeSafeAPI()
     {
@@ -26,11 +102,11 @@ public sealed class DispatcherContractTests
     [Test]
     public void ICommandDispatcher_GenericConstraint_EnforcesCommandInterface()
     {
-         // This test validates compile-time contract via type system.
-         // If ICommandDispatcher.Enqueue<TCommand> where TCommand : ICommand
-         // is correctly defined, this will compile. Otherwise it won't.
-         var dispatcher = new FakeCommandDispatcher();
-         var command = new TestCommand { Value = 99 };
+        // This test validates compile-time contract via type system.
+        // If ICommandDispatcher.Enqueue<TCommand> where TCommand : ICommand
+        // is correctly defined, this will compile. Otherwise it won't.
+        var dispatcher = new FakeCommandDispatcher();
+        var command = new TestCommand { Value = 99 };
 
         // Act & Assert: compiler enforces ICommand constraint
         dispatcher.EnqueueAsync(command);
@@ -65,6 +141,38 @@ public sealed class DispatcherContractTests
         {
             EnqueuedCommands.Add(command!);
             return Task.CompletedTask;
+        }
+    }
+
+    private static Type GetApplicationType(string metadataName)
+    {
+        var type = typeof(ICommandDispatcher).Assembly.GetType(metadataName);
+        type.Should().NotBeNull($"{metadataName} must be defined by the Platform assembly");
+        return type!;
+    }
+
+    private static IEnumerable<Type> GetExposedSignatureTypes(Type portType)
+    {
+        yield return portType;
+
+        foreach (var interfaceType in portType.GetInterfaces())
+        {
+            yield return interfaceType;
+        }
+
+        foreach (var method in portType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+        {
+            yield return method.ReturnType;
+
+            foreach (var parameter in method.GetParameters())
+            {
+                yield return parameter.ParameterType;
+            }
+
+            foreach (var constraint in method.GetGenericArguments().SelectMany(argument => argument.GetGenericParameterConstraints()))
+            {
+                yield return constraint;
+            }
         }
     }
 }

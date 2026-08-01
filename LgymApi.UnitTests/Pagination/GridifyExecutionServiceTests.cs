@@ -2,6 +2,7 @@ using FluentAssertions;
 using LgymApi.Application.Pagination;
 using LgymApi.Infrastructure;
 using LgymApi.Infrastructure.Pagination;
+using LgymApi.Platform;
 using LgymApi.TestUtils;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -93,10 +94,74 @@ public sealed class GridifyExecutionServiceTests
     }
 
     [Test]
+    public async Task GridifyExecutionService_WithAsyncProvider_HonorsPreCancelledToken()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = new GridifyExecutionService();
+        var registry = CreateRegistry();
+
+        await SeedRowsAsync(dbContext,
+        [
+            new TestRow { Id = Guid.Parse("11111111-1111-1111-1111-111111111111"), Name = "Alpha", Rank = 10, IsActive = true }
+        ]);
+
+        using var cancellationSource = new CancellationTokenSource();
+        cancellationSource.Cancel();
+
+        var action = () => service.ExecuteAsync(
+            dbContext.Rows,
+            new FilterInput
+            {
+                Page = 1,
+                PageSize = 2,
+                SortDescriptors = [new SortDescriptor { FieldName = "rank", Descending = true }]
+            },
+            registry,
+            CreatePolicy(),
+            cancellationSource.Token);
+
+        await action.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Test]
+    public async Task GridifyExecutionService_WithPlainProvider_CompletesWithPreCancelledToken()
+    {
+        var service = new GridifyExecutionService();
+        var registry = CreateRegistry();
+        var rows = new[]
+        {
+            new TestRow { Id = Guid.Parse("11111111-1111-1111-1111-111111111111"), Name = "Alpha", Rank = 10, IsActive = true },
+            new TestRow { Id = Guid.Parse("22222222-2222-2222-2222-222222222222"), Name = "Bravo", Rank = 20, IsActive = true },
+            new TestRow { Id = Guid.Parse("33333333-3333-3333-3333-333333333333"), Name = "Charlie", Rank = 30, IsActive = true }
+        };
+
+        using var cancellationSource = new CancellationTokenSource();
+        cancellationSource.Cancel();
+
+        var result = await service.ExecuteAsync(
+            rows.AsQueryable(),
+            new FilterInput
+            {
+                Page = 2,
+                PageSize = 2,
+                SortDescriptors = [new SortDescriptor { FieldName = "rank", Descending = true }]
+            },
+            registry,
+            CreatePolicy(),
+            cancellationSource.Token);
+
+        result.TotalCount.Should().Be(3);
+        result.Page.Should().Be(2);
+        result.PageSize.Should().Be(2);
+        result.Items.Select(x => x.Rank).Should().Equal(10);
+    }
+
+    [Test]
     public void GridifyExecutionService_IsResolvableFromDependencyInjection()
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddPlatformModule();
         services.AddInfrastructure(
             TestConfigurationBuilder.BuildEnabledEmailConfiguration(),
             enableSensitiveLogging: false,

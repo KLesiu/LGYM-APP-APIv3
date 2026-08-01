@@ -1,5 +1,6 @@
 using LgymApi.Application.Abstractions.Storage;
 using LgymApi.Application.Repositories;
+using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Domain.Enums;
 using Microsoft.Extensions.Logging;
 
@@ -7,18 +8,18 @@ namespace LgymApi.Application.Features.Reporting;
 
 public sealed class ExpiredPhotoUploadCleanupService : IExpiredPhotoUploadCleanupService
 {
-    private readonly IPhotoUploadInitTracker _photoUploadInitTracker;
+    private readonly IReportPhotoPersistence _photoPersistence;
     private readonly IPhotoStorageProvider _photoStorageProvider;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<ExpiredPhotoUploadCleanupService> _logger;
 
     public ExpiredPhotoUploadCleanupService(
-        IPhotoUploadInitTracker photoUploadInitTracker,
+        IReportPhotoPersistence photoPersistence,
         IPhotoStorageProvider photoStorageProvider,
         IUnitOfWork unitOfWork,
         ILogger<ExpiredPhotoUploadCleanupService> logger)
     {
-        _photoUploadInitTracker = photoUploadInitTracker;
+        _photoPersistence = photoPersistence;
         _photoStorageProvider = photoStorageProvider;
         _unitOfWork = unitOfWork;
         _logger = logger;
@@ -26,7 +27,7 @@ public sealed class ExpiredPhotoUploadCleanupService : IExpiredPhotoUploadCleanu
 
     public async Task<int> CleanupExpiredUploadsAsync(CancellationToken cancellationToken = default)
     {
-        var candidates = await _photoUploadInitTracker.GetCleanupCandidatesAsync(DateTimeOffset.UtcNow, cancellationToken);
+        var candidates = await _photoPersistence.ListCleanupCandidatesAsync(DateTimeOffset.UtcNow, cancellationToken);
         var cleaned = 0;
 
         foreach (var candidate in candidates)
@@ -35,7 +36,7 @@ public sealed class ExpiredPhotoUploadCleanupService : IExpiredPhotoUploadCleanu
             {
                 await _photoStorageProvider.DeleteAsync(candidate.StorageKey, cancellationToken);
 
-                await _photoUploadInitTracker.MarkExpiredAsync(candidate.StorageKey, cancellationToken);
+                await _photoPersistence.MarkUploadExpiredAsync(candidate.StorageKey, cancellationToken);
 
                 cleaned++;
             }

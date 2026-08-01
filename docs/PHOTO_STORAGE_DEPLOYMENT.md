@@ -327,7 +327,7 @@ Responsibilities:
 
 ## Step 4 - Register provider conditionally
 
-In `AddInfrastructure(...)`:
+In the infrastructure composition layer, keep this branch inside the reporting module helper or the shared platform helper that owns photo storage wiring:
 
 - `Development` -> local provider,
 - `Production` -> R2 provider.

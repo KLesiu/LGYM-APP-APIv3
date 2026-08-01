@@ -2,15 +2,11 @@ using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.User.Contracts;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Common.Results;
-using LgymApi.Application.Features.User;
-using LgymApi.Application.Features.User.Models;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping.Core;
-using LgymApi.Domain.Security;
-using LgymApi.Domain.ValueObjects;
+using LgymApi.Application.Notifications.Models;
+using LgymApi.Notifications.ApiAdapters;
 using Microsoft.AspNetCore.Mvc;
-using UserEntity = LgymApi.Domain.Entities.User;
-using UserSessionEntity = LgymApi.Domain.Entities.UserSession;
 
 namespace LgymApi.Api.Features.User.Controllers;
 
@@ -18,12 +14,12 @@ namespace LgymApi.Api.Features.User.Controllers;
 [Route("api/push/installations")]
 public sealed class PushInstallationController : ControllerBase
 {
-    private readonly IUserService _userService;
+    private readonly IPushInstallationApiAdapter _pushInstallationApiAdapter;
     private readonly IMapper _mapper;
 
-    public PushInstallationController(IUserService userService, IMapper mapper)
+    public PushInstallationController(IPushInstallationApiAdapter pushInstallationApiAdapter, IMapper mapper)
     {
-        _userService = userService;
+        _pushInstallationApiAdapter = pushInstallationApiAdapter;
         _mapper = mapper;
     }
 
@@ -39,9 +35,10 @@ public sealed class PushInstallationController : ControllerBase
             request.Environment,
             request.PermissionStatus);
 
-        var result = await _userService.RegisterPushInstallationAsync(
-            HttpContext.GetCurrentUser(),
-            ParseCurrentSessionId(),
+        var accountContext = HttpContext.GetAuthenticatedAccountContext();
+        var result = await _pushInstallationApiAdapter.RegisterAsync(
+            accountContext?.Id,
+            accountContext?.SessionId,
             input,
             cancellationToken);
         if (result.IsFailure)
@@ -56,9 +53,10 @@ public sealed class PushInstallationController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Unregister([FromBody] PushInstallationActionRequest request, CancellationToken cancellationToken = default)
     {
-        var result = await _userService.UnregisterPushInstallationAsync(
-            HttpContext.GetCurrentUser(),
-            ParseCurrentSessionId(),
+        var accountContext = HttpContext.GetAuthenticatedAccountContext();
+        var result = await _pushInstallationApiAdapter.UnregisterAsync(
+            accountContext?.Id,
+            accountContext?.SessionId,
             new PushInstallationActionInput(request.InstallationId),
             cancellationToken);
         if (result.IsFailure)
@@ -73,9 +71,10 @@ public sealed class PushInstallationController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Disassociate([FromBody] PushInstallationActionRequest request, CancellationToken cancellationToken = default)
     {
-        var result = await _userService.DisassociatePushInstallationAsync(
-            HttpContext.GetCurrentUser(),
-            ParseCurrentSessionId(),
+        var accountContext = HttpContext.GetAuthenticatedAccountContext();
+        var result = await _pushInstallationApiAdapter.DisassociateAsync(
+            accountContext?.Id,
+            accountContext?.SessionId,
             new PushInstallationActionInput(request.InstallationId),
             cancellationToken);
         if (result.IsFailure)
@@ -84,18 +83,5 @@ public sealed class PushInstallationController : ControllerBase
         }
 
         return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Updated));
-    }
-
-    private Id<UserSessionEntity>? ParseCurrentSessionId()
-    {
-        var rawSessionId = HttpContext.User.FindFirst(AuthConstants.ClaimNames.SessionId)?.Value;
-        if (string.IsNullOrWhiteSpace(rawSessionId))
-        {
-            return null;
-        }
-
-        return Id<UserSessionEntity>.TryParse(rawSessionId, out var parsedSessionId)
-            ? parsedSessionId
-            : null;
     }
 }

@@ -1,13 +1,14 @@
 using LgymApi.Api.Extensions;
 using LgymApi.Api.Features.AdminManagement.Contracts;
 using LgymApi.Api.Features.Common.Contracts;
-using LgymApi.Application.Features.AdminManagement;
+using LgymApi.Api.Middleware;
+using LgymApi.Application.Identity.ApiAdapters;
 using LgymApi.Application.Features.AdminManagement.Models;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Pagination;
-using LgymApi.Domain.Entities;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -20,12 +21,12 @@ public sealed class AdminUserController : ControllerBase
 {
     private const string InvalidUserIdMessage = "Invalid user id.";
 
-    private readonly IAdminUserService _adminUserService;
+    private readonly IAdminAccountManagementApiAdapter _adminAccountManagementApiAdapter;
     private readonly IMapper _mapper;
 
-    public AdminUserController(IAdminUserService adminUserService, IMapper mapper)
+    public AdminUserController(IAdminAccountManagementApiAdapter adminAccountManagementApiAdapter, IMapper mapper)
     {
-        _adminUserService = adminUserService;
+        _adminAccountManagementApiAdapter = adminAccountManagementApiAdapter;
         _mapper = mapper;
     }
 
@@ -40,7 +41,7 @@ public sealed class AdminUserController : ControllerBase
             FilterGroups = request.FilterGroups,
             SortDescriptors = request.SortDescriptors
         };
-        var result = await _adminUserService.GetUsersAsync(filterInput, request.IncludeDeleted, cancellationToken);
+        var result = await _adminAccountManagementApiAdapter.GetUsersAsync(filterInput, request.IncludeDeleted, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -50,7 +51,7 @@ public sealed class AdminUserController : ControllerBase
         var pagination = result.Value;
         var response = new PaginatedAdminUserResult
         {
-            Items = _mapper.MapList<UserResult, AdminUserDto>(pagination.Items),
+            Items = _mapper.MapList<AdminAccountProjection, AdminUserDto>(pagination.Items),
             Page = pagination.Page,
             PageSize = pagination.PageSize,
             TotalCount = pagination.TotalCount,
@@ -72,14 +73,14 @@ public sealed class AdminUserController : ControllerBase
             return errorResult;
         }
 
-        var result = await _adminUserService.GetUserAsync(userId, cancellationToken);
+        var result = await _adminAccountManagementApiAdapter.GetUserAsync(userId, cancellationToken);
 
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
 
-        return Ok(_mapper.Map<UserResult, AdminUserDto>(result.Value));
+        return Ok(_mapper.Map<AdminAccountProjection, AdminUserDto>(result.Value));
     }
 
     [HttpPost("{id}/update")]
@@ -103,7 +104,7 @@ public sealed class AdminUserController : ControllerBase
             Avatar = request.Avatar
         };
 
-        var result = await _adminUserService.UpdateUserAsync(targetUserId, adminUserId, command, cancellationToken);
+        var result = await _adminAccountManagementApiAdapter.UpdateUserAsync(targetUserId, adminUserId, command, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -125,7 +126,7 @@ public sealed class AdminUserController : ControllerBase
         }
 
         var adminUserId = GetAdminUserId();
-        var result = await _adminUserService.DeleteUserAsync(targetUserId, adminUserId, cancellationToken);
+        var result = await _adminAccountManagementApiAdapter.DeleteUserAsync(targetUserId, adminUserId, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -147,7 +148,7 @@ public sealed class AdminUserController : ControllerBase
         }
 
         var adminUserId = GetAdminUserId();
-        var result = await _adminUserService.BlockUserAsync(targetUserId, adminUserId, cancellationToken);
+        var result = await _adminAccountManagementApiAdapter.BlockUserAsync(targetUserId, adminUserId, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -167,7 +168,7 @@ public sealed class AdminUserController : ControllerBase
             return errorResult;
         }
 
-        var result = await _adminUserService.UnblockUserAsync(targetUserId, cancellationToken);
+        var result = await _adminAccountManagementApiAdapter.UnblockUserAsync(targetUserId, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -177,15 +178,12 @@ public sealed class AdminUserController : ControllerBase
         return Ok(_mapper.Map<string, ResponseMessageDto>(Messages.Updated));
     }
 
-    private Id<Domain.Entities.User> GetAdminUserId()
-    {
-        var userIdClaim = HttpContext.User.FindFirst(AuthConstants.ClaimNames.UserId)?.Value;
-        return Id<Domain.Entities.User>.TryParse(userIdClaim, out var userId) ? userId : Id<Domain.Entities.User>.Empty;
-    }
+    private Id<AccountReference> GetAdminUserId()
+        => HttpContext.GetAuthenticatedAccountContext()?.Id ?? Id<AccountReference>.Empty;
 
-    private bool TryParseUserId(string id, out Id<Domain.Entities.User> userId, out IActionResult errorResult)
+    private bool TryParseUserId(string id, out Id<AccountReference> userId, out IActionResult errorResult)
     {
-        if (Id<Domain.Entities.User>.TryParse(id, out userId))
+        if (Id<AccountReference>.TryParse(id, out userId))
         {
             errorResult = null!;
             return true;

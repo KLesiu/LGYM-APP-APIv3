@@ -1,444 +1,94 @@
 using FluentAssertions;
-using LgymApi.Application.Common.Errors;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Measurements;
 using LgymApi.Application.Features.Measurements.Models;
-using LgymApi.Application.Pagination;
-using LgymApi.Application.Repositories;
-using LgymApi.Application.Features.TrainerRelationships.Models;
-using LgymApi.Application.Units;
+using LgymApi.Application.WorkoutProgress.Contracts.Measurements;
+using LgymApi.Application.WorkoutProgress.Errors;
+using LgymApi.Application.WorkoutProgress.ProgressData;
+using LgymApi.Application.WorkoutProgress.ProgressData.Models;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
+using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
-using NUnit.Framework;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
+using NSubstitute;
 
 namespace LgymApi.UnitTests;
 
 [TestFixture]
 public sealed class MeasurementsServiceTests
 {
-    [Test]
-    public async Task GetMeasurementDetailAsync_WhenMeasurementBelongsToDifferentUser_ReturnsForbidden()
+    private IWorkoutProgressReadWriteService _progress = null!;
+    private IAccountAccessReader _accounts = null!;
+    private IMeasurementsRelationshipAccessPort _relationships = null!;
+    private MeasurementsService _service = null!;
+
+    [SetUp]
+    public void SetUp()
     {
-        var currentUser = new User { Id = Id<User>.New(), Name = "current", Email = "current-measure@example.com", ProfileRank = "Rookie" };
-        var foreignUserId = Id<User>.New();
-        var measurementId = Id<Measurement>.New();
-        var measurement = new Measurement
-        {
-            Id = measurementId,
-            UserId = foreignUserId,
-            BodyPart = BodyParts.Chest,
-            Unit = MeasurementUnits.Centimeters.ToString(),
-            Value = 100
-        };
+        _progress = Substitute.For<IWorkoutProgressReadWriteService>();
+        _accounts = Substitute.For<IAccountAccessReader>();
+        _relationships = Substitute.For<IMeasurementsRelationshipAccessPort>();
+        _service = new MeasurementsService(_progress, _accounts, _relationships);
+    }
 
-        var service = CreateService(findById: (_, _) => Task.FromResult<Measurement?>(measurement));
+    [Test]
+    public async Task AddMeasurement_ShouldPassAuthenticatedMarker()
+    {
+        var accountId = Id<AccountReference>.New();
+        _progress.AddMeasurementAsync(accountId, BodyParts.BodyWeight, MeasurementUnits.Kilograms, 80, Arg.Any<CancellationToken>()).Returns(Result<Unit, AppError>.Success(Unit.Value));
+        var result = await _service.AddMeasurementAsync(Account(accountId), BodyParts.BodyWeight, MeasurementUnits.Kilograms, 80);
+        result.IsSuccess.Should().BeTrue();
+        await _progress.Received(1).AddMeasurementAsync(accountId, BodyParts.BodyWeight, MeasurementUnits.Kilograms, 80, Arg.Any<CancellationToken>());
+    }
 
-        var result = await service.GetMeasurementDetailAsync(currentUser, measurementId);
+    [Test]
+    public async Task OwnerRead_ShouldBypassTrainerRelationshipLookup()
+    {
+        var accountId = Id<AccountReference>.New();
+        _progress.GetMeasurementsListForOwnerAsync(accountId, null, null, Arg.Any<CancellationToken>()).Returns(Result<List<MeasurementReadModel>, AppError>.Success([]));
+        var result = await _service.GetMeasurementsListAsync(Account(accountId), accountId, null, null);
+        result.IsSuccess.Should().BeTrue();
+        await _relationships.DidNotReceiveWithAnyArgs().HasActiveRelationshipAsync(default, default);
+    }
 
-        result.IsFailure.Should().BeTrue();
+    [Test]
+    public async Task TrainerRead_ShouldRequireRoleAndActiveRelationship()
+    {
+        var trainerId = Id<AccountReference>.New();
+        var traineeId = Id<AccountReference>.New();
+        _accounts.GetByIdAsync(trainerId, Arg.Any<CancellationToken>()).Returns(new AccountAccessFacts(trainerId, false, false, [AuthConstants.Roles.Trainer], []));
+        _relationships.HasActiveRelationshipAsync(trainerId, traineeId, Arg.Any<CancellationToken>()).Returns(true);
+        _progress.GetMeasurementsHistoryForOwnerAsync(traineeId, null, null, Arg.Any<CancellationToken>()).Returns(Result<List<MeasurementReadModel>, AppError>.Success([]));
+
+        var result = await _service.GetMeasurementsHistoryAsync(Account(trainerId), traineeId, null, null);
+
+        result.IsSuccess.Should().BeTrue();
+        await _relationships.Received(1).HasActiveRelationshipAsync(trainerId, traineeId, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task NonTrainerRead_ShouldReturnForbidden()
+    {
+        var actorId = Id<AccountReference>.New();
+        var ownerId = Id<AccountReference>.New();
+        _accounts.GetByIdAsync(actorId, Arg.Any<CancellationToken>()).Returns(new AccountAccessFacts(actorId, false, false, [], []));
+        var result = await _service.GetMeasurementsTrendsAsync(Account(actorId), ownerId);
         result.Error.Should().BeOfType<MeasurementForbiddenError>();
     }
 
     [Test]
-    public async Task GetMeasurementsHistoryAsync_WhenTrainerOwnsTrainee_ReturnsTraineeMeasurements()
+    public async Task DetailRead_ShouldResolveOwnerBeforeAuthorization()
     {
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
-        var trainer = CreateUser(trainerId, "trainer@example.com");
-        var measurements = new List<Measurement>
-        {
-            CreateMeasurement(traineeId, BodyParts.BodyWeight, MeasurementUnits.Kilograms, 82, 0),
-            CreateMeasurement(traineeId, BodyParts.BodyWeight, MeasurementUnits.Kilograms, 81.5, 3)
-        };
-
-        var service = CreateService(
-            getByUser: (userId, _, _) => Task.FromResult(userId == traineeId ? measurements : new List<Measurement>()),
-            userHasRole: (_, _, _) => Task.FromResult(true),
-            hasTrainerTraineeLink: (_, _, _) => Task.FromResult(new TrainerTraineeLink
-            {
-                Id = Id<TrainerTraineeLink>.New(),
-                TrainerId = trainerId,
-                TraineeId = traineeId,
-            }));
-
-        var result = await service.GetMeasurementsHistoryAsync(trainer, traineeId, BodyParts.BodyWeight, MeasurementUnits.Kilograms);
-
+        var accountId = Id<AccountReference>.New();
+        var measurementId = Id<Measurement>.New();
+        _progress.GetMeasurementOwnerAsync(measurementId, Arg.Any<CancellationToken>()).Returns(Result<Id<AccountReference>, AppError>.Success(accountId));
+        _progress.GetMeasurementDetailForOwnerAsync(accountId, measurementId, Arg.Any<CancellationToken>()).Returns(Result<MeasurementReadModel, AppError>.Success(new(measurementId, accountId, BodyParts.BodyWeight, MeasurementUnits.Kilograms, 80, default, default)));
+        var result = await _service.GetMeasurementDetailAsync(Account(accountId), measurementId);
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().HaveCount(2);
-        result.Value.Should().OnlyContain(item => item.UserId == traineeId);
     }
 
-    [Test]
-    public async Task AddMeasurementAsync_WhenUnitDoesNotMatchBodyPart_ReturnsInvalidMeasurementError()
-    {
-        var currentUser = new User { Id = Id<User>.New(), Name = "user", Email = "weight-unit@example.com", ProfileRank = "Rookie" };
-        var service = CreateService();
-
-        var result = await service.AddMeasurementAsync(currentUser, BodyParts.BodyWeight, MeasurementUnits.Centimeters, 80);
-
-        result.IsFailure.Should().BeTrue();
-        result.Error.Should().BeOfType<InvalidMeasurementError>();
-    }
-
-    [Test]
-    public async Task AddMeasurementAsync_WhenValueIsNotPositive_ReturnsInvalidMeasurementError()
-    {
-        var currentUser = new User { Id = Id<User>.New(), Name = "user", Email = "weight-value@example.com", ProfileRank = "Rookie" };
-        var service = CreateService();
-
-        var result = await service.AddMeasurementAsync(currentUser, BodyParts.BodyWeight, MeasurementUnits.Kilograms, 0);
-
-        result.IsFailure.Should().BeTrue();
-        result.Error.Should().BeOfType<InvalidMeasurementError>();
-    }
-
-    [Test]
-    public async Task GetMeasurementsTrendAsync_WhenValueGrows_ReturnsUpDirectionAndDifference()
-    {
-        var userId = Id<User>.New();
-        var currentUser = CreateUser(userId, "trend-up@example.com");
-        var measurements = new List<Measurement>
-        {
-            CreateMeasurement(userId, BodyParts.BodyWeight, MeasurementUnits.Kilograms, 80, 0),
-            CreateMeasurement(userId, BodyParts.BodyWeight, MeasurementUnits.Kilograms, 94.1, 5)
-        };
-
-        var service = CreateService(getByUser: (_, _, _) => Task.FromResult(measurements));
-
-        var result = await service.GetMeasurementsTrendAsync(currentUser, userId, BodyParts.BodyWeight, MeasurementUnits.Kilograms);
-
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Direction.Should().Be("up");
-        result.Value.Difference.Should().Be(14.1);
-        result.Value.FirstMeasurementValue.Should().Be(80);
-        result.Value.LastMeasurementValue.Should().Be(94.1);
-    }
-
-    [Test]
-    public async Task GetMeasurementsTrendAsync_WhenValueDrops_ReturnsDownDirectionAndAbsoluteDifference()
-    {
-        var userId = Id<User>.New();
-        var currentUser = CreateUser(userId, "trend-down@example.com");
-        var measurements = new List<Measurement>
-        {
-            CreateMeasurement(userId, BodyParts.Waist, MeasurementUnits.Centimeters, 90, 0),
-            CreateMeasurement(userId, BodyParts.Waist, MeasurementUnits.Centimeters, 86.6, 7)
-        };
-
-        var service = CreateService(getByUser: (_, _, _) => Task.FromResult(measurements));
-
-        var result = await service.GetMeasurementsTrendAsync(currentUser, userId, BodyParts.Waist, MeasurementUnits.Centimeters);
-
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Direction.Should().Be("down");
-        result.Value.Difference.Should().Be(3.4);
-        result.Value.Change.Should().Be(-3.4);
-    }
-
-    [Test]
-    public async Task GetMeasurementsTrendAsync_WhenValueStaysTheSame_ReturnsSameDirection()
-    {
-        var userId = Id<User>.New();
-        var currentUser = CreateUser(userId, "trend-same@example.com");
-        var measurements = new List<Measurement>
-        {
-            CreateMeasurement(userId, BodyParts.BodyFat, MeasurementUnits.Percent, 15, 0),
-            CreateMeasurement(userId, BodyParts.BodyFat, MeasurementUnits.Percent, 15, 2)
-        };
-
-        var service = CreateService(getByUser: (_, _, _) => Task.FromResult(measurements));
-
-        var result = await service.GetMeasurementsTrendAsync(currentUser, userId, BodyParts.BodyFat, MeasurementUnits.Percent);
-
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Direction.Should().Be("same");
-        result.Value.Difference.Should().Be(0);
-    }
-
-    [Test]
-    public async Task GetMeasurementsTrendAsync_WhenOnlyOneMeasurementExists_ReturnsInsufficientData()
-    {
-        var userId = Id<User>.New();
-        var currentUser = CreateUser(userId, "trend-one@example.com");
-        var measurements = new List<Measurement>
-        {
-            CreateMeasurement(userId, BodyParts.Neck, MeasurementUnits.Centimeters, 42, 0)
-        };
-
-        var service = CreateService(getByUser: (_, _, _) => Task.FromResult(measurements));
-
-        var result = await service.GetMeasurementsTrendAsync(currentUser, userId, BodyParts.Neck, MeasurementUnits.Centimeters);
-
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Direction.Should().Be("insufficient_data");
-        result.Value.Points.Should().Be(1);
-    }
-
-    [Test]
-    public async Task GetMeasurementsTrendAsync_WhenNoMeasurementsExist_ReturnsInsufficientData()
-    {
-        var userId = Id<User>.New();
-        var currentUser = CreateUser(userId, "trend-none@example.com");
-        var service = CreateService(getByUser: (_, _, _) => Task.FromResult(new List<Measurement>()));
-
-        var result = await service.GetMeasurementsTrendAsync(currentUser, userId, BodyParts.Bmi, MeasurementUnits.Bmi);
-
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Direction.Should().Be("insufficient_data");
-        result.Value.Points.Should().Be(0);
-    }
-
-    [Test]
-    public async Task GetMeasurementsTrendsAsync_WhenMultipleMeasurementTypesExist_ReturnsTrendPerType()
-    {
-        var userId = Id<User>.New();
-        var currentUser = CreateUser(userId, "trend-many@example.com");
-        var measurements = new List<Measurement>
-        {
-            CreateMeasurement(userId, BodyParts.BodyWeight, MeasurementUnits.Kilograms, 80, 0),
-            CreateMeasurement(userId, BodyParts.BodyWeight, MeasurementUnits.Kilograms, 82, 4),
-            CreateMeasurement(userId, BodyParts.Waist, MeasurementUnits.Centimeters, 90, 1),
-            CreateMeasurement(userId, BodyParts.Waist, MeasurementUnits.Centimeters, 88, 6),
-            CreateMeasurement(userId, BodyParts.BodyFat, MeasurementUnits.Percent, 16, 3)
-        };
-
-        var service = CreateService(getByUser: (_, _, _) => Task.FromResult(measurements));
-
-        var result = await service.GetMeasurementsTrendsAsync(currentUser, userId);
-
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().HaveCount(3);
-        result.Value.Should().ContainSingle(x => x.BodyPart == BodyParts.BodyWeight && x.Direction == "up");
-        result.Value.Should().ContainSingle(x => x.BodyPart == BodyParts.Waist && x.Direction == "down");
-        result.Value.Should().ContainSingle(x => x.BodyPart == BodyParts.BodyFat && x.Direction == "insufficient_data");
-    }
-
-    [Test]
-    public async Task AddMeasurementsAsync_WhenBulkPayloadIsValid_SavesAllMeasurements()
-    {
-        var userId = Id<User>.New();
-        var currentUser = CreateUser(userId, "bulk-valid@example.com");
-        var repository = new CapturingMeasurementRepository();
-        var service = CreateService(repository: repository);
-
-        var result = await service.AddMeasurementsAsync(currentUser,
-        [
-            new MeasurementCreateInput { BodyPart = BodyParts.BodyWeight, Unit = MeasurementUnits.Kilograms, Value = 80 },
-            new MeasurementCreateInput { BodyPart = BodyParts.Waist, Unit = MeasurementUnits.Centimeters, Value = 90 }
-        ]);
-
-        result.IsSuccess.Should().BeTrue();
-        repository.AddedMeasurements.Should().HaveCount(2);
-    }
-
-    private static User CreateUser(Id<User> userId, string email)
-        => new() { Id = userId, Name = email.Split('@')[0], Email = email, ProfileRank = "Rookie" };
-
-    private static Measurement CreateMeasurement(Id<User> userId, BodyParts bodyPart, MeasurementUnits unit, double value, int dayOffset)
-        => new()
-        {
-            Id = Id<Measurement>.New(),
-            UserId = userId,
-            BodyPart = bodyPart,
-            Unit = unit.ToString(),
-            Value = value,
-            CreatedAt = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero).AddDays(dayOffset)
-        };
-
-    private static MeasurementsService CreateService(
-        Func<Id<Measurement>, CancellationToken, Task<Measurement?>>? findById = null,
-        Func<Id<User>, BodyParts?, CancellationToken, Task<List<Measurement>>>? getByUser = null,
-        Func<Id<User>, string, CancellationToken, Task<bool>>? userHasRole = null,
-        Func<Id<User>, Id<User>, CancellationToken, Task<TrainerTraineeLink?>>? hasTrainerTraineeLink = null,
-        CapturingMeasurementRepository? repository = null)
-    {
-        var measurementRepository = repository ?? new CapturingMeasurementRepository();
-        measurementRepository.FindByIdHandler = findById ?? ((_, _) => Task.FromResult<Measurement?>(null));
-        measurementRepository.GetByUserHandler = getByUser ?? ((_, _, _) => Task.FromResult(new List<Measurement>()));
-        var roleRepository = new StubRoleRepository
-        {
-            UserHasRoleHandler = userHasRole ?? ((_, _, _) => Task.FromResult(false))
-        };
-        var trainerRelationshipRepository = new StubTrainerRelationshipRepository
-        {
-            FindActiveLinkByTrainerAndTraineeHandler = hasTrainerTraineeLink ?? ((_, _, _) => Task.FromResult<TrainerTraineeLink?>(null))
-        };
-
-        var heightConverter = new StubHeightUnitConverter();
-        var weightConverter = new StubWeightUnitConverter();
-        var unitOfWork = new StubUnitOfWork();
-
-        return new MeasurementsService(new StubMeasurementsServiceDependencies(
-            measurementRepository,
-            roleRepository,
-            trainerRelationshipRepository,
-            heightConverter,
-            weightConverter,
-            unitOfWork));
-    }
-
-    private sealed class StubMeasurementsServiceDependencies : IMeasurementsServiceDependencies
-    {
-        public StubMeasurementsServiceDependencies(
-            IMeasurementRepository measurementRepository,
-            IRoleRepository roleRepository,
-            ITrainerRelationshipRepository trainerRelationshipRepository,
-            IUnitConverter<HeightUnits> heightUnitConverter,
-            IUnitConverter<WeightUnits> weightUnitConverter,
-            IUnitOfWork unitOfWork)
-        {
-            MeasurementRepository = measurementRepository;
-            RoleRepository = roleRepository;
-            TrainerRelationshipRepository = trainerRelationshipRepository;
-            HeightUnitConverter = heightUnitConverter;
-            WeightUnitConverter = weightUnitConverter;
-            UnitOfWork = unitOfWork;
-        }
-
-        public IMeasurementRepository MeasurementRepository { get; }
-        public IRoleRepository RoleRepository { get; }
-        public ITrainerRelationshipRepository TrainerRelationshipRepository { get; }
-        public IUnitConverter<HeightUnits> HeightUnitConverter { get; }
-        public IUnitConverter<WeightUnits> WeightUnitConverter { get; }
-        public IUnitOfWork UnitOfWork { get; }
-    }
-
-    private sealed class CapturingMeasurementRepository : IMeasurementRepository
-    {
-        public List<Measurement> AddedMeasurements { get; } = new();
-        public Func<Id<Measurement>, CancellationToken, Task<Measurement?>> FindByIdHandler { get; set; } = (_, _) => Task.FromResult<Measurement?>(null);
-        public Func<Id<User>, BodyParts?, CancellationToken, Task<List<Measurement>>> GetByUserHandler { get; set; } = (_, _, _) => Task.FromResult(new List<Measurement>());
-
-        public Task AddAsync(Measurement measurement, CancellationToken cancellationToken = default)
-        {
-            AddedMeasurements.Add(measurement);
-            return Task.CompletedTask;
-        }
-
-        public Task<Measurement?> FindByIdAsync(Id<Measurement> id, CancellationToken cancellationToken = default)
-            => FindByIdHandler(id, cancellationToken);
-
-        public Task<List<Measurement>> GetByUserAsync(Id<User> userId, BodyParts? bodyPart, CancellationToken cancellationToken = default)
-            => GetFilteredAsync(userId, bodyPart, cancellationToken);
-
-        public async Task<HashSet<BodyParts>> GetExistingBodyPartsByUserAndCreatedAtRangeAsync(
-            Id<User> userId,
-            IReadOnlyCollection<BodyParts> bodyParts,
-            DateTimeOffset createdAtFromUtc,
-            DateTimeOffset createdAtToUtc,
-            CancellationToken cancellationToken = default)
-        {
-            var items = await GetByUserHandler(userId, null, cancellationToken);
-
-            return items
-                .Where(item => bodyParts.Contains(item.BodyPart)
-                               && item.CreatedAt >= createdAtFromUtc
-                               && item.CreatedAt < createdAtToUtc)
-                .Select(item => item.BodyPart)
-                .ToHashSet();
-        }
-
-        private async Task<List<Measurement>> GetFilteredAsync(Id<User> userId, BodyParts? bodyPart, CancellationToken cancellationToken)
-        {
-            var items = await GetByUserHandler(userId, bodyPart, cancellationToken);
-            return bodyPart.HasValue ? items.Where(item => item.BodyPart == bodyPart.Value).ToList() : items;
-        }
-    }
-
-    private sealed class StubHeightUnitConverter : IUnitConverter<HeightUnits>
-    {
-        public double Convert(double value, HeightUnits fromUnit, HeightUnits toUnit)
-        {
-            if (fromUnit == toUnit)
-            {
-                return value;
-            }
-
-            return (fromUnit, toUnit) switch
-            {
-                (HeightUnits.Meters, HeightUnits.Centimeters) => value * 100d,
-                (HeightUnits.Centimeters, HeightUnits.Meters) => value / 100d,
-                (HeightUnits.Centimeters, HeightUnits.Millimeters) => value * 10d,
-                (HeightUnits.Millimeters, HeightUnits.Centimeters) => value / 10d,
-                _ => value
-            };
-        }
-    }
-
-    private sealed class StubWeightUnitConverter : IUnitConverter<WeightUnits>
-    {
-        public double Convert(double value, WeightUnits fromUnit, WeightUnits toUnit)
-        {
-            if (fromUnit == toUnit)
-            {
-                return value;
-            }
-
-            return (fromUnit, toUnit) switch
-            {
-                (WeightUnits.Kilograms, WeightUnits.Pounds) => value * 2.20462d,
-                (WeightUnits.Pounds, WeightUnits.Kilograms) => value / 2.20462d,
-                _ => value
-            };
-        }
-    }
-
-    private sealed class StubUnitOfWork : IUnitOfWork
-    {
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(1);
-
-        public Task<IUnitOfWorkTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public void DetachEntity<TEntity>(TEntity entity) where TEntity : class => throw new NotSupportedException();
-    }
-
-    private sealed class StubRoleRepository : IRoleRepository
-    {
-        public Func<Id<User>, string, CancellationToken, Task<bool>> UserHasRoleHandler { get; set; } = (_, _, _) => Task.FromResult(false);
-
-        public Task<bool> UserHasRoleAsync(Id<User> userId, string roleName, CancellationToken cancellationToken = default)
-            => UserHasRoleHandler(userId, roleName, cancellationToken);
-
-        public Task<List<Role>> GetAllAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Role?> FindByIdAsync(Id<Role> roleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Role?> FindByNameAsync(string roleName, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<List<Role>> GetByNamesAsync(IReadOnlyCollection<string> roleNames, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<bool> ExistsByNameAsync(string roleName, Id<Role>? excludeRoleId = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<List<string>> GetRoleNamesByUserIdAsync(Id<User> userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Dictionary<Id<User>, List<string>>> GetRoleNamesByUserIdsAsync(IReadOnlyCollection<Id<User>> userIds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<List<string>> GetPermissionClaimsByUserIdAsync(Id<User> userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<List<string>> GetPermissionClaimsByRoleIdAsync(Id<Role> targetRoleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Dictionary<Id<Role>, List<string>>> GetPermissionClaimsByRoleIdsAsync(IReadOnlyCollection<Id<Role>> targetRoleIds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<bool> UserHasPermissionAsync(Id<User> userId, string permission, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task AddRoleAsync(Role role, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task UpdateRoleAsync(Role role, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task DeleteRoleAsync(Role role, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task ReplaceRolePermissionClaimsAsync(Id<Role> targetRoleId, IReadOnlyCollection<string> permissionClaims, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task AddUserRolesAsync(Id<User> userId, IReadOnlyCollection<Id<Role>> roleIds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task ReplaceUserRolesAsync(Id<User> userId, IReadOnlyCollection<Id<Role>> roleIds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<LgymApi.Application.Pagination.Pagination<Role>> GetRolesPaginatedAsync(FilterInput filterInput, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    }
-
-    private sealed class StubTrainerRelationshipRepository : ITrainerRelationshipRepository
-    {
-        public Func<Id<User>, Id<User>, CancellationToken, Task<TrainerTraineeLink?>> FindActiveLinkByTrainerAndTraineeHandler { get; set; } = (_, _, _) => Task.FromResult<TrainerTraineeLink?>(null);
-
-        public Task<TrainerTraineeLink?> FindActiveLinkByTrainerAndTraineeAsync(Id<User> trainerId, Id<User> traineeId, CancellationToken cancellationToken = default)
-            => FindActiveLinkByTrainerAndTraineeHandler(trainerId, traineeId, cancellationToken);
-
-        public Task AddInvitationAsync(TrainerInvitation invitation, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<TrainerInvitation?> FindInvitationByIdAsync(Id<TrainerInvitation> invitationId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<TrainerInvitation?> FindPendingInvitationAsync(Id<User> trainerId, Id<User> traineeId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<TrainerInvitation?> FindPendingInvitationByEmailAsync(Id<User> trainerId, string inviteeEmail, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<bool> IsEmailAlreadyTraineeAsync(Id<User> trainerId, string inviteeEmail, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<TrainerInvitation?> FindInvitationByIdWithCodeAsync(Id<TrainerInvitation> invitationId, string code, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<List<TrainerInvitation>> GetInvitationsByTrainerIdAsync(Id<User> trainerId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<bool> HasActiveLinkForTraineeAsync(Id<User> traineeId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<TrainerTraineeLink?> FindActiveLinkByTraineeIdAsync(Id<User> traineeId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<LgymApi.Application.Features.TrainerRelationships.Models.TrainerDashboardTraineeListResult> GetDashboardTraineesAsync(Id<User> trainerId, LgymApi.Application.Features.TrainerRelationships.Models.TrainerDashboardTraineeQuery query, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<LgymApi.Application.Pagination.Pagination<LgymApi.Application.Features.TrainerRelationships.Models.TrainerInvitationResult>> GetInvitationsPaginatedAsync(Id<User> trainerId, FilterInput filterInput, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task AddLinkAsync(TrainerTraineeLink link, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task RemoveLinkAsync(TrainerTraineeLink link, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    }
+    private static AuthenticatedAccountContext Account(Id<AccountReference> id) => new(id, null, [], [], false, false);
 }

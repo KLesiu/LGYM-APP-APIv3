@@ -3,8 +3,10 @@ using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.User.Contracts;
 using LgymApi.Api.Idempotency;
 using LgymApi.Api.Middleware;
-using LgymApi.Application.Features.User;
+using LgymApi.Application.Features.EloRegistry;
 using LgymApi.Application.Features.User.Models;
+using LgymApi.Application.Identity.ApiAdapters;
+using LgymApi.Application.Identity.Contracts.Authentication;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -16,12 +18,23 @@ namespace LgymApi.Api.Features.Trainer.Controllers;
 [Route("api/trainer")]
 public sealed class TrainerAuthController : ControllerBase
 {
-    private readonly IUserService _userService;
+    private readonly IUserCredentialLoginService _userCredentialLoginService;
+    private readonly IAuthenticatedAccountApiAdapter _authenticatedAccountApiAdapter;
+    private readonly IAccountEloApiAdapter _accountEloApiAdapter;
+    private readonly IEloRegistryService _eloRegistryService;
     private readonly IMapper _mapper;
 
-    public TrainerAuthController(IUserService userService, IMapper mapper)
+    public TrainerAuthController(
+        IUserCredentialLoginService userCredentialLoginService,
+        IAuthenticatedAccountApiAdapter authenticatedAccountApiAdapter,
+        IAccountEloApiAdapter accountEloApiAdapter,
+        IEloRegistryService eloRegistryService,
+        IMapper mapper)
     {
-        _userService = userService;
+        _userCredentialLoginService = userCredentialLoginService;
+        _authenticatedAccountApiAdapter = authenticatedAccountApiAdapter;
+        _accountEloApiAdapter = accountEloApiAdapter;
+        _eloRegistryService = eloRegistryService;
         _mapper = mapper;
     }
 
@@ -39,7 +52,7 @@ public sealed class TrainerAuthController : ControllerBase
             IsVisibleInRanking: null,
             PreferredLanguage: null);
 
-        var result = await _userService.RegisterTrainerAsync(input, cancellationToken);
+        var result = await _eloRegistryService.RegisterUserAsync(input, trainer: true, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -53,12 +66,13 @@ public sealed class TrainerAuthController : ControllerBase
     [ProducesResponseType(typeof(LoginResponseDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken cancellationToken = default)
     {
-        var result = await _userService.LoginTrainerAsync(request.Name, request.Password, cancellationToken);
+        var result = await _userCredentialLoginService.LoginTrainerAsync(request.Name, request.Password, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
 
+        await _eloRegistryService.PopulateLatestEloAsync(result.Value.User, cancellationToken);
         return Ok(_mapper.Map<LgymApi.Application.Features.User.Models.LoginResult, LoginResponseDto>(result.Value));
     }
 
@@ -67,13 +81,13 @@ public sealed class TrainerAuthController : ControllerBase
     [ProducesResponseType(typeof(UserInfoDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> CheckToken(CancellationToken cancellationToken = default)
     {
-        var user = HttpContext.GetCurrentUser();
-        var result = await _userService.CheckTokenAsync(user, cancellationToken);
+        var result = await _authenticatedAccountApiAdapter.CheckTokenAsync(HttpContext.GetCurrentAccountId(), cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
         }
 
-        return Ok(_mapper.Map<LgymApi.Application.Features.User.Models.UserInfoResult, UserInfoDto>(result.Value));
+        var account = await _accountEloApiAdapter.PopulateLatestEloAsync(result.Value, cancellationToken);
+        return Ok(_mapper.Map<AccountProfileProjection, UserInfoDto>(account));
     }
 }
