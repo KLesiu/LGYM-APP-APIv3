@@ -328,9 +328,9 @@ public sealed class ModuleContributionDocumentationTests
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var agent = File.ReadAllBytes(Path.Combine(repositoryRoot, "AGENT.md"));
         var agents = File.ReadAllBytes(Path.Combine(repositoryRoot, "AGENTS.md"));
-        Ensure(agent.SequenceEqual(agents), "AGENT.md and AGENTS.md must remain byte-identical.");
+        Assert.That(agent.SequenceEqual(agents), Is.True, "AGENT.md and AGENTS.md must remain byte-identical.");
         var markdown = Encoding.UTF8.GetString(agent);
-        Ensure(CountLinksTo(markdown, "AGENT.md", GuideRelativePath) == 1, "Root agent guidance must link the canonical workflow exactly once.");
+        Assert.That(CountLinksTo(markdown, "AGENT.md", GuideRelativePath), Is.EqualTo(1), "Root agent guidance must link the canonical workflow exactly once.");
     }
 
     [Test]
@@ -355,15 +355,18 @@ public sealed class ModuleContributionDocumentationTests
         _ = ReadRequiredArtifact(GuideRelativePath);
         var markdown = ReadRequiredArtifact("LgymApi.ArchitectureTests/LgymApi.ArchitectureTests.md");
         var tokens = ExtractInlineCodeTokens(markdown);
-        foreach (var token in new[] { "ModuleContributionDocumentationTests", GuideRelativePath, "path#Type.Member", PullRequestStartMarker, PullRequestEndMarker })
+        Assert.Multiple(() =>
         {
-            Ensure(tokens.Contains(token, StringComparer.Ordinal), $"ArchitectureTests documentation is missing machine token {token}.");
-        }
+            foreach (var token in new[] { "ModuleContributionDocumentationTests", GuideRelativePath, "path#Type.Member", PullRequestStartMarker, PullRequestEndMarker })
+            {
+                Assert.That(tokens.Contains(token, StringComparer.Ordinal), Is.True, $"ArchitectureTests documentation is missing machine token {token}.");
+            }
 
-        foreach (var prefix in new[] { AuthorityPrefix, PolicyPrefix, "module-guide.path.", ExceptionPrefix })
-        {
-            Ensure(tokens.Any(token => token.StartsWith(prefix, StringComparison.Ordinal)), $"ArchitectureTests documentation is missing stable prefix {prefix}.");
-        }
+            foreach (var prefix in new[] { AuthorityPrefix, PolicyPrefix, "module-guide.path.", ExceptionPrefix })
+            {
+                Assert.That(tokens.Any(token => token.StartsWith(prefix, StringComparison.Ordinal)), Is.True, $"ArchitectureTests documentation is missing stable prefix {prefix}.");
+            }
+        });
     }
 
     [Test]
