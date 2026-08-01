@@ -45,7 +45,7 @@ public sealed class ApiIdempotencyMiddleware
             {
                 message = "Idempotency key is required.",
                 code = "IDEMPOTENCY_KEY_REQUIRED"
-            });
+            }, context.RequestAborted);
             return;
         }
 
@@ -57,7 +57,7 @@ public sealed class ApiIdempotencyMiddleware
             {
                 message = "Idempotency key is required.",
                 code = "IDEMPOTENCY_KEY_REQUIRED"
-            });
+            }, context.RequestAborted);
             return;
         }
 
@@ -102,7 +102,7 @@ public sealed class ApiIdempotencyMiddleware
                 {
                     message = "Idempotency key reused with different request payload.",
                     code = "IDEMPOTENCY_KEY_FINGERPRINT_MISMATCH"
-                });
+                }, context.RequestAborted);
                 return;
             }
         }
@@ -174,7 +174,7 @@ public sealed class ApiIdempotencyMiddleware
             context.Request.EnableBuffering();
             context.Request.Body.Position = 0;
             using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
-            var bodyText = await reader.ReadToEndAsync();
+            var bodyText = await reader.ReadToEndAsync(context.RequestAborted);
             context.Request.Body.Position = 0;
 
             var bodyJson = JsonDocument.Parse(bodyText);
@@ -191,7 +191,7 @@ public sealed class ApiIdempotencyMiddleware
         context.Request.Body.Position = 0;
 
         using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
-        var bodyText = await reader.ReadToEndAsync();
+        var bodyText = await reader.ReadToEndAsync(context.RequestAborted);
         context.Request.Body.Position = 0;
 
         // Canonicalize JSON body
