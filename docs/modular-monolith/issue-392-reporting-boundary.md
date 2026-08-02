@@ -46,7 +46,11 @@ Reporting owns the business lifecycle for evidence attached to report requests a
 
 ## Recurring Assignment and Cleanup Jobs
 
-Reporting owns recurring assignment business rules through `IRecurringReportAssignmentService`. The Worker owns execution of the persisted `RecurringReportAssignmentProcessingJob`, which invokes `ProcessDueAssignmentsAsync`. The job retains its existing Hangfire concurrency protection and persisted identity. Processing remains idempotent, respects feedback-read gating, and deactivates assignments whose templates are deleted instead of creating a new request.
+Reporting owns recurring assignment business rules through `IRecurringReportAssignmentService`. The Worker owns execution of the persisted `RecurringReportAssignmentProcessingJob`, which invokes `ProcessDueAssignmentsAsync`. The job retains its existing Hangfire concurrency protection and persisted identity, `reporting-recurring-report-assignments`, scheduled minutely. Processing remains idempotent, respects feedback-read gating, and deactivates assignments whose templates are deleted instead of creating a new request.
+
+Automatic processing and trainer request-now share one locked, stage-only request-creation path. Each outer use case owns its transaction, locks and freshly reloads the assignment, stages the pending request, assignment pointer/timestamps, and the canonical in-app notification envelope through `ICommandOutboxWriter.StageAsync`, then performs one save and commit. No repository, staging helper, or controller saves, commits, or schedules independently. A confirmed pre-commit automatic failure rolls back and is isolated to that assignment so later candidates can continue; cancellation, rollback failure, disposal failure, or an ambiguous commit failure aborts without context reuse. Diagnostics are bounded to identifiers, outcome/reason, and exception type metadata, and must not include report content or other user content.
+
+`POST /api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/request-now` is an additive trainer action with no request body. It returns `201` and the existing `RecurringReportAssignmentDto`, including the nested pending `currentReportRequest`; no legacy Reporting route, DTO, JSON property, or response wrapper changes. Resource-backed `ResponseMessageDto` errors cover malformed IDs (`400`), authorization (`403`), missing/deleted/foreign assignments or relationships (`404`), and unresolved lifecycle, unavailable active window, or unavailable template (`409`). Manual creation bypasses only `NextEligibleAt`: it retains trainer relationship and ownership checks, active-window and template checks, and the fully completed submitted/submission/feedback-added/feedback-read lifecycle. It never replaces an incomplete request. Manual creation emits the same canonical notification path as automatic creation, and the next interval starts only when trainee feedback-read is recorded.
 
 `ExpiredPhotoUploadCleanupService` is the Reporting application service for expired evidence upload cleanup and uses `IReportPhotoPersistence` for upload-session state. Its Worker job and scheduler wiring, where present, are runtime adapters. The Worker executes the job, while Reporting remains responsible for the lifecycle policy and state transitions. No persistence adapter owns a commit or transaction.
 
@@ -69,5 +73,12 @@ Reporting contributes six owner-oriented Application API adapters to the final 2
 ## Persistence and Deployment Boundary
 
 Reporting uses the current shared persistence composition. The production system has one `AppDbContext`, one PostgreSQL database, and one migration stream. Logical write ownership does not create a physical database, schema, context, migration stream, service, or deployment split. There is no broker. Existing tables, migrations, worker identities, routes, and payload shapes remain compatible.
+
+### Forward-Only Recurring Request Recovery Runbook
+
+1. Deploy the application binary normally. Outside the Testing environment, `StartupMigrationBootstrap` creates a scope and applies pending migrations through the shared `AppDbContext` before runtime schema guards execute.
+2. Confirm `20260801222135_RepairRecurringReportAssignmentRequestIndex` appears in `__EFMigrationsHistory`, then query PostgreSQL to verify `pg_index.indisunique = false` for `IX_ReportRequests_RecurringReportAssignmentId`.
+3. Confirm the existing Hangfire recurring identity `reporting-recurring-report-assignments` is present and running, then monitor for new PostgreSQL `23505` occurrences on the old request-assignment constraint. New occurrences must stop after the repair is applied.
+4. If the application must be rolled back, roll back the application binary only and leave the forward schema repair applied. Never run the repair migration `Down`: restoring index uniqueness is unsupported once multiple history rows exist.
 
 For the broader ownership matrix and cross-module rules, see [`issue-376-ownership-map.md`](issue-376-ownership-map.md). The durable API contract guard is maintained in `LgymApi.ArchitectureTests/ReportingApiContractImmutabilityGuardTests.cs`.
