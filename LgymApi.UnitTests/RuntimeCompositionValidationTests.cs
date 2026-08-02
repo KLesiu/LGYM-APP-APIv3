@@ -2,6 +2,8 @@ using System.Reflection;
 using FluentAssertions;
 using Hangfire.Logging;
 using LgymApi.Application;
+using LgymApi.Application.Platform.Contracts.BackgroundCommands;
+using LgymApi.BackgroundWorker;
 using LgymApi.BackgroundWorker.Actions.Contracts;
 using LgymApi.BackgroundWorker.Runtime;
 using LgymApi.TestUtils;
@@ -60,6 +62,31 @@ public sealed class RuntimeCompositionValidationTests
 
         action.Should().Throw<InvalidOperationException>()
             .WithMessage($"*{typeof(IDuplicateDescriptorFixture).FullName}*exactly once*2*");
+    }
+
+    [Test]
+    public void RuntimeComposition_RegistersSingleCommandOutboxWriter()
+    {
+        var services = TestServiceProviderFactory.CreateServiceCollection(
+            CompositionRootTestHost.CreateFactoryComposition(CreateConfiguration(isTesting: true), isTesting: true),
+            services =>
+            {
+                services.AddHttpContextAccessor();
+                services.AddSingleton<IHostApplicationLifetime, TestHostApplicationLifetime>();
+            });
+        var descriptor = services
+            .Where(service => service.ServiceType == typeof(ICommandOutboxWriter))
+            .Should().ContainSingle().Subject;
+
+        descriptor.Lifetime.Should().Be(ServiceLifetime.Scoped);
+        descriptor.ImplementationType.Should().Be(typeof(CommandOutboxWriter));
+        WithRestoredHangfireLogProvider(services, provider =>
+        {
+            using var scope = provider.CreateScope();
+            scope.ServiceProvider.GetServices<ICommandOutboxWriter>()
+                .Should().ContainSingle()
+                .Which.Should().BeOfType<CommandOutboxWriter>();
+        });
     }
 
     [Test]

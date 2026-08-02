@@ -15,13 +15,14 @@ using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Repositories.Reporting;
 using LgymApi.Infrastructure.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NUnit.Framework;
 
 namespace LgymApi.UnitTests;
 
 [TestFixture]
-public sealed class RecurringReportAssignmentServiceTests
+public sealed partial class RecurringReportAssignmentServiceTests
 {
     [Test]
     public async Task CreateAsync_CreatesRecurringAssignment_ForOwnedTrainee()
@@ -163,13 +164,15 @@ public sealed class RecurringReportAssignmentServiceTests
         db.RecurringReportAssignments.Add(assignment);
         await db.SaveChangesAsync();
 
-        var commandDispatcher = Substitute.For<ICommandDispatcher>();
-        var service = CreateService(db, trainerId, traineeId, ownsTrainee: true, commandDispatcher: commandDispatcher);
+        var commandOutboxWriter = CreateOutboxWriter();
+        var service = CreateService(db, trainerId, traineeId, ownsTrainee: true, commandOutboxWriter: commandOutboxWriter);
 
         await service.ProcessDueAssignmentsAsync();
 
         db.ReportRequests.Should().HaveCount(1);
-        await commandDispatcher.DidNotReceiveWithAnyArgs().EnqueueAsync(Arg.Any<ReportRequestCreatedInAppNotificationCommand>());
+        await commandOutboxWriter.DidNotReceiveWithAnyArgs().StageAsync(
+            Arg.Any<ReportRequestCreatedInAppNotificationCommand>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -222,14 +225,16 @@ public sealed class RecurringReportAssignmentServiceTests
         db.RecurringReportAssignments.Add(assignment);
         await db.SaveChangesAsync();
 
-        var commandDispatcher = Substitute.For<ICommandDispatcher>();
-        var service = CreateService(db, trainerId, traineeId, ownsTrainee: true, commandDispatcher: commandDispatcher);
+        var commandOutboxWriter = CreateOutboxWriter();
+        var service = CreateService(db, trainerId, traineeId, ownsTrainee: true, commandOutboxWriter: commandOutboxWriter);
 
         await service.ProcessDueAssignmentsAsync();
 
         db.ReportRequests.Should().HaveCount(2);
         db.RecurringReportAssignments.Single().CurrentReportRequestId.Should().NotBe(currentRequest.Id);
-        await commandDispatcher.Received(1).EnqueueAsync(Arg.Any<ReportRequestCreatedInAppNotificationCommand>());
+        await commandOutboxWriter.Received(1).StageAsync(
+            Arg.Any<ReportRequestCreatedInAppNotificationCommand>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -282,14 +287,16 @@ public sealed class RecurringReportAssignmentServiceTests
         db.RecurringReportAssignments.Add(assignment);
         await db.SaveChangesAsync();
 
-        var commandDispatcher = Substitute.For<ICommandDispatcher>();
-        var service = CreateService(db, trainerId, traineeId, ownsTrainee: true, commandDispatcher: commandDispatcher);
+        var commandOutboxWriter = CreateOutboxWriter();
+        var service = CreateService(db, trainerId, traineeId, ownsTrainee: true, commandOutboxWriter: commandOutboxWriter);
 
         await service.ProcessDueAssignmentsAsync();
         await service.ProcessDueAssignmentsAsync();
 
         db.ReportRequests.Should().HaveCount(2);
-        await commandDispatcher.Received(1).EnqueueAsync(Arg.Any<ReportRequestCreatedInAppNotificationCommand>());
+        await commandOutboxWriter.Received(1).StageAsync(
+            Arg.Any<ReportRequestCreatedInAppNotificationCommand>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -415,7 +422,7 @@ public sealed class RecurringReportAssignmentServiceTests
         Id<User> trainerId,
         Id<User> traineeId,
         bool ownsTrainee,
-        ICommandDispatcher? commandDispatcher = null,
+        ICommandOutboxWriter? commandOutboxWriter = null,
         bool isTrainer = true)
     {
         var relationshipAccess = Substitute.For<IReportingRelationshipAccessPersistence>();
@@ -429,8 +436,19 @@ public sealed class RecurringReportAssignmentServiceTests
             new RecurringReportAssignmentPersistenceRepository(db),
             relationshipAccess,
             ReportingTestData.Mapper(),
-            commandDispatcher ?? Substitute.For<ICommandDispatcher>(),
-            new EfUnitOfWork(db));
+            commandOutboxWriter ?? CreateOutboxWriter(),
+            new EfUnitOfWork(db),
+            NullLogger<RecurringReportAssignmentService>.Instance);
+    }
+
+    private static ICommandOutboxWriter CreateOutboxWriter()
+    {
+        var writer = Substitute.For<ICommandOutboxWriter>();
+        writer.StageAsync(
+                Arg.Any<ReportRequestCreatedInAppNotificationCommand>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new CommandEnvelopeStageResult("test-envelope", false));
+        return writer;
     }
 
     private static AppDbContext CreateDbContext(string name)
