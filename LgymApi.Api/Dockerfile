@@ -10,8 +10,12 @@ COPY ["LgymApi.BackgroundWorker.Common/LgymApi.BackgroundWorker.Common.csproj", 
 COPY ["LgymApi.Application/LgymApi.Application.csproj", "LgymApi.Application/"]
 COPY ["LgymApi.Infrastructure/LgymApi.Infrastructure.csproj", "LgymApi.Infrastructure/"]
 COPY ["LgymApi.Domain/LgymApi.Domain.csproj", "LgymApi.Domain/"]
+COPY ["LgymApi.Identity/LgymApi.Identity.csproj", "LgymApi.Identity/"]
+COPY ["LgymApi.Notifications/LgymApi.Notifications.csproj", "LgymApi.Notifications/"]
+COPY ["LgymApi.Platform/LgymApi.Platform.csproj", "LgymApi.Platform/"]
 COPY ["LgymApi.Resources/LgymApi.Resources.csproj", "LgymApi.Resources/"]
 COPY ["LgymApi.Resources.Generator/LgymApi.Resources.Generator.csproj", "LgymApi.Resources.Generator/"]
+COPY ["LgymApi.TrainingPlanning/LgymApi.TrainingPlanning.csproj", "LgymApi.TrainingPlanning/"]
 
 RUN dotnet restore "LgymApi.Api/LgymApi.Api.csproj"
 
@@ -21,8 +25,12 @@ COPY ["LgymApi.BackgroundWorker.Common/", "LgymApi.BackgroundWorker.Common/"]
 COPY ["LgymApi.Application/", "LgymApi.Application/"]
 COPY ["LgymApi.Infrastructure/", "LgymApi.Infrastructure/"]
 COPY ["LgymApi.Domain/", "LgymApi.Domain/"]
+COPY ["LgymApi.Identity/", "LgymApi.Identity/"]
+COPY ["LgymApi.Notifications/", "LgymApi.Notifications/"]
+COPY ["LgymApi.Platform/", "LgymApi.Platform/"]
 COPY ["LgymApi.Resources/", "LgymApi.Resources/"]
 COPY ["LgymApi.Resources.Generator/", "LgymApi.Resources.Generator/"]
+COPY ["LgymApi.TrainingPlanning/", "LgymApi.TrainingPlanning/"]
 
 RUN find . \( -type d -name bin -o -type d -name obj \) -prune -exec rm -rf {} +
 
