@@ -15,6 +15,7 @@ public interface IRecurringReportAssignmentService
     Task<Result<RecurringReportAssignmentResult, AppError>> UpdateAsync(AuthenticatedAccountContext currentTrainer, Id<AccountReference> traineeId, Id<RecurringReportAssignment> assignmentId, UpsertRecurringReportAssignmentCommand command, CancellationToken cancellationToken = default);
     Task<Result<RecurringReportAssignmentResult, AppError>> PauseAsync(AuthenticatedAccountContext currentTrainer, Id<AccountReference> traineeId, Id<RecurringReportAssignment> assignmentId, CancellationToken cancellationToken = default);
     Task<Result<RecurringReportAssignmentResult, AppError>> ResumeAsync(AuthenticatedAccountContext currentTrainer, Id<AccountReference> traineeId, Id<RecurringReportAssignment> assignmentId, CancellationToken cancellationToken = default);
+    Task<Result<RecurringReportAssignmentResult, AppError>> RequestNowAsync(AuthenticatedAccountContext currentTrainer, Id<AccountReference> traineeId, Id<RecurringReportAssignment> assignmentId, CancellationToken cancellationToken = default);
     Task<Result<Unit, AppError>> DeleteAsync(AuthenticatedAccountContext currentTrainer, Id<AccountReference> traineeId, Id<RecurringReportAssignment> assignmentId, CancellationToken cancellationToken = default);
     Task ProcessDueAssignmentsAsync(CancellationToken cancellationToken = default);
 }

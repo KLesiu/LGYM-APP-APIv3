@@ -1,9 +1,7 @@
 using System.Runtime.ExceptionServices;
-using LgymApi.Application.Reporting.Contracts.BackgroundCommands;
 using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Application.Repositories;
 using LgymApi.Domain.Entities;
-using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using Microsoft.Extensions.Logging;
 
@@ -170,43 +168,6 @@ public sealed partial class RecurringReportAssignmentService
         abort?.Throw();
     }
 
-    private async Task<StagedRequestCreation> StageRequestCreationAsync(
-        RecurringReportAssignmentPersistenceModel assignment,
-        DateTimeOffset createdAt,
-        CancellationToken cancellationToken)
-    {
-        var request = new NewReportRequestPersistenceModel(
-            Id<ReportRequest>.New(),
-            assignment.TrainerId,
-            assignment.TraineeId,
-            assignment.TemplateId,
-            assignment.Id,
-            ReportRequestStatus.Pending,
-            null,
-            null,
-            assignment.Note,
-            createdAt);
-        await _requestSubmissionPersistence.AddRequestAsync(request, cancellationToken);
-
-        var updated = assignment with
-        {
-            CurrentReportRequestId = request.Id,
-            CurrentReportRequest = ToRequestPersistenceModel(request, assignment.Template),
-            LastRequestCreatedAt = createdAt,
-            NextEligibleAt = null
-        };
-        await _assignmentPersistence.UpdateAsync(updated.Id, ToUpdateModel(updated), cancellationToken);
-
-        var envelope = await _commandOutboxWriter.StageAsync(new ReportRequestCreatedInAppNotificationCommand
-        {
-            RequestId = request.Id,
-            TraineeId = assignment.TraineeId,
-            TrainerId = assignment.TrainerId,
-            TemplateName = assignment.Template.Name
-        }, cancellationToken);
-        return new StagedRequestCreation(request.Id, envelope.EnvelopeId);
-    }
-
     private async Task<BusinessRollbackResult> RollbackBusinessDecisionAsync(
         IUnitOfWorkTransaction transaction,
         Id<RecurringReportAssignment> assignmentId,
@@ -315,7 +276,7 @@ public sealed partial class RecurringReportAssignmentService
             => new(id, ProcessingOutcome.Aborted, reason, ExceptionType: exceptionType);
     }
 
-    private sealed record StagedRequestCreation(Id<ReportRequest> RequestId, string? EnvelopeId);
+    private sealed record StagedRequestCreation(Id<ReportRequest> RequestId, string? EnvelopeId, RecurringReportAssignmentPersistenceModel Assignment);
     private sealed record BusinessRollbackResult(ProcessingResult Result, Exception? Failure);
 
     private enum TransactionPhase { PreCommit, RolledBack, RollbackFailed, CommitStarted, Committed }
