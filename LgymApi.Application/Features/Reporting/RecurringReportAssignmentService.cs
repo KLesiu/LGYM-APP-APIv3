@@ -3,7 +3,6 @@ using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Reporting.Models;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Platform.Contracts.BackgroundCommands;
-using LgymApi.Application.Reporting.Contracts.BackgroundCommands;
 using LgymApi.Application.Reporting.Persistence;
 using LgymApi.Application.Repositories;
 using LgymApi.Domain.Entities;
@@ -11,6 +10,7 @@ using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 using LgymApi.Identity.Contracts.Accounts;
+using Microsoft.Extensions.Logging;
 
 namespace LgymApi.Application.Features.Reporting;
 
@@ -21,8 +21,9 @@ public sealed partial class RecurringReportAssignmentService : IRecurringReportA
     private readonly IRecurringReportAssignmentPersistence _assignmentPersistence;
     private readonly IReportingRelationshipAccessPersistence _relationshipAccessPersistence;
     private readonly IMapper _mapper;
-    private readonly ICommandDispatcher _commandDispatcher;
+    private readonly ICommandOutboxWriter _commandOutboxWriter;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ILogger<RecurringReportAssignmentService> _logger;
 
     public RecurringReportAssignmentService(
         IReportTemplatePersistence templatePersistence,
@@ -30,16 +31,18 @@ public sealed partial class RecurringReportAssignmentService : IRecurringReportA
         IRecurringReportAssignmentPersistence recurringAssignmentPersistence,
         IReportingRelationshipAccessPersistence relationshipAccessPersistence,
         IMapper mapper,
-        ICommandDispatcher commandDispatcher,
-        IUnitOfWork unitOfWork)
+        ICommandOutboxWriter commandOutboxWriter,
+        IUnitOfWork unitOfWork,
+        ILogger<RecurringReportAssignmentService> logger)
     {
         _templatePersistence = templatePersistence;
         _requestSubmissionPersistence = requestSubmissionPersistence;
         _assignmentPersistence = recurringAssignmentPersistence;
         _relationshipAccessPersistence = relationshipAccessPersistence;
         _mapper = mapper;
-        _commandDispatcher = commandDispatcher;
+        _commandOutboxWriter = commandOutboxWriter;
         _unitOfWork = unitOfWork;
+        _logger = logger;
     }
 
     public async Task<Result<RecurringReportAssignmentResult, AppError>> CreateAsync(
@@ -162,65 +165,6 @@ public sealed partial class RecurringReportAssignmentService : IRecurringReportA
         await _assignmentPersistence.UpdateAsync(deleted.Id, ToUpdateModel(deleted), cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return Result<Unit, AppError>.Success(Unit.Value);
-    }
-
-    public async Task ProcessDueAssignmentsAsync(CancellationToken cancellationToken = default)
-    {
-        var now = DateTimeOffset.UtcNow;
-        var dueAssignments = await _assignmentPersistence.ListDueAsync(now, cancellationToken);
-
-        foreach (var dueAssignment in dueAssignments)
-        {
-            await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
-            var assignment = await _assignmentPersistence.FindByIdAsync(dueAssignment.Id, cancellationToken);
-            if (assignment == null || !CanCreateNextRequest(assignment, now))
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                continue;
-            }
-
-            if (assignment.Template.IsDeleted)
-            {
-                var inactive = assignment with { IsActive = false };
-                await _assignmentPersistence.UpdateAsync(inactive.Id, ToUpdateModel(inactive), cancellationToken);
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-                continue;
-            }
-
-            var request = new NewReportRequestPersistenceModel(
-                Id<ReportRequest>.New(),
-                assignment.TrainerId,
-                assignment.TraineeId,
-                assignment.TemplateId,
-                assignment.Id,
-                ReportRequestStatus.Pending,
-                null,
-                null,
-                assignment.Note,
-                now);
-            await _requestSubmissionPersistence.AddRequestAsync(request, cancellationToken);
-
-            var updated = assignment with
-            {
-                CurrentReportRequestId = request.Id,
-                CurrentReportRequest = ToRequestPersistenceModel(request, assignment.Template),
-                LastRequestCreatedAt = now,
-                NextEligibleAt = null
-            };
-            await _assignmentPersistence.UpdateAsync(updated.Id, ToUpdateModel(updated), cancellationToken);
-
-            await _commandDispatcher.EnqueueAsync(new ReportRequestCreatedInAppNotificationCommand
-            {
-                RequestId = request.Id,
-                TraineeId = assignment.TraineeId,
-                TrainerId = assignment.TrainerId,
-                TemplateName = assignment.Template.Name
-            });
-
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-        }
     }
 
     private async Task<Result<RecurringReportAssignmentResult, AppError>> SetActiveAsync(

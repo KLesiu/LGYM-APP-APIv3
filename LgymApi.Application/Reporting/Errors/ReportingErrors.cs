@@ -48,3 +48,17 @@ public sealed class ReportingForbiddenError : ForbiddenError
     {
     }
 }
+
+/// <summary>
+/// Error indicating a conflict with the current reporting state (HTTP 409).
+/// </summary>
+public sealed class ReportingConflictError : ConflictError
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ReportingConflictError"/> class.
+    /// </summary>
+    /// <param name="message">The error message.</param>
+    public ReportingConflictError(string message) : base(message)
+    {
+    }
+}

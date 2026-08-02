@@ -210,6 +210,15 @@
   <data name="ReportRequestExpired" xml:space="preserve">
     <value>Report request has expired.</value>
   </data>
+  <data name="RecurringReportRequestInProgress" xml:space="preserve">
+    <value>The current recurring report request must be completed before another request can be created.</value>
+  </data>
+  <data name="RecurringReportAssignmentUnavailable" xml:space="preserve">
+    <value>This recurring report cycle is not active at this time.</value>
+  </data>
+  <data name="RecurringReportTemplateUnavailable" xml:space="preserve">
+    <value>The report template for this recurring report cycle is unavailable.</value>
+  </data>
   <data name="MissingRequiredPhotoViews" xml:space="preserve">
     <value>Missing required photo views.</value>
   </data>

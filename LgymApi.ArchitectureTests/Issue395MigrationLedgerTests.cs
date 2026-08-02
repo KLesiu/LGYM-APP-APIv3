@@ -190,7 +190,7 @@ public sealed class Issue395MigrationLedgerTests
     private static readonly PartialRow[] PartialContributors =
     [
         Partial("Application", "LgymApi.Application.Features.Reporting.ReportingService", "Features/Reporting", "ReportingService.cs", "ReportingService.Templates.cs", "ReportingService.Submissions.cs", "ReportingService.Submissions.Read.cs", "ReportingService.Submissions.PhotoValidation.cs", "ReportingService.Submissions.Helpers.cs", "ReportingService.Requests.cs", "ReportingService.Photos.cs", "ReportingService.Photos.Support.cs", "ReportingService.Photos.Completion.cs", "ReportingService.Photos.Read.cs"),
-        Partial("Application", "LgymApi.Application.Features.Reporting.RecurringReportAssignmentService", "Features/Reporting", "RecurringReportAssignmentService.cs", "RecurringReportAssignmentService.Support.cs"),
+        Partial("Application", "LgymApi.Application.Features.Reporting.RecurringReportAssignmentService", "Features/Reporting", "RecurringReportAssignmentService.cs", "RecurringReportAssignmentService.Support.cs", "RecurringReportAssignmentService.Processing.cs", "RecurringReportAssignmentService.RequestNow.cs"),
         Partial("Application", "LgymApi.Application.WorkoutProgress.ProgressData.WorkoutProgressReadWriteService", "WorkoutProgress/ProgressData", "WorkoutProgressReadWriteService.cs", "WorkoutProgressReadWriteService.Measurements.cs", "WorkoutProgressReadWriteService.MainRecords.cs"),
         Partial("Application", "LgymApi.Application.Features.Exercise.ExerciseService", "Exercise", "ExerciseService.cs", "ExerciseService.Scores.cs", "ExerciseService.Queries.cs", "ExerciseService.Management.cs"),
         Partial("Application", "LgymApi.Application.Features.Training.TrainingService", "Training", "TrainingService.cs", "TrainingService.Queries.cs", "TrainingService.AddTraining.cs"),
@@ -372,8 +372,8 @@ public sealed class Issue395MigrationLedgerTests
     [Test]
     public void PartialServiceLedger_Resolves_All_Approved_Compiled_Contributors()
     {
-        Assert.That(PartialContributors.Sum(row => row.Files.Length), Is.EqualTo(25));
-        Assert.That(PartialContributors.Select(row => row.Files.Length), Is.EqualTo(new[] { 11, 2, 3, 4, 3, 2 }));
+        Assert.That(PartialContributors.Sum(row => row.Files.Length), Is.EqualTo(27));
+        Assert.That(PartialContributors.Select(row => row.Files.Length), Is.EqualTo(new[] { 11, 4, 3, 4, 3, 2 }));
         ValidatePartialRows(PartialContributors);
     }
 
@@ -405,7 +405,7 @@ public sealed class Issue395MigrationLedgerTests
             ["LgymApi.Identity"] = 68,
             ["LgymApi.TrainingPlanning"] = 69,
             ["LgymApi.Notifications"] = 76,
-            ["LgymApi.Application"] = 475
+            ["LgymApi.Application"] = 476
         };
 
         var inventory = expectedCounts.ToDictionary(

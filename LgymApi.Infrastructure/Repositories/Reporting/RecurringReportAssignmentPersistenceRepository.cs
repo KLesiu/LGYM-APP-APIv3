@@ -3,6 +3,7 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 using LgymApi.Infrastructure.Data;
+using LgymApi.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 
 namespace LgymApi.Infrastructure.Repositories.Reporting;
@@ -60,6 +61,24 @@ public sealed class RecurringReportAssignmentPersistenceRepository : IRecurringR
             .Where(assignment => !assignment.IsDeleted)
             .FirstOrDefaultAsync(assignment => assignment.Id == assignmentId, cancellationToken);
         return entity is null ? null : ReportingPersistenceProjection.Assignment(entity);
+    }
+
+    public async Task<RecurringReportAssignmentPersistenceModel?> FindByIdForUpdateAsync(
+        Id<RecurringReportAssignment> assignmentId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireActiveTransaction();
+        var affectedRows = await _dbContext.RecurringReportAssignments
+            .IgnoreQueryFilters()
+            .Where(assignment => assignment.Id == assignmentId && !assignment.IsDeleted)
+            .StageUpdateAsync(
+                _dbContext,
+                assignment => assignment.UpdatedAt,
+                assignment => assignment.UpdatedAt,
+                cancellationToken);
+        return affectedRows == 0
+            ? null
+            : await FindByIdAsync(assignmentId, cancellationToken);
     }
 
     public async Task<RecurringReportAssignmentPersistenceModel?> FindByCurrentRequestAsync(
@@ -136,4 +155,12 @@ public sealed class RecurringReportAssignmentPersistenceRepository : IRecurringR
                     .ThenInclude(template => template.Fields)
             .Include(assignment => assignment.CurrentReportRequest)
                 .ThenInclude(request => request!.Submission);
+
+    private void RequireActiveTransaction()
+    {
+        if (_dbContext.Database.CurrentTransaction == null)
+        {
+            throw new InvalidOperationException("Recurring report assignment locking requires an active transaction.");
+        }
+    }
 }

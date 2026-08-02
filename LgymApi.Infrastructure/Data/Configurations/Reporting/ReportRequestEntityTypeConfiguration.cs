@@ -15,7 +15,7 @@ internal sealed class ReportRequestEntityTypeConfiguration : IEntityTypeConfigur
 
         builder.HasIndex(e => new { e.TrainerId, e.TraineeId, e.CreatedAt });
         builder.HasIndex(e => new { e.TraineeId, e.Status, e.CreatedAt });
-        builder.HasIndex(e => e.RecurringReportAssignmentId);
+        builder.HasIndex(e => e.RecurringReportAssignmentId).IsUnique(false);
 
         builder.HasOne(e => e.Trainer)
             .WithMany()

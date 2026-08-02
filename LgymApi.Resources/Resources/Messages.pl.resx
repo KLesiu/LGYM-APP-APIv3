@@ -204,6 +204,15 @@
   <data name="ReportRequestExpired" xml:space="preserve">
     <value>Termin zgłoszenia raportu minął.</value>
   </data>
+  <data name="RecurringReportRequestInProgress" xml:space="preserve">
+    <value>Bieżąca prośba o raport okresowy musi zostać zakończona przed utworzeniem kolejnej.</value>
+  </data>
+  <data name="RecurringReportAssignmentUnavailable" xml:space="preserve">
+    <value>Ten cykl raportu okresowego nie jest teraz aktywny.</value>
+  </data>
+  <data name="RecurringReportTemplateUnavailable" xml:space="preserve">
+    <value>Szablon raportu dla tego cyklu raportu okresowego jest niedostępny.</value>
+  </data>
   <data name="MissingRequiredPhotoViews" xml:space="preserve">
     <value>Brakuje wymaganych ujęć zdjęć.</value>
   </data>

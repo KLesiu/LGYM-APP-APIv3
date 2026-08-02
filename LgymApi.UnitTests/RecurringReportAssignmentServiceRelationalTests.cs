@@ -12,6 +12,7 @@ using LgymApi.Infrastructure.Repositories.Reporting;
 using LgymApi.Infrastructure.UnitOfWork;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -88,11 +89,11 @@ public sealed class RecurringReportAssignmentServiceRelationalTests
             await setupDb.SaveChangesAsync();
         }
 
-        var commandDispatcher = Substitute.For<ICommandDispatcher>();
+        var commandOutboxWriter = CreateOutboxWriter();
 
         await using (var actDb = new AppDbContext(options))
         {
-            var service = CreateService(actDb, commandDispatcher);
+            var service = CreateService(actDb, commandOutboxWriter);
             await service.ProcessDueAssignmentsAsync();
         }
 
@@ -110,11 +111,13 @@ public sealed class RecurringReportAssignmentServiceRelationalTests
         nextRequest.Status.Should().Be(ReportRequestStatus.Pending);
         nextRequest.Note.Should().Be("weekly check-in");
 
-        await commandDispatcher.Received(1).EnqueueAsync(Arg.Is<ReportRequestCreatedInAppNotificationCommand>(command =>
-            command.RequestId == nextRequest.Id
-            && command.TraineeId == storedAssignment.TraineeId.Rebind<LgymApi.Identity.Contracts.AccountReference>()
-            && command.TrainerId == storedAssignment.TrainerId.Rebind<LgymApi.Identity.Contracts.AccountReference>()
-            && command.TemplateName == "Weekly check-in"));
+        await commandOutboxWriter.Received(1).StageAsync(
+            Arg.Is<ReportRequestCreatedInAppNotificationCommand>(command =>
+                command.RequestId == nextRequest.Id
+                && command.TraineeId == storedAssignment.TraineeId.Rebind<LgymApi.Identity.Contracts.AccountReference>()
+                && command.TrainerId == storedAssignment.TrainerId.Rebind<LgymApi.Identity.Contracts.AccountReference>()
+                && command.TemplateName == "Weekly check-in"),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -157,11 +160,11 @@ public sealed class RecurringReportAssignmentServiceRelationalTests
             await setupDb.SaveChangesAsync();
         }
 
-        var commandDispatcher = Substitute.For<ICommandDispatcher>();
+        var commandOutboxWriter = CreateOutboxWriter();
 
         await using (var actDb = new AppDbContext(options))
         {
-            var service = CreateService(actDb, commandDispatcher);
+            var service = CreateService(actDb, commandOutboxWriter);
             await service.ProcessDueAssignmentsAsync();
         }
 
@@ -172,7 +175,9 @@ public sealed class RecurringReportAssignmentServiceRelationalTests
 
         storedAssignment.IsActive.Should().BeFalse();
         (await assertDb.ReportRequests.CountAsync()).Should().Be(0);
-        await commandDispatcher.DidNotReceiveWithAnyArgs().EnqueueAsync(Arg.Any<ReportRequestCreatedInAppNotificationCommand>());
+        await commandOutboxWriter.DidNotReceiveWithAnyArgs().StageAsync(
+            Arg.Any<ReportRequestCreatedInAppNotificationCommand>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -197,7 +202,7 @@ public sealed class RecurringReportAssignmentServiceRelationalTests
         firstElement.Should().NotBe(20); // Ensure we're not getting the wrong element
     }
 
-    private static RecurringReportAssignmentService CreateService(AppDbContext db, ICommandDispatcher commandDispatcher)
+    private static RecurringReportAssignmentService CreateService(AppDbContext db, ICommandOutboxWriter commandOutboxWriter)
     {
         var relationshipAccess = Substitute.For<IReportingRelationshipAccessPersistence>();
 
@@ -207,8 +212,19 @@ public sealed class RecurringReportAssignmentServiceRelationalTests
             new RecurringReportAssignmentPersistenceRepository(db),
             relationshipAccess,
             ReportingTestData.Mapper(),
-            commandDispatcher,
-            new EfUnitOfWork(db));
+            commandOutboxWriter,
+            new EfUnitOfWork(db),
+            NullLogger<RecurringReportAssignmentService>.Instance);
+    }
+
+    private static ICommandOutboxWriter CreateOutboxWriter()
+    {
+        var writer = Substitute.For<ICommandOutboxWriter>();
+        writer.StageAsync(
+                Arg.Any<ReportRequestCreatedInAppNotificationCommand>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new CommandEnvelopeStageResult("test-envelope", false));
+        return writer;
     }
 
     private static User CreateUser(string email, string name)

@@ -15,13 +15,14 @@ using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Repositories.Reporting;
 using LgymApi.Infrastructure.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NUnit.Framework;
 
 namespace LgymApi.UnitTests;
 
 [TestFixture]
-public sealed class RecurringReportAssignmentServiceTests
+public sealed partial class RecurringReportAssignmentServiceTests
 {
     [Test]
     public async Task CreateAsync_CreatesRecurringAssignment_ForOwnedTrainee()
@@ -116,9 +117,11 @@ public sealed class RecurringReportAssignmentServiceTests
     [Test]
     public async Task ProcessDueAssignmentsAsync_DoesNotCreateNextRequest_BeforeFeedbackRead()
     {
-        await using var db = CreateDbContext("recurring-worker-blocked");
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
+        await using var db = CreateRelationalDbContext();
+        var trainer = CreateUser();
+        var trainee = CreateUser(Id<User>.New(), "Trainee", "trainee-blocked@example.com");
+        var trainerId = trainer.Id;
+        var traineeId = trainee.Id;
         var template = CreateTemplate(trainerId);
         var currentRequest = new ReportRequest
         {
@@ -157,27 +160,32 @@ public sealed class RecurringReportAssignmentServiceTests
             NextEligibleAt = null
         };
 
+        db.Users.AddRange(trainer, trainee);
         db.ReportTemplates.Add(template);
         db.ReportRequests.Add(currentRequest);
         db.ReportSubmissions.Add(submission);
         db.RecurringReportAssignments.Add(assignment);
         await db.SaveChangesAsync();
 
-        var commandDispatcher = Substitute.For<ICommandDispatcher>();
-        var service = CreateService(db, trainerId, traineeId, ownsTrainee: true, commandDispatcher: commandDispatcher);
+        var commandOutboxWriter = CreateOutboxWriter();
+        var service = CreateService(db, trainerId, traineeId, ownsTrainee: true, commandOutboxWriter: commandOutboxWriter);
 
         await service.ProcessDueAssignmentsAsync();
 
         db.ReportRequests.Should().HaveCount(1);
-        await commandDispatcher.DidNotReceiveWithAnyArgs().EnqueueAsync(Arg.Any<ReportRequestCreatedInAppNotificationCommand>());
+        await commandOutboxWriter.DidNotReceiveWithAnyArgs().StageAsync(
+            Arg.Any<ReportRequestCreatedInAppNotificationCommand>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
     public async Task ProcessDueAssignmentsAsync_CreatesNextRequest_AfterFeedbackReadAndIntervalElapsed()
     {
-        await using var db = CreateDbContext("recurring-worker-success");
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
+        await using var db = CreateRelationalDbContext();
+        var trainer = CreateUser();
+        var trainee = CreateUser(Id<User>.New(), "Trainee", "trainee-success@example.com");
+        var trainerId = trainer.Id;
+        var traineeId = trainee.Id;
         var template = CreateTemplate(trainerId);
         var currentRequest = new ReportRequest
         {
@@ -216,28 +224,33 @@ public sealed class RecurringReportAssignmentServiceTests
             NextEligibleAt = DateTimeOffset.UtcNow.AddDays(-1)
         };
 
+        db.Users.AddRange(trainer, trainee);
         db.ReportTemplates.Add(template);
         db.ReportRequests.Add(currentRequest);
         db.ReportSubmissions.Add(submission);
         db.RecurringReportAssignments.Add(assignment);
         await db.SaveChangesAsync();
 
-        var commandDispatcher = Substitute.For<ICommandDispatcher>();
-        var service = CreateService(db, trainerId, traineeId, ownsTrainee: true, commandDispatcher: commandDispatcher);
+        var commandOutboxWriter = CreateOutboxWriter();
+        var service = CreateService(db, trainerId, traineeId, ownsTrainee: true, commandOutboxWriter: commandOutboxWriter);
 
         await service.ProcessDueAssignmentsAsync();
 
         db.ReportRequests.Should().HaveCount(2);
         db.RecurringReportAssignments.Single().CurrentReportRequestId.Should().NotBe(currentRequest.Id);
-        await commandDispatcher.Received(1).EnqueueAsync(Arg.Any<ReportRequestCreatedInAppNotificationCommand>());
+        await commandOutboxWriter.Received(1).StageAsync(
+            Arg.Any<ReportRequestCreatedInAppNotificationCommand>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
     public async Task ProcessDueAssignmentsAsync_IsIdempotent_WhenCalledTwice()
     {
-        await using var db = CreateDbContext("recurring-worker-idempotent");
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
+        await using var db = CreateRelationalDbContext();
+        var trainer = CreateUser();
+        var trainee = CreateUser(Id<User>.New(), "Trainee", "trainee-idempotent@example.com");
+        var trainerId = trainer.Id;
+        var traineeId = trainee.Id;
         var template = CreateTemplate(trainerId);
         var currentRequest = new ReportRequest
         {
@@ -276,20 +289,23 @@ public sealed class RecurringReportAssignmentServiceTests
             NextEligibleAt = DateTimeOffset.UtcNow.AddDays(-1)
         };
 
+        db.Users.AddRange(trainer, trainee);
         db.ReportTemplates.Add(template);
         db.ReportRequests.Add(currentRequest);
         db.ReportSubmissions.Add(submission);
         db.RecurringReportAssignments.Add(assignment);
         await db.SaveChangesAsync();
 
-        var commandDispatcher = Substitute.For<ICommandDispatcher>();
-        var service = CreateService(db, trainerId, traineeId, ownsTrainee: true, commandDispatcher: commandDispatcher);
+        var commandOutboxWriter = CreateOutboxWriter();
+        var service = CreateService(db, trainerId, traineeId, ownsTrainee: true, commandOutboxWriter: commandOutboxWriter);
 
         await service.ProcessDueAssignmentsAsync();
         await service.ProcessDueAssignmentsAsync();
 
         db.ReportRequests.Should().HaveCount(2);
-        await commandDispatcher.Received(1).EnqueueAsync(Arg.Any<ReportRequestCreatedInAppNotificationCommand>());
+        await commandOutboxWriter.Received(1).StageAsync(
+            Arg.Any<ReportRequestCreatedInAppNotificationCommand>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -415,7 +431,7 @@ public sealed class RecurringReportAssignmentServiceTests
         Id<User> trainerId,
         Id<User> traineeId,
         bool ownsTrainee,
-        ICommandDispatcher? commandDispatcher = null,
+        ICommandOutboxWriter? commandOutboxWriter = null,
         bool isTrainer = true)
     {
         var relationshipAccess = Substitute.For<IReportingRelationshipAccessPersistence>();
@@ -429,8 +445,19 @@ public sealed class RecurringReportAssignmentServiceTests
             new RecurringReportAssignmentPersistenceRepository(db),
             relationshipAccess,
             ReportingTestData.Mapper(),
-            commandDispatcher ?? Substitute.For<ICommandDispatcher>(),
-            new EfUnitOfWork(db));
+            commandOutboxWriter ?? CreateOutboxWriter(),
+            new EfUnitOfWork(db),
+            NullLogger<RecurringReportAssignmentService>.Instance);
+    }
+
+    private static ICommandOutboxWriter CreateOutboxWriter()
+    {
+        var writer = Substitute.For<ICommandOutboxWriter>();
+        writer.StageAsync(
+                Arg.Any<ReportRequestCreatedInAppNotificationCommand>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new CommandEnvelopeStageResult("test-envelope", false));
+        return writer;
     }
 
     private static AppDbContext CreateDbContext(string name)
@@ -438,14 +465,21 @@ public sealed class RecurringReportAssignmentServiceTests
             .UseInMemoryDatabase($"{name}-{Id<RecurringReportAssignmentServiceTests>.New():N}")
             .Options);
 
+    private static AppDbContext CreateRelationalDbContext()
+    {
+        var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options);
+        database.Database.OpenConnection();
+        database.Database.EnsureCreated();
+        return database;
+    }
+
     private static User CreateUser()
-        => new()
-        {
-            Id = Id<User>.New(),
-            Name = "Trainer",
-            Email = "trainer@example.com",
-            ProfileRank = "Rookie"
-        };
+        => CreateUser(Id<User>.New(), "Trainer", "trainer@example.com");
+
+    private static User CreateUser(Id<User> id, string name, string email)
+        => new() { Id = id, Name = name, Email = email, ProfileRank = "Rookie" };
 
     private static ReportTemplate CreateTemplate(Id<User> trainerId)
         => new()

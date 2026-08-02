@@ -118,33 +118,101 @@ public sealed partial class RecurringReportAssignmentService
         return assignment.CurrentReportRequestId.HasValue ? null : assignment.StartsAt;
     }
 
-    private static bool CanCreateNextRequest(RecurringReportAssignmentPersistenceModel assignment, DateTimeOffset now)
+    private static AutomaticEligibilityDecision EvaluateAutomaticEligibility(
+        RecurringReportAssignmentPersistenceModel assignment,
+        DateTimeOffset now)
     {
-        if (!assignment.IsActive || assignment.StartsAt > now || assignment.EndsAt.HasValue && assignment.EndsAt < now)
+        if (!assignment.IsActive)
         {
-            return false;
+            return AutomaticEligibilityDecision.Blocked(AutomaticEligibilityReason.Inactive);
+        }
+
+        if (assignment.StartsAt > now)
+        {
+            return AutomaticEligibilityDecision.Blocked(AutomaticEligibilityReason.NotStarted);
+        }
+
+        if (assignment.EndsAt.HasValue && assignment.EndsAt < now)
+        {
+            return AutomaticEligibilityDecision.Blocked(AutomaticEligibilityReason.Ended);
         }
 
         if (!assignment.CurrentReportRequestId.HasValue)
         {
-            return (assignment.NextEligibleAt ?? assignment.StartsAt) <= now;
+            return (assignment.NextEligibleAt ?? assignment.StartsAt) <= now
+                ? AutomaticEligibilityDecision.Eligible()
+                : AutomaticEligibilityDecision.Blocked(AutomaticEligibilityReason.NotDue);
         }
 
         var request = assignment.CurrentReportRequest;
-        var submission = request?.Submission;
-        if (request == null || submission == null || request.Status is ReportRequestStatus.Pending or ReportRequestStatus.Expired)
+        if (request == null)
         {
-            return false;
+            return AutomaticEligibilityDecision.Blocked(AutomaticEligibilityReason.CurrentRequestMissing);
         }
 
-        if (!submission.TrainerFeedbackAddedAt.HasValue || !submission.TrainerFeedbackReadAt.HasValue)
+        var statusReason = request.Status switch
         {
-            return false;
+            ReportRequestStatus.Submitted => AutomaticEligibilityReason.Eligible,
+            ReportRequestStatus.Pending => AutomaticEligibilityReason.CurrentRequestPending,
+            ReportRequestStatus.Expired => AutomaticEligibilityReason.CurrentRequestExpired,
+            ReportRequestStatus.Cancelled => AutomaticEligibilityReason.CurrentRequestCancelled,
+            _ => AutomaticEligibilityReason.CurrentRequestNotSubmitted
+        };
+        if (statusReason != AutomaticEligibilityReason.Eligible)
+        {
+            return AutomaticEligibilityDecision.Blocked(statusReason);
+        }
+
+        var submission = request.Submission;
+        if (submission == null)
+        {
+            return AutomaticEligibilityDecision.Blocked(AutomaticEligibilityReason.SubmissionMissing);
+        }
+
+        if (!submission.TrainerFeedbackAddedAt.HasValue)
+        {
+            return AutomaticEligibilityDecision.Blocked(AutomaticEligibilityReason.FeedbackNotAdded);
+        }
+
+        if (!submission.TrainerFeedbackReadAt.HasValue)
+        {
+            return AutomaticEligibilityDecision.Blocked(AutomaticEligibilityReason.FeedbackNotRead);
         }
 
         var eligibleAt = assignment.NextEligibleAt
             ?? AddInterval(submission.TrainerFeedbackReadAt.Value, assignment.IntervalValue, assignment.IntervalUnit);
-        return eligibleAt <= now;
+        return eligibleAt <= now
+            ? AutomaticEligibilityDecision.Eligible()
+            : AutomaticEligibilityDecision.Blocked(AutomaticEligibilityReason.NotDue);
+    }
+
+    private readonly record struct AutomaticEligibilityDecision(
+        bool CanCreate,
+        AutomaticEligibilityReason Reason)
+    {
+        public static AutomaticEligibilityDecision Eligible()
+            => new(true, AutomaticEligibilityReason.Eligible);
+
+        public static AutomaticEligibilityDecision Blocked(AutomaticEligibilityReason reason)
+            => new(false, reason);
+    }
+
+    private enum AutomaticEligibilityReason
+    {
+        Eligible,
+        AssignmentMissing,
+        NotDue,
+        Inactive,
+        NotStarted,
+        Ended,
+        CurrentRequestMissing,
+        CurrentRequestPending,
+        CurrentRequestExpired,
+        CurrentRequestCancelled,
+        CurrentRequestNotSubmitted,
+        SubmissionMissing,
+        FeedbackNotAdded,
+        FeedbackNotRead
     }
 
     private RecurringReportAssignmentResult MapAssignment(RecurringReportAssignmentPersistenceModel assignment)

@@ -75,6 +75,9 @@ internal sealed class RecurringReportAssignmentApiAdapter : IRecurringReportAssi
     public Task<Result<RecurringReportAssignmentResult, AppError>> ResumeAsync(AuthenticatedAccountContext trainer, Id<AccountReference> traineeId, Id<RecurringReportAssignment> assignmentId, CancellationToken cancellationToken = default)
         => _recurringService.ResumeAsync(trainer, traineeId, assignmentId, cancellationToken);
 
+    public Task<Result<RecurringReportAssignmentResult, AppError>> RequestNowAsync(AuthenticatedAccountContext trainer, Id<AccountReference> traineeId, Id<RecurringReportAssignment> assignmentId, CancellationToken cancellationToken = default)
+        => _recurringService.RequestNowAsync(trainer, traineeId, assignmentId, cancellationToken);
+
     public Task<Result<Unit, AppError>> DeleteAsync(AuthenticatedAccountContext trainer, Id<AccountReference> traineeId, Id<RecurringReportAssignment> assignmentId, CancellationToken cancellationToken = default)
         => _recurringService.DeleteAsync(trainer, traineeId, assignmentId, cancellationToken);
 }

@@ -33,6 +33,28 @@ public sealed class RecurringReportAssignmentRepositoryTests
     }
 
     [Test]
+    public async Task FindByIdAsync_ReturnsCompleteNonDeletedProjection()
+    {
+        await using var db = CreateDbContext();
+        var trainer = CreateUser("trainer@example.com");
+        var trainee = CreateUser("trainee@example.com");
+        var template = CreateTemplate(trainer.Id);
+        var request = CreateRequest(trainer.Id, trainee.Id, template);
+        var assignment = CreateAssignment(trainer.Id, trainee.Id, template, request);
+        db.AddRange(trainer, trainee, template, request, assignment);
+        await db.SaveChangesAsync();
+        var persistence = new RecurringReportAssignmentPersistenceRepository(db);
+
+        var result = await persistence.FindByIdAsync(assignment.Id);
+
+        result.Should().NotBeNull();
+        result!.IsDeleted.Should().BeFalse();
+        result.Template.Fields.Select(field => field.Order).Should().BeInAscendingOrder();
+        result.CurrentReportRequest.Should().NotBeNull();
+        result.CurrentReportRequest!.Template.Fields.Select(field => field.Order).Should().BeInAscendingOrder();
+    }
+
+    [Test]
     public async Task ListDue_FiltersDateWindowAndOrdersByEligibility()
     {
         await using var db = CreateDbContext();

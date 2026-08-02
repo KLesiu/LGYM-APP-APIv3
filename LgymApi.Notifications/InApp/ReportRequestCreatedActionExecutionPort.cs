@@ -34,8 +34,8 @@ internal sealed class ReportRequestCreatedActionExecutionPort(
         {
             CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo(defaults.PreferredLanguage);
             var template = string.IsNullOrWhiteSpace(templateName) ? Messages.GenericReportDisplayName : templateName.Trim();
-            await notificationWriter.CreateAsync(trainerId, traineeId, $"report-request:{requestId}:created",
-                string.Format(Messages.TrainerReportRequestReceived, template), $"/trainer/report-requests/{requestId}",
+            await notificationWriter.CreateAsync(traineeId, trainerId, $"report-request:{requestId}:created",
+                string.Format(Messages.TrainerReportRequestReceived, Messages.GenericTrainerDisplayName, template), $"/trainer/report-requests/{requestId}",
                 "ReportRequestReceived", cancellationToken);
         }
         finally

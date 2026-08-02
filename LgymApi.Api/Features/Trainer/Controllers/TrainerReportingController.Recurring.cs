@@ -46,6 +46,39 @@ public sealed partial class TrainerReportingController
         return StatusCode(StatusCodes.Status201Created, _mapper.Map<RecurringReportAssignmentResult, RecurringReportAssignmentDto>(result.Value));
     }
 
+    [HttpPost("trainees/{traineeId}/recurring-report-assignments/{id}/request-now")]
+    [ProducesResponseType(typeof(RecurringReportAssignmentDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> RequestRecurringReportNow([FromRoute] string traineeId, [FromRoute] string id, CancellationToken cancellationToken = default)
+    {
+        if (!Id<AccountReference>.TryParse(traineeId, out var parsedTraineeId))
+        {
+            return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.UserIdRequired));
+        }
+
+        if (!Id<RecurringReportAssignment>.TryParse(id, out var parsedAssignmentId))
+        {
+            return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
+        }
+
+        var result = await _recurringAssignments.RequestNowAsync(
+            HttpContext.GetAuthenticatedAccountContext()!,
+            parsedTraineeId,
+            parsedAssignmentId,
+            cancellationToken);
+        if (result.IsFailure)
+        {
+            return result.ToActionResult();
+        }
+
+        return StatusCode(
+            StatusCodes.Status201Created,
+            _mapper.Map<RecurringReportAssignmentResult, RecurringReportAssignmentDto>(result.Value));
+    }
+
     [HttpGet("trainees/{traineeId}/recurring-report-assignments")]
     [ProducesResponseType(typeof(List<RecurringReportAssignmentDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]

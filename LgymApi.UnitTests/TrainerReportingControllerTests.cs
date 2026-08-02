@@ -1,5 +1,6 @@
 using FluentAssertions;
 using LgymApi.Api;
+using LgymApi.Api.Features.Common.Contracts;
 using LgymApi.Api.Features.Trainer.Contracts;
 using LgymApi.Api.Features.Trainer.Controllers;
 using LgymApi.Api.Middleware;
@@ -260,6 +261,92 @@ public sealed class TrainerReportingControllerTests
         });
 
         result.Should().BeAssignableTo<ObjectResult>();
+    }
+
+    [Test]
+    public async Task RequestRecurringReportNow_ForwardsAndReturnsCreated()
+    {
+        var recurringService = Substitute.For<IRecurringReportAssignmentService>();
+        var traineeId = Id<User>.New();
+        var assignmentId = Id<RecurringReportAssignment>.New();
+        var templateId = Id<ReportTemplate>.New();
+        var assignment = CreateAssignmentResult(traineeId, templateId);
+        var currentRequest = CreateRequestResult(traineeId, templateId);
+        assignment.Id = assignmentId;
+        assignment.CurrentReportRequestId = currentRequest.Id;
+        assignment.CurrentReportRequest = currentRequest;
+        assignment.NextEligibleAt = null;
+        using var cancellationSource = new CancellationTokenSource();
+        recurringService.RequestNowAsync(
+                Arg.Any<AuthenticatedAccountContext>(),
+                traineeId.Rebind<AccountReference>(),
+                assignmentId,
+                cancellationSource.Token)
+            .Returns(Result.Success<RecurringReportAssignmentResult, AppError>(assignment));
+        var controller = CreateController(Substitute.For<IReportingService>(), recurringService);
+
+        var result = await controller.RequestRecurringReportNow(
+            traineeId.ToString(),
+            assignmentId.ToString(),
+            cancellationSource.Token);
+
+        var created = result.Should().BeOfType<ObjectResult>().Subject;
+        created.StatusCode.Should().Be(StatusCodes.Status201Created);
+        var payload = created.Value.Should().BeOfType<RecurringReportAssignmentDto>().Subject;
+        payload.Id.Should().Be(assignmentId.ToString());
+        payload.CurrentReportRequestId.Should().Be(currentRequest.Id.ToString());
+        payload.CurrentReportRequest.Should().NotBeNull();
+        payload.CurrentReportRequest!.Status.Should().Be(ReportRequestStatus.Pending);
+        payload.NextEligibleAt.Should().BeNull();
+        await recurringService.Received(1).RequestNowAsync(
+            Arg.Any<AuthenticatedAccountContext>(),
+            traineeId.Rebind<AccountReference>(),
+            assignmentId,
+            cancellationSource.Token);
+    }
+
+    [Test]
+    public async Task RequestRecurringReportNow_WithInvalidIds_ReturnsBadRequestWithoutForwarding()
+    {
+        var recurringService = Substitute.For<IRecurringReportAssignmentService>();
+        var controller = CreateController(Substitute.For<IReportingService>(), recurringService);
+
+        var invalidTrainee = await controller.RequestRecurringReportNow(
+            "not-a-guid",
+            Id<RecurringReportAssignment>.New().ToString());
+        var invalidAssignment = await controller.RequestRecurringReportNow(
+            Id<User>.New().ToString(),
+            "not-a-guid");
+
+        ((ObjectResult)invalidTrainee).StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        ((ObjectResult)invalidAssignment).StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await recurringService.DidNotReceive().RequestNowAsync(
+            Arg.Any<AuthenticatedAccountContext>(),
+            Arg.Any<Id<AccountReference>>(),
+            Arg.Any<Id<RecurringReportAssignment>>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RequestRecurringReportNow_WhenPortFails_ReturnsMappedError()
+    {
+        var recurringService = Substitute.For<IRecurringReportAssignmentService>();
+        var traineeId = Id<User>.New();
+        var assignmentId = Id<RecurringReportAssignment>.New();
+        recurringService.RequestNowAsync(
+                Arg.Any<AuthenticatedAccountContext>(),
+                traineeId.Rebind<AccountReference>(),
+                assignmentId,
+                Arg.Any<CancellationToken>())
+            .Returns(Result.Failure<RecurringReportAssignmentResult, AppError>(
+                new ReportingConflictError("conflict")));
+        var controller = CreateController(Substitute.For<IReportingService>(), recurringService);
+
+        var result = await controller.RequestRecurringReportNow(traineeId.ToString(), assignmentId.ToString());
+
+        var conflict = result.Should().BeOfType<ObjectResult>().Subject;
+        conflict.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        conflict.Value.Should().BeEquivalentTo(new ResponseMessageDto { Message = "conflict" });
     }
 
     [Test]
