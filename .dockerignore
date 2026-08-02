@@ -8,8 +8,12 @@
 !LgymApi.Application/**
 !LgymApi.Infrastructure/**
 !LgymApi.Domain/**
+!LgymApi.Identity/**
+!LgymApi.Notifications/**
+!LgymApi.Platform/**
 !LgymApi.Resources/**
 !LgymApi.Resources.Generator/**
+!LgymApi.TrainingPlanning/**
 !README.md
 !docker/
 !docker/logpanel/

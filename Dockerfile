@@ -11,9 +11,13 @@ COPY LgymApi.Application/*.csproj LgymApi.Application/
 COPY LgymApi.BackgroundWorker/*.csproj LgymApi.BackgroundWorker/
 COPY LgymApi.BackgroundWorker.Common/*.csproj LgymApi.BackgroundWorker.Common/
 COPY LgymApi.Domain/*.csproj LgymApi.Domain/
+COPY LgymApi.Identity/*.csproj LgymApi.Identity/
 COPY LgymApi.Infrastructure/*.csproj LgymApi.Infrastructure/
+COPY LgymApi.Notifications/*.csproj LgymApi.Notifications/
+COPY LgymApi.Platform/*.csproj LgymApi.Platform/
 COPY LgymApi.Resources/*.csproj LgymApi.Resources/
 COPY LgymApi.Resources.Generator/*.csproj LgymApi.Resources.Generator/
+COPY LgymApi.TrainingPlanning/*.csproj LgymApi.TrainingPlanning/
 
 RUN dotnet restore "LgymApi.Api/LgymApi.Api.csproj"
 
