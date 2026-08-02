@@ -106,6 +106,7 @@ Final responses for such tasks should mention which `.csproj` files changed and 
 - Keep the request flow: `Controller -> FluentValidation -> Application Service -> Repository -> Unit of Work -> Mapper -> Middleware`.
 - Keep controllers thin; business rules belong in Application services.
 - Keep repositories stage-only; services own `IUnitOfWork.SaveChangesAsync()` and transactions.
+- For runtime application persistence, use provider-neutral EF Core APIs. Do not use raw SQL or branch on `Database.ProviderName` or provider-name string literals.
 - Map between distinct layer models or results, including entities, application/read models, and DTOs, through registered custom `IMapper` mapping profiles (`IMapper`, `IMappingProfile`, `MappingContext`). AutoMapper, ad-hoc mapper implementations, and manual cross-layer mapping in controllers, services, or adapters are prohibited. Trivial scalar assignments without model transformation are allowed.
 - Use resource-backed messages from `LgymApi.Resources` for user-facing validation, errors, and emails.
 - The current project-reference graph is fixed at exactly 18 projects and 90 edges. The authoritative current graph is `docs/modular-monolith/issue-380-project-reference-graph.md`. No project-reference edge may be added, removed, duplicated, or made cyclic outside an approved topology change. `issue-375-project-reference-graph.md` is historical and must remain unchanged.

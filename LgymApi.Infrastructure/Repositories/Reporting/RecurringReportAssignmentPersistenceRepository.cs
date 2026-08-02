@@ -3,6 +3,7 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 using LgymApi.Infrastructure.Data;
+using LgymApi.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 
 namespace LgymApi.Infrastructure.Repositories.Reporting;
@@ -66,42 +67,18 @@ public sealed class RecurringReportAssignmentPersistenceRepository : IRecurringR
         Id<RecurringReportAssignment> assignmentId,
         CancellationToken cancellationToken = default)
     {
-        switch (SelectLockProvider(_dbContext.Database.IsRelational(), _dbContext.Database.ProviderName))
-        {
-            case RecurringReportAssignmentLockProvider.Npgsql:
-                RequireActiveTransaction();
-                var lockedAssignment = await _dbContext.RecurringReportAssignments
-                    .FromSqlInterpolated($"SELECT * FROM \"RecurringReportAssignments\" WHERE \"Id\" = {assignmentId.Value} AND NOT \"IsDeleted\" FOR UPDATE")
-                    .AsNoTracking()
-                    .SingleOrDefaultAsync(cancellationToken);
-                return lockedAssignment is null
-                    ? null
-                    : await FindByIdAsync(assignmentId, cancellationToken);
-            case RecurringReportAssignmentLockProvider.Sqlite:
-                RequireActiveTransaction();
-                return await FindByIdAsync(assignmentId, cancellationToken);
-            case RecurringReportAssignmentLockProvider.NonRelational:
-                return await FindByIdAsync(assignmentId, cancellationToken);
-            default:
-                throw new NotSupportedException("The selected recurring report assignment lock provider is unsupported.");
-        }
-    }
-
-    internal static RecurringReportAssignmentLockProvider SelectLockProvider(
-        bool isRelational,
-        string? providerName)
-    {
-        if (!isRelational)
-        {
-            return RecurringReportAssignmentLockProvider.NonRelational;
-        }
-
-        return providerName switch
-        {
-            "Npgsql.EntityFrameworkCore.PostgreSQL" => RecurringReportAssignmentLockProvider.Npgsql,
-            "Microsoft.EntityFrameworkCore.Sqlite" => RecurringReportAssignmentLockProvider.Sqlite,
-            _ => throw new NotSupportedException($"Recurring report assignment locking is not supported by relational provider '{providerName ?? "(unknown)"}'.")
-        };
+        RequireActiveTransaction();
+        var affectedRows = await _dbContext.RecurringReportAssignments
+            .IgnoreQueryFilters()
+            .Where(assignment => assignment.Id == assignmentId && !assignment.IsDeleted)
+            .StageUpdateAsync(
+                _dbContext,
+                assignment => assignment.UpdatedAt,
+                assignment => assignment.UpdatedAt,
+                cancellationToken);
+        return affectedRows == 0
+            ? null
+            : await FindByIdAsync(assignmentId, cancellationToken);
     }
 
     public async Task<RecurringReportAssignmentPersistenceModel?> FindByCurrentRequestAsync(
@@ -186,11 +163,4 @@ public sealed class RecurringReportAssignmentPersistenceRepository : IRecurringR
             throw new InvalidOperationException("Recurring report assignment locking requires an active transaction.");
         }
     }
-}
-
-internal enum RecurringReportAssignmentLockProvider
-{
-    NonRelational,
-    Npgsql,
-    Sqlite
 }

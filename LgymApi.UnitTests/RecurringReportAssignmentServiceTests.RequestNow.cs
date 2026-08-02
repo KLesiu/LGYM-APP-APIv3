@@ -28,13 +28,15 @@ public sealed partial class RecurringReportAssignmentServiceTests
     [Test]
     public async Task RequestNowAsync_WithNoCurrentRequest_CreatesPendingRequestAndBypassesNextEligibleAt()
     {
-        await using var database = CreateDbContext("recurring-request-now-success");
+        await using var database = CreateRelationalDbContext();
         var trainer = CreateUser();
-        var traineeId = Id<User>.New();
+        var trainee = CreateUser(Id<User>.New(), "Trainee", "trainee-request-now@example.com");
+        var traineeId = trainee.Id;
         var template = CreateTemplate(trainer.Id);
         var assignment = CreateAssignment(trainer.Id, traineeId, template.Id);
         assignment.Template = template;
         assignment.NextEligibleAt = DateTimeOffset.UtcNow.AddMonths(1);
+        database.Users.AddRange(trainer, trainee);
         database.ReportTemplates.Add(template);
         database.RecurringReportAssignments.Add(assignment);
         await database.SaveChangesAsync();

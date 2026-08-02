@@ -16,7 +16,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace LgymApi.IntegrationTests;
 
 [TestFixture]
-public sealed class RecurringReportRequestNowIntegrationTests : IntegrationTestBase
+[Category("PostgreSql")]
+public sealed class RecurringReportRequestNowIntegrationTests : PostgreSqlRecurringReportHttpTestBase
 {
     private const string CanonicalCommandId =
         "LgymApi.BackgroundWorker.Common.Commands.ReportRequestCreatedInAppNotificationCommand";
@@ -131,7 +132,10 @@ public sealed class RecurringReportRequestNowIntegrationTests : IntegrationTestB
             .AsNoTracking()
             .SingleAsync(candidate => candidate.Id == assignmentId);
         storedSubmission.TrainerFeedbackAddedAt.Should().NotBeNull();
-        storedSubmission.TrainerFeedbackReadAt.Should().Be(feedbackRead.TrainerFeedbackReadAt);
+        storedSubmission.TrainerFeedbackReadAt.Should().NotBeNull();
+        storedSubmission.TrainerFeedbackReadAt!.Value.Should().BeCloseTo(
+            feedbackRead.TrainerFeedbackReadAt!.Value,
+            TimeSpan.FromMicroseconds(1));
         storedAssignment.NextEligibleAt.Should().Be(storedSubmission.TrainerFeedbackReadAt!.Value.AddDays(2));
         storedAssignment.NextEligibleAt.Should().BeAfter(storedAssignment.LastRequestCreatedAt!.Value);
     }

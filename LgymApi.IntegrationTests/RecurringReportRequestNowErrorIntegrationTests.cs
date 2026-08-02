@@ -13,7 +13,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace LgymApi.IntegrationTests;
 
 [TestFixture]
-public sealed class RecurringReportRequestNowErrorIntegrationTests : IntegrationTestBase
+[Category("PostgreSql")]
+public sealed class RecurringReportRequestNowErrorIntegrationTests : PostgreSqlRecurringReportHttpTestBase
 {
     private static readonly string[] Cultures = ["en", "pl"];
 

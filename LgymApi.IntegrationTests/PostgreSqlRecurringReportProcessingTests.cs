@@ -12,7 +12,6 @@ using LgymApi.Infrastructure.Repositories.Reporting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Npgsql;
 
 namespace LgymApi.IntegrationTests;
 
@@ -86,7 +85,7 @@ public sealed class PostgreSqlRecurringReportProcessingTests : PostgreSqlIntegra
     }
 
     [Test]
-    public async Task FindByIdForUpdateAsync_SecondTransactionTimesOutThenReloadsCompleteGraphAfterRelease()
+    public async Task FindByIdForUpdateAsync_SecondTransactionWaitsThenReloadsCommittedCompleteGraph()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var cancellationToken = timeout.Token;
@@ -98,28 +97,28 @@ public sealed class PostgreSqlRecurringReportProcessingTests : PostgreSqlIntegra
         await using var lockingTransaction = await lockingDatabase.Database.BeginTransactionAsync(cancellationToken);
         AssertCompleteGraph(await lockingRepository.FindByIdForUpdateAsync(assignmentId, cancellationToken));
 
-        await using (var blockedScope = Factory.Services.CreateAsyncScope())
-        {
-            var blockedDatabase = blockedScope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var blockedRepository = new RecurringReportAssignmentPersistenceRepository(blockedDatabase);
-            await using var blockedTransaction = await blockedDatabase.Database.BeginTransactionAsync(cancellationToken);
-            await blockedDatabase.Database.ExecuteSqlRawAsync("SET LOCAL lock_timeout = '1s'", cancellationToken);
+        var assignment = await lockingDatabase.RecurringReportAssignments
+            .SingleAsync(candidate => candidate.Id == assignmentId, cancellationToken);
+        assignment.Note = "committed by locking transaction";
+        await lockingDatabase.SaveChangesAsync(cancellationToken);
 
-            var action = () => blockedRepository.FindByIdForUpdateAsync(assignmentId, cancellationToken);
+        await using var blockedScope = Factory.Services.CreateAsyncScope();
+        var blockedDatabase = blockedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var blockedRepository = new RecurringReportAssignmentPersistenceRepository(blockedDatabase);
+        await using var blockedTransaction = await blockedDatabase.Database.BeginTransactionAsync(cancellationToken);
+        var blockedReload = blockedRepository.FindByIdForUpdateAsync(assignmentId, cancellationToken);
 
-            var exception = await action.Should().ThrowAsync<InvalidOperationException>();
-            exception.Which.InnerException.Should().BeOfType<PostgresException>().Which.SqlState.Should().Be("55P03");
-        }
+        var completionBeforeRelease = async () =>
+            await blockedReload.WaitAsync(TimeSpan.FromMilliseconds(500), cancellationToken);
+
+        await completionBeforeRelease.Should().ThrowAsync<TimeoutException>();
 
         await lockingTransaction.CommitAsync(cancellationToken);
 
-        await using var reloadedScope = Factory.Services.CreateAsyncScope();
-        var reloadedDatabase = reloadedScope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var reloadedRepository = new RecurringReportAssignmentPersistenceRepository(reloadedDatabase);
-        await using var reloadedTransaction = await reloadedDatabase.Database.BeginTransactionAsync(cancellationToken);
-
-        AssertCompleteGraph(await reloadedRepository.FindByIdForUpdateAsync(assignmentId, cancellationToken));
-        await reloadedTransaction.CommitAsync(cancellationToken);
+        var blockedResult = await blockedReload.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+        blockedResult!.Note.Should().Be("committed by locking transaction");
+        AssertCompleteGraph(blockedResult);
+        await blockedTransaction.CommitAsync(cancellationToken);
     }
 
     private async Task<Id<RecurringReportAssignment>> SeedAssignmentAsync(CancellationToken cancellationToken)

@@ -151,15 +151,7 @@ public static class ExecuteUpdateExtensions
     }
 
     private static bool CanUseSetBasedUpdate(DbContext dbContext)
-    {
-        var providerName = dbContext.Database.ProviderName;
-        if (providerName?.Contains("InMemory", StringComparison.OrdinalIgnoreCase) == true)
-        {
-            return false;
-        }
-
-        return true;
-    }
+        => dbContext.Database.IsRelational();
 
     private static Task<int> ExecuteSetBasedUpdateAsync<TSource, TProperty>(
         IQueryable<TSource> source,

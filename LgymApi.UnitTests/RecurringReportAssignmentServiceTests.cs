@@ -117,9 +117,11 @@ public sealed partial class RecurringReportAssignmentServiceTests
     [Test]
     public async Task ProcessDueAssignmentsAsync_DoesNotCreateNextRequest_BeforeFeedbackRead()
     {
-        await using var db = CreateDbContext("recurring-worker-blocked");
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
+        await using var db = CreateRelationalDbContext();
+        var trainer = CreateUser();
+        var trainee = CreateUser(Id<User>.New(), "Trainee", "trainee-blocked@example.com");
+        var trainerId = trainer.Id;
+        var traineeId = trainee.Id;
         var template = CreateTemplate(trainerId);
         var currentRequest = new ReportRequest
         {
@@ -158,6 +160,7 @@ public sealed partial class RecurringReportAssignmentServiceTests
             NextEligibleAt = null
         };
 
+        db.Users.AddRange(trainer, trainee);
         db.ReportTemplates.Add(template);
         db.ReportRequests.Add(currentRequest);
         db.ReportSubmissions.Add(submission);
@@ -178,9 +181,11 @@ public sealed partial class RecurringReportAssignmentServiceTests
     [Test]
     public async Task ProcessDueAssignmentsAsync_CreatesNextRequest_AfterFeedbackReadAndIntervalElapsed()
     {
-        await using var db = CreateDbContext("recurring-worker-success");
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
+        await using var db = CreateRelationalDbContext();
+        var trainer = CreateUser();
+        var trainee = CreateUser(Id<User>.New(), "Trainee", "trainee-success@example.com");
+        var trainerId = trainer.Id;
+        var traineeId = trainee.Id;
         var template = CreateTemplate(trainerId);
         var currentRequest = new ReportRequest
         {
@@ -219,6 +224,7 @@ public sealed partial class RecurringReportAssignmentServiceTests
             NextEligibleAt = DateTimeOffset.UtcNow.AddDays(-1)
         };
 
+        db.Users.AddRange(trainer, trainee);
         db.ReportTemplates.Add(template);
         db.ReportRequests.Add(currentRequest);
         db.ReportSubmissions.Add(submission);
@@ -240,9 +246,11 @@ public sealed partial class RecurringReportAssignmentServiceTests
     [Test]
     public async Task ProcessDueAssignmentsAsync_IsIdempotent_WhenCalledTwice()
     {
-        await using var db = CreateDbContext("recurring-worker-idempotent");
-        var trainerId = Id<User>.New();
-        var traineeId = Id<User>.New();
+        await using var db = CreateRelationalDbContext();
+        var trainer = CreateUser();
+        var trainee = CreateUser(Id<User>.New(), "Trainee", "trainee-idempotent@example.com");
+        var trainerId = trainer.Id;
+        var traineeId = trainee.Id;
         var template = CreateTemplate(trainerId);
         var currentRequest = new ReportRequest
         {
@@ -281,6 +289,7 @@ public sealed partial class RecurringReportAssignmentServiceTests
             NextEligibleAt = DateTimeOffset.UtcNow.AddDays(-1)
         };
 
+        db.Users.AddRange(trainer, trainee);
         db.ReportTemplates.Add(template);
         db.ReportRequests.Add(currentRequest);
         db.ReportSubmissions.Add(submission);
@@ -456,14 +465,21 @@ public sealed partial class RecurringReportAssignmentServiceTests
             .UseInMemoryDatabase($"{name}-{Id<RecurringReportAssignmentServiceTests>.New():N}")
             .Options);
 
+    private static AppDbContext CreateRelationalDbContext()
+    {
+        var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options);
+        database.Database.OpenConnection();
+        database.Database.EnsureCreated();
+        return database;
+    }
+
     private static User CreateUser()
-        => new()
-        {
-            Id = Id<User>.New(),
-            Name = "Trainer",
-            Email = "trainer@example.com",
-            ProfileRank = "Rookie"
-        };
+        => CreateUser(Id<User>.New(), "Trainer", "trainer@example.com");
+
+    private static User CreateUser(Id<User> id, string name, string email)
+        => new() { Id = id, Name = name, Email = email, ProfileRank = "Rookie" };
 
     private static ReportTemplate CreateTemplate(Id<User> trainerId)
         => new()
