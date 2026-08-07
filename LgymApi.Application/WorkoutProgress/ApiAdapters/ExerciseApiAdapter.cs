@@ -12,19 +12,19 @@ namespace LgymApi.Application.WorkoutProgress.ApiAdapters;
 
 public interface IExerciseApiAdapter
 {
-    Task<Result<Unit, AppError>> AddExerciseAsync(string name, BodyParts bodyPart, string? description, string? image, CancellationToken cancellationToken = default);
-    Task<Result<Unit, AppError>> AddExerciseWithFormulaAsync(AddExerciseWithFormulaInput input, CancellationToken cancellationToken = default);
-    Task<Result<Unit, AppError>> AddUserExerciseAsync(Id<AccountReference> accountId, string name, BodyParts bodyPart, string? description, string? image, CancellationToken cancellationToken = default);
-    Task<Result<Unit, AppError>> AddUserExerciseWithFormulaAsync(Id<AccountReference> accountId, AddExerciseWithFormulaInput input, CancellationToken cancellationToken = default);
-    Task<Result<Unit, AppError>> DeleteExerciseAsync(Id<AccountReference> accountId, Id<ExerciseEntity> exerciseId, CancellationToken cancellationToken = default);
+    Task<Result<Unit, AppError>> AddExerciseAsync(AuthenticatedAccountContext? currentAccount, string name, BodyParts bodyPart, string? description, string? image, CancellationToken cancellationToken = default);
+    Task<Result<Unit, AppError>> AddExerciseWithFormulaAsync(AuthenticatedAccountContext? currentAccount, AddExerciseWithFormulaInput input, CancellationToken cancellationToken = default);
+    Task<Result<Unit, AppError>> AddUserExerciseAsync(AuthenticatedAccountContext? currentAccount, Id<AccountReference> accountId, string name, BodyParts bodyPart, string? description, string? image, CancellationToken cancellationToken = default);
+    Task<Result<Unit, AppError>> AddUserExerciseWithFormulaAsync(AuthenticatedAccountContext? currentAccount, Id<AccountReference> accountId, AddExerciseWithFormulaInput input, CancellationToken cancellationToken = default);
+    Task<Result<Unit, AppError>> DeleteExerciseAsync(AuthenticatedAccountContext? currentAccount, Id<AccountReference> accountId, Id<ExerciseEntity> exerciseId, CancellationToken cancellationToken = default);
     Task<Result<Unit, AppError>> UpdateExerciseAsync(AuthenticatedAccountContext currentAccount, UpdateExerciseInput input, CancellationToken cancellationToken = default);
     Task<Result<Unit, AppError>> UpdateExerciseWithFormulaAsync(AuthenticatedAccountContext currentAccount, UpdateExerciseWithFormulaInput input, CancellationToken cancellationToken = default);
     Task<Result<Unit, AppError>> AddGlobalTranslationAsync(AuthenticatedAccountContext? currentAccount, Id<AccountReference> routeAccountId, Id<ExerciseEntity> exerciseId, string? culture, string? name, CancellationToken cancellationToken = default);
-    Task<Result<ExercisesWithTranslations, AppError>> GetAllExercisesAsync(Id<AccountReference> accountId, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default);
-    Task<Result<ExercisesWithTranslations, AppError>> GetAllUserExercisesAsync(Id<AccountReference> accountId, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default);
-    Task<Result<ExercisesWithTranslations, AppError>> GetAllGlobalExercisesAsync(IReadOnlyList<string> cultures, CancellationToken cancellationToken = default);
-    Task<Result<ExercisesWithTranslations, AppError>> GetExerciseByBodyPartAsync(Id<AccountReference> accountId, BodyParts bodyPart, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default);
-    Task<Result<ExerciseWithTranslations, AppError>> GetExerciseAsync(Id<ExerciseEntity> exerciseId, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default);
+    Task<Result<ExercisesWithTranslations, AppError>> GetAllExercisesAsync(AuthenticatedAccountContext? currentAccount, Id<AccountReference> accountId, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default);
+    Task<Result<ExercisesWithTranslations, AppError>> GetAllUserExercisesAsync(AuthenticatedAccountContext? currentAccount, Id<AccountReference> accountId, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default);
+    Task<Result<ExercisesWithTranslations, AppError>> GetAllGlobalExercisesAsync(AuthenticatedAccountContext? currentAccount, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default);
+    Task<Result<ExercisesWithTranslations, AppError>> GetExerciseByBodyPartAsync(AuthenticatedAccountContext? currentAccount, Id<AccountReference> accountId, BodyParts bodyPart, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default);
+    Task<Result<ExerciseWithTranslations, AppError>> GetExerciseAsync(AuthenticatedAccountContext? currentAccount, Id<ExerciseEntity> exerciseId, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default);
     Task<Result<LastExerciseScoresResult, AppError>> GetLastExerciseScoresAsync(Id<AccountReference> routeAccountId, Id<AccountReference> currentAccountId, Id<ExerciseEntity> exerciseId, int series, Id<LgymApi.Domain.Entities.Gym>? gymId, string exerciseName, CancellationToken cancellationToken = default);
     Task<Result<List<ExerciseTrainingHistoryItem>, AppError>> GetExerciseScoresFromTrainingByExerciseAsync(Id<AccountReference> currentAccountId, Id<ExerciseEntity> exerciseId, CancellationToken cancellationToken = default);
 }
@@ -38,22 +38,23 @@ internal sealed class ExerciseApiAdapter : IExerciseApiAdapter
         _exerciseService = exerciseService;
     }
 
-    public Task<Result<Unit, AppError>> AddExerciseAsync(string name, BodyParts bodyPart, string? description, string? image, CancellationToken cancellationToken = default)
-        => _exerciseService.AddExerciseAsync(name, bodyPart, description, image, cancellationToken);
+    public Task<Result<Unit, AppError>> AddExerciseAsync(AuthenticatedAccountContext? currentAccount, string name, BodyParts bodyPart, string? description, string? image, CancellationToken cancellationToken = default)
+        => _exerciseService.AddExerciseAsync(currentAccount, name, bodyPart, description, image, cancellationToken);
 
-    public Task<Result<Unit, AppError>> AddExerciseWithFormulaAsync(AddExerciseWithFormulaInput input, CancellationToken cancellationToken = default)
-        => _exerciseService.AddExerciseWithFormulaAsync(input, cancellationToken);
+    public Task<Result<Unit, AppError>> AddExerciseWithFormulaAsync(AuthenticatedAccountContext? currentAccount, AddExerciseWithFormulaInput input, CancellationToken cancellationToken = default)
+        => _exerciseService.AddExerciseWithFormulaAsync(currentAccount, input, cancellationToken);
 
-    public Task<Result<Unit, AppError>> AddUserExerciseAsync(Id<AccountReference> accountId, string name, BodyParts bodyPart, string? description, string? image, CancellationToken cancellationToken = default)
-        => _exerciseService.AddUserExerciseAsync(new AddUserExerciseInput(accountId, name, bodyPart, description, image), cancellationToken);
+    public Task<Result<Unit, AppError>> AddUserExerciseAsync(AuthenticatedAccountContext? currentAccount, Id<AccountReference> accountId, string name, BodyParts bodyPart, string? description, string? image, CancellationToken cancellationToken = default)
+        => _exerciseService.AddUserExerciseAsync(currentAccount, new AddUserExerciseInput(accountId, name, bodyPart, description, image), cancellationToken);
 
-    public Task<Result<Unit, AppError>> AddUserExerciseWithFormulaAsync(Id<AccountReference> accountId, AddExerciseWithFormulaInput input, CancellationToken cancellationToken = default)
+    public Task<Result<Unit, AppError>> AddUserExerciseWithFormulaAsync(AuthenticatedAccountContext? currentAccount, Id<AccountReference> accountId, AddExerciseWithFormulaInput input, CancellationToken cancellationToken = default)
         => _exerciseService.AddUserExerciseWithFormulaAsync(
+            currentAccount,
             new AddUserExerciseWithFormulaInput(accountId, input.Name, input.BodyPart, input.EloFormula, input.Description, input.Image),
             cancellationToken);
 
-    public Task<Result<Unit, AppError>> DeleteExerciseAsync(Id<AccountReference> accountId, Id<ExerciseEntity> exerciseId, CancellationToken cancellationToken = default)
-        => _exerciseService.DeleteExerciseAsync(accountId, exerciseId, cancellationToken);
+    public Task<Result<Unit, AppError>> DeleteExerciseAsync(AuthenticatedAccountContext? currentAccount, Id<AccountReference> accountId, Id<ExerciseEntity> exerciseId, CancellationToken cancellationToken = default)
+        => _exerciseService.DeleteExerciseAsync(currentAccount, accountId, exerciseId, cancellationToken);
 
     public async Task<Result<Unit, AppError>> UpdateExerciseAsync(AuthenticatedAccountContext currentAccount, UpdateExerciseInput input, CancellationToken cancellationToken = default)
     {
@@ -75,20 +76,20 @@ internal sealed class ExerciseApiAdapter : IExerciseApiAdapter
         return await _exerciseService.AddGlobalTranslationAsync(currentAccount, new AddGlobalTranslationInput(routeAccountId, exerciseId, culture, name), cancellationToken);
     }
 
-    public Task<Result<ExercisesWithTranslations, AppError>> GetAllExercisesAsync(Id<AccountReference> accountId, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default)
-        => _exerciseService.GetAllExercisesAsync(accountId, cultures, cancellationToken);
+    public Task<Result<ExercisesWithTranslations, AppError>> GetAllExercisesAsync(AuthenticatedAccountContext? currentAccount, Id<AccountReference> accountId, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default)
+        => _exerciseService.GetAllExercisesAsync(currentAccount, accountId, cultures, cancellationToken);
 
-    public Task<Result<ExercisesWithTranslations, AppError>> GetAllUserExercisesAsync(Id<AccountReference> accountId, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default)
-        => _exerciseService.GetAllUserExercisesAsync(accountId, cultures, cancellationToken);
+    public Task<Result<ExercisesWithTranslations, AppError>> GetAllUserExercisesAsync(AuthenticatedAccountContext? currentAccount, Id<AccountReference> accountId, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default)
+        => _exerciseService.GetAllUserExercisesAsync(currentAccount, accountId, cultures, cancellationToken);
 
-    public Task<Result<ExercisesWithTranslations, AppError>> GetAllGlobalExercisesAsync(IReadOnlyList<string> cultures, CancellationToken cancellationToken = default)
-        => _exerciseService.GetAllGlobalExercisesAsync(cultures, cancellationToken);
+    public Task<Result<ExercisesWithTranslations, AppError>> GetAllGlobalExercisesAsync(AuthenticatedAccountContext? currentAccount, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default)
+        => _exerciseService.GetAllGlobalExercisesAsync(currentAccount, cultures, cancellationToken);
 
-    public Task<Result<ExercisesWithTranslations, AppError>> GetExerciseByBodyPartAsync(Id<AccountReference> accountId, BodyParts bodyPart, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default)
-        => _exerciseService.GetExerciseByBodyPartAsync(accountId, bodyPart, cultures, cancellationToken);
+    public Task<Result<ExercisesWithTranslations, AppError>> GetExerciseByBodyPartAsync(AuthenticatedAccountContext? currentAccount, Id<AccountReference> accountId, BodyParts bodyPart, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default)
+        => _exerciseService.GetExerciseByBodyPartAsync(currentAccount, accountId, bodyPart, cultures, cancellationToken);
 
-    public Task<Result<ExerciseWithTranslations, AppError>> GetExerciseAsync(Id<ExerciseEntity> exerciseId, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default)
-        => _exerciseService.GetExerciseAsync(exerciseId, cultures, cancellationToken);
+    public Task<Result<ExerciseWithTranslations, AppError>> GetExerciseAsync(AuthenticatedAccountContext? currentAccount, Id<ExerciseEntity> exerciseId, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default)
+        => _exerciseService.GetExerciseAsync(currentAccount, exerciseId, cultures, cancellationToken);
 
     public Task<Result<LastExerciseScoresResult, AppError>> GetLastExerciseScoresAsync(Id<AccountReference> routeAccountId, Id<AccountReference> currentAccountId, Id<ExerciseEntity> exerciseId, int series, Id<LgymApi.Domain.Entities.Gym>? gymId, string exerciseName, CancellationToken cancellationToken = default)
         => _exerciseService.GetLastExerciseScoresAsync(

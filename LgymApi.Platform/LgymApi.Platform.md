@@ -5,3 +5,5 @@
 - Rules: keep direct references limited to Domain and Resources. Its internal persistence context is friend-visible only to Infrastructure, UnitTests, and IntegrationTests.
 - Boundary: do not add feature workflows, a DbContext, migrations, or Worker dependencies. `IPlatformPersistenceContext` exposes only the four Platform-owned sets and `Entry(CommandEnvelope)`; Infrastructure remains the sole context implementation. `PlatformModule.AddPlatformModule` is the only public Platform registration entry; its implementations are internal.
 - EF coordination: `PlatformModelConfigurationRegistrar` provides the fixed Reference Data and reliability phase entry points. Infrastructure supplies the configurations without assembly scanning.
+- `IActorRowSecurityScopeFactory` is the single Platform contract for owner services to begin an actor-bound `IUnitOfWorkTransaction` using `Id<ActorReference>` without provider dependencies.
+- The staging-only tutorial RLS operating procedure is [`tutorial-rls-pilot.md`](../docs/security/tutorial-rls-pilot.md). The Platform contract remains the only approved path for transaction-local actor context.

@@ -9,6 +9,7 @@ using LgymApi.Domain.Notifications;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Data.SeedData;
+using LgymApi.IntegrationTests.Authorization;
 using LgymApi.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,6 +20,9 @@ namespace LgymApi.IntegrationTests;
 public sealed class DietPlansApiTests : IntegrationTestBase
 {
     [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/diet-plans", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/history", "trainer-shared", "active-relationship-allow")]
     public async Task TrainerDietPlanCrudFlow_Works()
     {
         var trainer = await SeedTrainerAsync("trainer-diet", "trainer-diet@example.com");
@@ -89,6 +93,7 @@ public sealed class DietPlansApiTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans", "trainer-shared", "foreign-object-denial-no-mutation")]
     public async Task TrainerCannotCreateDietForForeignTrainee()
     {
         var ownerTrainer = await SeedTrainerAsync("trainer-owner-diet", "trainer-owner-diet@example.com");
@@ -97,18 +102,140 @@ public sealed class DietPlansApiTests : IntegrationTestBase
         await LinkTrainerAndTraineeAsync(ownerTrainer.Id, trainee.Id);
 
         SetAuthorizationHeader(otherTrainer.Id);
-        var response = await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans", new
-        {
-            name = "Forbidden",
-            startDate = new DateOnly(2026, 6, 1),
-            isActive = false,
-            meals = new object[] { new { name = "Meal", order = 0 } }
-        });
+        var beforeCreate = await GetDietPersistenceCountsAsync();
+        await AssertExactMessageAsync(
+            await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans", ValidDietRequest("Foreign trainee plan")),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await GetDietPersistenceCountsAsync()).Should().Be(beforeCreate);
     }
 
     [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans", "trainer-shared", "anonymous-denial")]
+    public async Task TrainerDietCreate_WithoutRelationshipOrAuthentication_DoesNotPersist()
+    {
+        var unrelatedTrainer = await SeedTrainerAsync("task10-unrelated-diet-create-trainer", "task10-unrelated-diet-create-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-unrelated-diet-create-trainee", "task10-unrelated-diet-create-trainee@example.com", "password123");
+        var beforeCreate = await GetDietPersistenceCountsAsync();
+
+        SetAuthorizationHeader(unrelatedTrainer.Id);
+        await AssertExactMessageAsync(
+            await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans", ValidDietRequest("Unrelated trainee plan")),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+        (await GetDietPersistenceCountsAsync()).Should().Be(beforeCreate);
+
+        ClearAuthorizationHeader();
+        using (var anonymousResponse = await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans", ValidDietRequest("Anonymous trainee plan")))
+        {
+            anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        (await GetDietPersistenceCountsAsync()).Should().Be(beforeCreate);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans", "trainer-shared", "former-relationship-denial")]
+    public async Task TrainerDietCreate_AfterUnlink_ReturnsNotFoundWithoutPersistence()
+    {
+        var trainer = await SeedTrainerAsync("task10-former-diet-create-trainer", "task10-former-diet-create-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-former-diet-create-trainee", "task10-former-diet-create-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
+
+        SetAuthorizationHeader(trainer.Id);
+        var beforeCreate = await GetDietPersistenceCountsAsync();
+        using (var unlinkResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null))
+        {
+            unlinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        await AssertExactMessageAsync(
+            await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans", ValidDietRequest("Former trainee plan")),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+
+        (await GetDietPersistenceCountsAsync()).Should().Be(beforeCreate);
+    }
+
+    [Test]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/diet-plans", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/diet-plans", "trainer-shared", "anonymous-denial")]
+    public async Task TrainerDietList_WithoutRelationshipOrAuthentication_DoesNotMutatePersistence()
+    {
+        var unrelatedTrainer = await SeedTrainerAsync("task10-unrelated-diet-list-trainer", "task10-unrelated-diet-list-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-unrelated-diet-list-trainee", "task10-unrelated-diet-list-trainee@example.com", "password123");
+        var beforeRead = await GetDietPersistenceCountsAsync();
+
+        SetAuthorizationHeader(unrelatedTrainer.Id);
+        await AssertExactMessageAsync(
+            await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans"),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+        (await GetDietPersistenceCountsAsync()).Should().Be(beforeRead);
+
+        ClearAuthorizationHeader();
+        using (var anonymousResponse = await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans"))
+        {
+            anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        (await GetDietPersistenceCountsAsync()).Should().Be(beforeRead);
+    }
+
+    [Test]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/diet-plans", "trainer-shared", "foreign-object-denial-no-mutation")]
+    public async Task TrainerDietList_ForForeignTrainee_ReturnsNotFoundAndPreservesPlan()
+    {
+        var owner = await SeedTrainerAsync("task10-foreign-diet-list-owner", "task10-foreign-diet-list-owner@example.com");
+        var otherTrainer = await SeedTrainerAsync("task10-foreign-diet-list-trainer", "task10-foreign-diet-list-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-foreign-diet-list-trainee", "task10-foreign-diet-list-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(owner.Id, trainee.Id);
+
+        SetAuthorizationHeader(owner.Id);
+        var plan = await CreateDietAsync(trainee.Id, "Foreign trainer list plan", true);
+        var originalPlan = await GetDietPlanSnapshotAsync(plan.Id);
+        var beforeRead = await GetDietPersistenceCountsAsync();
+
+        SetAuthorizationHeader(otherTrainer.Id);
+        await AssertExactMessageAsync(
+            await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans"),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+
+        (await GetDietPlanSnapshotAsync(plan.Id)).Should().BeEquivalentTo(originalPlan);
+        (await GetDietPersistenceCountsAsync()).Should().Be(beforeRead);
+    }
+
+    [Test]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/diet-plans", "trainer-shared", "former-relationship-denial")]
+    public async Task TrainerDietList_AfterUnlink_ReturnsNotFoundAndPreservesPlan()
+    {
+        var trainer = await SeedTrainerAsync("task10-former-diet-list-trainer", "task10-former-diet-list-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-former-diet-list-trainee", "task10-former-diet-list-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
+
+        SetAuthorizationHeader(trainer.Id);
+        var plan = await CreateDietAsync(trainee.Id, "Former trainer list plan", true);
+        var originalPlan = await GetDietPlanSnapshotAsync(plan.Id);
+        var beforeRead = await GetDietPersistenceCountsAsync();
+        using (var unlinkResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null))
+        {
+            unlinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        await AssertExactMessageAsync(
+            await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans"),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+
+        (await GetDietPlanSnapshotAsync(plan.Id)).Should().BeEquivalentTo(originalPlan);
+        (await GetDietPersistenceCountsAsync()).Should().Be(beforeRead);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/activate", "trainer-shared", "active-relationship-allow")]
     public async Task ActivateDietPlan_PreservesExistingActivePlanCharacterization()
     {
         var trainer = await SeedTrainerAsync("trainer-activate-diet", "trainer-activate-diet@example.com");
@@ -118,14 +245,16 @@ public sealed class DietPlansApiTests : IntegrationTestBase
         SetAuthorizationHeader(trainer.Id);
         var first = await CreateDietAsync(trainee.Id, "Diet A", true);
         var second = await CreateDietAsync(trainee.Id, "Diet B", false);
+        var beforeActivation = await GetDietPersistenceCountsAsync();
 
-        var activateResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{second.Id}/activate", null);
-        activateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var activateResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{second.Id}/activate", null);
+        await AssertExactMessageAsync(activateResponse, HttpStatusCode.OK, EnglishMessage(() => Messages.Updated));
 
         var listResponse = await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans");
         var plans = await listResponse.Content.ReadFromJsonAsync<List<DietPlanResponse>>();
         plans.Should().Contain(x => x.IsActive && x.Id == second.Id);
         plans.Should().Contain(x => x.IsActive && x.Id == first.Id);
+        (await GetDietPersistenceCountsAsync()).Should().Be((beforeActivation.Plans, beforeActivation.Histories + 1, beforeActivation.Commands + 1));
     }
 
     [Test]
@@ -170,6 +299,11 @@ public sealed class DietPlansApiTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/delete", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/delete", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/history", "trainer-shared", "foreign-object-denial-no-mutation")]
     public async Task DietDeleteAndSingleRead_PreserveContracts()
     {
         var owner = await SeedTrainerAsync("trainer-diet-owner", "trainer-diet-owner@example.com");
@@ -180,6 +314,8 @@ public sealed class DietPlansApiTests : IntegrationTestBase
 
         SetAuthorizationHeader(owner.Id);
         var plan = await CreateDietAsync(trainee.Id, "Owner plan", true);
+        var originalPlan = await GetDietPlanSnapshotAsync(plan.Id);
+        var beforeForeignRead = await GetDietPersistenceCountsAsync();
 
         var singleRead = await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}");
         singleRead.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -196,9 +332,15 @@ public sealed class DietPlansApiTests : IntegrationTestBase
             HttpStatusCode.NotFound,
             EnglishMessage(() => Messages.DidntFind));
         await AssertExactMessageAsync(
+            await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/history"),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+        await AssertExactMessageAsync(
             await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/delete", null),
             HttpStatusCode.NotFound,
             EnglishMessage(() => Messages.DidntFind));
+        (await GetDietPlanSnapshotAsync(plan.Id)).Should().BeEquivalentTo(originalPlan);
+        (await GetDietPersistenceCountsAsync()).Should().Be(beforeForeignRead);
 
         SetAuthorizationHeader(owner.Id);
         await AssertExactMessageAsync(
@@ -216,6 +358,84 @@ public sealed class DietPlansApiTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/history", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/history", "trainer-shared", "anonymous-denial")]
+    public async Task TrainerDietSingleRead_WithoutRelationshipOrAuthentication_DoesNotMutatePlan()
+    {
+        var owner = await SeedTrainerAsync("task10-unrelated-diet-read-owner", "task10-unrelated-diet-read-owner@example.com");
+        var unrelatedTrainer = await SeedTrainerAsync("task10-unrelated-diet-read-trainer", "task10-unrelated-diet-read-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-unrelated-diet-read-trainee", "task10-unrelated-diet-read-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(owner.Id, trainee.Id);
+
+        SetAuthorizationHeader(owner.Id);
+        var plan = await CreateDietAsync(trainee.Id, "Unrelated trainer read plan", true);
+        var originalPlan = await GetDietPlanSnapshotAsync(plan.Id);
+        var beforeRead = await GetDietPersistenceCountsAsync();
+
+        SetAuthorizationHeader(unrelatedTrainer.Id);
+        await AssertExactMessageAsync(
+            await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}"),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+        await AssertExactMessageAsync(
+            await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/history"),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+        (await GetDietPlanSnapshotAsync(plan.Id)).Should().BeEquivalentTo(originalPlan);
+        (await GetDietPersistenceCountsAsync()).Should().Be(beforeRead);
+
+        ClearAuthorizationHeader();
+        using (var anonymousResponse = await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}"))
+        {
+            anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+        using (var anonymousHistoryResponse = await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/history"))
+        {
+            anonymousHistoryResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        (await GetDietPlanSnapshotAsync(plan.Id)).Should().BeEquivalentTo(originalPlan);
+        (await GetDietPersistenceCountsAsync()).Should().Be(beforeRead);
+    }
+
+    [Test]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/history", "trainer-shared", "former-relationship-denial")]
+    public async Task TrainerDietSingleRead_AfterUnlink_ReturnsNotFoundAndPreservesPlan()
+    {
+        var trainer = await SeedTrainerAsync("task10-former-diet-read-trainer", "task10-former-diet-read-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-former-diet-read-trainee", "task10-former-diet-read-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
+
+        SetAuthorizationHeader(trainer.Id);
+        var plan = await CreateDietAsync(trainee.Id, "Former trainer read plan", true);
+        var originalPlan = await GetDietPlanSnapshotAsync(plan.Id);
+        var beforeRead = await GetDietPersistenceCountsAsync();
+        using (var unlinkResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null))
+        {
+            unlinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        await AssertExactMessageAsync(
+            await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}"),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+        await AssertExactMessageAsync(
+            await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/history"),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+
+        (await GetDietPlanSnapshotAsync(plan.Id)).Should().BeEquivalentTo(originalPlan);
+        (await GetDietPersistenceCountsAsync()).Should().Be(beforeRead);
+    }
+
+    [Test]
+    [AuthorizationEvidence("GET", "/api/trainee/diet-plan/current", "own", "owner-allow")]
+    [AuthorizationEvidence("GET", "/api/trainee/diet-plan/current", "own", "no-client-subject")]
+    [AuthorizationEvidence("GET", "/api/trainee/diet-plans/current", "own", "owner-allow")]
+    [AuthorizationEvidence("GET", "/api/trainee/diet-plans/current", "own", "no-client-subject")]
     public async Task TraineeCurrentDietRoutes_PreservePluralAndSingularSemantics()
     {
         var trainer = await SeedTrainerAsync("trainer-current-contract", "trainer-current-contract@example.com");
@@ -248,6 +468,276 @@ public sealed class DietPlansApiTests : IntegrationTestBase
         var current = await singular.Content.ReadFromJsonAsync<DietPlanResponse>();
         current.Should().NotBeNull();
         current!.Id.Should().BeOneOf(first.Id, second.Id);
+    }
+
+    [Test]
+    [AuthorizationEvidence("GET", "/api/trainee/diet-plan/current", "own", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/trainee/diet-plans/current", "own", "anonymous-denial")]
+    public async Task TraineeCurrentDietRoutes_WithoutAuthentication_AreUnauthorized()
+    {
+        ClearAuthorizationHeader();
+
+        using var singularResponse = await Client.GetAsync("/api/trainee/diet-plan/current");
+        using var pluralResponse = await Client.GetAsync("/api/trainee/diet-plans/current");
+
+        singularResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        pluralResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/update", "trainer-shared", "active-relationship-allow")]
+    public async Task TrainerDietUpdate_WithActiveRelationship_UpdatesPlan()
+    {
+        var trainer = await SeedTrainerAsync("task10-active-diet-trainer", "task10-active-diet-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-active-diet-trainee", "task10-active-diet-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
+
+        SetAuthorizationHeader(trainer.Id);
+        var plan = await CreateDietAsync(trainee.Id, "Active trainer plan", true);
+
+        using var response = await Client.PostAsJsonAsync(
+            $"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/update",
+            ValidDietRequest("Active trainer updated plan"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updatedPlan = await response.Content.ReadFromJsonAsync<DietPlanResponse>();
+        updatedPlan.Should().NotBeNull();
+        updatedPlan!.Name.Should().Be("Active trainer updated plan");
+
+        var persistedPlan = await GetDietPlanSnapshotAsync(plan.Id);
+        persistedPlan.Name.Should().Be("Active trainer updated plan");
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/update", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/update", "trainer-shared", "anonymous-denial")]
+    public async Task TrainerDietUpdate_WithoutRelationshipOrAuthentication_DoesNotMutatePlan()
+    {
+        var owner = await SeedTrainerAsync("task10-unrelated-diet-update-owner", "task10-unrelated-diet-update-owner@example.com");
+        var unrelatedTrainer = await SeedTrainerAsync("task10-unrelated-diet-update-trainer", "task10-unrelated-diet-update-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-unrelated-diet-update-trainee", "task10-unrelated-diet-update-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(owner.Id, trainee.Id);
+
+        SetAuthorizationHeader(owner.Id);
+        var plan = await CreateDietAsync(trainee.Id, "Unrelated trainer update plan", true);
+        var originalPlan = await GetDietPlanSnapshotAsync(plan.Id);
+        var originalPersistenceCounts = await GetDietPersistenceCountsAsync();
+
+        SetAuthorizationHeader(unrelatedTrainer.Id);
+        await AssertExactMessageAsync(
+            await Client.PostAsJsonAsync(
+                $"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/update",
+                ValidDietRequest("Unrelated trainer mutation")),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+        (await GetDietPlanSnapshotAsync(plan.Id)).Should().BeEquivalentTo(originalPlan);
+        (await GetDietPersistenceCountsAsync()).Should().Be(originalPersistenceCounts);
+
+        ClearAuthorizationHeader();
+        using (var anonymousResponse = await Client.PostAsJsonAsync(
+                   $"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/update",
+                   ValidDietRequest("Anonymous mutation")))
+        {
+            anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        (await GetDietPlanSnapshotAsync(plan.Id)).Should().BeEquivalentTo(originalPlan);
+        (await GetDietPersistenceCountsAsync()).Should().Be(originalPersistenceCounts);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/update", "trainer-shared", "foreign-object-denial-no-mutation")]
+    public async Task TrainerDietUpdate_ForPlanOwnedByAnotherTrainer_ReturnsNotFoundAndPreservesPlan()
+    {
+        var owner = await SeedTrainerAsync("task10-foreign-diet-update-owner", "task10-foreign-diet-update-owner@example.com");
+        var otherTrainer = await SeedTrainerAsync("task10-foreign-diet-update-trainer", "task10-foreign-diet-update-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-foreign-diet-update-trainee", "task10-foreign-diet-update-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(owner.Id, trainee.Id);
+        await LinkTrainerAndTraineeAsync(otherTrainer.Id, trainee.Id);
+
+        SetAuthorizationHeader(owner.Id);
+        var plan = await CreateDietAsync(trainee.Id, "Foreign trainer update plan", true);
+        var originalPlan = await GetDietPlanSnapshotAsync(plan.Id);
+        var originalPersistenceCounts = await GetDietPersistenceCountsAsync();
+
+        SetAuthorizationHeader(otherTrainer.Id);
+        await AssertExactMessageAsync(
+            await Client.PostAsJsonAsync(
+                $"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/update",
+                ValidDietRequest("Foreign trainer mutation")),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+
+        (await GetDietPlanSnapshotAsync(plan.Id)).Should().BeEquivalentTo(originalPlan);
+        (await GetDietPersistenceCountsAsync()).Should().Be(originalPersistenceCounts);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/update", "trainer-shared", "former-relationship-denial")]
+    public async Task TrainerDietUpdate_AfterUnlink_ReturnsNotFoundAndPreservesPlan()
+    {
+        var trainer = await SeedTrainerAsync("task10-former-diet-trainer", "task10-former-diet-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-former-diet-trainee", "task10-former-diet-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
+
+        SetAuthorizationHeader(trainer.Id);
+        var plan = await CreateDietAsync(trainee.Id, "Former trainer plan", true);
+        var originalPlan = await GetDietPlanSnapshotAsync(plan.Id);
+        var originalPersistenceCounts = await GetDietPersistenceCountsAsync();
+        using (var unlinkResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null))
+        {
+            unlinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        using var response = await Client.PostAsJsonAsync(
+            $"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/update",
+            ValidDietRequest("Former trainer mutation"));
+        await AssertExactMessageAsync(response, HttpStatusCode.NotFound, EnglishMessage(() => Messages.DidntFind));
+
+        (await GetDietPlanSnapshotAsync(plan.Id)).Should().BeEquivalentTo(originalPlan);
+        (await GetDietPersistenceCountsAsync()).Should().Be(originalPersistenceCounts);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/activate", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/activate", "trainer-shared", "anonymous-denial")]
+    public async Task TrainerDietActivate_WithoutRelationshipOrAuthentication_DoesNotMutatePlan()
+    {
+        var owner = await SeedTrainerAsync("task10-unrelated-diet-activate-owner", "task10-unrelated-diet-activate-owner@example.com");
+        var unrelatedTrainer = await SeedTrainerAsync("task10-unrelated-diet-activate-trainer", "task10-unrelated-diet-activate-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-unrelated-diet-activate-trainee", "task10-unrelated-diet-activate-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(owner.Id, trainee.Id);
+
+        SetAuthorizationHeader(owner.Id);
+        var plan = await CreateDietAsync(trainee.Id, "Unrelated trainer activate plan", false);
+        var originalPlan = await GetDietPlanSnapshotAsync(plan.Id);
+        var originalPersistenceCounts = await GetDietPersistenceCountsAsync();
+
+        SetAuthorizationHeader(unrelatedTrainer.Id);
+        await AssertExactMessageAsync(
+            await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/activate", null),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+        (await GetDietPlanSnapshotAsync(plan.Id)).Should().BeEquivalentTo(originalPlan);
+        (await GetDietPersistenceCountsAsync()).Should().Be(originalPersistenceCounts);
+
+        ClearAuthorizationHeader();
+        using (var anonymousResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/activate", null))
+        {
+            anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        (await GetDietPlanSnapshotAsync(plan.Id)).Should().BeEquivalentTo(originalPlan);
+        (await GetDietPersistenceCountsAsync()).Should().Be(originalPersistenceCounts);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/activate", "trainer-shared", "foreign-object-denial-no-mutation")]
+    public async Task TrainerDietActivate_ForPlanOwnedByAnotherTrainer_ReturnsNotFoundAndPreservesPlan()
+    {
+        var owner = await SeedTrainerAsync("task10-foreign-diet-activate-owner", "task10-foreign-diet-activate-owner@example.com");
+        var otherTrainer = await SeedTrainerAsync("task10-foreign-diet-activate-trainer", "task10-foreign-diet-activate-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-foreign-diet-activate-trainee", "task10-foreign-diet-activate-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(owner.Id, trainee.Id);
+        await LinkTrainerAndTraineeAsync(otherTrainer.Id, trainee.Id);
+
+        SetAuthorizationHeader(owner.Id);
+        var plan = await CreateDietAsync(trainee.Id, "Foreign trainer activate plan", false);
+        var originalPlan = await GetDietPlanSnapshotAsync(plan.Id);
+        var originalPersistenceCounts = await GetDietPersistenceCountsAsync();
+
+        SetAuthorizationHeader(otherTrainer.Id);
+        await AssertExactMessageAsync(
+            await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/activate", null),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+
+        (await GetDietPlanSnapshotAsync(plan.Id)).Should().BeEquivalentTo(originalPlan);
+        (await GetDietPersistenceCountsAsync()).Should().Be(originalPersistenceCounts);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/activate", "trainer-shared", "former-relationship-denial")]
+    public async Task TrainerDietActivate_AfterUnlink_ReturnsNotFoundAndPreservesPlan()
+    {
+        var trainer = await SeedTrainerAsync("task10-former-diet-activate-trainer", "task10-former-diet-activate-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-former-diet-activate-trainee", "task10-former-diet-activate-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
+
+        SetAuthorizationHeader(trainer.Id);
+        var plan = await CreateDietAsync(trainee.Id, "Former trainer activate plan", false);
+        var originalPlan = await GetDietPlanSnapshotAsync(plan.Id);
+        var originalPersistenceCounts = await GetDietPersistenceCountsAsync();
+        using (var unlinkResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null))
+        {
+            unlinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        await AssertExactMessageAsync(
+            await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/activate", null),
+            HttpStatusCode.NotFound,
+            EnglishMessage(() => Messages.DidntFind));
+
+        (await GetDietPlanSnapshotAsync(plan.Id)).Should().BeEquivalentTo(originalPlan);
+        (await GetDietPersistenceCountsAsync()).Should().Be(originalPersistenceCounts);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/delete", "trainer-shared", "former-relationship-denial")]
+    public async Task TrainerDietDelete_AfterUnlink_ReturnsNotFoundAndPreservesPlan()
+    {
+        var trainer = await SeedTrainerAsync("task10-former-diet-delete-trainer", "task10-former-diet-delete-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-former-diet-delete-trainee", "task10-former-diet-delete-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
+
+        SetAuthorizationHeader(trainer.Id);
+        var plan = await CreateDietAsync(trainee.Id, "Former trainer delete plan", true);
+        using (var unlinkResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null))
+        {
+            unlinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        using var response = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/delete", null);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await response.Content.ReadAsStringAsync()).Should().NotContain("Former trainer delete plan");
+
+        using var verifyScope = Factory.Services.CreateScope();
+        var database = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var persistedPlan = await database.DietPlans.IgnoreQueryFilters().AsNoTracking().SingleAsync(item => item.Id.ToString() == plan.Id);
+        persistedPlan.Name.Should().Be("Former trainer delete plan");
+        persistedPlan.IsDeleted.Should().BeFalse();
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/delete", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/diet-plans/{dietPlanId}/delete", "trainer-shared", "anonymous-denial")]
+    public async Task TrainerDietDelete_WithoutRelationshipOrAuthentication_DoesNotMutatePlan()
+    {
+        var owner = await SeedTrainerAsync("task10-unrelated-diet-owner", "task10-unrelated-diet-owner@example.com");
+        var unrelatedTrainer = await SeedTrainerAsync("task10-unrelated-diet-trainer", "task10-unrelated-diet-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-unrelated-diet-trainee", "task10-unrelated-diet-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(owner.Id, trainee.Id);
+
+        SetAuthorizationHeader(owner.Id);
+        var plan = await CreateDietAsync(trainee.Id, "Unrelated trainer delete plan", true);
+
+        SetAuthorizationHeader(unrelatedTrainer.Id);
+        using (var unrelatedResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/delete", null))
+        {
+            unrelatedResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        ClearAuthorizationHeader();
+        using (var anonymousResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/diet-plans/{plan.Id}/delete", null))
+        {
+            anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        using var verifyScope = Factory.Services.CreateScope();
+        var database = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var persistedPlan = await database.DietPlans.IgnoreQueryFilters().AsNoTracking().SingleAsync(item => item.Id.ToString() == plan.Id);
+        persistedPlan.Name.Should().Be("Unrelated trainer delete plan");
+        persistedPlan.IsDeleted.Should().BeFalse();
     }
 
     [Test]
@@ -396,10 +886,44 @@ public sealed class DietPlansApiTests : IntegrationTestBase
             await db.CommandEnvelopes.CountAsync());
     }
 
-    private static object ValidDietRequest()
+    private async Task<DietPlanSnapshot> GetDietPlanSnapshotAsync(string dietPlanId)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var plan = await db.DietPlans
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Include(item => item.Meals)
+            .SingleAsync(item => item.Id.ToString() == dietPlanId);
+
+        return new DietPlanSnapshot(
+            plan.Name,
+            plan.StartDate,
+            plan.EndDate,
+            plan.EstimatedCalories,
+            plan.ProteinGrams,
+            plan.CarbsGrams,
+            plan.FatGrams,
+            plan.Notes,
+            plan.IsActive,
+            plan.IsDeleted,
+            plan.Meals
+                .OrderBy(meal => meal.Order)
+                .Select(meal => new DietMealSnapshot(
+                    meal.Name,
+                    meal.Order,
+                    meal.Description,
+                    meal.EstimatedCalories,
+                    meal.ProteinGrams,
+                    meal.CarbsGrams,
+                    meal.FatGrams))
+                .ToArray());
+    }
+
+    private static object ValidDietRequest(string name = "Valid diet")
         => new
         {
-            name = "Valid diet",
+            name,
             startDate = new DateOnly(2026, 7, 23),
             isActive = true,
             meals = new[] { new { name = "Meal", order = 0, estimatedCalories = 500 } }
@@ -484,4 +1008,26 @@ public sealed class DietPlansApiTests : IntegrationTestBase
         [JsonPropertyName("changeType")]
         public string ChangeType { get; set; } = string.Empty;
     }
+
+    private sealed record DietPlanSnapshot(
+        string Name,
+        DateOnly StartDate,
+        DateOnly? EndDate,
+        int? EstimatedCalories,
+        decimal? ProteinGrams,
+        decimal? CarbsGrams,
+        decimal? FatGrams,
+        string? Notes,
+        bool IsActive,
+        bool IsDeleted,
+        IReadOnlyList<DietMealSnapshot> Meals);
+
+    private sealed record DietMealSnapshot(
+        string Name,
+        int Order,
+        string? Description,
+        int? EstimatedCalories,
+        decimal? ProteinGrams,
+        decimal? CarbsGrams,
+        decimal? FatGrams);
 }

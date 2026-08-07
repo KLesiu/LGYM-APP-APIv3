@@ -7,6 +7,7 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.Tutorials;
+using LgymApi.Platform.Contracts;
 using LgymApi.Resources;
 using UserEntity = LgymApi.Domain.Entities.User;
 
@@ -16,13 +17,16 @@ internal sealed class TutorialService : ITutorialService
 {
     private readonly ITutorialProgressRepository _tutorialProgressRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IActorRowSecurityScopeFactory _actorRowSecurityScopeFactory;
 
     public TutorialService(
         ITutorialProgressRepository tutorialProgressRepository,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IActorRowSecurityScopeFactory actorRowSecurityScopeFactory)
     {
         _tutorialProgressRepository = tutorialProgressRepository;
         _unitOfWork = unitOfWork;
+        _actorRowSecurityScopeFactory = actorRowSecurityScopeFactory;
     }
 
     public async Task<Result<Unit, AppError>> InitializeOnboardingTutorialAsync(Id<UserEntity> userId, CancellationToken cancellationToken = default)
@@ -32,6 +36,9 @@ internal sealed class TutorialService : ITutorialService
             return Result<Unit, AppError>.Failure(new InvalidUserIdError(Messages.FieldRequired));
         }
 
+        await using var actorScope = await _actorRowSecurityScopeFactory.BeginAsync(
+            userId.Rebind<ActorReference>(),
+            cancellationToken);
         var existingProgress = await _tutorialProgressRepository.FindByUserIdAndTypeAsync(
             userId,
             TutorialType.OnboardingDemo,
@@ -53,6 +60,7 @@ internal sealed class TutorialService : ITutorialService
 
         await _tutorialProgressRepository.AddAsync(progress, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await actorScope.CommitAsync(cancellationToken);
 
         return Result<Unit, AppError>.Success(Unit.Value);
     }
@@ -64,6 +72,9 @@ internal sealed class TutorialService : ITutorialService
             return Result<List<TutorialProgressResult>, AppError>.Failure(new InvalidUserIdError(Messages.FieldRequired));
         }
 
+        await using var actorScope = await _actorRowSecurityScopeFactory.BeginAsync(
+            userId.Rebind<ActorReference>(),
+            cancellationToken);
         var activeTutorials = await _tutorialProgressRepository.GetActiveByUserIdAsync(userId, cancellationToken);
         return Result<List<TutorialProgressResult>, AppError>.Success(activeTutorials.Select(MapToResult).ToList());
     }
@@ -80,6 +91,9 @@ internal sealed class TutorialService : ITutorialService
             return Result<TutorialProgressResult?, AppError>.Failure(new InvalidTutorialTypeError(Messages.FieldRequired));
         }
 
+        await using var actorScope = await _actorRowSecurityScopeFactory.BeginAsync(
+            userId.Rebind<ActorReference>(),
+            cancellationToken);
         var progress = await _tutorialProgressRepository.FindByUserIdAndTypeAsync(userId, tutorialType, cancellationToken);
         return Result<TutorialProgressResult?, AppError>.Success(progress == null ? null : MapToResult(progress));
     }
@@ -96,6 +110,9 @@ internal sealed class TutorialService : ITutorialService
             return Result<Unit, AppError>.Failure(new InvalidTutorialTypeError(Messages.FieldRequired));
         }
 
+        await using var actorScope = await _actorRowSecurityScopeFactory.BeginAsync(
+            userId.Rebind<ActorReference>(),
+            cancellationToken);
         var progress = await _tutorialProgressRepository.FindByUserIdAndTypeAsync(userId, tutorialType, cancellationToken);
         if (progress == null)
         {
@@ -119,28 +136,38 @@ internal sealed class TutorialService : ITutorialService
             return Result<Unit, AppError>.Success(Unit.Value); // Idempotent - step already completed
         }
 
+        var trackedProgress = await _tutorialProgressRepository.FindTrackedByUserIdAndTypeAsync(
+            userId,
+            tutorialType,
+            cancellationToken);
+        if (trackedProgress == null)
+        {
+            return Result<Unit, AppError>.Failure(new TutorialProgressNotFoundError(Messages.DidntFind));
+        }
+
         var stepProgress = new UserTutorialStepProgress
         {
             Id = Id<UserTutorialStepProgress>.New(),
-            UserTutorialProgressId = progress.Id,
+            UserTutorialProgressId = trackedProgress.Id,
             TutorialStep = step,
             CompletedAt = DateTimeOffset.UtcNow
         };
 
-        await _tutorialProgressRepository.AddStepAsync(progress.Id, stepProgress, cancellationToken);
-        await _tutorialProgressRepository.UpdateAsync(progress, cancellationToken);
+        await _tutorialProgressRepository.AddStepAsync(trackedProgress.Id, stepProgress, cancellationToken);
+        await _tutorialProgressRepository.UpdateAsync(trackedProgress, cancellationToken);
 
         var allStepsCompleted = tutorialDefinition.Steps.All(requiredStep =>
-            progress.CompletedSteps.Any(completed => completed.TutorialStep == requiredStep));
+            trackedProgress.CompletedSteps.Any(completed => completed.TutorialStep == requiredStep));
 
         if (allStepsCompleted)
         {
-            progress.IsCompleted = true;
-            progress.CompletedAt = DateTimeOffset.UtcNow;
-            await _tutorialProgressRepository.UpdateAsync(progress, cancellationToken);
+            trackedProgress.IsCompleted = true;
+            trackedProgress.CompletedAt = DateTimeOffset.UtcNow;
+            await _tutorialProgressRepository.UpdateAsync(trackedProgress, cancellationToken);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await actorScope.CommitAsync(cancellationToken);
 
         return Result<Unit, AppError>.Success(Unit.Value);
     }
@@ -157,6 +184,9 @@ internal sealed class TutorialService : ITutorialService
             return Result<Unit, AppError>.Failure(new InvalidTutorialTypeError(Messages.FieldRequired));
         }
 
+        await using var actorScope = await _actorRowSecurityScopeFactory.BeginAsync(
+            userId.Rebind<ActorReference>(),
+            cancellationToken);
         var progress = await _tutorialProgressRepository.FindByUserIdAndTypeAsync(userId, tutorialType, cancellationToken);
         if (progress == null)
         {
@@ -168,23 +198,36 @@ internal sealed class TutorialService : ITutorialService
             return Result<Unit, AppError>.Success(Unit.Value); // Already completed
         }
 
-        progress.IsCompleted = true;
-        progress.CompletedAt = DateTimeOffset.UtcNow;
-        await _tutorialProgressRepository.UpdateAsync(progress, cancellationToken);
+        var trackedProgress = await _tutorialProgressRepository.FindTrackedByUserIdAndTypeAsync(
+            userId,
+            tutorialType,
+            cancellationToken);
+        if (trackedProgress == null)
+        {
+            return Result<Unit, AppError>.Failure(new TutorialProgressNotFoundError(Messages.DidntFind));
+        }
+
+        trackedProgress.IsCompleted = true;
+        trackedProgress.CompletedAt = DateTimeOffset.UtcNow;
+        await _tutorialProgressRepository.UpdateAsync(trackedProgress, cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await actorScope.CommitAsync(cancellationToken);
 
         return Result<Unit, AppError>.Success(Unit.Value);
     }
 
-    public Task<bool> HasActiveTutorialsAsync(Id<UserEntity> userId, CancellationToken cancellationToken = default)
+    public async Task<bool> HasActiveTutorialsAsync(Id<UserEntity> userId, CancellationToken cancellationToken = default)
     {
         if (userId.IsEmpty)
         {
-            return Task.FromResult(false);
+            return false;
         }
 
-        return _tutorialProgressRepository.HasActiveTutorialsAsync(userId, cancellationToken);
+        await using var actorScope = await _actorRowSecurityScopeFactory.BeginAsync(
+            userId.Rebind<ActorReference>(),
+            cancellationToken);
+        return await _tutorialProgressRepository.HasActiveTutorialsAsync(userId, cancellationToken);
     }
 
     private static TutorialProgressResult MapToResult(UserTutorialProgress progress)

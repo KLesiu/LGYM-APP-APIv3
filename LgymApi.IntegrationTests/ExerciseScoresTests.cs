@@ -34,6 +34,7 @@ public sealed class ExerciseScoresTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/exerciseScores/{id}/getExerciseScoresChartData", "own", "owner-allow")]
     public async Task GetExerciseScoresChartData_WithScores_ReturnsChartData()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -86,6 +87,7 @@ public sealed class ExerciseScoresTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/exerciseScores/{id}/getExerciseScoresChartData", "own", "foreign-object-denial-no-mutation")]
     public async Task GetExerciseScoresChartData_WithMismatchedRouteUserId_ReturnsForbidden()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -185,6 +187,7 @@ public sealed class ExerciseScoresTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/exercise/{id}/getLastExerciseScores", "own", "owner-allow")]
     public async Task GetLastExerciseScores_WithExistingScores_ReturnsPreviousScores()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -260,6 +263,7 @@ public sealed class ExerciseScoresTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/exercise/getExerciseScoresFromTrainingByExercise", "own", "owner-allow")]
     public async Task GetExerciseScoresFromTrainingByExercise_WithScores_ReturnsHistory()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(

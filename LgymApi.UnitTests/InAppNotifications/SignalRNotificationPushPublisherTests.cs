@@ -6,8 +6,11 @@ using LgymApi.Application.Notifications.Models;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Notifications;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
+using NSubstitute;
 using NUnit.Framework;
 using System.Reflection;
 
@@ -17,15 +20,15 @@ namespace LgymApi.UnitTests.InAppNotifications;
 public sealed class SignalRNotificationPushPublisherTests
 {
     [Test]
-    public async Task PushAsync_Success_SendsNotificationDtoToUserGroup()
+    public async Task PushAsync_Success_SendsNotificationDtoToValidatedConnection()
     {
-        var (publisher, clientProxy, logger) = CreatePublisher(throwOnSend: false);
         var notification = CreateNotification();
+        var (publisher, clientProxy, logger) = CreatePublisher(notification.RecipientId, throwOnSend: false);
 
         await InvokePushAsync(publisher, notification);
 
         clientProxy.SendCalls.Should().Be(1);
-        clientProxy.LastGroupName.Should().Be($"user-{notification.RecipientId}");
+        clientProxy.LastConnectionId.Should().Be("connection-1");
         clientProxy.LastMethod.Should().Be("ReceiveNotification");
         clientProxy.LastArgs.Should().NotBeNull();
         clientProxy.LastArgs![0].Should().BeOfType<InAppNotificationResultDto>();
@@ -45,26 +48,37 @@ public sealed class SignalRNotificationPushPublisherTests
     [Test]
     public async Task PushAsync_Failure_LogsWarning()
     {
-        var (publisher, _, logger) = CreatePublisher(throwOnSend: true);
         var notification = CreateNotification();
+        var (publisher, _, logger) = CreatePublisher(notification.RecipientId, throwOnSend: true);
 
         await InvokePushAsync(publisher, notification);
 
         logger.WarningCalls.Should().Be(1);
     }
 
-    private static (object Publisher, FakeClientProxy ClientProxy, FakeLogger Logger) CreatePublisher(bool throwOnSend)
+    private static (object Publisher, FakeClientProxy ClientProxy, FakeLogger Logger) CreatePublisher(
+        Id<User> recipientId,
+        bool throwOnSend)
     {
         var clientProxy = new FakeClientProxy(throwOnSend);
         var hubClients = new FakeHubClients(clientProxy);
         var hubContext = new FakeHubContext(hubClients);
         var logger = new FakeLogger();
+        var registry = new AccountSessionConnectionRegistry();
+        var accountId = recipientId.Rebind<AccountReference>();
+        var sessionId = Id<AccountSessionReference>.New();
+        registry.Register(accountId, sessionId, "connection-1");
+        var resolver = Substitute.For<IAuthenticatedAccountContextResolver>();
+        resolver.ResolveAsync(Arg.Any<Id<AccountReference>>(), Arg.Any<Id<AccountSessionReference>>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(new AuthenticatedAccountResolution(
+                AuthenticatedAccountResolutionStatus.Active,
+                new AuthenticatedAccountContext(call.ArgAt<Id<AccountReference>>(0), sessionId, [], [], false, false))));
         var type = typeof(NotificationHub).Assembly.GetType("LgymApi.Api.Features.InAppNotification.SignalRNotificationPushPublisher", throwOnError: true)!;
         var publisher = Activator.CreateInstance(
             type,
             BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
             null,
-            new object[] { hubContext, logger },
+            new object[] { hubContext, registry, resolver, logger },
             null)!;
 
         return (publisher, clientProxy, logger);
@@ -100,7 +114,7 @@ public sealed class SignalRNotificationPushPublisherTests
         public int SendCalls { get; private set; }
         public string? LastMethod { get; private set; }
         public object?[]? LastArgs { get; private set; }
-        public string? LastGroupName { get; set; }
+        public string? LastConnectionId { get; set; }
 
         public Task SendCoreAsync(string method, object?[] args, CancellationToken cancellationToken = default)
         {
@@ -128,12 +142,15 @@ public sealed class SignalRNotificationPushPublisherTests
 
         public IClientProxy All => _proxy;
         public IClientProxy AllExcept(IReadOnlyList<string> excludedConnectionIds) => _proxy;
-        public IClientProxy Client(string connectionId) => _proxy;
+        public IClientProxy Client(string connectionId)
+        {
+            _proxy.LastConnectionId = connectionId;
+            return _proxy;
+        }
         public IClientProxy Clients(IReadOnlyList<string> connectionIds) => _proxy;
 
         public IClientProxy Group(string groupName)
         {
-            _proxy.LastGroupName = groupName;
             return _proxy;
         }
 

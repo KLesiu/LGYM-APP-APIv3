@@ -15,6 +15,7 @@ public sealed class TrainerAuthTests : IntegrationTestBase
     private static readonly string[] ExpectedTrainerRoles = ["User", "Trainer"];
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainer/register", "public", "anonymous-intended-behavior")]
     public async Task RegisterTrainer_WithValidData_CreatesTrainerRoleAssignment()
     {
         var request = new
@@ -46,6 +47,9 @@ public sealed class TrainerAuthTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainer/login", "public", "anonymous-intended-behavior")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/trainer/checkToken", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/trainer/checkToken", "own", "no-client-subject")]
     public async Task TrainerCheckToken_WithTrainerToken_ReturnsOk()
     {
         SetIdempotencyKey("test-register-trainer-auth");

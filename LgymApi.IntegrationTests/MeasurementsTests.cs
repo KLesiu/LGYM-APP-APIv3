@@ -15,6 +15,7 @@ namespace LgymApi.IntegrationTests;
 public sealed class MeasurementsTests : IntegrationTestBase
 {
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/measurements/add", "own", "owner-allow")]
     public async Task AddMeasurement_WithBodyWeight_CreatesMeasurement()
     {
         var (_, token) = await RegisterUserViaEndpointAsync(
@@ -62,6 +63,7 @@ public sealed class MeasurementsTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/measurements/{id}/getHistory", "own", "owner-allow")]
     public async Task GetMeasurementsHistory_WithLengthUnitConversion_ReturnsConvertedValues()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -101,6 +103,7 @@ public sealed class MeasurementsTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/measurements/{id}/trend", "own", "owner-allow")]
     public async Task GetMeasurementsTrend_WhenValueGrows_ReturnsUpDirection()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -209,6 +212,7 @@ public sealed class MeasurementsTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/measurements/{id}/trends", "own", "owner-allow")]
     public async Task GetMeasurementsTrends_WithMultipleTypes_ReturnsSummariesPerType()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -256,6 +260,7 @@ public sealed class MeasurementsTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/measurements/add-bulk", "own", "owner-allow")]
     public async Task AddMeasurementsBulk_WithMultipleOptionalMeasurements_CreatesAllProvidedMeasurements()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -283,6 +288,8 @@ public sealed class MeasurementsTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/measurements:/{id}/getMeasurementDetail", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/measurements:/{id}/getMeasurementDetail", "own", "foreign-object-denial-no-mutation")]
     public async Task GetMeasurementDetail_UsesLegacyColonRouteAndEnforcesOwnership()
     {
         var owner = await SeedUserAsync(name: "measurement-owner", email: "measurement-owner@example.com");
@@ -327,6 +334,43 @@ public sealed class MeasurementsTests : IntegrationTestBase
         var response = await Client.GetAsync("/api/measurements:/not-a-guid/getMeasurementDetail");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/measurements/{id}/getHistory", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/measurements/{id}/getHistory", "own", "foreign-object-denial-no-mutation")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/measurements/{id}/list", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/measurements/{id}/list", "own", "foreign-object-denial-no-mutation")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/measurements/{id}/trend", "own", "foreign-object-denial-no-mutation")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/measurements/{id}/trends", "own", "foreign-object-denial-no-mutation")]
+    public async Task MeasurementAccountReadRoutes_EnforceRouteOwnership()
+    {
+        var owner = await SeedUserAsync(name: "measurement-read-owner", email: "measurement-read-owner@example.com");
+        var attacker = await SeedUserAsync(name: "measurement-read-attacker", email: "measurement-read-attacker@example.com");
+        SetAuthorizationHeader(owner.Id);
+        await AddMeasurementAsync(BodyParts.BodyWeight, 80, MeasurementUnits.Kilograms);
+
+        using var ownerHistory = await Client.GetAsync($"/api/measurements/{owner.Id}/getHistory?bodyPart=BodyWeight&unit=Kilograms");
+        using var ownerList = await Client.GetAsync($"/api/measurements/{owner.Id}/list");
+        ownerHistory.StatusCode.Should().Be(HttpStatusCode.OK);
+        ownerList.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        SetAuthorizationHeader(attacker.Id);
+        var foreignResponses = new[]
+        {
+            await Client.GetAsync($"/api/measurements/{owner.Id}/getHistory?bodyPart=BodyWeight&unit=Kilograms"),
+            await Client.GetAsync($"/api/measurements/{owner.Id}/list"),
+            await Client.GetAsync($"/api/measurements/{owner.Id}/trend?bodyPart=BodyWeight&unit=Kilograms"),
+            await Client.GetAsync($"/api/measurements/{owner.Id}/trends")
+        };
+
+        foreach (var response in foreignResponses)
+        {
+            using (response)
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            }
+        }
     }
 
     private async Task AddMeasurementAsync(BodyParts bodyPart, double value, MeasurementUnits unit)

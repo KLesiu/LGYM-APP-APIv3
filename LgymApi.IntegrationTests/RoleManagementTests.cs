@@ -15,7 +15,23 @@ namespace LgymApi.IntegrationTests;
 public sealed class RoleManagementTests : IntegrationTestBase
 {
     private static readonly string[] UnknownRole = ["UnknownRole"];
+
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/roles", "admin", "current-permission-allow")]
+    public async Task RoleEndpoints_WithCurrentlyPrivilegedValidSession_ReturnOk()
+    {
+        // Given
+        await AuthenticateAsAdminAsync();
+
+        // When
+        var response = await Client.GetAsync("/api/roles");
+
+        // Then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/roles/permission-claims", "admin", "current-permission-allow")]
     public async Task PermissionClaimsCatalog_AsAdmin_ReturnsLocalizedClaims()
     {
         await AuthenticateAsAdminAsync();
@@ -42,6 +58,8 @@ public sealed class RoleManagementTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/roles", "admin", "current-permission-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/roles/{id}", "admin", "current-permission-allow")]
     public async Task CreateAndGetRole_AsAdmin_Works()
     {
         await AuthenticateAsAdminAsync();
@@ -74,6 +92,7 @@ public sealed class RoleManagementTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/roles/{id}/update", "admin", "current-permission-allow")]
     public async Task UpdateRole_AsAdmin_UpdatesNameAndClaims()
     {
         await AuthenticateAsAdminAsync();
@@ -104,6 +123,7 @@ public sealed class RoleManagementTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/roles/{id}/delete", "admin", "current-permission-allow")]
     public async Task DeleteRole_AsAdmin_RemovesRole()
     {
         await AuthenticateAsAdminAsync();
@@ -124,6 +144,7 @@ public sealed class RoleManagementTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/roles/users/{id}/roles", "admin", "current-permission-allow")]
     public async Task UpdateUserRoles_AsAdmin_AssignsRolesToUser()
     {
         await AuthenticateAsAdminAsync();
@@ -155,6 +176,65 @@ public sealed class RoleManagementTests : IntegrationTestBase
     }
 
     [Test]
+    public async Task RoleEndpoints_AfterAdminDemotion_RejectPreIssuedPrivilegedToken()
+    {
+        // Given
+        var administratorA = await SeedAdminAsync();
+        var administratorB = await SeedUserAsync(
+            name: "demoted-admin",
+            email: "demoted-admin@example.com",
+            password: "pass1234",
+            isAdmin: true);
+        var administratorBToken = await AuthenticateAsync(administratorB.Name, "pass1234");
+        await AuthenticateAsync(administratorA.Name, AdminPassword);
+        var demotionResponse = await Client.PostAsJsonAsync($"/api/roles/users/{administratorB.Id}/roles", new
+        {
+            roles = new[] { AuthConstants.Roles.User }
+        });
+        demotionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", administratorBToken);
+
+        // When
+        var response = await Client.GetAsync("/api/roles");
+        var responseBody = await response.Content.ReadAsStringAsync();
+
+        // Then
+        response.StatusCode.Should().Be(
+            HttpStatusCode.Forbidden,
+            "the demoted administrator reused the pre-issued token and received body {0}",
+            responseBody);
+    }
+
+    [Test]
+    public async Task RoleEndpoints_AfterAdminPromotion_AcceptPreIssuedOrdinaryToken()
+    {
+        // Given
+        var administrator = await SeedAdminAsync();
+        var promotedUser = await SeedUserAsync(
+            name: "promoted-user",
+            email: "promoted-user@example.com",
+            password: "pass1234");
+        var promotedUserToken = await AuthenticateAsync(promotedUser.Name, "pass1234");
+        await AuthenticateAsync(administrator.Name, AdminPassword);
+        var promotionResponse = await Client.PostAsJsonAsync($"/api/roles/users/{promotedUser.Id}/roles", new
+        {
+            roles = new[] { AuthConstants.Roles.User, AuthConstants.Roles.Admin }
+        });
+        promotionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", promotedUserToken);
+
+        // When
+        var response = await Client.GetAsync("/api/roles");
+        var responseBody = await response.Content.ReadAsStringAsync();
+
+        // Then
+        response.StatusCode.Should().Be(
+            HttpStatusCode.OK,
+            "the promoted user reused the pre-issued token and received body {0}",
+            responseBody);
+    }
+
+    [Test]
     public async Task UpdateUserRoles_WithUnknownRole_ReturnsBadRequest()
     {
         await AuthenticateAsAdminAsync();
@@ -174,7 +254,7 @@ public sealed class RoleManagementTests : IntegrationTestBase
         await AuthenticateAsync(AdminName, AdminPassword);
     }
 
-    private async Task AuthenticateAsync(string name, string password)
+    private async Task<string> AuthenticateAsync(string name, string password)
     {
         var loginResponse = await Client.PostAsJsonAsync("/api/login", new { name, password });
         loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -183,6 +263,7 @@ public sealed class RoleManagementTests : IntegrationTestBase
         body!.Token.Should().NotBeNullOrWhiteSpace();
 
         Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", body.Token);
+        return body.Token;
     }
 
     private sealed class LoginResponse

@@ -8,6 +8,7 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Data.SeedData;
+using LgymApi.IntegrationTests.Authorization;
 using LgymApi.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,6 +40,9 @@ public sealed class SupplementationApiTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("GET", "/api/trainee/supplements/schedule", "own", "owner-allow")]
+    [AuthorizationEvidence("GET", "/api/trainee/supplements/schedule", "own", "no-client-subject")]
+    [AuthorizationEvidence("POST", "/api/trainee/supplements/intakes/check-off", "own", "owner-allow")]
     public async Task SupplementScheduleAndAdherenceFlow_Works()
     {
         var trainer = await SeedTrainerAsync("trainer-supp", "trainer-supp@example.com");
@@ -97,6 +101,26 @@ public sealed class SupplementationApiTests : IntegrationTestBase
         compliance!.PlannedDoses.Should().Be(1);
         compliance.TakenDoses.Should().Be(1);
         compliance.AdherenceRate.Should().Be(100);
+    }
+
+    [Test]
+    [AuthorizationEvidence("GET", "/api/trainee/supplements/schedule", "own", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainee/supplements/intakes/check-off", "own", "anonymous-denial")]
+    public async Task TraineeSupplementRoutes_WithoutAuthentication_AreUnauthorized()
+    {
+        ClearAuthorizationHeader();
+        var date = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        using var scheduleResponse = await Client.GetAsync($"/api/trainee/supplements/schedule?date={date:yyyy-MM-dd}");
+        using var checkOffResponse = await Client.PostAsJsonAsync("/api/trainee/supplements/intakes/check-off", new
+        {
+            planItemId = "00000000-0000-0000-0000-000000000001",
+            intakeDate = date,
+            takenAt = DateTimeOffset.UtcNow
+        });
+
+        scheduleResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        checkOffResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Test]
@@ -255,6 +279,9 @@ public sealed class SupplementationApiTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/{planId}/update", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/{planId}/delete", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/{planId}/assign", "trainer-shared", "active-relationship-allow")]
     public async Task SupplementUpdate_ReplacesIdentityAndRetainsActiveState()
     {
         var trainer = await SeedTrainerAsync("trainer-supp-update", "trainer-supp-update@example.com");
@@ -346,6 +373,132 @@ public sealed class SupplementationApiTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/{planId}/update", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/{planId}/update", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/{planId}/delete", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/{planId}/delete", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/{planId}/assign", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/{planId}/assign", "trainer-shared", "anonymous-denial")]
+    public async Task SupplementUpdate_WithoutRelationshipOrAuthentication_DoesNotMutatePlans()
+    {
+        var owner = await SeedTrainerAsync("task10-unrelated-supp-update-owner", "task10-unrelated-supp-update-owner@example.com");
+        var unrelatedTrainer = await SeedTrainerAsync("task10-unrelated-supp-update-trainer", "task10-unrelated-supp-update-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-unrelated-supp-update-trainee", "task10-unrelated-supp-update-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(owner.Id, trainee.Id);
+        var plan = await CreateSupplementPlanAsync(owner.Id, trainee.Id, "Unrelated plan", "Original", new SupplementPlanItemInput("Item", "1", "08:00", 127, 0));
+        var before = await GetSupplementPlanSnapshotsAsync(trainee.Id);
+
+        SetAuthorizationHeader(unrelatedTrainer.Id);
+        await AssertMessageAsync(
+            await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/{plan.Id}/update", ValidSupplementRequest()),
+            HttpStatusCode.NotFound,
+            Messages.DidntFind);
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id)).Should().Equal(before);
+
+        SetAuthorizationHeader(unrelatedTrainer.Id);
+        await AssertMessageAsync(await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/{plan.Id}/assign", null), HttpStatusCode.NotFound, Messages.DidntFind);
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id)).Should().Equal(before);
+
+        SetAuthorizationHeader(unrelatedTrainer.Id);
+        await AssertMessageAsync(
+            await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/{plan.Id}/delete", null),
+            HttpStatusCode.NotFound,
+            Messages.DidntFind);
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id)).Should().Equal(before);
+
+        ClearAuthorizationHeader();
+        using (var assignResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/{plan.Id}/assign", null))
+        {
+            assignResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id)).Should().Equal(before);
+
+        using (var response = await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/{plan.Id}/update", ValidSupplementRequest()))
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id)).Should().Equal(before);
+
+        using (var deleteResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/{plan.Id}/delete", null))
+        {
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id)).Should().Equal(before);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/{planId}/update", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/{planId}/delete", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/{planId}/assign", "trainer-shared", "foreign-object-denial-no-mutation")]
+    public async Task SupplementUpdate_ForAnotherTrainersPlan_ReturnsNotFoundAndPreservesPlans()
+    {
+        var owner = await SeedTrainerAsync("task10-foreign-supp-update-owner", "task10-foreign-supp-update-owner@example.com");
+        var otherTrainer = await SeedTrainerAsync("task10-foreign-supp-update-trainer", "task10-foreign-supp-update-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-foreign-supp-update-trainee", "task10-foreign-supp-update-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(owner.Id, trainee.Id);
+        await LinkTrainerAndTraineeAsync(otherTrainer.Id, trainee.Id);
+        var plan = await CreateSupplementPlanAsync(owner.Id, trainee.Id, "Foreign plan", "Original", new SupplementPlanItemInput("Item", "1", "08:00", 127, 0));
+        var before = await GetSupplementPlanSnapshotsAsync(trainee.Id);
+
+        SetAuthorizationHeader(otherTrainer.Id);
+        await AssertMessageAsync(
+            await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/{plan.Id}/update", ValidSupplementRequest()),
+            HttpStatusCode.NotFound,
+            Messages.DidntFind);
+
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id)).Should().Equal(before);
+
+        await AssertMessageAsync(await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/{plan.Id}/assign", null), HttpStatusCode.NotFound, Messages.DidntFind);
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id)).Should().Equal(before);
+
+        await AssertMessageAsync(
+            await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/{plan.Id}/delete", null),
+            HttpStatusCode.NotFound,
+            Messages.DidntFind);
+
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id)).Should().Equal(before);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/{planId}/update", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/{planId}/delete", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/{planId}/assign", "trainer-shared", "former-relationship-denial")]
+    public async Task SupplementUpdate_AfterUnlink_ReturnsNotFoundAndPreservesPlans()
+    {
+        var trainer = await SeedTrainerAsync("task10-former-supp-update-trainer", "task10-former-supp-update-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-former-supp-update-trainee", "task10-former-supp-update-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
+        var plan = await CreateSupplementPlanAsync(trainer.Id, trainee.Id, "Former plan", "Original", new SupplementPlanItemInput("Item", "1", "08:00", 127, 0));
+        var before = await GetSupplementPlanSnapshotsAsync(trainee.Id);
+
+        SetAuthorizationHeader(trainer.Id);
+        using (var unlinkResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null))
+        {
+            unlinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        await AssertMessageAsync(
+            await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/{plan.Id}/update", ValidSupplementRequest()),
+            HttpStatusCode.NotFound,
+            Messages.DidntFind);
+
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id)).Should().Equal(before);
+
+        await AssertMessageAsync(await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/{plan.Id}/assign", null), HttpStatusCode.NotFound, Messages.DidntFind);
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id)).Should().Equal(before);
+
+        await AssertMessageAsync(
+            await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/{plan.Id}/delete", null),
+            HttpStatusCode.NotFound,
+            Messages.DidntFind);
+
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id)).Should().Equal(before);
+    }
+
+    [Test]
     public async Task AssignAndUnassign_PreserveSingleActiveAndNoOpSemantics()
     {
         var trainer = await SeedTrainerAsync("trainer-supp-assignment", "trainer-supp-assignment@example.com");
@@ -415,6 +568,334 @@ public sealed class SupplementationApiTests : IntegrationTestBase
             .Single(plan => plan.Id == foreignPlanId.ToString());
         foreignAfter.Should().Be(foreignBefore);
         foreignAfter.IsActive.Should().BeTrue();
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/unassign", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/unassign", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/unassign", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/unassign", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans/unassign", "trainer-shared", "former-relationship-denial")]
+    public async Task UnassignTraineePlan_EnforcesRelationshipAndOwnershipBoundaries()
+    {
+        var trainer = await SeedTrainerAsync("task10-unassign-owner", "task10-unassign-owner@example.com");
+        var foreignTrainer = await SeedTrainerAsync("task10-unassign-foreign", "task10-unassign-foreign@example.com");
+        var unrelatedTrainer = await SeedTrainerAsync("task10-unassign-unrelated", "task10-unassign-unrelated@example.com");
+        var trainee = await SeedUserAsync("task10-unassign-trainee", "task10-unassign-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
+        await LinkTrainerAndTraineeAsync(foreignTrainer.Id, trainee.Id);
+
+        var ownedPlanId = await SeedSupplementPlanAsync(trainer.Id, trainee.Id, "Owned active", isActive: true);
+
+        SetAuthorizationHeader(trainer.Id);
+        await AssertMessageAsync(
+            await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/unassign", null),
+            HttpStatusCode.OK,
+            Messages.Updated);
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id))
+            .Single(plan => plan.Id == ownedPlanId.ToString())
+            .IsActive
+            .Should()
+            .BeFalse();
+
+        var foreignPlanId = await SeedSupplementPlanAsync(foreignTrainer.Id, trainee.Id, "Foreign active", isActive: true);
+        var beforeDeniedOrNoOpRequests = await GetSupplementPlanSnapshotsAsync(trainee.Id);
+
+        SetAuthorizationHeader(trainer.Id);
+        await AssertMessageAsync(
+            await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/unassign", null),
+            HttpStatusCode.OK,
+            Messages.Updated);
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id)).Should().Equal(beforeDeniedOrNoOpRequests);
+        beforeDeniedOrNoOpRequests.Single(plan => plan.Id == foreignPlanId.ToString()).IsActive.Should().BeTrue();
+
+        SetAuthorizationHeader(unrelatedTrainer.Id);
+        await AssertMessageAsync(
+            await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/unassign", null),
+            HttpStatusCode.NotFound,
+            Messages.DidntFind);
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id)).Should().Equal(beforeDeniedOrNoOpRequests);
+
+        ClearAuthorizationHeader();
+        using (var anonymousResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/unassign", null))
+        {
+            anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id)).Should().Equal(beforeDeniedOrNoOpRequests);
+
+        SetAuthorizationHeader(trainer.Id);
+        using (var unlinkResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null))
+        {
+            unlinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        await AssertMessageAsync(
+            await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans/unassign", null),
+            HttpStatusCode.NotFound,
+            Messages.DidntFind);
+        (await GetSupplementPlanSnapshotsAsync(trainee.Id)).Should().Equal(beforeDeniedOrNoOpRequests);
+    }
+
+    [Test]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/supplement-plans", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/supplement-plans", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/supplement-plans", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/supplement-plans", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/supplement-plans", "trainer-shared", "former-relationship-denial")]
+    public async Task SupplementPlanList_EnforcesRelationshipAndOwnershipBoundaries()
+    {
+        var owner = await SeedTrainerAsync("task10-supplement-list-owner", "task10-supplement-list-owner@example.com");
+        var foreignTrainer = await SeedTrainerAsync("task10-supplement-list-foreign", "task10-supplement-list-foreign@example.com");
+        var unrelatedTrainer = await SeedTrainerAsync("task10-supplement-list-unrelated", "task10-supplement-list-unrelated@example.com");
+        var trainee = await SeedUserAsync("task10-supplement-list-trainee", "task10-supplement-list-trainee@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(owner.Id, trainee.Id);
+        await LinkTrainerAndTraineeAsync(foreignTrainer.Id, trainee.Id);
+        var planId = await SeedSupplementPlanAsync(owner.Id, trainee.Id, "Owner-only plan", isActive: true);
+        var before = await GetSupplementPlanSnapshotNoTrackingAsync(planId);
+
+        SetAuthorizationHeader(owner.Id);
+        using (var ownerResponse = await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans"))
+        {
+            ownerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var ownerPlans = await ReadJsonAsync(ownerResponse);
+            ownerPlans.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+            ownerPlans.RootElement.EnumerateArray()
+                .Select(plan => plan.GetProperty("_id").GetString())
+                .Should().Contain(planId.ToString());
+        }
+
+        (await GetSupplementPlanSnapshotNoTrackingAsync(planId)).Should().Be(before);
+
+        SetAuthorizationHeader(foreignTrainer.Id);
+        using (var foreignResponse = await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans"))
+        {
+            foreignResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var foreignBody = await foreignResponse.Content.ReadAsStringAsync();
+            foreignBody.Should().NotContain(planId.ToString()).And.NotContain("Owner-only plan");
+            using var foreignPlans = JsonDocument.Parse(foreignBody);
+            foreignPlans.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+            foreignPlans.RootElement.GetArrayLength().Should().Be(0);
+        }
+
+        (await GetSupplementPlanSnapshotNoTrackingAsync(planId)).Should().Be(before);
+
+        SetAuthorizationHeader(unrelatedTrainer.Id);
+        using (var unrelatedResponse = await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans"))
+        {
+            unrelatedResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            var unrelatedBody = await unrelatedResponse.Content.ReadAsStringAsync();
+            unrelatedBody.Should().NotContain(planId.ToString()).And.NotContain("Owner-only plan");
+            using var message = JsonDocument.Parse(unrelatedBody);
+            message.RootElement.GetProperty("msg").GetString().Should().Be(Messages.DidntFind);
+        }
+
+        (await GetSupplementPlanSnapshotNoTrackingAsync(planId)).Should().Be(before);
+
+        ClearAuthorizationHeader();
+        using (var anonymousResponse = await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans"))
+        {
+            anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            var anonymousBody = await anonymousResponse.Content.ReadAsStringAsync();
+            anonymousBody.Should().NotContain(planId.ToString()).And.NotContain("Owner-only plan");
+        }
+
+        (await GetSupplementPlanSnapshotNoTrackingAsync(planId)).Should().Be(before);
+
+        SetAuthorizationHeader(owner.Id);
+        using (var unlinkResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null))
+        {
+            unlinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        using (var formerResponse = await Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/supplement-plans"))
+        {
+            formerResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            var formerBody = await formerResponse.Content.ReadAsStringAsync();
+            formerBody.Should().NotContain(planId.ToString()).And.NotContain("Owner-only plan");
+            using var message = JsonDocument.Parse(formerBody);
+            message.RootElement.GetProperty("msg").GetString().Should().Be(Messages.DidntFind);
+        }
+
+        (await GetSupplementPlanSnapshotNoTrackingAsync(planId)).Should().Be(before);
+    }
+
+    [Test]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/supplements/compliance", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/supplements/compliance", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/supplements/compliance", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/supplements/compliance", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/supplements/compliance", "trainer-shared", "former-relationship-denial")]
+    public async Task SupplementCompliance_EnforcesRelationshipAndOwnershipBoundaries()
+    {
+        var owner = await SeedTrainerAsync("task10-supplement-compliance-owner", "task10-supplement-compliance-owner@example.com");
+        var foreignTrainer = await SeedTrainerAsync("task10-supplement-compliance-foreign", "task10-supplement-compliance-foreign@example.com");
+        var unrelatedTrainer = await SeedTrainerAsync("task10-supplement-compliance-unrelated", "task10-supplement-compliance-unrelated@example.com");
+        var trainee = await SeedUserAsync("task10-supplement-compliance-trainee", "task10-supplement-compliance-trainee@example.com", "password123");
+        var date = new DateOnly(2026, 8, 5);
+        await LinkTrainerAndTraineeAsync(owner.Id, trainee.Id);
+        await LinkTrainerAndTraineeAsync(foreignTrainer.Id, trainee.Id);
+        var planId = await SeedSupplementPlanAsync(owner.Id, trainee.Id, "Owner-only compliance plan", isActive: true);
+        var before = await GetSupplementPlanSnapshotNoTrackingAsync(planId);
+        var route = $"/api/trainer/trainees/{trainee.Id}/supplements/compliance?fromDate={date:yyyy-MM-dd}&toDate={date:yyyy-MM-dd}";
+
+        SetAuthorizationHeader(owner.Id);
+        using (var ownerResponse = await Client.GetAsync(route))
+        {
+            ownerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var ownerSummary = await ReadJsonAsync(ownerResponse);
+            AssertComplianceContract(ownerSummary.RootElement, trainee.Id.ToString(), date, date, 1, 0, 0);
+        }
+
+        (await GetSupplementPlanSnapshotNoTrackingAsync(planId)).Should().Be(before);
+
+        SetAuthorizationHeader(foreignTrainer.Id);
+        using (var foreignResponse = await Client.GetAsync(route))
+        {
+            foreignResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var foreignBody = await foreignResponse.Content.ReadAsStringAsync();
+            foreignBody.Should().NotContain(planId.ToString()).And.NotContain("Owner-only compliance plan");
+            using var foreignSummary = JsonDocument.Parse(foreignBody);
+            AssertComplianceContract(foreignSummary.RootElement, trainee.Id.ToString(), date, date, 0, 0, 0);
+        }
+
+        (await GetSupplementPlanSnapshotNoTrackingAsync(planId)).Should().Be(before);
+
+        SetAuthorizationHeader(unrelatedTrainer.Id);
+        using (var unrelatedResponse = await Client.GetAsync(route))
+        {
+            unrelatedResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            var unrelatedBody = await unrelatedResponse.Content.ReadAsStringAsync();
+            unrelatedBody.Should().NotContain(planId.ToString()).And.NotContain("Owner-only compliance plan");
+            using var message = JsonDocument.Parse(unrelatedBody);
+            message.RootElement.GetProperty("msg").GetString().Should().Be(Messages.DidntFind);
+        }
+
+        (await GetSupplementPlanSnapshotNoTrackingAsync(planId)).Should().Be(before);
+
+        ClearAuthorizationHeader();
+        using (var anonymousResponse = await Client.GetAsync(route))
+        {
+            anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            var anonymousBody = await anonymousResponse.Content.ReadAsStringAsync();
+            anonymousBody.Should().NotContain(planId.ToString()).And.NotContain("Owner-only compliance plan");
+        }
+
+        (await GetSupplementPlanSnapshotNoTrackingAsync(planId)).Should().Be(before);
+
+        SetAuthorizationHeader(owner.Id);
+        using (var unlinkResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null))
+        {
+            unlinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        using (var formerResponse = await Client.GetAsync(route))
+        {
+            formerResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            var formerBody = await formerResponse.Content.ReadAsStringAsync();
+            formerBody.Should().NotContain(planId.ToString()).And.NotContain("Owner-only compliance plan");
+            using var message = JsonDocument.Parse(formerBody);
+            message.RootElement.GetProperty("msg").GetString().Should().Be(Messages.DidntFind);
+        }
+
+        (await GetSupplementPlanSnapshotNoTrackingAsync(planId)).Should().Be(before);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/supplement-plans", "trainer-shared", "former-relationship-denial")]
+    public async Task SupplementPlanCreate_EnforcesRelationshipAndOwnershipBoundaries()
+    {
+        var owner = await SeedTrainerAsync("task10-supplement-create-owner", "task10-supplement-create-owner@example.com");
+        var foreignTrainer = await SeedTrainerAsync("task10-supplement-create-foreign", "task10-supplement-create-foreign@example.com");
+        var unrelatedTrainer = await SeedTrainerAsync("task10-supplement-create-unrelated", "task10-supplement-create-unrelated@example.com");
+        var trainee = await SeedUserAsync("task10-supplement-create-trainee", "task10-supplement-create-trainee@example.com", "password123");
+        var route = $"/api/trainer/trainees/{trainee.Id}/supplement-plans";
+        await LinkTrainerAndTraineeAsync(owner.Id, trainee.Id);
+        await LinkTrainerAndTraineeAsync(foreignTrainer.Id, trainee.Id);
+        var ownerPlanId = await SeedSupplementPlanAsync(owner.Id, trainee.Id, "Existing owner plan", isActive: true);
+        var ownerPlanBefore = await GetSupplementPlanSnapshotNoTrackingAsync(ownerPlanId);
+
+        SetAuthorizationHeader(owner.Id);
+        using (var ownerResponse = await Client.PostAsJsonAsync(route, new
+        {
+            name = "Owner-created plan",
+            notes = "Owner-created notes",
+            items = new[] { new { supplementName = "Owner item", dosage = "1", timeOfDay = "08:00", daysOfWeekMask = 127, order = 0 } }
+        }))
+        {
+            ownerResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            using var ownerCreated = await ReadJsonAsync(ownerResponse);
+            ownerCreated.RootElement.GetProperty("trainerId").GetString().Should().Be(owner.Id.ToString());
+            ownerCreated.RootElement.GetProperty("traineeId").GetString().Should().Be(trainee.Id.ToString());
+            ownerCreated.RootElement.GetProperty("name").GetString().Should().Be("Owner-created plan");
+        }
+
+        (await GetSupplementPlanSnapshotNoTrackingAsync(ownerPlanId)).Should().Be(ownerPlanBefore);
+
+        SetAuthorizationHeader(foreignTrainer.Id);
+        using (var foreignResponse = await Client.PostAsJsonAsync(route, new
+        {
+            name = "Foreign-created plan",
+            notes = "Foreign-created notes",
+            items = new[] { new { supplementName = "Foreign item", dosage = "1", timeOfDay = "08:00", daysOfWeekMask = 127, order = 0 } }
+        }))
+        {
+            foreignResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            using var foreignCreated = await ReadJsonAsync(foreignResponse);
+            foreignCreated.RootElement.GetProperty("trainerId").GetString().Should().Be(foreignTrainer.Id.ToString());
+            foreignCreated.RootElement.GetProperty("traineeId").GetString().Should().Be(trainee.Id.ToString());
+            foreignCreated.RootElement.GetProperty("name").GetString().Should().Be("Foreign-created plan");
+            foreignCreated.RootElement.GetRawText().Should().NotContain(ownerPlanId.ToString()).And.NotContain("Existing owner plan");
+        }
+
+        (await GetSupplementPlanSnapshotNoTrackingAsync(ownerPlanId)).Should().Be(ownerPlanBefore);
+        var beforeDeniedRequests = await GetSupplementPlanCountNoTrackingAsync(trainee.Id);
+
+        SetAuthorizationHeader(unrelatedTrainer.Id);
+        using (var unrelatedResponse = await Client.PostAsJsonAsync(route, ValidSupplementRequest()))
+        {
+            unrelatedResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            var unrelatedBody = await unrelatedResponse.Content.ReadAsStringAsync();
+            unrelatedBody.Should().NotContain(ownerPlanId.ToString()).And.NotContain("Existing owner plan");
+            using var message = JsonDocument.Parse(unrelatedBody);
+            message.RootElement.GetProperty("msg").GetString().Should().Be(Messages.DidntFind);
+        }
+
+        (await GetSupplementPlanCountNoTrackingAsync(trainee.Id)).Should().Be(beforeDeniedRequests);
+        (await GetSupplementPlanSnapshotNoTrackingAsync(ownerPlanId)).Should().Be(ownerPlanBefore);
+
+        ClearAuthorizationHeader();
+        using (var anonymousResponse = await Client.PostAsJsonAsync(route, ValidSupplementRequest()))
+        {
+            anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            var anonymousBody = await anonymousResponse.Content.ReadAsStringAsync();
+            anonymousBody.Should().NotContain(ownerPlanId.ToString()).And.NotContain("Existing owner plan");
+        }
+
+        (await GetSupplementPlanCountNoTrackingAsync(trainee.Id)).Should().Be(beforeDeniedRequests);
+        (await GetSupplementPlanSnapshotNoTrackingAsync(ownerPlanId)).Should().Be(ownerPlanBefore);
+
+        SetAuthorizationHeader(owner.Id);
+        using (var unlinkResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null))
+        {
+            unlinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        using (var formerResponse = await Client.PostAsJsonAsync(route, ValidSupplementRequest()))
+        {
+            formerResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            var formerBody = await formerResponse.Content.ReadAsStringAsync();
+            formerBody.Should().NotContain(ownerPlanId.ToString()).And.NotContain("Existing owner plan");
+            using var message = JsonDocument.Parse(formerBody);
+            message.RootElement.GetProperty("msg").GetString().Should().Be(Messages.DidntFind);
+        }
+
+        (await GetSupplementPlanCountNoTrackingAsync(trainee.Id)).Should().Be(beforeDeniedRequests);
+        (await GetSupplementPlanSnapshotNoTrackingAsync(ownerPlanId)).Should().Be(ownerPlanBefore);
     }
 
     [Test]
@@ -888,6 +1369,32 @@ public sealed class SupplementationApiTests : IntegrationTestBase
                 plan.UpdatedAt))
             .OrderBy(plan => plan.Id, StringComparer.Ordinal)
             .ToList();
+    }
+
+    private async Task<SupplementPlanSnapshot> GetSupplementPlanSnapshotNoTrackingAsync(Id<SupplementPlan> planId)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var plan = await db.SupplementPlans
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .SingleAsync(candidate => candidate.Id == planId);
+
+        return new SupplementPlanSnapshot(
+            plan.Id.ToString(),
+            plan.IsActive,
+            plan.IsDeleted,
+            plan.UpdatedAt);
+    }
+
+    private async Task<int> GetSupplementPlanCountNoTrackingAsync(Id<User> traineeId)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        return await db.SupplementPlans
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .CountAsync(plan => plan.TraineeId == traineeId);
     }
 
     private async Task<Id<SupplementPlan>> SeedSupplementPlanAsync(

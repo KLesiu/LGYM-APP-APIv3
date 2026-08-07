@@ -19,6 +19,14 @@ internal sealed class TutorialProgressRepository : ITutorialProgressRepository
     public Task<UserTutorialProgress?> FindByUserIdAndTypeAsync(Id<User> userId, TutorialType tutorialType, CancellationToken cancellationToken = default)
     {
         return _dbContext.UserTutorialProgresses
+            .AsNoTracking()
+            .Include(p => p.CompletedSteps)
+            .FirstOrDefaultAsync(p => p.UserId == userId && p.TutorialType == tutorialType, cancellationToken);
+    }
+
+    public Task<UserTutorialProgress?> FindTrackedByUserIdAndTypeAsync(Id<User> userId, TutorialType tutorialType, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.UserTutorialProgresses
             .AsTracking()
             .Include(p => p.CompletedSteps)
             .FirstOrDefaultAsync(p => p.UserId == userId && p.TutorialType == tutorialType, cancellationToken);
@@ -27,6 +35,7 @@ internal sealed class TutorialProgressRepository : ITutorialProgressRepository
     public Task<List<UserTutorialProgress>> GetActiveByUserIdAsync(Id<User> userId, CancellationToken cancellationToken = default)
     {
         return _dbContext.UserTutorialProgresses
+            .AsNoTracking()
             .Include(p => p.CompletedSteps)
             .Where(p => p.UserId == userId && !p.IsCompleted)
             .ToListAsync(cancellationToken);

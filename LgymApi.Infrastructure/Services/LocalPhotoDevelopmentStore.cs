@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.StaticFiles;
 
 namespace LgymApi.Infrastructure.Services;
@@ -34,6 +35,18 @@ public sealed class LocalPhotoDevelopmentStore
 
     public async Task SaveAsync(string storageKey, Stream content, CancellationToken cancellationToken = default)
     {
+        await SaveAsync(storageKey, content, long.MaxValue, cancellationToken);
+    }
+
+    public async Task SaveAsync(
+        string storageKey,
+        Stream content,
+        long maxFileSizeBytes,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxFileSizeBytes);
+        cancellationToken.ThrowIfCancellationRequested();
+
         var path = ResolvePath(storageKey);
         var directory = Path.GetDirectoryName(path);
 
@@ -42,8 +55,50 @@ public sealed class LocalPhotoDevelopmentStore
             Directory.CreateDirectory(directory);
         }
 
-        await using var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
-        await content.CopyToAsync(fileStream, cancellationToken);
+        var temporaryPath = Path.Combine(
+            directory!,
+            $".{Path.GetFileName(path)}.{RandomNumberGenerator.GetHexString(16)}.tmp");
+        try
+        {
+            await using (var fileStream = new FileStream(
+                temporaryPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 81_920,
+                FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                var buffer = new byte[81_920];
+                long totalBytes = 0;
+                while (true)
+                {
+                    var bytesRead = await content.ReadAsync(buffer, cancellationToken);
+                    if (bytesRead == 0)
+                    {
+                        break;
+                    }
+
+                    if (totalBytes > maxFileSizeBytes - bytesRead)
+                    {
+                        throw new InvalidDataException("Photo exceeds the configured maximum size.");
+                    }
+
+                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+                    totalBytes += bytesRead;
+                }
+
+                await fileStream.FlushAsync(cancellationToken);
+            }
+
+            File.Move(temporaryPath, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+        }
     }
 
     public async Task<byte[]?> ReadAsync(string storageKey, CancellationToken cancellationToken = default)

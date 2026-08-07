@@ -5,6 +5,7 @@ using FluentAssertions;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Notifications;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.IntegrationTests.Authorization;
 using LgymApi.Infrastructure.Data;
 using NotificationEntity = global::LgymApi.Domain.Entities.InAppNotification;
 using NotificationTypes = global::LgymApi.Domain.Notifications.InAppNotificationTypes;
@@ -31,6 +32,38 @@ public sealed class InAppNotificationApiTests : IntegrationTestBase
         body.HasNextPage.Should().BeFalse();
         body.NextCursorCreatedAt.Should().BeNull();
         body.NextCursorId.Should().BeNull();
+    }
+
+    [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/notifications", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/notifications", "own", "foreign-object-denial-no-mutation")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/notifications", "own", "anonymous-denial")]
+    public async Task GetNotificationsRoute_IsOwnerScopedAndNonDisclosing()
+    {
+        var owner = await SeedUserAsync(name: "notif-http-owner", email: "notif-http-owner@example.test");
+        var otherUser = await SeedUserAsync(name: "notif-http-other", email: "notif-http-other@example.test");
+        var notification = await SeedNotificationAsync(owner.Id, "HTTP protected notification");
+
+        SetAuthorizationHeader(owner.Id);
+        using var ownerResponse = await Client.GetAsync($"/api/{owner.Id}/notifications");
+        ownerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var ownerBody = await ownerResponse.Content.ReadFromJsonAsync<PagedNotificationsResponse>();
+        ownerBody.Should().NotBeNull();
+        ownerBody!.Items.Should().ContainSingle(item => item.Id == notification.Id.ToString() && item.Message == notification.Message);
+
+        SetAuthorizationHeader(otherUser.Id);
+        using var foreignResponse = await Client.GetAsync($"/api/{owner.Id}/notifications");
+        foreignResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var foreignText = await foreignResponse.Content.ReadAsStringAsync();
+        foreignText.Should().NotContain(notification.Id.ToString());
+        foreignText.Should().NotContain(notification.Message);
+
+        ClearAuthorizationHeader();
+        using var anonymousResponse = await Client.GetAsync($"/api/{owner.Id}/notifications");
+        anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var anonymousText = await anonymousResponse.Content.ReadAsStringAsync();
+        anonymousText.Should().NotContain(notification.Id.ToString());
+        anonymousText.Should().NotContain(notification.Message);
     }
 
     [TestCase(0)]
@@ -121,9 +154,13 @@ public sealed class InAppNotificationApiTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("POST", "/api/{id}/notifications/{notificationId}/mark-read", "own", "owner-allow")]
+    [AuthorizationEvidence("POST", "/api/{id}/notifications/{notificationId}/mark-read", "own", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/{id}/notifications/{notificationId}/mark-read", "own", "anonymous-denial")]
     public async Task MarkAsRead_OwnNotification_Returns200()
     {
         var user = await SeedUserAsync(name: "notif-read", email: "notif-read@example.com");
+        var otherUser = await SeedUserAsync(name: "notif-read-other", email: "notif-read-other@example.com");
         var notification = await SeedNotificationAsync(user.Id, "mark-me");
         SetAuthorizationHeader(user.Id);
 
@@ -138,12 +175,23 @@ public sealed class InAppNotificationApiTests : IntegrationTestBase
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var stored = await db.InAppNotifications.SingleAsync(x => x.Id == notification.Id);
         stored.IsRead.Should().BeTrue();
+
+        SetAuthorizationHeader(otherUser.Id);
+        var foreignResponse = await Client.PostAsync($"/api/{user.Id}/notifications/{notification.Id}/mark-read", null);
+        foreignResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Client.DefaultRequestHeaders.Authorization = null;
+        var anonymousResponse = await Client.PostAsync($"/api/{user.Id}/notifications/{notification.Id}/mark-read", null);
+        anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Test]
+    [AuthorizationEvidence("POST", "/api/{id}/notifications/mark-all-read", "own", "owner-allow")]
+    [AuthorizationEvidence("POST", "/api/{id}/notifications/mark-all-read", "own", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/{id}/notifications/mark-all-read", "own", "anonymous-denial")]
     public async Task MarkAllAsRead_Returns200()
     {
         var user = await SeedUserAsync(name: "notif-read-all", email: "notif-read-all@example.com");
+        var otherUser = await SeedUserAsync(name: "notif-read-all-other", email: "notif-read-all-other@example.com");
         await SeedNotificationAsync(user.Id, "one");
         await SeedNotificationAsync(user.Id, "two");
         await SeedNotificationAsync(user.Id, "already-read", isRead: true);
@@ -157,6 +205,13 @@ public sealed class InAppNotificationApiTests : IntegrationTestBase
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var unreadCount = await db.InAppNotifications.CountAsync(x => x.RecipientId == user.Id && !x.IsRead);
         unreadCount.Should().Be(0);
+
+        SetAuthorizationHeader(otherUser.Id);
+        var foreignResponse = await Client.PostAsync($"/api/{user.Id}/notifications/mark-all-read", null);
+        foreignResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Client.DefaultRequestHeaders.Authorization = null;
+        var anonymousResponse = await Client.PostAsync($"/api/{user.Id}/notifications/mark-all-read", null);
+        anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Test]
@@ -178,6 +233,39 @@ public sealed class InAppNotificationApiTests : IntegrationTestBase
         var body = await response.Content.ReadFromJsonAsync<UnreadCountResponse>();
         body.Should().NotBeNull();
         body!.Count.Should().Be(2);
+    }
+
+    [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/notifications/unread-count", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/notifications/unread-count", "own", "foreign-object-denial-no-mutation")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/notifications/unread-count", "own", "anonymous-denial")]
+    public async Task GetUnreadCountRoute_IsOwnerScopedAndNonDisclosing()
+    {
+        var owner = await SeedUserAsync(name: "notif-http-count-owner", email: "notif-http-count-owner@example.test");
+        var otherUser = await SeedUserAsync(name: "notif-http-count-other", email: "notif-http-count-other@example.test");
+        await SeedNotificationAsync(owner.Id, "HTTP unread one");
+        await SeedNotificationAsync(owner.Id, "HTTP unread two");
+
+        SetAuthorizationHeader(owner.Id);
+        using var ownerResponse = await Client.GetAsync($"/api/{owner.Id}/notifications/unread-count");
+        ownerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var ownerBody = await ownerResponse.Content.ReadFromJsonAsync<UnreadCountResponse>();
+        ownerBody.Should().NotBeNull();
+        ownerBody!.Count.Should().Be(2);
+
+        SetAuthorizationHeader(otherUser.Id);
+        using var foreignResponse = await Client.GetAsync($"/api/{owner.Id}/notifications/unread-count");
+        foreignResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var foreignText = await foreignResponse.Content.ReadAsStringAsync();
+        foreignText.Should().NotContain("HTTP unread one");
+        foreignText.Should().NotContain("HTTP unread two");
+
+        ClearAuthorizationHeader();
+        using var anonymousResponse = await Client.GetAsync($"/api/{owner.Id}/notifications/unread-count");
+        anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var anonymousText = await anonymousResponse.Content.ReadAsStringAsync();
+        anonymousText.Should().NotContain("HTTP unread one");
+        anonymousText.Should().NotContain("HTTP unread two");
     }
 
     private async Task<NotificationEntity> SeedNotificationAsync(

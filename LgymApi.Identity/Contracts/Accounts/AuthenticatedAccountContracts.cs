@@ -42,6 +42,12 @@ public interface IAccountSessionValidator
     Task<bool> IsValidAsync(
         Id<AccountSessionReference> sessionId,
         CancellationToken cancellationToken = default);
+
+    Task<bool> IsValidAsync(
+        Id<AccountReference> accountId,
+        Id<AccountSessionReference> sessionId,
+        CancellationToken cancellationToken = default) =>
+        IsValidAsync(sessionId, cancellationToken);
 }
 
 public interface IAuthenticatedAccountContextResolver

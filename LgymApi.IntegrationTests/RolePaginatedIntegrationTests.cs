@@ -10,6 +10,7 @@ namespace LgymApi.IntegrationTests;
 public sealed class RolePaginatedIntegrationTests : IntegrationTestBase
 {
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/roles/paginated", "admin", "current-permission-allow")]
     public async Task GetRolesPaginated_AsAdmin_ReturnsPaginatedResults()
     {
         await AuthenticateAsAdminAsync();

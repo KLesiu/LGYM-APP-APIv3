@@ -10,6 +10,24 @@ namespace LgymApi.IntegrationTests;
 public sealed class EnumTests : IntegrationTestBase
 {
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/enums", "authenticated-global", "ordinary-authenticated-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/enums/all", "authenticated-global", "ordinary-authenticated-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/enums/{enumType}", "authenticated-global", "ordinary-authenticated-allow")]
+    public async Task EnumRoutes_WithAuthenticatedUser_ReturnReferenceData()
+    {
+        var (userId, _) = await RegisterUserViaEndpointAsync("enum-auth", "enum-auth@example.com", "password123");
+        SetAuthorizationHeader(userId);
+
+        using var types = await Client.GetAsync("/api/enums");
+        using var all = await Client.GetAsync("/api/enums/all");
+        using var bodyParts = await Client.GetAsync("/api/enums/BodyParts");
+
+        types.StatusCode.Should().Be(HttpStatusCode.OK);
+        all.StatusCode.Should().Be(HttpStatusCode.OK);
+        bodyParts.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Test]
     public async Task GetEnumLookup_DoesNotReturnHiddenUnknownValue()
     {
         var (userId, _) = await RegisterUserViaEndpointAsync(

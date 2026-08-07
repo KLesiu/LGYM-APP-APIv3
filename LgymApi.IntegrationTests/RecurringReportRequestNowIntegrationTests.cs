@@ -10,6 +10,7 @@ using LgymApi.Domain.Notifications;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Data.SeedData;
+using LgymApi.IntegrationTests.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -23,10 +24,50 @@ public sealed class RecurringReportRequestNowIntegrationTests : PostgreSqlRecurr
         "LgymApi.BackgroundWorker.Common.Commands.ReportRequestCreatedInAppNotificationCommand";
 
     [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/delete", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/delete", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/delete", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/delete", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/delete", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/pause", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/pause", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/pause", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/pause", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/pause", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/request-now", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/request-now", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/request-now", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/request-now", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/request-now", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/resume", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/resume", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/resume", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/resume", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/resume", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/update", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/update", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/update", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/update", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/recurring-report-assignments/{id}/update", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainee/report-submissions/{submissionId}/mark-feedback-read", "own", "owner-allow")]
+    [AuthorizationEvidence("POST", "/api/trainee/report-submissions/{submissionId}/mark-feedback-read", "own", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainee/report-submissions/{submissionId}/mark-feedback-read", "own", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/report-submissions/{submissionId}/feedback", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/report-submissions/{submissionId}/feedback", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/report-submissions/{submissionId}/feedback", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/report-submissions/{submissionId}/feedback", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/report-submissions/{submissionId}/feedback", "trainer-shared", "anonymous-denial")]
     public async Task RequestNow_EmptyBody_ProvesPendingVisibilityNotificationAndFeedbackReadScheduling()
     {
         var trainer = await SeedTrainerAsync("request-now-trainer", "request-now-trainer@example.com");
+        var otherTrainer = await SeedTrainerAsync("request-now-other-trainer", "request-now-other-trainer@example.com");
         var trainee = await SeedUserAsync("request-now-trainee", "request-now-trainee@example.com");
+        var otherTrainee = await SeedUserAsync("request-now-other-trainee", "request-now-other-trainee@example.com");
         await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
         SetAuthorizationHeader(trainer.Id);
 
@@ -115,6 +156,33 @@ public sealed class RecurringReportRequestNowIntegrationTests : PostgreSqlRecurr
         feedbackResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         await AssertNextEligibleAtIsNullAsync(assignmentId);
 
+        var feedbackRequest = new
+        {
+            trainerOverallComment = "Blocked feedback",
+            trainerFieldComments = new Dictionary<string, string?> { ["note"] = "Blocked" }
+        };
+        SetAuthorizationHeader(otherTrainer.Id);
+        var foreignFeedbackResponse = await PostAsJsonWithApiOptionsAsync($"/api/trainer/trainees/{trainee.Id}/report-submissions/{submission.Id}/feedback", feedbackRequest);
+        foreignFeedbackResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        SetAuthorizationHeader(otherTrainee.Id);
+        var ordinaryFeedbackResponse = await PostAsJsonWithApiOptionsAsync($"/api/trainer/trainees/{trainee.Id}/report-submissions/{submission.Id}/feedback", feedbackRequest);
+        ordinaryFeedbackResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Client.DefaultRequestHeaders.Authorization = null;
+        var anonymousFeedbackResponse = await PostAsJsonWithApiOptionsAsync($"/api/trainer/trainees/{trainee.Id}/report-submissions/{submission.Id}/feedback", feedbackRequest);
+        anonymousFeedbackResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        SetAuthorizationHeader(otherTrainee.Id);
+        using var foreignFeedbackReadResponse = await Client.PostAsync(
+            $"/api/trainee/report-submissions/{submission.Id}/mark-feedback-read",
+            content: null);
+        foreignFeedbackReadResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        Client.DefaultRequestHeaders.Authorization = null;
+        using var anonymousFeedbackReadResponse = await Client.PostAsync(
+            $"/api/trainee/report-submissions/{submission.Id}/mark-feedback-read",
+            content: null);
+        anonymousFeedbackReadResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
         SetAuthorizationHeader(trainee.Id);
         var feedbackReadResponse = await Client.PostAsync(
             $"/api/trainee/report-submissions/{submission.Id}/mark-feedback-read",
@@ -138,6 +206,164 @@ public sealed class RecurringReportRequestNowIntegrationTests : PostgreSqlRecurr
             TimeSpan.FromMicroseconds(1));
         storedAssignment.NextEligibleAt.Should().Be(storedSubmission.TrainerFeedbackReadAt!.Value.AddDays(2));
         storedAssignment.NextEligibleAt.Should().BeAfter(storedAssignment.LastRequestCreatedAt!.Value);
+
+        SetAuthorizationHeader(trainer.Id);
+        var unrelatedCreateResponse = await PostAsJsonWithApiOptionsAsync(
+            $"/api/trainer/trainees/{otherTrainee.Id}/recurring-report-assignments",
+            new { templateId = template.Id, intervalValue = 2, intervalUnit = RecurringReportIntervalUnit.Day, startsAt = DateTimeOffset.UtcNow, note = "Blocked unrelated" });
+        unrelatedCreateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        SetAuthorizationHeader(otherTrainee.Id);
+        var ordinaryCreateResponse = await PostAsJsonWithApiOptionsAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments",
+            new { templateId = template.Id, intervalValue = 2, intervalUnit = RecurringReportIntervalUnit.Day, startsAt = DateTimeOffset.UtcNow, note = "Blocked ordinary" });
+        ordinaryCreateResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        Client.DefaultRequestHeaders.Authorization = null;
+        var anonymousCreateResponse = await PostAsJsonWithApiOptionsAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments",
+            new { templateId = template.Id, intervalValue = 2, intervalUnit = RecurringReportIntervalUnit.Day, startsAt = DateTimeOffset.UtcNow, note = "Blocked anonymous" });
+        anonymousCreateResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        SetAuthorizationHeader(trainer.Id);
+        var ownerPauseResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/pause",
+            content: null);
+        ownerPauseResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var ownerResumeResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/resume",
+            content: null);
+        ownerResumeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var foreignPauseResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{otherTrainee.Id}/recurring-report-assignments/{assignment.Id}/pause",
+            content: null);
+        foreignPauseResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var foreignResumeResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{otherTrainee.Id}/recurring-report-assignments/{assignment.Id}/resume",
+            content: null);
+        foreignResumeResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        SetAuthorizationHeader(otherTrainee.Id);
+        var ordinaryPauseResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/pause",
+            content: null);
+        ordinaryPauseResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var ordinaryResumeResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/resume",
+            content: null);
+        ordinaryResumeResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        Client.DefaultRequestHeaders.Authorization = null;
+        var anonymousPauseResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/pause",
+            content: null);
+        anonymousPauseResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var anonymousResumeResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/resume",
+            content: null);
+        anonymousResumeResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        SetAuthorizationHeader(trainer.Id);
+        var foreignRequestNowResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{otherTrainee.Id}/recurring-report-assignments/{assignment.Id}/request-now",
+            content: null);
+        foreignRequestNowResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        SetAuthorizationHeader(otherTrainee.Id);
+        var ordinaryRequestNowResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/request-now",
+            content: null);
+        ordinaryRequestNowResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        Client.DefaultRequestHeaders.Authorization = null;
+        var anonymousRequestNowResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/request-now",
+            content: null);
+        anonymousRequestNowResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        SetAuthorizationHeader(trainer.Id);
+        var ownerUpdateResponse = await PostAsJsonWithApiOptionsAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/update",
+            new { templateId = template.Id, intervalValue = 3, intervalUnit = RecurringReportIntervalUnit.Day, startsAt = DateTimeOffset.UtcNow, note = "Updated cycle" });
+        ownerUpdateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var foreignUpdateResponse = await PostAsJsonWithApiOptionsAsync(
+            $"/api/trainer/trainees/{otherTrainee.Id}/recurring-report-assignments/{assignment.Id}/update",
+            new { templateId = template.Id, intervalValue = 3, intervalUnit = RecurringReportIntervalUnit.Day, startsAt = DateTimeOffset.UtcNow, note = "Blocked unrelated update" });
+        foreignUpdateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        SetAuthorizationHeader(otherTrainee.Id);
+        var ordinaryUpdateResponse = await PostAsJsonWithApiOptionsAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/update",
+            new { templateId = template.Id, intervalValue = 3, intervalUnit = RecurringReportIntervalUnit.Day, startsAt = DateTimeOffset.UtcNow, note = "Blocked ordinary update" });
+        ordinaryUpdateResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        Client.DefaultRequestHeaders.Authorization = null;
+        var anonymousUpdateResponse = await PostAsJsonWithApiOptionsAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/update",
+            new { templateId = template.Id, intervalValue = 3, intervalUnit = RecurringReportIntervalUnit.Day, startsAt = DateTimeOffset.UtcNow, note = "Blocked anonymous update" });
+        anonymousUpdateResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        SetAuthorizationHeader(trainer.Id);
+        var ownerDeleteResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/delete",
+            content: null);
+        ownerDeleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var foreignDeleteResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{otherTrainee.Id}/recurring-report-assignments/{assignment.Id}/delete",
+            content: null);
+        foreignDeleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        SetAuthorizationHeader(otherTrainee.Id);
+        var ordinaryDeleteResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/delete",
+            content: null);
+        ordinaryDeleteResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        Client.DefaultRequestHeaders.Authorization = null;
+        var anonymousDeleteResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/delete",
+            content: null);
+        anonymousDeleteResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        SetAuthorizationHeader(trainer.Id);
+        using (var unlinkScope = Factory.Services.CreateScope())
+        {
+            var database = unlinkScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var link = await database.TrainerTraineeLinks.SingleAsync(candidate => candidate.TrainerId == trainer.Id && candidate.TraineeId == trainee.Id);
+            database.TrainerTraineeLinks.Remove(link);
+            await database.SaveChangesAsync();
+        }
+
+        var formerCreateResponse = await PostAsJsonWithApiOptionsAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments",
+            new { templateId = template.Id, intervalValue = 2, intervalUnit = RecurringReportIntervalUnit.Day, startsAt = DateTimeOffset.UtcNow, note = "Blocked former" });
+        formerCreateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var formerFeedbackResponse = await PostAsJsonWithApiOptionsAsync($"/api/trainer/trainees/{trainee.Id}/report-submissions/{submission.Id}/feedback", feedbackRequest);
+        formerFeedbackResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var formerPauseResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/pause",
+            content: null);
+        formerPauseResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var formerResumeResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/resume",
+            content: null);
+        formerResumeResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var formerUpdateResponse = await PostAsJsonWithApiOptionsAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/update",
+            new { templateId = template.Id, intervalValue = 3, intervalUnit = RecurringReportIntervalUnit.Day, startsAt = DateTimeOffset.UtcNow, note = "Blocked former update" });
+        formerUpdateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var formerRequestNowResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/request-now",
+            content: null);
+        formerRequestNowResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var formerDeleteResponse = await Client.PostAsync(
+            $"/api/trainer/trainees/{trainee.Id}/recurring-report-assignments/{assignment.Id}/delete",
+            content: null);
+        formerDeleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     private async Task AssertStagedCanonicalCommandAndNoScheduleAsync(

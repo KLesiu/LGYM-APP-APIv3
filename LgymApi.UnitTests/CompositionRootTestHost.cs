@@ -1,4 +1,5 @@
 using LgymApi.Api.Features.InAppNotification;
+using LgymApi.Api.Hubs;
 using LgymApi.Application;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Notifications;
@@ -67,6 +68,7 @@ internal static class CompositionRootTestHost
                     omittedFacade,
                     services.AddNotificationsApiAdapters);
                 services.AddSignalR();
+                services.AddSingleton<IAccountSessionConnectionRegistry, AccountSessionConnectionRegistry>();
                 services.AddScoped<IInAppNotificationPushPublisher, SignalRNotificationPushPublisher>();
             },
             AddWorker: includeWorker
@@ -87,6 +89,7 @@ internal static class CompositionRootTestHost
         services.AddSingleton<IConfiguration>(configuration);
         services.AddLogging();
         services.AddSignalR();
+        services.AddSingleton<IAccountSessionConnectionRegistry, AccountSessionConnectionRegistry>();
         services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 
         AddUnlessOmitted(CompositionFacade.Platform, omittedFacade, services.AddPlatformModule);

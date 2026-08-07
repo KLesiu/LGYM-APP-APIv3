@@ -2,6 +2,7 @@ using LgymApi.DataSeeder;
 using LgymApi.DataSeeder.Seeders;
 using LgymApi.Identity;
 using LgymApi.Infrastructure.Data;
+using Hangfire.PostgreSql;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,41 +15,60 @@ public static class Program
     {
         Console.WriteLine("=== LgymApi DataSeeder ===");
 
-        var basePath = Environment.GetEnvironmentVariable("LGYM_SEEDER_BASE_PATH") ?? AppContext.BaseDirectory;
-        var configuration = DataSeederProgram.BuildConfiguration(basePath);
-        var connectionString = configuration.GetConnectionString("Postgres") ?? string.Empty;
-        Console.WriteLine("Reading configuration from LgymApi.Api/appsettings.json...");
-        Console.WriteLine($"Connection: {DataSeederProgram.MaskConnectionString(connectionString)}");
-
-        if (string.IsNullOrWhiteSpace(connectionString))
+        if (!TryParseMode(args, out var mode))
         {
-            Console.WriteLine("Connection string 'ConnectionStrings:Postgres' is missing. Aborting.");
+            Console.Error.WriteLine("Supported modes: --migrate-only, --prepare-hangfire, --seed.");
             return 1;
         }
 
-        Console.WriteLine();
+        var basePath = Environment.GetEnvironmentVariable("LGYM_SEEDER_BASE_PATH") ?? AppContext.BaseDirectory;
+        var configuration = DataSeederProgram.BuildConfiguration(basePath);
+        var connectionString = DataSeederProgram.GetMigrationConnectionString();
+
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            Console.Error.WriteLine("LGYM_MIGRATION_POSTGRES is required for offline database operations.");
+            return 1;
+        }
+
+        if (IsTestModeEnabled())
+        {
+            Console.WriteLine("Test mode enabled. Skipping offline database operation.");
+            return 0;
+        }
+
+        await using var provider = BuildServiceProvider(configuration, connectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        if (mode == SeederMode.MigrateOnly)
+        {
+            await context.Database.MigrateAsync();
+            Console.WriteLine("EF Core migrations are current.");
+            return 0;
+        }
+
+        if (mode == SeederMode.PrepareHangfire)
+        {
+            _ = new PostgreSqlStorage(connectionString, new PostgreSqlStorageOptions
+            {
+                PrepareSchemaIfNecessary = true,
+                StartupConnectionMaxRetries = 0,
+                AllowDegradedModeWithoutStorage = false
+            });
+            Console.WriteLine("Hangfire PostgreSQL schema is prepared.");
+            return 0;
+        }
 
         var dropDatabase = ConsolePrompt.Confirm("Drop existing database before seeding?", false);
         Console.WriteLine("EF Core migrations are required for relational databases. EnsureCreated is reserved only for non-relational test stores.");
         var seedDemo = ConsolePrompt.Confirm("Seed demo data?", false);
-
         var options = new SeedOptions
         {
             DropDatabase = dropDatabase,
             UseMigrations = true,
             SeedDemoData = seedDemo
         };
-
-        if (IsTestModeEnabled())
-        {
-            Console.WriteLine("Test mode enabled. Skipping database seeding.");
-            return 0;
-        }
-
-        await using var provider = BuildServiceProvider(configuration, connectionString);
-        await using var scope = provider.CreateAsyncScope();
-
-        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var orchestrator = scope.ServiceProvider.GetRequiredService<SeedOrchestrator>();
 
         var seedContext = new SeedContext();
@@ -62,6 +82,25 @@ public static class Program
         var value = Environment.GetEnvironmentVariable("LGYM_SEEDER_TEST_MODE");
         return string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
                || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool TryParseMode(string[] args, out SeederMode mode)
+    {
+        mode = SeederMode.Seed;
+        return args.Length switch
+        {
+            0 => true,
+            1 when string.Equals(args[0], "--seed", StringComparison.Ordinal) => true,
+            1 when string.Equals(args[0], "--migrate-only", StringComparison.Ordinal) => SetMode(SeederMode.MigrateOnly, out mode),
+            1 when string.Equals(args[0], "--prepare-hangfire", StringComparison.Ordinal) => SetMode(SeederMode.PrepareHangfire, out mode),
+            _ => false
+        };
+    }
+
+    private static bool SetMode(SeederMode selectedMode, out SeederMode mode)
+    {
+        mode = selectedMode;
+        return true;
     }
 
     internal static ServiceProvider BuildServiceProvider(IConfiguration configuration, string connectionString)
@@ -113,4 +152,11 @@ public static class Program
         services.AddScoped<SeedOrchestrator>();
         return services.BuildServiceProvider();
     }
+}
+
+public enum SeederMode
+{
+    Seed,
+    MigrateOnly,
+    PrepareHangfire
 }

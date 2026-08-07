@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
 using FluentAssertions.Execution;
+using LgymApi.Api.Authorization;
 using LgymApi.Api.Extensions;
 using LgymApi.Application.Platform.Contracts.Serialization;
 using LgymApi.Domain.Security;
@@ -14,7 +15,6 @@ using LgymApi.Resources;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -217,11 +217,10 @@ public sealed class ApiHostConfigurationCharacterizationTests
             var policy = await policyProvider.GetPolicyAsync(policyName);
             policy.Should().NotBeNull();
             policy!.AuthenticationSchemes.Should().BeEmpty();
-            var claimRequirement = policy.Requirements
-                .OfType<ClaimsAuthorizationRequirement>()
+            var permissionRequirement = policy.Requirements
+                .OfType<CurrentPermissionRequirement>()
                 .Should().ContainSingle().Subject;
-            claimRequirement.ClaimType.Should().Be(AuthConstants.PermissionClaimType);
-            claimRequirement.AllowedValues.Should().Equal(permission);
+            permissionRequirement.Permission.Should().Be(permission);
         }
     }
 

@@ -12,13 +12,16 @@ namespace LgymApi.Api.Hubs;
 public sealed class NotificationHub : Hub
 {
     private readonly IAuthenticatedAccountContextResolver _authenticatedAccountContextResolver;
+    private readonly IAccountSessionConnectionRegistry _connectionRegistry;
     private readonly ILogger<NotificationHub> _logger;
 
     public NotificationHub(
         IAuthenticatedAccountContextResolver authenticatedAccountContextResolver,
+        IAccountSessionConnectionRegistry connectionRegistry,
         ILogger<NotificationHub> logger)
     {
         _authenticatedAccountContextResolver = authenticatedAccountContextResolver;
+        _connectionRegistry = connectionRegistry;
         _logger = logger;
     }
 
@@ -39,18 +42,21 @@ public sealed class NotificationHub : Hub
         }
 
         var resolution = await _authenticatedAccountContextResolver.ResolveAsync(accountId, sessionId, Context.ConnectionAborted);
-        if (resolution.Status != AuthenticatedAccountResolutionStatus.Active)
+        if (resolution.Status != AuthenticatedAccountResolutionStatus.Active
+            || resolution.Context?.Id != accountId)
         {
             Context.Abort();
             return;
         }
 
-        await Groups.AddToGroupAsync(Context.ConnectionId, $"user-{resolution.Context!.Id}");
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"user-{accountId}");
+        _connectionRegistry.Register(accountId, sessionId, Context.ConnectionId);
         await base.OnConnectedAsync();
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
+        _connectionRegistry.Remove(Context.ConnectionId);
         _logger.LogInformation(
             exception,
             "Notification hub disconnected for connection {ConnectionId}",

@@ -2,10 +2,12 @@ using FluentAssertions;
 using LgymApi.Api.Features.InAppNotification;
 using LgymApi.Api.Features.InAppNotification.Controllers;
 using LgymApi.Api.Features.User.Controllers;
+using LgymApi.Api.Hubs;
 using LgymApi.Api.Mapping;
 using LgymApi.Application.Notifications;
 using LgymApi.Application.Repositories;
 using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using LgymApi.Notifications.ApiAdapters;
 using LgymApi.Notifications.Contracts;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,6 +24,8 @@ public sealed class NotificationHostAdapterCompositionTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSignalR();
+        services.AddSingleton<IAccountSessionConnectionRegistry, AccountSessionConnectionRegistry>();
+        services.AddSingleton(Substitute.For<IAuthenticatedAccountContextResolver>());
         services.AddScoped<IInAppNotificationPushPublisher, SignalRNotificationPushPublisher>();
 
         var registrations = services

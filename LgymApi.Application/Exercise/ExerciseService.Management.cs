@@ -15,25 +15,57 @@ namespace LgymApi.Application.Features.Exercise;
 
 public sealed partial class ExerciseService : IExerciseService
 {
-    public Task<Result<Unit, AppError>> AddExerciseAsync(string name, BodyParts bodyPart, string? description, string? image, CancellationToken cancellationToken = default)
-        => CreateExerciseAsync(name, bodyPart, ExerciseEloFormula.Standard, description, image, null, cancellationToken);
-
-    public async Task<Result<Unit, AppError>> AddExerciseWithFormulaAsync(AddExerciseWithFormulaInput input, CancellationToken cancellationToken = default)
+    public async Task<Result<Unit, AppError>> AddExerciseAsync(AuthenticatedAccountContext? currentAccount, string name, BodyParts bodyPart, string? description, string? image, CancellationToken cancellationToken = default)
     {
+        if (!CanManageGlobalExercises(currentAccount))
+        {
+            return Result<Unit, AppError>.Failure(new ExerciseForbiddenError(Messages.Forbidden));
+        }
+
+        return await CreateExerciseAsync(name, bodyPart, ExerciseEloFormula.Standard, description, image, null, false, cancellationToken);
+    }
+
+    public async Task<Result<Unit, AppError>> AddExerciseWithFormulaAsync(AuthenticatedAccountContext? currentAccount, AddExerciseWithFormulaInput input, CancellationToken cancellationToken = default)
+    {
+        if (!CanManageGlobalExercises(currentAccount))
+        {
+            return Result<Unit, AppError>.Failure(new ExerciseForbiddenError(Messages.Forbidden));
+        }
+
         var (name, bodyPart, eloFormula, description, image) = input;
-        return await CreateExerciseAsync(name, bodyPart, eloFormula ?? ExerciseEloFormula.Standard, description, image, null, cancellationToken);
+        return await CreateExerciseAsync(name, bodyPart, eloFormula ?? ExerciseEloFormula.Standard, description, image, null, false, cancellationToken);
     }
 
-    public async Task<Result<Unit, AppError>> AddUserExerciseAsync(AddUserExerciseInput input, CancellationToken cancellationToken = default)
+    public async Task<Result<Unit, AppError>> AddUserExerciseAsync(AuthenticatedAccountContext? currentAccount, AddUserExerciseInput input, CancellationToken cancellationToken = default)
     {
-        var (userId, name, bodyPart, description, image) = input;
-        return await CreateExerciseAsync(name, bodyPart, ExerciseEloFormula.Standard, description, image, userId, cancellationToken);
+        var (routeAccountId, name, bodyPart, description, image) = input;
+        if (routeAccountId.IsEmpty)
+        {
+            return Result<Unit, AppError>.Failure(new InvalidExerciseError(Messages.InvalidId));
+        }
+
+        if (currentAccount == null || currentAccount.Id.IsEmpty || currentAccount.Id != routeAccountId)
+        {
+            return Result<Unit, AppError>.Failure(new ExerciseForbiddenError(Messages.Forbidden));
+        }
+
+        return await CreateExerciseAsync(name, bodyPart, ExerciseEloFormula.Standard, description, image, routeAccountId, false, cancellationToken);
     }
 
-    public async Task<Result<Unit, AppError>> AddUserExerciseWithFormulaAsync(AddUserExerciseWithFormulaInput input, CancellationToken cancellationToken = default)
+    public async Task<Result<Unit, AppError>> AddUserExerciseWithFormulaAsync(AuthenticatedAccountContext? currentAccount, AddUserExerciseWithFormulaInput input, CancellationToken cancellationToken = default)
     {
-        var (userId, name, bodyPart, eloFormula, description, image) = input;
-        return await CreateExerciseAsync(name, bodyPart, eloFormula ?? ExerciseEloFormula.Standard, description, image, userId, cancellationToken);
+        var (targetAccountId, name, bodyPart, eloFormula, description, image) = input;
+        if (targetAccountId.IsEmpty)
+        {
+            return Result<Unit, AppError>.Failure(new InvalidExerciseError(Messages.InvalidId));
+        }
+
+        if (!CanManageGlobalExercises(currentAccount))
+        {
+            return Result<Unit, AppError>.Failure(new ExerciseForbiddenError(Messages.Forbidden));
+        }
+
+        return await CreateExerciseAsync(name, bodyPart, eloFormula ?? ExerciseEloFormula.Standard, description, image, targetAccountId, true, cancellationToken);
     }
 
     private async Task<Result<Unit, AppError>> CreateExerciseAsync(
@@ -43,6 +75,7 @@ public sealed partial class ExerciseService : IExerciseService
         string? description,
         string? image,
         Id<AccountReference>? userId,
+        bool verifyTargetAccount,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(name) || bodyPart == BodyParts.Unknown)
@@ -55,7 +88,7 @@ public sealed partial class ExerciseService : IExerciseService
             return Result<Unit, AppError>.Failure(new InvalidExerciseError(Messages.InvalidId));
         }
 
-        if (userId.HasValue)
+        if (userId.HasValue && verifyTargetAccount)
         {
             if (await _accountAccess.GetByIdAsync(userId.Value, cancellationToken) is null)
             {
@@ -70,37 +103,24 @@ public sealed partial class ExerciseService : IExerciseService
         return Result<Unit, AppError>.Success(Unit.Value);
     }
 
-    public async Task<Result<Unit, AppError>> DeleteExerciseAsync(Id<AccountReference> userId, Id<Domain.Entities.Exercise> exerciseId, CancellationToken cancellationToken = default)
+    public async Task<Result<Unit, AppError>> DeleteExerciseAsync(AuthenticatedAccountContext? currentAccount, Id<AccountReference> routeAccountId, Id<Domain.Entities.Exercise> exerciseId, CancellationToken cancellationToken = default)
     {
-        if (userId.IsEmpty || exerciseId.IsEmpty)
+        if (routeAccountId.IsEmpty || exerciseId.IsEmpty)
         {
             return Result<Unit, AppError>.Failure(new InvalidExerciseError(Messages.InvalidId));
         }
 
-        var account = await _accountAccess.GetByIdAsync(userId, cancellationToken);
-        if (account == null)
+        if (currentAccount == null || currentAccount.Id.IsEmpty || currentAccount.Id != routeAccountId)
         {
-            return Result<Unit, AppError>.Failure(new ExerciseNotFoundError(Messages.DidntFind));
+            return Result<Unit, AppError>.Failure(new ExerciseForbiddenError(Messages.Forbidden));
         }
 
-        var exercise = await _exerciseRepository.FindByIdAsync(exerciseId, cancellationToken);
+        var exercise = CanManageGlobalExercises(currentAccount)
+            ? await _exerciseRepository.FindUnrestrictedByIdAsync(exerciseId, cancellationToken)
+            : await _exerciseRepository.FindOwnedByAccountAsync(exerciseId, currentAccount.Id, cancellationToken);
         if (exercise == null)
         {
             return Result<Unit, AppError>.Failure(new ExerciseNotFoundError(Messages.DidntFind));
-        }
-
-        if (!account.PermissionClaims.Contains(AuthConstants.Permissions.ManageGlobalExercises, StringComparer.Ordinal))
-        {
-            if (!exercise.OwnerId.HasValue)
-            {
-                return Result<Unit, AppError>.Failure(new InvalidExerciseError(Messages.Forbidden));
-            }
-
-            if (exercise.OwnerId.Value != userId)
-            {
-                return Result<Unit, AppError>.Failure(new ExerciseForbiddenError(Messages.Forbidden));
-            }
-
         }
 
         await _exerciseRepository.UpdateAsync(new WorkoutExerciseWriteModel(exercise.Id, exercise.OwnerId, exercise.Name, exercise.BodyPart, exercise.EloFormula, exercise.Description, exercise.Image, true), cancellationToken);
@@ -132,19 +152,12 @@ public sealed partial class ExerciseService : IExerciseService
             return Result<Unit, AppError>.Failure(new InvalidExerciseError(Messages.FieldRequired));
         }
 
-        var exercise = await _exerciseRepository.FindByIdAsync(exerciseId, cancellationToken);
+        var exercise = CanManageGlobalExercises(currentUser)
+            ? await _exerciseRepository.FindUnrestrictedByIdAsync(exerciseId, cancellationToken)
+            : await _exerciseRepository.FindOwnedByAccountAsync(exerciseId, currentUser.Id, cancellationToken);
         if (exercise == null)
         {
             return Result<Unit, AppError>.Failure(new ExerciseNotFoundError(Messages.DidntFind));
-        }
-
-        var account = await _accountAccess.GetByIdAsync(currentUser.Id, cancellationToken);
-        var canEditExercise = exercise.OwnerId == currentUser.Id
-            || account?.PermissionClaims.Contains(AuthConstants.Permissions.ManageGlobalExercises, StringComparer.Ordinal) == true;
-
-        if (!canEditExercise)
-        {
-            return Result<Unit, AppError>.Failure(new ExerciseForbiddenError(Messages.Forbidden));
         }
 
         if (!string.IsNullOrWhiteSpace(request.Name))
@@ -192,8 +205,7 @@ public sealed partial class ExerciseService : IExerciseService
             return Result<Unit, AppError>.Failure(new ExerciseForbiddenError(Messages.Forbidden));
         }
 
-        var account = await _accountAccess.GetByIdAsync(currentUser.Id, cancellationToken);
-        if (account?.PermissionClaims.Contains(AuthConstants.Permissions.ManageGlobalExercises, StringComparer.Ordinal) != true)
+        if (!CanManageGlobalExercises(currentUser))
         {
             return Result<Unit, AppError>.Failure(new ExerciseForbiddenError(Messages.Forbidden));
         }
@@ -222,7 +234,7 @@ public sealed partial class ExerciseService : IExerciseService
             return Result<Unit, AppError>.Failure(new InvalidExerciseError(Messages.FieldRequired));
         }
 
-        var exercise = await _exerciseRepository.FindByIdAsync(exerciseId, cancellationToken);
+        var exercise = await _exerciseRepository.FindUnrestrictedByIdAsync(exerciseId, cancellationToken);
         if (exercise == null)
         {
             return Result<Unit, AppError>.Failure(new ExerciseNotFoundError(Messages.DidntFind));

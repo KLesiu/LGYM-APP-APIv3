@@ -24,7 +24,7 @@ public sealed class NotificationHubTests
         var context = new TestHubCallerContext(accountId.ToString(), sessionId.ToString());
         var groups = new FakeGroupManager();
 
-        var hub = new NotificationHub(resolver, NullLogger<NotificationHub>.Instance)
+        var hub = new NotificationHub(resolver, new AccountSessionConnectionRegistry(), NullLogger<NotificationHub>.Instance)
         {
             Context = context,
             Groups = groups
@@ -45,7 +45,7 @@ public sealed class NotificationHubTests
         var context = new TestHubCallerContext(Id<AccountReference>.New().ToString(), null);
         var groups = new FakeGroupManager();
 
-        var hub = new NotificationHub(resolver, NullLogger<NotificationHub>.Instance)
+        var hub = new NotificationHub(resolver, new AccountSessionConnectionRegistry(), NullLogger<NotificationHub>.Instance)
         {
             Context = context,
             Groups = groups
@@ -67,7 +67,7 @@ public sealed class NotificationHubTests
         var context = new TestHubCallerContext(accountId.ToString(), invalidSessionId.ToString());
         var groups = new FakeGroupManager();
 
-        var hub = new NotificationHub(resolver, NullLogger<NotificationHub>.Instance)
+        var hub = new NotificationHub(resolver, new AccountSessionConnectionRegistry(), NullLogger<NotificationHub>.Instance)
         {
             Context = context,
             Groups = groups

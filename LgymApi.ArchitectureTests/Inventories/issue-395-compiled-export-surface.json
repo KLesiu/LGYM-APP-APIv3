@@ -18,8 +18,8 @@
     },
     {
       "name": "LgymApi.Platform",
-      "exportedTypeCount": 69,
-      "sha256": "f9065075db3db3bdfad7c0c906e6b7af2a38e3a0085d8e8a6413d99c81135ab9"
+      "exportedTypeCount": 70,
+      "sha256": "e32b49602b535c91f0f5591c9a2d5d96f391c0401e9473c03a9ce78dd15ae28e"
     },
     {
       "name": "LgymApi.TrainingPlanning",

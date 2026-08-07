@@ -35,11 +35,14 @@ public sealed partial class ExerciseController : ControllerBase
     }
 
     [HttpPost("exercise/addExercise")]
+    [Authorize(Policy = AuthConstants.Policies.ManageGlobalExercises)]
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> AddExercise([FromBody] ExerciseFormDto form, CancellationToken cancellationToken = default)
     {
-        var result = await _exerciseService.AddExerciseAsync(form.Name, form.BodyPart, form.Description, form.Image, cancellationToken);
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
+        var result = await _exerciseService.AddExerciseAsync(currentAccount, form.Name, form.BodyPart, form.Description, form.Image, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -55,8 +58,9 @@ public sealed partial class ExerciseController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> AddExerciseWithFormula([FromBody] ExerciseExtendedFormDto form, CancellationToken cancellationToken = default)
     {
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
         var input = _mapper.Map<ExerciseExtendedFormDto, AddExerciseWithFormulaInput>(form);
-        var result = await _exerciseService.AddExerciseWithFormulaAsync(input, cancellationToken);
+        var result = await _exerciseService.AddExerciseWithFormulaAsync(currentAccount, input, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -71,8 +75,9 @@ public sealed partial class ExerciseController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> AddUserExercise([FromRoute] string id, [FromBody] ExerciseFormDto form, CancellationToken cancellationToken = default)
     {
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
         var accountId = id.ToIdOrEmpty<AccountReference>();
-        var result = await _exerciseService.AddUserExerciseAsync(accountId, form.Name, form.BodyPart, form.Description, form.Image, cancellationToken);
+        var result = await _exerciseService.AddUserExerciseAsync(currentAccount, accountId, form.Name, form.BodyPart, form.Description, form.Image, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -89,9 +94,10 @@ public sealed partial class ExerciseController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> AddUserExerciseWithFormula([FromRoute] string id, [FromBody] ExerciseExtendedFormDto form, CancellationToken cancellationToken = default)
     {
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
         var accountId = id.ToIdOrEmpty<AccountReference>();
         var input = _mapper.Map<ExerciseExtendedFormDto, AddExerciseWithFormulaInput>(form);
-        var result = await _exerciseService.AddUserExerciseWithFormulaAsync(accountId, input, cancellationToken);
+        var result = await _exerciseService.AddUserExerciseWithFormulaAsync(currentAccount, accountId, input, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -112,9 +118,10 @@ public sealed partial class ExerciseController : ControllerBase
             return Result<Unit, AppError>.Failure(new InvalidExerciseError(Messages.FieldRequired)).ToActionResult();
         }
 
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
         var accountId = id.ToIdOrEmpty<AccountReference>();
         var exerciseId = exerciseIdString.ToIdOrEmpty<ExerciseEntity>();
-        var result = await _exerciseService.DeleteExerciseAsync(accountId, exerciseId, cancellationToken);
+        var result = await _exerciseService.DeleteExerciseAsync(currentAccount, accountId, exerciseId, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -171,6 +178,7 @@ public sealed partial class ExerciseController : ControllerBase
     }
 
     [HttpPost("exercise/{id}/addGlobalTranslation")]
+    [Authorize(Policy = AuthConstants.Policies.ManageGlobalExercises)]
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status403Forbidden)]
@@ -194,9 +202,10 @@ public sealed partial class ExerciseController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetAllExercises([FromRoute] string id, CancellationToken cancellationToken = default)
     {
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
         var accountId = id.ToIdOrEmpty<AccountReference>();
         var cultures = HttpContext.GetCulturePreferences();
-        var result = await _exerciseService.GetAllExercisesAsync(accountId, cultures, cancellationToken);
+        var result = await _exerciseService.GetAllExercisesAsync(currentAccount, accountId, cultures, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -214,9 +223,10 @@ public sealed partial class ExerciseController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetAllUserExercises([FromRoute] string id, CancellationToken cancellationToken = default)
     {
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
         var accountId = id.ToIdOrEmpty<AccountReference>();
         var cultures = HttpContext.GetCulturePreferences();
-        var result = await _exerciseService.GetAllUserExercisesAsync(accountId, cultures, cancellationToken);
+        var result = await _exerciseService.GetAllUserExercisesAsync(currentAccount, accountId, cultures, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -234,8 +244,9 @@ public sealed partial class ExerciseController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetAllGlobalExercises(CancellationToken cancellationToken = default)
     {
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
         var cultures = HttpContext.GetCulturePreferences();
-        var result = await _exerciseService.GetAllGlobalExercisesAsync(cultures, cancellationToken);
+        var result = await _exerciseService.GetAllGlobalExercisesAsync(currentAccount, cultures, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -254,9 +265,10 @@ public sealed partial class ExerciseController : ControllerBase
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetExerciseByBodyPart([FromRoute] string id, [FromBody] ExerciseByBodyPartRequestDto request, CancellationToken cancellationToken = default)
     {
+        var currentAccount = HttpContext.GetAuthenticatedAccountContext();
         var accountId = id.ToIdOrEmpty<AccountReference>();
         var cultures = HttpContext.GetCulturePreferences();
-        var result = await _exerciseService.GetExerciseByBodyPartAsync(accountId, request.BodyPart, cultures, cancellationToken);
+        var result = await _exerciseService.GetExerciseByBodyPartAsync(currentAccount, accountId, request.BodyPart, cultures, cancellationToken);
         if (result.IsFailure)
         {
             return result.ToActionResult();
@@ -267,25 +279,6 @@ public sealed partial class ExerciseController : ControllerBase
         mappingContext.Set(ExerciseProfile.Keys.Translations, context.Translations);
         var response = _mapper.MapList<LgymApi.Application.WorkoutProgress.ProgressData.Models.ProgressExerciseReadModel, ExerciseResponseDto>(context.Exercises, mappingContext);
         return Ok(response);
-    }
-
-    [HttpGet("exercise/{id}/getExercise")]
-    [ProducesResponseType(typeof(ExerciseResponseDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetExercise([FromRoute] string id, CancellationToken cancellationToken = default)
-    {
-        var exerciseId = id.ToIdOrEmpty<ExerciseEntity>();
-        var cultures = HttpContext.GetCulturePreferences();
-        var result = await _exerciseService.GetExerciseAsync(exerciseId, cultures, cancellationToken);
-        if (result.IsFailure)
-        {
-            return result.ToActionResult();
-        }
-
-        var context = result.Value;
-        var mappingContext = _mapper.CreateContext();
-        mappingContext.Set(ExerciseProfile.Keys.Translations, context.Translations);
-        return Ok(_mapper.Map<LgymApi.Application.WorkoutProgress.ProgressData.Models.ProgressExerciseReadModel, ExerciseResponseDto>(context.Exercise, mappingContext));
     }
 
 }

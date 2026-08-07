@@ -65,6 +65,7 @@ new(Surface.TechnicalPlatform, "LgymApi.Platform/Contracts/BackgroundCommands/IA
         new(Surface.TechnicalPlatform, "LgymApi.Platform/Pagination/IGridifyExecutionService.cs", "LgymApi.Infrastructure.Pagination.IGridifyExecutionService", TypeKind.Interface, false, false, true),
         new(Surface.TechnicalPlatform, "LgymApi.Platform/Repositories/IUnitOfWork.cs", "LgymApi.Application.Repositories.IUnitOfWork", TypeKind.Interface, false, false, true),
         new(Surface.TechnicalPlatform, "LgymApi.Platform/Repositories/IUnitOfWork.cs", "LgymApi.Application.Repositories.IUnitOfWorkTransaction", TypeKind.Interface, false, false, true),
+        new(Surface.TechnicalPlatform, "LgymApi.Platform/Repositories/IActorRowSecurityScopeFactory.cs", "LgymApi.Application.Repositories.IActorRowSecurityScopeFactory", TypeKind.Interface, false, false, true),
         new(Surface.TechnicalPlatform, "LgymApi.Platform/Repositories/ICommittedIntentDispatcher.cs", "LgymApi.Application.Repositories.ICommittedIntentDispatcher", TypeKind.Interface, false, false, true),
         new(Surface.TechnicalPlatform, "LgymApi.Platform/Repositories/ICommandEnvelopeRepository.cs", "LgymApi.Application.Repositories.ICommandEnvelopeRepository", TypeKind.Interface, false, false, true),
         new(Surface.TechnicalPlatform, "LgymApi.Platform/Repositories/IApiIdempotencyRecordRepository.cs", "LgymApi.Application.Repositories.IApiIdempotencyRecordRepository", TypeKind.Interface, false, false, true),

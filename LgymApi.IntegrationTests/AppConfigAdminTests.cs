@@ -12,6 +12,7 @@ namespace LgymApi.IntegrationTests;
 public sealed class AppConfigAdminTests : IntegrationTestBase
 {
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/appconfig/paginated", "admin", "current-permission-allow")]
     public async Task GetPaginated_ReturnsExpectedJsonShape_WithDefaultPagination()
     {
         var admin = await SeedAdminAsync();
@@ -193,6 +194,7 @@ public sealed class AppConfigAdminTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/appconfig/{id}", "admin", "current-permission-allow")]
     public async Task GetById_ReturnsExpectedJsonShape()
     {
         var admin = await SeedAdminAsync();
@@ -265,6 +267,7 @@ public sealed class AppConfigAdminTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/appconfig/{id}/update", "admin", "current-permission-allow")]
     public async Task Update_ModifiesAppConfigAndPersistsChanges()
     {
         var admin = await SeedAdminAsync();
@@ -351,6 +354,7 @@ public sealed class AppConfigAdminTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/appconfig/{id}/delete", "admin", "current-permission-allow")]
     public async Task Delete_RemovesAppConfig()
     {
         var admin = await SeedAdminAsync();

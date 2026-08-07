@@ -10,10 +10,26 @@ namespace LgymApi.Infrastructure.Repositories.WorkoutProgress;
 
 public sealed class WorkoutExercisePersistenceRepository(AppDbContext dbContext) : IWorkoutExercisePersistence
 {
-    public async Task<WorkoutExercisePersistenceModel?> FindByIdAsync(Id<Exercise> id, CancellationToken cancellationToken = default)
+    public Task<WorkoutExercisePersistenceModel?> FindByIdAsync(Id<Exercise> id, CancellationToken cancellationToken = default)
+        => FindUnrestrictedByIdAsync(id, cancellationToken);
+
+    public Task<WorkoutExercisePersistenceModel?> FindUnrestrictedByIdAsync(Id<Exercise> id, CancellationToken cancellationToken = default)
+        => FindAsync(dbContext.Exercises.Where(exercise => exercise.Id == id), cancellationToken);
+
+    public Task<WorkoutExercisePersistenceModel?> FindVisibleToAccountAsync(Id<Exercise> id, Id<AccountReference> accountId, CancellationToken cancellationToken = default)
     {
-        var entity = await dbContext.Exercises.AsNoTracking().FirstOrDefaultAsync(exercise => exercise.Id == id, cancellationToken);
-        return entity is null ? null : WorkoutPersistenceProjection.Exercise(entity);
+        var persistedAccountId = WorkoutPersistenceAccountIds.ToPersisted(accountId);
+        return FindAsync(
+            dbContext.Exercises.Where(exercise => exercise.Id == id && (exercise.UserId == null || exercise.UserId == persistedAccountId)),
+            cancellationToken);
+    }
+
+    public Task<WorkoutExercisePersistenceModel?> FindOwnedByAccountAsync(Id<Exercise> id, Id<AccountReference> accountId, CancellationToken cancellationToken = default)
+    {
+        var persistedAccountId = WorkoutPersistenceAccountIds.ToPersisted(accountId);
+        return FindAsync(
+            dbContext.Exercises.Where(exercise => exercise.Id == id && exercise.UserId == persistedAccountId),
+            cancellationToken);
     }
 
     public Task<IReadOnlyList<WorkoutExercisePersistenceModel>> GetAllForAccountAsync(Id<AccountReference> accountId, CancellationToken cancellationToken = default)
@@ -88,4 +104,10 @@ public sealed class WorkoutExercisePersistenceRepository(AppDbContext dbContext)
 
     private static async Task<IReadOnlyList<WorkoutExercisePersistenceModel>> ReadAsync(IQueryable<Exercise> query, CancellationToken cancellationToken)
         => (await query.AsNoTracking().ToListAsync(cancellationToken)).Select(WorkoutPersistenceProjection.Exercise).ToList();
+
+    private static async Task<WorkoutExercisePersistenceModel?> FindAsync(IQueryable<Exercise> query, CancellationToken cancellationToken)
+    {
+        var entity = await query.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        return entity is null ? null : WorkoutPersistenceProjection.Exercise(entity);
+    }
 }

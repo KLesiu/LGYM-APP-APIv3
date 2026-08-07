@@ -23,6 +23,7 @@ public sealed class PasswordRecoveryTests : IntegrationTestBase
     private const string ResetPasswordInvalidMessage = "Invalid or expired reset token.";
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/forgot-password", "public", "anonymous-intended-behavior")]
     public async Task PasswordRecovery_ForgotPassword_WithExistingEmail_ReturnsOkGenericMessageAndCreatesNotificationRow()
     {
         var user = await SeedUserAsync(
@@ -105,6 +106,7 @@ public sealed class PasswordRecoveryTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/reset-password", "public", "anonymous-intended-behavior")]
     public async Task PasswordRecovery_ResetPassword_WithValidToken_ReturnsOkAndAllowsLoginWithNewPassword()
     {
         var user = await SeedUserAsync(

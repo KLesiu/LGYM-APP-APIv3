@@ -9,7 +9,7 @@ namespace LgymApi.ArchitectureTests;
 [TestFixture]
 public sealed class ModulePublicSurfaceGuardTests
 {
-    private const int ManifestEntryCount = 774;
+    private const int ManifestEntryCount = 775;
 
     private static readonly Lazy<IReadOnlySet<SurfaceEntry>> AllowedSurfaceStore = new(ReadManifest);
 
@@ -35,7 +35,8 @@ public sealed class ModulePublicSurfaceGuardTests
     [
         "LgymApi.Application/Features/Reporting/RecurringReportAssignmentService.Processing.cs\tLgymApi.Application.Features.Reporting.RecurringReportAssignmentService",
         "LgymApi.Application/Features/Reporting/RecurringReportAssignmentService.RequestNow.cs\tLgymApi.Application.Features.Reporting.RecurringReportAssignmentService",
-        "LgymApi.Application/Reporting/Errors/ReportingErrors.cs\tLgymApi.Application.Reporting.Errors.ReportingConflictError"
+        "LgymApi.Application/Reporting/Errors/ReportingErrors.cs\tLgymApi.Application.Reporting.Errors.ReportingConflictError",
+        "LgymApi.Platform/Repositories/IActorRowSecurityScopeFactory.cs\tLgymApi.Application.Repositories.IActorRowSecurityScopeFactory"
     ];
 
 

@@ -10,51 +10,71 @@ namespace LgymApi.UnitTests;
 [TestFixture]
 public sealed class AppDbContextFactoryTests
 {
-    private const string EnvironmentVariableName = "ConnectionStrings__Postgres";
-    private string? _originalValue;
+    private string? _originalMigrationConnection;
+    private string? _originalRuntimeConnection;
+    private string? _originalEnvironment;
 
     [SetUp]
     public void SetUp()
     {
-        _originalValue = Environment.GetEnvironmentVariable(EnvironmentVariableName);
+        _originalMigrationConnection = Environment.GetEnvironmentVariable("LGYM_MIGRATION_POSTGRES");
+        _originalRuntimeConnection = Environment.GetEnvironmentVariable("ConnectionStrings__Postgres");
+        _originalEnvironment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
     }
 
     [TearDown]
     public void TearDown()
     {
-        Environment.SetEnvironmentVariable(EnvironmentVariableName, _originalValue);
+        Environment.SetEnvironmentVariable("LGYM_MIGRATION_POSTGRES", _originalMigrationConnection);
+        Environment.SetEnvironmentVariable("ConnectionStrings__Postgres", _originalRuntimeConnection);
+        Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", _originalEnvironment);
     }
 
     [Test]
-    public void CreateDbContext_WhenEnvironmentVariableMissing_UsesDefaultConnectionString()
+    public void CreateDbContext_WhenDevelopmentConnectionVariablesAreMissing_UsesLocalFallback()
     {
-        Environment.SetEnvironmentVariable(EnvironmentVariableName, null);
+        Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Development");
+        Environment.SetEnvironmentVariable("LGYM_MIGRATION_POSTGRES", null);
+        Environment.SetEnvironmentVariable("ConnectionStrings__Postgres", null);
         var factory = new AppDbContextFactory();
 
         using var context = factory.CreateDbContext([]);
 
-        context.Database.GetConnectionString().Should().Contain("Host=localhost;Port=5433;Database=LGYM-APP");
-        context.Database.GetConnectionString().Should().Contain("Password=REPLACE_ME");
-        context.Database.GetConnectionString().Should().NotContain("sasasa");
+        context.Database.GetDbConnection().Database.Should().Be("LGYM-APP");
+        context.Database.GetDbConnection().DataSource.Should().Contain("localhost");
     }
 
     [Test]
-    public void CreateDbContext_WhenEnvironmentVariableProvided_UsesOverride()
+    public void CreateDbContext_WhenMigrationEnvironmentVariableProvided_PrefersMaintenanceConnection()
     {
-        const string connectionString = "Host=prod;Port=5432;Database=LGYM;Username=test;Password=REPLACE_ME_IN_TEST";
-        Environment.SetEnvironmentVariable(EnvironmentVariableName, connectionString);
+        Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Production");
+        Environment.SetEnvironmentVariable("LGYM_MIGRATION_POSTGRES", "Host=maintenance;Port=5432;Database=design_time;Username=maintenance;Password=test-only");
+        Environment.SetEnvironmentVariable("ConnectionStrings__Postgres", "Host=runtime;Port=5432;Database=runtime;Username=runtime;Password=test-only");
         var factory = new AppDbContextFactory();
 
         using var context = factory.CreateDbContext([]);
 
-        context.Database.GetConnectionString().Should().Be(connectionString);
+        context.Database.GetDbConnection().Database.Should().Be("design_time");
+        context.Database.GetDbConnection().DataSource.Should().Contain("maintenance");
+    }
+
+    [Test]
+    public void CreateDbContext_OutsideDevelopmentWithoutMaintenanceConnection_Throws()
+    {
+        Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Production");
+        Environment.SetEnvironmentVariable("LGYM_MIGRATION_POSTGRES", null);
+
+        var action = () => new AppDbContextFactory().CreateDbContext([]);
+
+        action.Should().Throw<InvalidOperationException>().WithMessage("*LGYM_MIGRATION_POSTGRES*");
     }
 
     [Test]
     public void CreateDbContext_BuildsCanonicalNpgsqlModelAndMigrationStream()
     {
         const string connectionString = "Host=127.0.0.1;Port=1;Database=design_time_guard;Username=guard;Password=guard";
-        Environment.SetEnvironmentVariable(EnvironmentVariableName, connectionString);
+        Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Production");
+        Environment.SetEnvironmentVariable("LGYM_MIGRATION_POSTGRES", connectionString);
         var factory = new AppDbContextFactory();
 
         using var context = factory.CreateDbContext([]);

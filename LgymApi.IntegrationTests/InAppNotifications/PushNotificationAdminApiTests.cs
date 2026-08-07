@@ -16,6 +16,7 @@ namespace LgymApi.IntegrationTests.InAppNotifications;
 public sealed class PushNotificationAdminApiTests : IntegrationTestBase
 {
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/internal/push/test-event", "admin", "current-permission-allow")]
     public async Task EnqueueTestEvent_WithLinkedInAppNotification_PersistsPrivacySafePayload()
     {
         var admin = await SeedAdminAsync();
@@ -52,6 +53,7 @@ public sealed class PushNotificationAdminApiTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/internal/push/test-event", "admin", "ordinary-user-denial")]
     public async Task EnqueueTestEvent_NonAdminUser_ReturnsForbidden()
     {
         var user = await SeedUserAsync(name: "push-admin-forbidden", email: "push-admin-forbidden@example.com");

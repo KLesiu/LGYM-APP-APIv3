@@ -11,6 +11,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: "${ASPNETCORE_ENVIRONMENT:-Development}"
       LGYM_APP_CONFIG_PATH: "/run/config/appsettings.container.json"
+      # The maintenance credential is intentionally not passed into the API container.
       ConnectionStrings__Postgres: "${LGYM_POSTGRES_CONNECTION_STRING:?Set LGYM_POSTGRES_CONNECTION_STRING in .env or your shell}"
       Jwt__SigningKey: "${LGYM_JWT_SIGNING_KEY:?Set LGYM_JWT_SIGNING_KEY in .env or your shell}"
     volumes:

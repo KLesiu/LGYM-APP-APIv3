@@ -11,10 +11,12 @@ namespace LgymApi.IntegrationTests;
 public sealed class PostgreSqlWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly PostgreSqlDatabaseLease _lease;
+    private readonly string _connectionString;
 
-    private PostgreSqlWebApplicationFactory(PostgreSqlDatabaseLease lease)
+    private PostgreSqlWebApplicationFactory(PostgreSqlDatabaseLease lease, string connectionString)
     {
         _lease = lease;
+        _connectionString = connectionString;
     }
 
     public string DatabaseName => _lease.DatabaseName;
@@ -26,13 +28,22 @@ public sealed class PostgreSqlWebApplicationFactory : WebApplicationFactory<Prog
     public static async Task<PostgreSqlWebApplicationFactory> CreateAsync(CancellationToken cancellationToken = default)
     {
         var lease = await PostgreSqlDatabaseLease.CreateAsync(cancellationToken);
-        var factory = new PostgreSqlWebApplicationFactory(lease);
+        var factory = new PostgreSqlWebApplicationFactory(lease, lease.ConnectionString);
 
         return await CompleteInitializationAsync(
             factory,
             static (target, token) => target.InitializeAsync(token),
             static target => target.DisposeAsync(),
             cancellationToken);
+    }
+
+    internal static PostgreSqlWebApplicationFactory CreateForPreparedDatabase(
+        PostgreSqlDatabaseLease lease,
+        string runtimeConnectionString)
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        ArgumentException.ThrowIfNullOrWhiteSpace(runtimeConnectionString);
+        return new PostgreSqlWebApplicationFactory(lease, runtimeConnectionString);
     }
 
     internal static async Task<TFactory> CompleteInitializationAsync<TFactory>(
@@ -78,7 +89,7 @@ public sealed class PostgreSqlWebApplicationFactory : WebApplicationFactory<Prog
         {
             RemoveAppDbContextRegistrations(services);
 
-            services.AddDbContext<AppDbContext>(options => options.UseNpgsql(_lease.ConnectionString));
+            services.AddDbContext<AppDbContext>(options => options.UseNpgsql(_connectionString));
             IntegrationHostServiceOverrides.ReplaceExternalEffects(services, EmailSender, PushSender);
         });
 

@@ -50,7 +50,7 @@ public sealed class StartupMigrationBootstrapTests
     }
 
     [Test]
-    public async Task ApplyAsync_OutsideTestingEnvironment_AttemptsMigration()
+    public async Task ApplyAsync_InDevelopmentEnvironment_AttemptsMigration()
     {
         using var app = CreateApp("Development", services =>
         {
@@ -62,6 +62,19 @@ public sealed class StartupMigrationBootstrapTests
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*relational-specific methods*");
+    }
+
+    [TestCase("Staging")]
+    [TestCase("Production")]
+    public void ShouldApplyMigrations_OutsideDevelopment_ReturnsFalse(string environmentName)
+    {
+        StartupMigrationBootstrap.ShouldApplyMigrations(environmentName, "Testing").Should().BeFalse();
+    }
+
+    [Test]
+    public void ShouldApplyMigrations_InDevelopment_ReturnsTrue()
+    {
+        StartupMigrationBootstrap.ShouldApplyMigrations("Development", "Testing").Should().BeTrue();
     }
 
     private static WebApplication CreateApp(string environmentName, Action<IServiceCollection> configureServices)

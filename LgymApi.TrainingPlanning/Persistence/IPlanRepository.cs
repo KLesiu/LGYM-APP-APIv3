@@ -9,6 +9,11 @@ namespace LgymApi.Application.Repositories;
 internal interface IPlanRepository
 {
     Task<Plan?> FindByIdAsync(Id<Plan> id, CancellationToken cancellationToken = default);
+    async Task<Plan?> FindByIdAndUserIdAsync(Id<Plan> id, Id<User> userId, CancellationToken cancellationToken = default)
+    {
+        var plan = await FindByIdAsync(id, cancellationToken);
+        return plan?.UserId == userId ? plan : null;
+    }
     Task<Plan?> FindActiveByUserIdAsync(Id<User> userId, CancellationToken cancellationToken = default);
     Task<PlanReadModel?> FindActiveReadModelByUserIdAsync(Id<User> userId, CancellationToken cancellationToken = default);
     Task<Plan?> FindLastActiveByUserIdAsync(Id<User> userId, CancellationToken cancellationToken = default);
@@ -30,6 +35,12 @@ internal interface IPlanRepository
 
     Task<Plan?> FindByIdAsync(Id<PlanReference> id, CancellationToken cancellationToken = default)
         => FindByIdAsync(id.Rebind<Plan>(), cancellationToken);
+
+    Task<Plan?> FindByIdAndUserIdAsync(
+        Id<PlanReference> id,
+        Id<AccountReference> userId,
+        CancellationToken cancellationToken = default)
+        => FindByIdAndUserIdAsync(id.Rebind<Plan>(), userId.Rebind<User>(), cancellationToken);
 
     Task<Plan?> FindActiveByUserIdAsync(Id<AccountReference> userId, CancellationToken cancellationToken = default)
         => FindActiveByUserIdAsync(userId.Rebind<User>(), cancellationToken);

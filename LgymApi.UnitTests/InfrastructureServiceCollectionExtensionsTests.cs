@@ -129,6 +129,11 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         AssertTypeDescriptor<IAppConfigRepository, AppConfigRepository>(services, ServiceLifetime.Scoped);
         AssertTypeDescriptor<ICommittedIntentDispatcher, CommittedIntentDispatcher>(services, ServiceLifetime.Scoped);
         AssertTypeDescriptor<IUnitOfWork, EfUnitOfWork>(services, ServiceLifetime.Scoped);
+        services.Should().ContainSingle(descriptor =>
+            descriptor.ServiceType == typeof(IActorRowSecurityScopeFactory)
+            && descriptor.ImplementationType != null
+            && descriptor.ImplementationType.FullName == "LgymApi.Infrastructure.RowSecurity.EfActorRowSecurityScopeFactory"
+            && descriptor.Lifetime == ServiceLifetime.Scoped);
         AssertTypeDescriptor<ICommandEnvelopeRepository, CommandEnvelopeRepository>(services, ServiceLifetime.Scoped);
         AssertTypeDescriptor<IApiIdempotencyRecordRepository, ApiIdempotencyRecordRepository>(services, ServiceLifetime.Scoped);
         AssertTypeDescriptor<IEmailNotificationsFeature, EmailNotificationsFeature>(services, ServiceLifetime.Singleton);
@@ -160,6 +165,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         scopedServices.GetRequiredService<IAppConfigRepository>().Should().BeOfType<AppConfigRepository>();
         scopedServices.GetRequiredService<ICommittedIntentDispatcher>().Should().BeOfType<CommittedIntentDispatcher>();
         scopedServices.GetRequiredService<IUnitOfWork>().Should().BeOfType<EfUnitOfWork>();
+        scopedServices.GetRequiredService<IActorRowSecurityScopeFactory>().GetType().Name.Should().Be("EfActorRowSecurityScopeFactory");
         scopedServices.GetRequiredService<ICommandEnvelopeRepository>().Should().BeOfType<CommandEnvelopeRepository>();
         scopedServices.GetRequiredService<IApiIdempotencyRecordRepository>().Should().BeOfType<ApiIdempotencyRecordRepository>();
         provider.GetRequiredService<IEmailNotificationsFeature>().Should().BeOfType<EmailNotificationsFeature>();
@@ -727,6 +733,43 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
 
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>().Should().NotBeNull();
+        provider.GetRequiredService<IPhotoStorageProvider>().Should().BeOfType<LocalPhotoStorageProvider>();
+    }
+
+    [TestCase("")]
+    [TestCase("short-local-photo-key")]
+    public void AddInfrastructure_Throws_WhenDevelopmentLocalSigningKeyIsMissingOrTooShort(string signingKey)
+    {
+        var services = new ServiceCollection();
+        var values = TestConfigurationBuilder.ToDictionary(TestConfigurationBuilder.BuildEnabledEmailConfiguration());
+        values["PhotoStorage:Provider"] = "Local";
+        values["PhotoStorage:LocalDevelopmentSigningKey"] = signingKey;
+        var configuration = TestConfigurationBuilder.BuildConfiguration(values);
+
+        var action = () => services.AddInfrastructure(
+            configuration,
+            enableSensitiveLogging: true,
+            isTesting: false);
+
+        action.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "PhotoStorage:LocalDevelopmentSigningKey must contain at least 32 UTF-8 bytes when the Local provider is enabled in Development.");
+    }
+
+    [Test]
+    public void AddInfrastructure_UsesConfiguredLocalSigningKeyInDevelopment()
+    {
+        var services = new ServiceCollection();
+        var values = TestConfigurationBuilder.ToDictionary(TestConfigurationBuilder.BuildEnabledEmailConfiguration());
+        values["PhotoStorage:Provider"] = "Local";
+        values["PhotoStorage:LocalDevelopmentSigningKey"] = "task6-local-photo-test-key-32-bytes-minimum";
+        var configuration = TestConfigurationBuilder.BuildConfiguration(values);
+
+        services.AddInfrastructure(configuration, enableSensitiveLogging: true, isTesting: false);
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<LocalPhotoDevelopmentUrlSigner>().Should().NotBeNull();
         provider.GetRequiredService<IPhotoStorageProvider>().Should().BeOfType<LocalPhotoStorageProvider>();
     }
 

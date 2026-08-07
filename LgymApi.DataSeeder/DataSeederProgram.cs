@@ -45,22 +45,8 @@ public static class DataSeederProgram
         throw new InvalidOperationException("Unable to locate repository root.");
     }
 
-    public static string MaskConnectionString(string connectionString)
+    public static string? GetMigrationConnectionString()
     {
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            return "<empty>";
-        }
-
-        var parts = connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        for (var i = 0; i < parts.Length; i++)
-        {
-            if (parts[i].StartsWith("Password=", StringComparison.OrdinalIgnoreCase))
-            {
-                parts[i] = "Password=***";
-            }
-        }
-
-        return string.Join(';', parts);
+        return Environment.GetEnvironmentVariable("LGYM_MIGRATION_POSTGRES");
     }
 }

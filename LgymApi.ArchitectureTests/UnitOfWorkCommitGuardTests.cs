@@ -61,7 +61,7 @@ public sealed class UnitOfWorkCommitGuardTests
                     continue;
                 }
 
-                if (IsAllowedPath(file))
+                if (IsAllowedPath(file) || IsActorScopeTransactionBegin(file, invocation))
                 {
                     continue;
                 }
@@ -112,6 +112,13 @@ public sealed class UnitOfWorkCommitGuardTests
         }
 
         return AllowedSegments.Any(segment => normalized.Contains(segment, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsActorScopeTransactionBegin(string path, InvocationExpressionSyntax invocation)
+    {
+        var normalized = Normalize(path);
+        return normalized.EndsWith("/LgymApi.Infrastructure/RowSecurity/EfActorRowSecurityScopeFactory.cs", StringComparison.OrdinalIgnoreCase)
+            && invocation.Expression is MemberAccessExpressionSyntax { Name.Identifier.ValueText: "BeginTransactionAsync" };
     }
 
     private static bool IsTestPath(string normalizedPath)

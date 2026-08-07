@@ -39,7 +39,7 @@ internal sealed class UpdatePlanUseCase : IUpdatePlanUseCase
             return Result<Unit, AppError>.Failure(new InvalidPlanError(Messages.InvalidId));
         }
 
-        var plan = await _planRepository.FindByIdAsync(input.PlanId, cancellationToken);
+        var plan = await _planRepository.FindByIdAndUserIdAsync(input.PlanId, input.CurrentUserId, cancellationToken);
         if (plan is null)
         {
             return Result<Unit, AppError>.Failure(new PlanNotFoundError(Messages.DidntFind));

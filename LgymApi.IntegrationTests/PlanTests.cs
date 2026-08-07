@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
@@ -16,6 +17,7 @@ namespace LgymApi.IntegrationTests;
 public sealed class PlanTests : IntegrationTestBase
 {
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/{id}/createPlan", "own", "owner-allow")]
     public async Task CreatePlan_WithValidData_CreatesPlanAndMakesItActive()
     {
         var user = await SeedUserAsync(name: "planuser", email: "plan@example.com");
@@ -45,6 +47,7 @@ public sealed class PlanTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/{id}/createPlan", "own", "foreign-object-denial-no-mutation")]
     public async Task CreatePlan_WithMismatchedUserId_ReturnsForbidden()
     {
         var user1 = await SeedUserAsync(name: "user1", email: "user1@example.com");
@@ -76,28 +79,58 @@ public sealed class PlanTests : IntegrationTestBase
     }
 
     [Test]
-    public async Task UpdatePlan_WithValidData_UpdatesPlanName()
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/{id}/updatePlan", "own", "owner-allow")]
+    public async Task UpdatePlan_ByOwner_ReturnsCurrentSuccessShapeAndUpdatesPlanName()
     {
-        var user = await SeedUserAsync(name: "planuser", email: "plan@example.com");
-        var plan = await SeedPlanAsync(user.Id, "Old Name");
-        SetAuthorizationHeader(user.Id);
+        var owner = await SeedUserAsync(name: "planupdateowner", email: "planupdateowner@example.com");
+        var ownerPlan = await SeedPlanAsync(owner.Id, "Owner Plan Before Update");
+        SetAuthorizationHeader(owner.Id);
 
         var request = new
         {
-            _id = plan.Id.ToString(),
-            name = "New Name"
+            _id = ownerPlan.Id.ToString(),
+            name = "Owner Plan After Update"
         };
 
-        var response = await PostAsJsonWithApiOptionsAsync($"/api/{user.Id}/updatePlan", request);
+        var response = await PostAsJsonWithApiOptionsAsync($"/api/{owner.Id}/updatePlan", request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
+        body.Should().NotBeNull();
+        body!.Message.Should().Be(CompatibilityResourceMessage.InCulture("en", () => Messages.Updated));
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var updatedPlan = await db.Plans.FirstOrDefaultAsync(p => p.Id == plan.Id);
+        var updatedPlan = await db.Plans.FirstOrDefaultAsync(p => p.Id == ownerPlan.Id);
         updatedPlan.Should().NotBeNull();
-        updatedPlan!.Name.Should().Be("New Name");
+        updatedPlan!.Name.Should().Be("Owner Plan After Update");
+    }
+
+    [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/{id}/updatePlan", "own", "foreign-object-denial-no-mutation")]
+    public async Task UpdatePlan_WithAttackerRouteAndVictimPlanId_ReturnsNotFoundAndPreservesVictimPlan()
+    {
+        var attacker = await SeedUserAsync(name: "planupdateattacker", email: "planupdateattacker@example.com");
+        var victim = await SeedUserAsync(name: "planupdatevictim", email: "planupdatevictim@example.com");
+        var victimPlan = await SeedPlanAsync(victim.Id, "Victim Plan Before Attack");
+        SetAuthorizationHeader(attacker.Id);
+
+        var response = await PostAsJsonWithApiOptionsAsync($"/api/{attacker.Id}/updatePlan", new
+        {
+            _id = victimPlan.Id.ToString(),
+            name = "Attacker Controlled Name"
+        });
+
+        using var verifyScope = Factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var persistedVictimPlan = await verifyDb.Plans
+            .AsNoTracking()
+            .SingleAsync(plan => plan.Id == victimPlan.Id);
+
+        using var assertionScope = new AssertionScope();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        persistedVictimPlan.Name.Should().Be("Victim Plan Before Attack");
     }
 
     [Test]
@@ -132,6 +165,7 @@ public sealed class PlanTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/getPlanConfig", "own", "owner-allow")]
     public async Task GetPlanConfig_WithActivePlan_ReturnsPlan()
     {
         var user = await SeedUserAsync(name: "planuser", email: "plan@example.com");
@@ -162,6 +196,7 @@ public sealed class PlanTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/checkIsUserHavePlan", "own", "owner-allow")]
     public async Task CheckIsUserHavePlan_WithNoPlan_ReturnsFalse()
     {
         var user = await SeedUserAsync(name: "planuser", email: "plan@example.com");
@@ -176,6 +211,7 @@ public sealed class PlanTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/getPlansList", "own", "owner-allow")]
     public async Task GetPlansList_WithMultiplePlans_ReturnsAllPlans()
     {
         var user = await SeedUserAsync(name: "planuser", email: "plan@example.com");
@@ -205,6 +241,7 @@ public sealed class PlanTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/{id}/setNewActivePlan", "own", "owner-allow")]
     public async Task SetNewActivePlan_WithValidPlanId_SetsActivePlan()
     {
         var user = await SeedUserAsync(name: "planuser", email: "plan@example.com");
@@ -261,6 +298,49 @@ public sealed class PlanTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/getPlanConfig", "own", "foreign-object-denial-no-mutation")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/checkIsUserHavePlan", "own", "foreign-object-denial-no-mutation")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/getPlansList", "own", "foreign-object-denial-no-mutation")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/{id}/setNewActivePlan", "own", "foreign-object-denial-no-mutation")]
+    public async Task PlanAccountRoutes_WithForeignRouteAreDeniedAndDoNotChangeActivePlan()
+    {
+        var attacker = await SeedUserAsync("plan-route-attacker", "plan-route-attacker@example.com");
+        var victim = await SeedUserAsync("plan-route-victim", "plan-route-victim@example.com");
+        var victimActivePlan = await SeedPlanAsync(victim.Id, "Victim Active", isActive: true);
+        var victimInactivePlan = await SeedPlanAsync(victim.Id, "Victim Inactive", isActive: false);
+        SetAuthorizationHeader(attacker.Id);
+
+        using var beforeScope = Factory.Services.CreateScope();
+        var beforeDb = beforeScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var beforeActive = await beforeDb.Plans.AsNoTracking().SingleAsync(plan => plan.Id == victimActivePlan.Id);
+        var responses = new[]
+        {
+            await Client.GetAsync($"/api/{victim.Id}/getPlanConfig"),
+            await Client.GetAsync($"/api/{victim.Id}/checkIsUserHavePlan"),
+            await Client.GetAsync($"/api/{victim.Id}/getPlansList"),
+            await PostAsJsonWithApiOptionsAsync($"/api/{victim.Id}/setNewActivePlan", new { _id = victimInactivePlan.Id.ToString() })
+        };
+
+        using var afterScope = Factory.Services.CreateScope();
+        var afterDb = afterScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var afterActive = await afterDb.Plans.AsNoTracking().SingleAsync(plan => plan.Id == victimActivePlan.Id);
+        var afterInactive = await afterDb.Plans.AsNoTracking().SingleAsync(plan => plan.Id == victimInactivePlan.Id);
+
+        using (new AssertionScope())
+        {
+            responses.Should().OnlyContain(response => response.StatusCode == HttpStatusCode.Forbidden);
+            afterActive.IsActive.Should().Be(beforeActive.IsActive);
+            afterInactive.IsActive.Should().BeFalse();
+        }
+
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
+    }
+
+    [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/{id}/deletePlan", "own", "owner-allow")]
     public async Task DeletePlan_WithValidId_SoftDeletesPlanAndAllPlanDays()
     {
         var user = await SeedUserAsync(name: "deleteplanuser", email: "deleteplan@example.com");
@@ -308,6 +388,7 @@ public sealed class PlanTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/{id}/deletePlan", "own", "foreign-object-denial-no-mutation")]
     public async Task DeletePlan_WithOtherUsersPlan_ReturnsForbidden()
     {
         var user1 = await SeedUserAsync(name: "deleteplanuser2", email: "deleteplan2@example.com");
@@ -617,6 +698,7 @@ public sealed class PlanTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/{id}/share", "own", "owner-allow")]
     public async Task GenerateShareCode_WithValidPlan_ReturnsShareCode()
     {
         var user = await SeedUserAsync(name: "shareuser", email: "share@example.com");
@@ -657,6 +739,7 @@ public sealed class PlanTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/{id}/share", "own", "foreign-object-denial-no-mutation")]
     public async Task GenerateShareCode_WithOtherUsersPlan_ReturnsForbidden()
     {
         var user1 = await SeedUserAsync(name: "shareuser3", email: "share3@example.com");
@@ -670,6 +753,8 @@ public sealed class PlanTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/copy", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/copy", "own", "no-client-subject")]
     public async Task CopyPlan_WithValidShareCode_CopiesPlan()
     {
         var user1 = await SeedUserAsync(name: "copyuser1", email: "copy1@example.com");
@@ -707,6 +792,7 @@ public sealed class PlanTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/copy", "own", "anonymous-denial")]
     public async Task CopyPlan_WithoutAuth_ReturnsUnauthorized()
     {
         ClearAuthorizationHeader();

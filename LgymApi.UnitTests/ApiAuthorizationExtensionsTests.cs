@@ -1,9 +1,14 @@
 using System.Security.Claims;
 using FluentAssertions;
+using LgymApi.Api.Authorization;
 using LgymApi.Api.Configuration;
+using LgymApi.Api.Middleware;
 using LgymApi.Domain.Security;
+using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authorization.Infrastructure;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
@@ -34,19 +39,13 @@ public sealed class ApiAuthorizationExtensionsTests
 
             policy.Should().NotBeNull();
             policy!.Requirements
-                .OfType<ClaimsAuthorizationRequirement>()
+                .OfType<CurrentPermissionRequirement>()
                 .Should()
                 .ContainSingle()
                 .Which
-                .ClaimType
+                .Permission
                 .Should()
-                .Be(AuthConstants.PermissionClaimType);
-            policy.Requirements
-                .OfType<ClaimsAuthorizationRequirement>()
-                .Single()
-                .AllowedValues
-                .Should()
-                .Equal(permission);
+                .Be(permission);
         }
 
         ExpectedPolicies.Should().HaveCount(5);
@@ -58,11 +57,32 @@ public sealed class ApiAuthorizationExtensionsTests
         using var serviceProvider = CreateServiceProvider();
         var authorizationService = serviceProvider.GetRequiredService<IAuthorizationService>();
 
-        var permitted = await authorizationService.AuthorizeAsync(CreatePrincipal(permission), null, policyName);
-        var denied = await authorizationService.AuthorizeAsync(CreatePrincipal(GetDifferentPermission(permission)), null, policyName);
+        var differentPermission = GetDifferentPermission(permission);
+        var permitted = await authorizationService.AuthorizeAsync(
+            CreatePrincipal(differentPermission),
+            CreateHttpContext(permission),
+            policyName);
+        var denied = await authorizationService.AuthorizeAsync(
+            CreatePrincipal(permission),
+            CreateHttpContext(differentPermission),
+            policyName);
 
         permitted.Succeeded.Should().BeTrue();
         denied.Succeeded.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task AddApiAuthorizationPolicies_DeniesTokenPermissionWhenFreshContextFeatureIsAbsent()
+    {
+        using var serviceProvider = CreateServiceProvider();
+        var authorizationService = serviceProvider.GetRequiredService<IAuthorizationService>();
+
+        var result = await authorizationService.AuthorizeAsync(
+            CreatePrincipal(AuthConstants.Permissions.AdminAccess),
+            new DefaultHttpContext(),
+            AuthConstants.Policies.AdminAccess);
+
+        result.Succeeded.Should().BeFalse();
     }
 
     private static IEnumerable<TestCaseData> GetPolicyCases()
@@ -84,8 +104,26 @@ public sealed class ApiAuthorizationExtensionsTests
         [new Claim(AuthConstants.PermissionClaimType, permission)]));
     }
 
+    private static HttpContext CreateHttpContext(string permission)
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Features.Set<IAuthenticatedAccountContextFeature>(
+            new TestAuthenticatedAccountContextFeature(
+                new AuthenticatedAccountContext(
+                    Id<AccountReference>.New(),
+                    Id<AccountSessionReference>.New(),
+                    [],
+                    [permission],
+                    IsBlocked: false,
+                    IsDeleted: false)));
+        return httpContext;
+    }
+
     private static string GetDifferentPermission(string permission)
     {
         return AuthConstants.Permissions.All.First(candidate => candidate != permission);
     }
+
+    private sealed record TestAuthenticatedAccountContextFeature(AuthenticatedAccountContext Context)
+        : IAuthenticatedAccountContextFeature;
 }

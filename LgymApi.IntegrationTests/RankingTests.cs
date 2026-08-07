@@ -27,6 +27,7 @@ public sealed class RankingTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/getUsersRanking", "authenticated-global", "ordinary-authenticated-allow")]
     public async Task GetUsersRanking_WithVisibleUsers_ReturnsRankedUsers()
     {
         var user1 = await SeedUserAsync(name: "highelo", email: "high@example.com", elo: 2000);
@@ -98,6 +99,7 @@ public sealed class RankingTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/changeVisibilityInRanking", "own", "owner-allow")]
     public async Task ChangeVisibilityInRanking_SetsVisibilityToFalse()
     {
         var user = await SeedUserAsync(name: "visibilityuser", email: "vis@example.com", isVisibleInRanking: true);
@@ -151,6 +153,7 @@ public sealed class RankingTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/userInfo/{id}/getUserEloPoints", "authenticated-global", "ordinary-authenticated-allow")]
     public async Task GetUserEloPoints_WithValidUser_ReturnsElo()
     {
         var user = await SeedUserAsync(name: "elouser", email: "elo@example.com", elo: 1750);
