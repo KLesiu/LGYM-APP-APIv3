@@ -20,7 +20,8 @@ param(
     [string]$EvidenceDirectory,
     [Parameter(Mandatory)]
     [string]$CommandJson,
-    [switch]$Supplementary
+    [switch]$Supplementary,
+    [string]$CoveragePath = ""
 )
 
 Set-StrictMode -Version Latest
@@ -78,6 +79,11 @@ try {
         throw "The TRX test-name set does not match the same-SHA discovery manifest."
     }
 
+    $coverage = $null
+    if (-not [string]::IsNullOrWhiteSpace($CoveragePath)) {
+        $coverage = Get-ValidatedOpenCoverReport -CoveragePath $CoveragePath -NotBeforeUtc $notBefore -RepositoryRoot $snapshot.path
+    }
+
     $evidencePath = New-FreshEvidenceDirectory -Path $EvidenceDirectory
     $summaryPath = Join-Path $evidencePath "trx-summary.json"
     $summary = [pscustomobject]@{
@@ -117,6 +123,19 @@ try {
             testCount = $trx.testNames.Count
             testNames = @($trx.testNames)
         }
+    }
+
+    if ($null -ne $coverage) {
+        $summary | Add-Member -NotePropertyName "coverage" -NotePropertyValue ([pscustomobject]@{
+                path = $coverage.file.FullName
+                fileName = $coverage.file.Name
+                sha256 = (Get-FileSha256 -Path $coverage.file.FullName)
+                bytes = $coverage.file.Length
+                lastWriteUtc = $coverage.file.LastWriteTimeUtc.ToString("O")
+                moduleCount = $coverage.moduleCount
+                fileCount = $coverage.fileCount
+                localPathMode = $coverage.localPathMode
+            })
     }
 
     Write-RedactedJsonFile -Path $summaryPath -Value $summary -NoClobber
