@@ -14,6 +14,12 @@ concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  SONAR_HOST_URL: https://sonarcloud.io
+  SONAR_ORG: ${{ vars.SONAR_ORG != '' && vars.SONAR_ORG || secrets.SONAR_ORG }}
+  SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY != '' && vars.SONAR_PROJECT_KEY || secrets.SONAR_PROJECT_KEY }}
+  SONAR_COVERAGE_EXCLUSIONS: "**/.github/**,**/Migrations/**,**/LgymApi.Resources.Generator/**,**/LgymApi.DataSeeder/**,**/LgymApi.Application/Common/Errors/*Errors.cs"
+
 jobs:
   release-build:
     name: release-build
@@ -461,3 +467,149 @@ jobs:
           }
 
           Write-Output 'Required validation aggregate passed.'
+
+  sonar-required:
+    name: sonar-required
+    needs: final-evidence-gate
+    if: >-
+      needs.final-evidence-gate.result == 'success' &&
+      github.event_name == 'pull_request' &&
+      (github.base_ref == 'main' || github.base_ref == 'automation/modular-monolith-milestone') &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.102
+
+      - name: Install SonarScanner
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      - name: Sonar Begin
+        run: dotnet sonarscanner begin /k:"${{ env.SONAR_PROJECT_KEY }}" /o:"${{ env.SONAR_ORG }}" /d:sonar.host.url="${{ env.SONAR_HOST_URL }}" /d:sonar.token="${{ secrets.SONAR_TOKEN }}" /d:sonar.qualitygate.wait=true /d:sonar.exclusions="**/.github/**,**/Migrations/**" /d:sonar.coverage.exclusions="${{ env.SONAR_COVERAGE_EXCLUSIONS }}" /d:sonar.cs.opencover.reportsPaths="TestResults/SonarInputs/**/coverage.opencover.xml" /d:sonar.cs.vstest.reportsPaths="TestResults/SonarInputs/**/*.trx" /d:sonar.verbose=true
+
+      - name: Restore
+        run: dotnet restore LgymApi.sln
+
+      - name: Build
+        run: dotnet build LgymApi.sln --configuration Release --no-restore
+
+      - name: Download validated Sonar inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: ${{ runner.temp }}/sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+
+      - name: Validate downloaded Sonar inputs
+        shell: pwsh
+        run: >-
+          pwsh -NoProfile -File scripts/assert-sonar-inputs.ps1
+          -DownloadRoot '${{ runner.temp }}/sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}'
+          -CheckoutRoot '${{ github.workspace }}'
+          -Repository ${{ github.repository }}
+          -RunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -Event ${{ github.event_name }}
+          -Ref ${{ github.ref }}
+          -MergeSha ${{ github.sha }}
+          -PullRequestHeadSha '${{ github.event.pull_request.head.sha }}'
+
+      - name: Copy validated Sonar inputs into scanner checkout
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $downloadRoot = '${{ runner.temp }}/sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}'
+          $downloadSonarInputsDirectory = Join-Path $downloadRoot 'TestResults/SonarInputs'
+          $checkoutSonarInputsDirectory = Join-Path $env:GITHUB_WORKSPACE 'TestResults/SonarInputs'
+          if (Test-Path -LiteralPath $checkoutSonarInputsDirectory) {
+            throw "The scanner checkout Sonar input directory '$checkoutSonarInputsDirectory' already exists."
+          }
+          Copy-Item -LiteralPath $downloadSonarInputsDirectory -Destination $checkoutSonarInputsDirectory -Recurse
+
+      - name: Sonar End
+        run: dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+
+  sonar-push:
+    name: sonar-push
+    needs: final-evidence-gate
+    if: >-
+      needs.final-evidence-gate.result == 'success' &&
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/automation/modular-monolith-milestone')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.102
+
+      - name: Install SonarScanner
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      - name: Sonar Begin
+        run: dotnet sonarscanner begin /k:"${{ env.SONAR_PROJECT_KEY }}" /o:"${{ env.SONAR_ORG }}" /d:sonar.host.url="${{ env.SONAR_HOST_URL }}" /d:sonar.token="${{ secrets.SONAR_TOKEN }}" /d:sonar.exclusions="**/.github/**,**/Migrations/**" /d:sonar.coverage.exclusions="${{ env.SONAR_COVERAGE_EXCLUSIONS }}" /d:sonar.cs.opencover.reportsPaths="TestResults/SonarInputs/**/coverage.opencover.xml" /d:sonar.cs.vstest.reportsPaths="TestResults/SonarInputs/**/*.trx" /d:sonar.verbose=true
+
+      - name: Restore
+        run: dotnet restore LgymApi.sln
+
+      - name: Build
+        run: dotnet build LgymApi.sln --configuration Release --no-restore
+
+      - name: Download validated Sonar inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: ${{ runner.temp }}/sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+
+      - name: Validate downloaded Sonar inputs
+        shell: pwsh
+        run: >-
+          pwsh -NoProfile -File scripts/assert-sonar-inputs.ps1
+          -DownloadRoot '${{ runner.temp }}/sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}'
+          -CheckoutRoot '${{ github.workspace }}'
+          -Repository ${{ github.repository }}
+          -RunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -Event ${{ github.event_name }}
+          -Ref ${{ github.ref }}
+          -MergeSha ${{ github.sha }}
+          -PullRequestHeadSha '${{ github.event.pull_request.head.sha }}'
+
+      - name: Copy validated Sonar inputs into scanner checkout
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $downloadRoot = '${{ runner.temp }}/sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}'
+          $downloadSonarInputsDirectory = Join-Path $downloadRoot 'TestResults/SonarInputs'
+          $checkoutSonarInputsDirectory = Join-Path $env:GITHUB_WORKSPACE 'TestResults/SonarInputs'
+          if (Test-Path -LiteralPath $checkoutSonarInputsDirectory) {
+            throw "The scanner checkout Sonar input directory '$checkoutSonarInputsDirectory' already exists."
+          }
+          Copy-Item -LiteralPath $downloadSonarInputsDirectory -Destination $checkoutSonarInputsDirectory -Recurse
+
+      - name: Sonar End
+        run: dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"

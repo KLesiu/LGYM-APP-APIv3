@@ -344,6 +344,150 @@ function Assert-SonarPostgreSqlCoverageContract {
     Assert-True -Condition ($runnerText -match 'CoverletOutput=\$coverageOutput') -Message 'The PostgreSQL runner must direct Coverlet output to the requested path.'
 }
 
+function Assert-UnifiedSonarContract {
+    param([Parameter(Mandatory)][object]$Workflow)
+
+    $expectedJobIds = @('final-evidence-gate', 'non-postgresql', 'postgresql', 'postgresql-cleanup', 'release-build', 'sonar-push', 'sonar-required', 'tests')
+    Assert-StringSet -Expected $expectedJobIds -Actual @($Workflow.jobs.PSObject.Properties.Name) -Description 'unified PR workflow job identifiers'
+
+    Assert-StringSet -Expected @('automation/modular-monolith-milestone', 'main') -Actual @($Workflow.on.pull_request.branches) -Description 'unified Sonar pull-request branches'
+    Assert-StringSet -Expected @('opened', 'ready_for_review', 'reopened', 'synchronize') -Actual @($Workflow.on.pull_request.types) -Description 'unified Sonar pull-request activity types'
+    Assert-StringSet -Expected @('automation/modular-monolith-milestone', 'main') -Actual @($Workflow.on.push.branches) -Description 'unified Sonar push branches'
+
+    foreach ($environmentName in @('SONAR_HOST_URL', 'SONAR_ORG', 'SONAR_PROJECT_KEY', 'SONAR_COVERAGE_EXCLUSIONS')) {
+        Assert-True -Condition ($null -ne $Workflow.env.PSObject.Properties[$environmentName]) -Message "The unified workflow must retain '$environmentName' for its Sonar jobs."
+    }
+    Assert-True -Condition ([string]$Workflow.env.SONAR_HOST_URL -ceq 'https://sonarcloud.io') -Message 'The unified workflow must retain the SonarCloud host URL.'
+    Assert-True -Condition ([string]$Workflow.env.SONAR_ORG -ceq '${{ vars.SONAR_ORG != '''' && vars.SONAR_ORG || secrets.SONAR_ORG }}') -Message 'The unified workflow must retain the Sonar organization variable/secret binding.'
+    Assert-True -Condition ([string]$Workflow.env.SONAR_PROJECT_KEY -ceq '${{ vars.SONAR_PROJECT_KEY != '''' && vars.SONAR_PROJECT_KEY || secrets.SONAR_PROJECT_KEY }}') -Message 'The unified workflow must retain the Sonar project-key variable/secret binding.'
+    Assert-True -Condition ([string]$Workflow.env.SONAR_COVERAGE_EXCLUSIONS -ceq '**/.github/**,**/Migrations/**,**/LgymApi.Resources.Generator/**,**/LgymApi.DataSeeder/**,**/LgymApi.Application/Common/Errors/*Errors.cs') -Message 'The unified workflow must retain Sonar coverage exclusions.'
+
+    $expectedArtifactName = 'sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}'
+    $expectedDownloadRoot = '${{ runner.temp }}/sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}'
+    $waitPropertyPattern = '(?<!\S)/d:sonar\.qualitygate\.wait=true(?!\S)'
+    $qualityGateTimeoutPattern = '(?<!\S)/d:sonar\.qualitygate\.timeout(?:=|\s|$)'
+    $expectedWaitCounts = @{ 'sonar-required' = 1; 'sonar-push' = 0 }
+
+    foreach ($jobId in @('sonar-required', 'sonar-push')) {
+        $job = $Workflow.jobs.$jobId
+        Assert-True -Condition ([string]$job.name -ceq $jobId) -Message "Sonar job '$jobId' must retain its published job name."
+        Assert-True -Condition ([string]$job.'runs-on' -ceq 'ubuntu-latest') -Message "Sonar job '$jobId' must retain its runner."
+        Assert-StringSet -Expected @('final-evidence-gate') -Actual @($job.needs) -Description "Sonar job '$jobId' dependencies"
+        Assert-True -Condition ($null -eq $job.PSObject.Properties['continue-on-error']) -Message "Sonar job '$jobId' must remain required."
+        Assert-True -Condition ($null -eq $job.PSObject.Properties['timeout-minutes']) -Message "Sonar job '$jobId' must retain the scanner default timeout."
+        Assert-True -Condition ($null -eq $job.PSObject.Properties['services']) -Message "Sonar job '$jobId' must not provision PostgreSQL or another service."
+        Assert-True -Condition ($null -eq $job.PSObject.Properties['env']) -Message "Sonar job '$jobId' must not carry a PostgreSQL admin connection."
+
+        $jobText = $job | ConvertTo-Json -Depth 64 -Compress
+        foreach ($forbiddenContent in @('dotnet test', 'run-postgresql-integration-tests.ps1', 'LGYM_CI_POSTGRES_ADMIN', 'postgres:', 'Create coverage directories')) {
+            Assert-True -Condition ($jobText -notmatch [regex]::Escape($forbiddenContent)) -Message "Sonar job '$jobId' must not contain '$forbiddenContent'."
+        }
+        Assert-True -Condition ($jobText -notmatch '(?i)(mkdir|New-Item).*?(TestResults|coverage)') -Message "Sonar job '$jobId' must not create coverage directories."
+        Assert-True -Condition ($jobText -notmatch '(?i)\b(gh|github)\s+api\b|api\.github\.com|workflow_run') -Message "Sonar job '$jobId' must not select artifacts through an external API."
+
+        $steps = @($job.steps)
+        $stepNames = @($steps | ForEach-Object { [string]$_.name })
+        function Get-StepIndex {
+            param([Parameter(Mandatory)][string]$Name)
+            return [array]::IndexOf([string[]]$stepNames, $Name)
+        }
+
+        foreach ($requiredStepName in @('Checkout', 'Setup Java', 'Setup .NET', 'Install SonarScanner', 'Sonar Begin', 'Restore', 'Build', 'Download validated Sonar inputs', 'Validate downloaded Sonar inputs', 'Copy validated Sonar inputs into scanner checkout', 'Sonar End')) {
+            Assert-True -Condition (@($stepNames | Where-Object { $_ -ceq $requiredStepName }).Count -eq 1) -Message "Sonar job '$jobId' must contain exactly one '$requiredStepName' step."
+        }
+
+        $checkoutStep = @($steps | Where-Object { $_.name -ceq 'Checkout' })[0]
+        $javaStep = @($steps | Where-Object { $_.name -ceq 'Setup Java' })[0]
+        $dotnetStep = @($steps | Where-Object { $_.name -ceq 'Setup .NET' })[0]
+        $scannerStep = @($steps | Where-Object { $_.name -ceq 'Install SonarScanner' })[0]
+        Assert-True -Condition ([string]$checkoutStep.uses -ceq 'actions/checkout@v4') -Message "Sonar job '$jobId' must retain checkout v4."
+        Assert-True -Condition ([string]$javaStep.uses -ceq 'actions/setup-java@v4' -and [string]$javaStep.with.distribution -ceq 'temurin' -and [string]$javaStep.with.'java-version' -ceq '17') -Message "Sonar job '$jobId' must retain Java 17 through setup-java v4."
+        Assert-True -Condition ([string]$dotnetStep.uses -ceq 'actions/setup-dotnet@v4' -and [string]$dotnetStep.with.'dotnet-version' -ceq '10.0.102') -Message "Sonar job '$jobId' must retain .NET 10.0.102 through setup-dotnet v4."
+        Assert-True -Condition ([string]$scannerStep.run -ceq 'dotnet tool install --global dotnet-sonarscanner') -Message "Sonar job '$jobId' must retain the global scanner install policy."
+
+        $beginStep = @($steps | Where-Object { $_.name -ceq 'Sonar Begin' })[0]
+        $restoreStep = @($steps | Where-Object { $_.name -ceq 'Restore' })[0]
+        $buildStep = @($steps | Where-Object { $_.name -ceq 'Build' })[0]
+        $downloadStep = @($steps | Where-Object { $_.name -ceq 'Download validated Sonar inputs' })[0]
+        $validateStep = @($steps | Where-Object { $_.name -ceq 'Validate downloaded Sonar inputs' })[0]
+        $copyStep = @($steps | Where-Object { $_.name -ceq 'Copy validated Sonar inputs into scanner checkout' })[0]
+        $endStep = @($steps | Where-Object { $_.name -ceq 'Sonar End' })[0]
+        $beginRun = [string]$beginStep.run
+        $validateRun = [string]$validateStep.run
+        $copyRun = [string]$copyStep.run
+
+        Assert-True -Condition ($beginRun -match '^\s*dotnet sonarscanner begin(?:\s|$)') -Message "Sonar job '$jobId' must invoke Begin directly."
+        foreach ($property in @('/k:"${{ env.SONAR_PROJECT_KEY }}"', '/o:"${{ env.SONAR_ORG }}"', '/d:sonar.host.url="${{ env.SONAR_HOST_URL }}"', '/d:sonar.token="${{ secrets.SONAR_TOKEN }}"', '/d:sonar.exclusions="**/.github/**,**/Migrations/**"', '/d:sonar.coverage.exclusions="${{ env.SONAR_COVERAGE_EXCLUSIONS }}"', '/d:sonar.cs.opencover.reportsPaths="TestResults/SonarInputs/**/coverage.opencover.xml"', '/d:sonar.cs.vstest.reportsPaths="TestResults/SonarInputs/**/*.trx"', '/d:sonar.verbose=true')) {
+            Assert-True -Condition ($beginRun -match [regex]::Escape($property)) -Message "Sonar job '$jobId' Begin must contain '$property'."
+        }
+        Assert-True -Condition (@([regex]::Matches($beginRun, $waitPropertyPattern)).Count -eq $expectedWaitCounts[$jobId]) -Message "Sonar job '$jobId' has an incorrect Quality Gate wait policy."
+        Assert-True -Condition (@([regex]::Matches($jobText, $qualityGateTimeoutPattern)).Count -eq 0) -Message "Sonar job '$jobId' must retain the scanner's default Quality Gate timeout."
+        Assert-True -Condition ([string]$restoreStep.run -ceq 'dotnet restore LgymApi.sln') -Message "Sonar job '$jobId' must restore after Begin."
+        Assert-True -Condition ([string]$buildStep.run -ceq 'dotnet build LgymApi.sln --configuration Release --no-restore') -Message "Sonar job '$jobId' must perform the scanner-instrumented Release build after restore."
+        Assert-True -Condition ([string]$endStep.run -ceq 'dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"') -Message "Sonar job '$jobId' must retain its End invocation."
+
+        Assert-True -Condition ([string]$downloadStep.uses -ceq 'actions/download-artifact@v4') -Message "Sonar job '$jobId' must download through download-artifact v4."
+        Assert-StringSet -Expected @('name', 'path') -Actual @($downloadStep.with.PSObject.Properties.Name) -Description "Sonar job '$jobId' download inputs"
+        Assert-True -Condition ([string]$downloadStep.with.name -ceq $expectedArtifactName) -Message "Sonar job '$jobId' must download the exact current-run Sonar input artifact."
+        Assert-True -Condition ([string]$downloadStep.with.path -ceq $expectedDownloadRoot) -Message "Sonar job '$jobId' must download into the isolated runner-temp artifact root."
+        foreach ($forbiddenInput in @('artifact-ids', 'github-token', 'token', 'pattern', 'repository', 'run-id')) {
+            Assert-True -Condition ($null -eq $downloadStep.with.PSObject.Properties[$forbiddenInput]) -Message "Sonar job '$jobId' must not set the cross-run download selector '$forbiddenInput'."
+        }
+
+        Assert-True -Condition ([string]$validateStep.shell -ceq 'pwsh') -Message "Sonar job '$jobId' must validate artifact provenance through PowerShell."
+        foreach ($argument in @('scripts/assert-sonar-inputs.ps1', "-DownloadRoot '$expectedDownloadRoot'", '-CheckoutRoot ''${{ github.workspace }}''', '-Repository ${{ github.repository }}', '-RunId ${{ github.run_id }}', '-RunAttempt ${{ github.run_attempt }}', '-Event ${{ github.event_name }}', '-Ref ${{ github.ref }}', '-MergeSha ${{ github.sha }}', "-PullRequestHeadSha '`$`{{ github.event.pull_request.head.sha }}`'")) {
+            Assert-True -Condition ($validateRun -match [regex]::Escape($argument)) -Message "Sonar job '$jobId' must bind '$argument' to assert-sonar-inputs."
+        }
+        Assert-True -Condition ($validateRun -notmatch [regex]::Escape('-DownloadRoot ''${{ github.workspace }}''')) -Message "Sonar job '$jobId' must keep the consumer input root distinct from its checkout."
+
+        Assert-True -Condition ([string]$copyStep.shell -ceq 'pwsh') -Message "Sonar job '$jobId' must copy validated reports through PowerShell."
+        foreach ($copyRequirement in @("`$downloadRoot = '$expectedDownloadRoot'", "Join-Path `$downloadRoot 'TestResults/SonarInputs'", "Join-Path `$env:GITHUB_WORKSPACE 'TestResults/SonarInputs'", 'if (Test-Path -LiteralPath $checkoutSonarInputsDirectory)', 'Copy-Item -LiteralPath $downloadSonarInputsDirectory -Destination $checkoutSonarInputsDirectory -Recurse')) {
+            Assert-True -Condition ($copyRun -match [regex]::Escape($copyRequirement)) -Message "Sonar job '$jobId' must copy only the validated SonarInputs subtree through '$copyRequirement'."
+        }
+
+        $beginIndex = Get-StepIndex -Name 'Sonar Begin'
+        $restoreIndex = Get-StepIndex -Name 'Restore'
+        $buildIndex = Get-StepIndex -Name 'Build'
+        $downloadIndex = Get-StepIndex -Name 'Download validated Sonar inputs'
+        $validateIndex = Get-StepIndex -Name 'Validate downloaded Sonar inputs'
+        $copyIndex = Get-StepIndex -Name 'Copy validated Sonar inputs into scanner checkout'
+        $endIndex = Get-StepIndex -Name 'Sonar End'
+        Assert-True -Condition ($beginIndex -lt $restoreIndex -and $restoreIndex -lt $buildIndex -and $buildIndex -lt $downloadIndex -and $downloadIndex -lt $validateIndex -and $validateIndex -lt $copyIndex -and $copyIndex -lt $endIndex) -Message "Sonar job '$jobId' must preserve Begin, restore, build, download, validate, copy, End ordering."
+        foreach ($step in @($steps[0..($validateIndex - 1)])) {
+            $stepRun = if ($null -eq $step.PSObject.Properties['run']) { '' } else { [string]$step.run }
+            Assert-True -Condition ($stepRun -notmatch 'Copy-Item') -Message "Sonar job '$jobId' must not copy reports into the checkout before consumer validation."
+        }
+    }
+
+    $requiredCondition = [string]$Workflow.jobs.'sonar-required'.if
+    foreach ($requiredClause in @("github.event_name == 'pull_request'", "github.base_ref == 'main'", "github.base_ref == 'automation/modular-monolith-milestone'", 'github.event.pull_request.draft == false', 'github.event.pull_request.head.repo.fork == false', "needs.final-evidence-gate.result == 'success'")) {
+        Assert-True -Condition ($requiredCondition -match [regex]::Escape($requiredClause)) -Message "The sonar-required guard must retain '$requiredClause'."
+    }
+    $pushCondition = [string]$Workflow.jobs.'sonar-push'.if
+    foreach ($pushClause in @("github.event_name == 'push'", "github.ref == 'refs/heads/main'", "github.ref == 'refs/heads/automation/modular-monolith-milestone'", "needs.final-evidence-gate.result == 'success'")) {
+        Assert-True -Condition ($pushCondition -match [regex]::Escape($pushClause)) -Message "The sonar-push guard must retain '$pushClause'."
+    }
+}
+
+function Assert-UnifiedSonarFixtureRejected {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Description
+    )
+
+    $fixtureWorkflow = @(Get-YamlDocuments -Paths @($Path))[0]
+    $rejection = $null
+    try {
+        Assert-UnifiedSonarContract -Workflow $fixtureWorkflow
+    }
+    catch {
+        $rejection = $_.Exception.Message
+    }
+
+    Assert-True -Condition (-not [string]::IsNullOrWhiteSpace($rejection)) -Message "The unified Sonar contract accepted the $Description fixture."
+    Write-Output "Rejected unified Sonar $Description fixture: $rejection"
+}
+
 function Assert-TestsCompatibilityContract {
     param([Parameter(Mandatory)][object]$Workflow)
 
@@ -600,11 +744,93 @@ param(
     Write-Output "Rejected unprotected rendered push command: $($unsafeOutput -join [Environment]::NewLine)"
 }
 
+function Assert-SonarConsumerArgumentBinding {
+    param(
+        [Parameter(Mandatory)][string]$ValidatorRun,
+        [Parameter(Mandatory)][string]$ProbePath
+    )
+
+    $probe = @'
+param(
+    [Parameter(Mandatory)][string]$DownloadRoot,
+    [Parameter(Mandatory)][string]$CheckoutRoot,
+    [Parameter(Mandatory)][string]$Repository,
+    [Parameter(Mandatory)][string]$RunId,
+    [Parameter(Mandatory)][string]$RunAttempt,
+    [Parameter(Mandatory)][string]$Event,
+    [Parameter(Mandatory)][string]$Ref,
+    [Parameter(Mandatory)][string]$MergeSha,
+    [Parameter(Mandatory)][AllowEmptyString()][string]$PullRequestHeadSha
+)
+
+[pscustomobject]@{
+    downloadRoot = $DownloadRoot
+    checkoutRoot = $CheckoutRoot
+    pullRequestHeadSha = $PullRequestHeadSha
+} | ConvertTo-Json -Compress
+'@
+    [System.IO.File]::WriteAllText($ProbePath, $probe, [System.Text.UTF8Encoding]::new($false))
+
+    function Invoke-RenderedConsumerProbe {
+        param([Parameter(Mandatory)][string]$RenderedCommand)
+
+        $output = @(& ([scriptblock]::Create($RenderedCommand)) 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            throw "The rendered consumer command failed with exit code $($LASTEXITCODE): $($output -join [Environment]::NewLine)"
+        }
+
+        return (($output -join [Environment]::NewLine) | ConvertFrom-Json -Depth 8)
+    }
+
+    function Render-ConsumerCommand {
+        param(
+            [Parameter(Mandatory)][string]$Event,
+            [Parameter(Mandatory)][string]$Ref,
+            [Parameter(Mandatory)][AllowEmptyString()][string]$PullRequestHeadSha
+        )
+
+        $rendered = $ValidatorRun.Replace('scripts/assert-sonar-inputs.ps1', "'$($ProbePath.Replace("'", "''"))'")
+        $replacements = [ordered]@{
+            '${{ runner.temp }}' = '/tmp/lgym-runner-temp'
+            '${{ github.workspace }}' = '/tmp/lgym-checkout'
+            '${{ github.repository }}' = 'lgym/LGYM-APP-APIv3'
+            '${{ github.run_id }}' = '440001'
+            '${{ github.run_attempt }}' = '2'
+            '${{ github.event_name }}' = $Event
+            '${{ github.ref }}' = $Ref
+            '${{ github.sha }}' = '0123456789abcdef0123456789abcdef01234567'
+            '${{ github.event.pull_request.head.sha }}' = $PullRequestHeadSha
+        }
+        foreach ($replacement in $replacements.GetEnumerator()) {
+            $rendered = $rendered.Replace([string]$replacement.Key, [string]$replacement.Value)
+        }
+
+        return $rendered
+    }
+
+    $prHeadSha = '89abcdef0123456789abcdef0123456789abcdef'
+    $prResult = Invoke-RenderedConsumerProbe -RenderedCommand (Render-ConsumerCommand -Event 'pull_request' -Ref 'refs/pull/440/merge' -PullRequestHeadSha $prHeadSha)
+    Assert-True -Condition ($prResult.downloadRoot -ceq '/tmp/lgym-runner-temp/sonar-inputs-440001-2-0123456789abcdef0123456789abcdef01234567' -and $prResult.checkoutRoot -ceq '/tmp/lgym-checkout' -and $prResult.pullRequestHeadSha -ceq $prHeadSha) -Message 'The rendered pull-request consumer command did not bind isolated input, checkout, and PR-head values.'
+
+    $pushCommand = Render-ConsumerCommand -Event 'push' -Ref 'refs/heads/main' -PullRequestHeadSha ''
+    $pushResult = Invoke-RenderedConsumerProbe -RenderedCommand $pushCommand
+    Assert-True -Condition ($pushResult.downloadRoot -ceq '/tmp/lgym-runner-temp/sonar-inputs-440001-2-0123456789abcdef0123456789abcdef01234567' -and $pushResult.checkoutRoot -ceq '/tmp/lgym-checkout' -and $pushResult.pullRequestHeadSha -ceq '') -Message 'The rendered push consumer command did not bind an empty PR head SHA safely.'
+
+    $unsafePushCommand = $pushCommand.Replace("-PullRequestHeadSha ''", '-PullRequestHeadSha')
+    $unsafeOutput = @(& ([scriptblock]::Create($unsafePushCommand)) 2>&1)
+    Assert-True -Condition ($LASTEXITCODE -ne 0) -Message 'The unprotected rendered push consumer command unexpectedly bound its next switch safely.'
+    Write-Output "Bound Sonar consumer pull_request and push commands; rejected unprotected push command: $($unsafeOutput -join [Environment]::NewLine)"
+}
+
 function New-EventContext {
     param(
         [Parameter(Mandatory)][string]$EventName,
         [Parameter(Mandatory)][AllowEmptyString()][string]$BaseRef,
-        [Parameter(Mandatory)][string]$Ref
+        [Parameter(Mandatory)][string]$Ref,
+        [bool]$Draft = $false,
+        [bool]$Fork = $false,
+        [string]$ReleaseBuildResult = 'success',
+        [string]$FinalEvidenceGateResult = 'success'
     )
 
     return @{
@@ -612,13 +838,14 @@ function New-EventContext {
             event_name = $EventName
             base_ref = $BaseRef
             ref = $Ref
-            event = @{ pull_request = @{ draft = $false; head = @{ repo = @{ fork = $false } } } }
+            event = @{ pull_request = @{ draft = $Draft; head = @{ repo = @{ fork = $Fork } } } }
         }
         needs = @{
-            'release-build' = @{ result = 'success' }
-            'non-postgresql' = @{ result = 'success' }
-            postgresql = @{ result = 'success' }
-            'postgresql-cleanup' = @{ result = 'success' }
+            'release-build' = @{ result = $ReleaseBuildResult }
+            'non-postgresql' = @{ result = $ReleaseBuildResult }
+            postgresql = @{ result = $ReleaseBuildResult }
+            'postgresql-cleanup' = @{ result = $ReleaseBuildResult }
+            'final-evidence-gate' = @{ result = $FinalEvidenceGateResult }
         }
     }
 }
@@ -899,15 +1126,14 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $prWorkflowPath = Join-Path $repositoryRoot '.github/workflows/pr-and-main-tests.yml'
 $sonarWorkflowPath = Join-Path $repositoryRoot '.github/workflows/sonarcloud-analysis.yml'
 $evidenceGatePath = Join-Path $PSScriptRoot 'assert-ci-verification-evidence.ps1'
-$documents = Get-YamlDocuments -Paths @($prWorkflowPath, $sonarWorkflowPath)
+
+Assert-True -Condition (-not (Test-Path -LiteralPath $sonarWorkflowPath -PathType Leaf)) -Message 'The standalone Sonar workflow must be deleted so the PR workflow is the only eligible Sonar trigger.'
+$documents = Get-YamlDocuments -Paths @($prWorkflowPath)
 $prWorkflow = $documents[0]
-$sonarWorkflow = $documents[1]
 
 $expectedBranches = @('automation/modular-monolith-milestone', 'main')
 Assert-StringSet -Expected $expectedBranches -Actual @($prWorkflow.on.pull_request.branches) -Description 'PR workflow pull-request branches'
 Assert-StringSet -Expected $expectedBranches -Actual @($prWorkflow.on.push.branches) -Description 'PR workflow push branches'
-Assert-StringSet -Expected $expectedBranches -Actual @($sonarWorkflow.on.pull_request.branches) -Description 'Sonar pull-request branches'
-Assert-StringSet -Expected $expectedBranches -Actual @($sonarWorkflow.on.push.branches) -Description 'Sonar push branches'
 
 $matrix = @($prWorkflow.jobs.'non-postgresql'.strategy.matrix.include)
 Assert-True -Condition ($matrix.Count -eq 4) -Message 'The non-PostgreSQL matrix must contain exactly four suites.'
@@ -928,26 +1154,22 @@ Assert-True -Condition (($prWorkflow.jobs.postgresql.steps | Where-Object { $_.n
 Assert-True -Condition (($prWorkflow.jobs.'final-evidence-gate'.steps | Where-Object { $_.name -ceq 'Validate complete same-SHA evidence before publication' }).run -match 'assert-ci-verification-evidence\.ps1') -Message 'The final evidence gate does not execute the artifact validator.'
 Assert-TestsCompatibilityContract -Workflow $prWorkflow
 Assert-Task4EvidenceProducerContract -Workflow $prWorkflow -RepositoryRoot $repositoryRoot
+Assert-UnifiedSonarContract -Workflow $prWorkflow
 $actionSteps = @(Get-WorkflowActionSteps -Workflow $prWorkflow)
 Assert-True -Condition (@($actionSteps | Where-Object { $_.uses -match 'test-reporter|dorny/' }).Count -eq 0) -Message 'A summary publisher can run before final evidence validation.'
-Assert-True -Condition ($null -eq $sonarWorkflow.jobs.'sonar-required'.PSObject.Properties['continue-on-error']) -Message 'Required Sonar analysis must not be optional.'
-foreach ($sonarJob in @($sonarWorkflow.jobs.'sonar-required', $sonarWorkflow.jobs.'sonar-push')) {
-    $integrationStep = @($sonarJob.steps | Where-Object { $_.name -ceq 'Run declared InMemory integration tests with coverage' })
-    Assert-True -Condition ($integrationStep.Count -eq 1 -and $integrationStep[0].run -match '--filter "TestCategory!=PostgreSql"') -Message 'Sonar does not use the declared InMemory integration filter.'
-}
-Assert-SonarQualityGateWaitContract -Workflow $sonarWorkflow
-Assert-SonarPostgreSqlCoverageContract -Workflow $sonarWorkflow -RepositoryRoot $repositoryRoot
 
 $requiredCiJobs = @('release-build', 'non-postgresql', 'postgresql', 'postgresql-cleanup', 'final-evidence-gate', 'tests')
 $cases = @(
-    [pscustomobject]@{ name = 'PR to automation'; context = New-EventContext -EventName 'pull_request' -BaseRef 'automation/modular-monolith-milestone' -Ref 'refs/pull/1/merge'; sonar = 'sonar-required' },
-    [pscustomobject]@{ name = 'automation push'; context = New-EventContext -EventName 'push' -BaseRef '' -Ref 'refs/heads/automation/modular-monolith-milestone'; sonar = 'sonar-push' },
-    [pscustomobject]@{ name = 'PR to main'; context = New-EventContext -EventName 'pull_request' -BaseRef 'main' -Ref 'refs/pull/2/merge'; sonar = 'sonar-required' },
-    [pscustomobject]@{ name = 'main push'; context = New-EventContext -EventName 'push' -BaseRef '' -Ref 'refs/heads/main'; sonar = 'sonar-push' }
+    [pscustomobject]@{ name = 'trusted non-draft PR to automation'; context = New-EventContext -EventName 'pull_request' -BaseRef 'automation/modular-monolith-milestone' -Ref 'refs/pull/1/merge'; jobs = @($requiredCiJobs + 'sonar-required') },
+    [pscustomobject]@{ name = 'trusted ready-for-review PR to main'; context = New-EventContext -EventName 'pull_request' -BaseRef 'main' -Ref 'refs/pull/2/merge'; jobs = @($requiredCiJobs + 'sonar-required') },
+    [pscustomobject]@{ name = 'fork PR to main'; context = New-EventContext -EventName 'pull_request' -BaseRef 'main' -Ref 'refs/pull/3/merge' -Fork $true; jobs = @($requiredCiJobs) },
+    [pscustomobject]@{ name = 'trusted draft PR'; context = New-EventContext -EventName 'pull_request' -BaseRef 'main' -Ref 'refs/pull/4/merge' -Draft $true -ReleaseBuildResult 'skipped' -FinalEvidenceGateResult 'skipped'; jobs = @('tests') },
+    [pscustomobject]@{ name = 'fork draft PR'; context = New-EventContext -EventName 'pull_request' -BaseRef 'main' -Ref 'refs/pull/5/merge' -Draft $true -Fork $true -ReleaseBuildResult 'skipped' -FinalEvidenceGateResult 'skipped'; jobs = @('tests') },
+    [pscustomobject]@{ name = 'automation push'; context = New-EventContext -EventName 'push' -BaseRef '' -Ref 'refs/heads/automation/modular-monolith-milestone'; jobs = @($requiredCiJobs + 'sonar-push') },
+    [pscustomobject]@{ name = 'main push'; context = New-EventContext -EventName 'push' -BaseRef '' -Ref 'refs/heads/main'; jobs = @($requiredCiJobs + 'sonar-push') }
 )
 foreach ($case in $cases) {
-    Assert-StringSet -Expected $requiredCiJobs -Actual (Get-SelectedJobs -Workflow $prWorkflow -Context $case.context) -Description "$($case.name) CI job selection"
-    Assert-StringSet -Expected @($case.sonar) -Actual (Get-SelectedJobs -Workflow $sonarWorkflow -Context $case.context) -Description "$($case.name) Sonar job selection"
+    Assert-StringSet -Expected $case.jobs -Actual (Get-SelectedJobs -Workflow $prWorkflow -Context $case.context) -Description "$($case.name) unified CI/Sonar job selection"
 }
 
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("lgym-ci-workflow-fixtures-" + [Guid]::NewGuid().ToString('N'))
@@ -1016,23 +1238,59 @@ try {
         Assert-Task4EvidenceProducerFixtureRejected -Path $fixture.path -RepositoryRoot $repositoryRoot -Description $fixture.description
     }
 
+    foreach ($jobId in @('sonar-required', 'sonar-push')) {
+        $consumerRun = [string]($prWorkflow.jobs.$jobId.steps | Where-Object { $_.name -ceq 'Validate downloaded Sonar inputs' }).run
+        Assert-SonarConsumerArgumentBinding -ValidatorRun $consumerRun -ProbePath (Join-Path $temporaryRoot "sonar-$jobId-binding-probe.ps1")
+    }
+
     $sonarFixtureRoot = New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'sonar-workflows') -Force
-    $sonarWorkflowText = [System.IO.File]::ReadAllText($sonarWorkflowPath)
     $waitProperty = '/d:sonar.qualitygate.wait=true'
-    $missingWaitPath = Join-Path $sonarFixtureRoot.FullName 'missing-wait.yml'
-    $duplicateWaitPath = Join-Path $sonarFixtureRoot.FullName 'duplicate-wait.yml'
-    $misplacedWaitPath = Join-Path $sonarFixtureRoot.FullName 'misplaced-wait.yml'
-    $pushWaitPath = Join-Path $sonarFixtureRoot.FullName 'push-wait.yml'
-    [System.IO.File]::WriteAllText($missingWaitPath, [regex]::Replace($sonarWorkflowText, [regex]::Escape($waitProperty), '', 1), [System.Text.UTF8Encoding]::new($false))
-    [System.IO.File]::WriteAllText($duplicateWaitPath, [regex]::Replace($sonarWorkflowText, [regex]::Escape($waitProperty), "$waitProperty $waitProperty", 1), [System.Text.UTF8Encoding]::new($false))
-    [System.IO.File]::WriteAllText($misplacedWaitPath, [regex]::Replace($sonarWorkflowText, 'dotnet sonarscanner end', "dotnet sonarscanner end $waitProperty", 1), [System.Text.UTF8Encoding]::new($false))
-    $pushWaitWorkflowText = [regex]::Replace($sonarWorkflowText, '(?s)(\n  sonar-push:.*?dotnet sonarscanner begin [^\r\n]*?)( /d:sonar\.exclusions=)', "`$1 $waitProperty`$2", 1)
-    Assert-True -Condition ($pushWaitWorkflowText -cne $sonarWorkflowText) -Message 'The Sonar push wait fixture could not add a Begin wait property.'
-    [System.IO.File]::WriteAllText($pushWaitPath, $pushWaitWorkflowText, [System.Text.UTF8Encoding]::new($false))
-    Assert-SonarWaitFixtureRejected -Path $missingWaitPath -Description 'missing-wait'
-    Assert-SonarWaitFixtureRejected -Path $duplicateWaitPath -Description 'duplicate-wait'
-    Assert-SonarWaitFixtureRejected -Path $misplacedWaitPath -Description 'misplaced-wait'
-    Assert-SonarWaitFixtureRejected -Path $pushWaitPath -Description 'push-wait'
+    $missingRequiredText = [regex]::Replace($prWorkflowText, '(?ms)\r?\n  sonar-required:\r?\n.*?(?=\r?\n  sonar-push:)', '', 1)
+    $wrongJobNameText = $prWorkflowText.Replace('    name: sonar-required', '    name: sonar-required-renamed')
+    $missingNeedsText = [regex]::Replace($prWorkflowText, '(?ms)(  sonar-required:.*?    needs:) final-evidence-gate', '${1} release-build', 1)
+    $removedDraftGuardText = $prWorkflowText.Replace("      github.event.pull_request.draft == false &&`n", '')
+    $removedForkGuardText = $prWorkflowText.Replace("      github.event.pull_request.head.repo.fork == false`n", '')
+    $sonarTestText = [regex]::Replace($prWorkflowText, '(?ms)(  sonar-required:.*?      - name: Restore\r?\n        run: dotnet restore LgymApi\.sln)', '$1 && dotnet test LgymApi.UnitTests/LgymApi.UnitTests.csproj', 1)
+    $sonarRunnerText = [regex]::Replace($prWorkflowText, '(?ms)(  sonar-required:.*?      - name: Restore\r?\n        run: dotnet restore LgymApi\.sln)', '$1 && pwsh -NoProfile -File scripts/run-postgresql-integration-tests.ps1', 1)
+    $coverageDirectoryText = [regex]::Replace($prWorkflowText, '(?ms)(  sonar-required:.*?      - name: Restore\r?\n        run: dotnet restore LgymApi\.sln)', '$1 && mkdir -p TestResults/Unit', 1)
+    $sonarPostgreSqlText = [regex]::Replace($prWorkflowText, '(?ms)(  sonar-required:.*?    runs-on: ubuntu-latest)\r?\n', "`$1`r`n    services:`r`n      postgres: {}`r`n", 1)
+    $crossRunSelectorText = [regex]::Replace($prWorkflowText, '(?ms)(  sonar-required:.*?          name: sonar-inputs-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}-\$\{\{ github\.sha \}\}\r?\n)', "`$1          repository: another/repository`r`n", 1)
+    $wrongArtifactNameText = [regex]::Replace($prWorkflowText, '(?ms)(  sonar-required:.*?          name: )sonar-inputs-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}-\$\{\{ github\.sha \}\}', '${1}sonar-inputs-${{ github.sha }}', 1)
+    $wrongDownloadPathText = [regex]::Replace($prWorkflowText, '(?ms)(  sonar-required:.*?          path: )\$\{\{ runner\.temp \}\}/sonar-inputs-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}-\$\{\{ github\.sha \}\}', '${1}${{ github.workspace }}', 1)
+    $missingReportGlobText = $prWorkflowText.Replace('/d:sonar.cs.vstest.reportsPaths="TestResults/SonarInputs/**/*.trx"', '')
+    $missingConsumerBindingText = [regex]::Replace($prWorkflowText, '(?ms)(  sonar-required:.*?)-RunAttempt \$\{\{ github\.run_attempt \}\}\r?\n', '${1}', 1)
+    $copyBeforeValidationText = [regex]::Replace($prWorkflowText, '(?ms)(      - name: Validate downloaded Sonar inputs.*?)(      - name: Copy validated Sonar inputs into scanner checkout.*?)(?=      - name: Sonar End)', '$2$1', 1)
+    $misorderedBeginText = [regex]::Replace($prWorkflowText, '(?ms)(      - name: Sonar Begin.*?)(      - name: Restore.*?)(?=      - name: Build)', '$2$1', 1)
+    $missingWaitText = [regex]::Replace($prWorkflowText, [regex]::Escape($waitProperty), '', 1)
+    $duplicateWaitText = [regex]::Replace($prWorkflowText, [regex]::Escape($waitProperty), "$waitProperty $waitProperty", 1)
+    $misplacedWaitText = [regex]::Replace($prWorkflowText, 'dotnet sonarscanner end', "dotnet sonarscanner end $waitProperty", 1)
+    $pushWaitText = [regex]::Replace($prWorkflowText, '(?s)(\n  sonar-push:.*?dotnet sonarscanner begin [^\r\n]*?)( /d:sonar\.exclusions=)', "`$1 $waitProperty`$2", 1)
+    foreach ($fixture in @(
+            [pscustomobject]@{ name = 'missing-sonar-required'; text = $missingRequiredText; description = 'missing Sonar job' },
+            [pscustomobject]@{ name = 'wrong-sonar-name'; text = $wrongJobNameText; description = 'wrong public job name' },
+            [pscustomobject]@{ name = 'missing-needs'; text = $missingNeedsText; description = 'missing final-evidence-gate dependency' },
+            [pscustomobject]@{ name = 'removed-draft-guard'; text = $removedDraftGuardText; description = 'removed draft guard' },
+            [pscustomobject]@{ name = 'removed-fork-guard'; text = $removedForkGuardText; description = 'removed fork guard' },
+            [pscustomobject]@{ name = 'sonar-tests'; text = $sonarTestText; description = 'Sonar-side test execution' },
+            [pscustomobject]@{ name = 'sonar-runner'; text = $sonarRunnerText; description = 'Sonar-side PostgreSQL runner' },
+            [pscustomobject]@{ name = 'coverage-directory'; text = $coverageDirectoryText; description = 'Sonar-side coverage directory creation' },
+            [pscustomobject]@{ name = 'sonar-postgresql'; text = $sonarPostgreSqlText; description = 'Sonar-side PostgreSQL service' },
+            [pscustomobject]@{ name = 'cross-run-selector'; text = $crossRunSelectorText; description = 'cross-run artifact selector' },
+            [pscustomobject]@{ name = 'wrong-artifact-name'; text = $wrongArtifactNameText; description = 'wrong artifact name' },
+            [pscustomobject]@{ name = 'wrong-download-path'; text = $wrongDownloadPathText; description = 'workspace-root artifact download' },
+            [pscustomobject]@{ name = 'missing-report-glob'; text = $missingReportGlobText; description = 'missing VSTest report glob' },
+            [pscustomobject]@{ name = 'missing-consumer-binding'; text = $missingConsumerBindingText; description = 'missing consumer provenance binding' },
+            [pscustomobject]@{ name = 'copy-before-validation'; text = $copyBeforeValidationText; description = 'copy before validation' },
+            [pscustomobject]@{ name = 'misordered-begin'; text = $misorderedBeginText; description = 'misordered Begin and restore' },
+            [pscustomobject]@{ name = 'missing-wait'; text = $missingWaitText; description = 'missing Quality Gate wait' },
+            [pscustomobject]@{ name = 'duplicate-wait'; text = $duplicateWaitText; description = 'duplicate Quality Gate wait' },
+            [pscustomobject]@{ name = 'misplaced-wait'; text = $misplacedWaitText; description = 'misplaced Quality Gate wait' },
+            [pscustomobject]@{ name = 'push-wait'; text = $pushWaitText; description = 'push Quality Gate wait' })) {
+        Assert-True -Condition ($fixture.text -cne $prWorkflowText) -Message "The unified Sonar $($fixture.description) fixture could not mutate the workflow."
+        $fixturePath = Join-Path $sonarFixtureRoot.FullName "$($fixture.name).yml"
+        [System.IO.File]::WriteAllText($fixturePath, $fixture.text, [System.Text.UTF8Encoding]::new($false))
+        Assert-UnifiedSonarFixtureRejected -Path $fixturePath -Description $fixture.description
+    }
 
     $sonarInputsPath = Join-Path $temporaryRoot 'SonarInputsArtifact'
     $happyExitCode = Invoke-FinalEvidenceGate -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead -SonarInputsDirectory $sonarInputsPath
@@ -1150,7 +1408,7 @@ try {
     Assert-True -Condition ($existingOutputExitCode -ne 0) -Message 'The final evidence gate accepted an existing Sonar input destination.'
     Assert-True -Condition ([System.IO.File]::ReadAllText((Join-Path $existingOutputPath 'sentinel.txt')) -ceq 'do not overwrite') -Message 'The final evidence gate overwrote the existing Sonar input destination.'
 
-    Write-Host 'CI workflow fixture matrix passed: yaml=2, events=4, compatibility-happy=1, compatibility-missing=1, compatibility-miswired=1, compatibility-permissive=1, sonar-wait-happy=1, sonar-wait-missing=1, sonar-wait-duplicate=1, sonar-wait-misplaced=1, sonar-wait-push=1, evidence-happy=1, missing-trx=1, missing-artifact=1, missing-discovery=1, malformed-trx=1, hash-tamper=1, counter-mismatch=1, name-mismatch=1.'
+    Write-Host 'CI workflow fixture matrix passed: yaml=1, events=7, unified-sonar-happy=1, sonar-consumer-binding-pr-push=2, sonar-mutations=20, compatibility-happy=1, compatibility-missing=1, compatibility-miswired=1, compatibility-permissive=1, task4-producer-happy=1, task4-push-nullability-happy=1, task4-push-nullability-rejected=1, task4-duplicate-suite-execution=1, task4-missing-suite=1, task4-missing-coverage=1, task4-second-postgresql-runner=1, task4-sha-only-artifact=1, task4-nonfatal-upload=1, task4-broken-provenance=1, task4-artifact-layout=1, evidence-happy=1, staging-files=11, consumer-root-shape=1, manifest-run-types=string, missing-trx=1, missing-artifact=1, missing-discovery=1, malformed-trx=1, hash-tamper=1, counter-mismatch=1, name-mismatch=1, missing-coverage=1, missing-coverage-metadata=1, empty-coverage=1, malformed-coverage=1, tampered-coverage=1, duplicate-coverage=1, sixth-coverage=1, wrong-suite-coverage=1, wrong-coverage-sha=1, wrong-run=1, noncanonical-run=1, noncanonical-run-attempt=1, wrong-repository=1, existing-output=1, no-partial-publish=13.'
 }
 finally {
     if (Test-Path -LiteralPath $temporaryRoot) {
