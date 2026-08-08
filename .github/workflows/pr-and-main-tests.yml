@@ -262,7 +262,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: verification-${{ matrix.suite }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
-          path: TestResults/Verification/${{ github.sha }}/${{ matrix.suite }}/**
+          path: |
+            TestResults/Verification/${{ github.sha }}/**
+            !TestResults/Verification/${{ github.sha }}/Build/**
           if-no-files-found: error
 
   postgresql:
@@ -357,7 +359,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: verification-PostgreSqlIntegration-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
-          path: TestResults/Verification/${{ github.sha }}/PostgreSqlIntegration/**
+          path: |
+            TestResults/Verification/${{ github.sha }}/**
+            !TestResults/Verification/${{ github.sha }}/Build/**
           if-no-files-found: error
 
   postgresql-cleanup:
@@ -399,7 +403,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: verification-PostgreSqlCleanup-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
-          path: TestResults/Verification/${{ github.sha }}/PostgreSqlCleanup/**
+          path: TestResults/Verification/${{ github.sha }}/**
           if-no-files-found: error
 
   final-evidence-gate:

@@ -615,6 +615,35 @@ function Assert-Task4EvidenceProducerContract {
         Assert-True -Condition ($upload.with.'if-no-files-found' -ceq 'error') -Message "Artifact '$($upload.with.name)' must fail when files are absent."
     }
 
+    $buildUpload = @($uploads | Where-Object { [string]$_.with.name -ceq 'verification-build-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}' })
+    Assert-True -Condition ($buildUpload.Count -eq 1) -Message 'The Release build evidence must have exactly one artifact upload.'
+    Assert-StringSet `
+        -Expected @('TestResults/Verification/${{ github.sha }}/Build/**', '**/bin/Release/**', '**/obj/Release/**') `
+        -Actual @(([string]$buildUpload[0].with.path -split '\r?\n') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) `
+        -Description 'Release build artifact paths'
+
+    $expectedSuiteArtifactPaths = @(
+        'TestResults/Verification/${{ github.sha }}/**',
+        '!TestResults/Verification/${{ github.sha }}/Build/**'
+    )
+    $matrixSuiteUpload = @($uploads | Where-Object { [string]$_.with.name -ceq 'verification-${{ matrix.suite }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}' })
+    Assert-True -Condition ($matrixSuiteUpload.Count -eq 1) -Message 'The non-PostgreSQL suites must have exactly one artifact upload definition.'
+    Assert-StringSet `
+        -Expected $expectedSuiteArtifactPaths `
+        -Actual @(([string]$matrixSuiteUpload[0].with.path -split '\r?\n') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) `
+        -Description 'non-PostgreSQL suite artifact paths'
+
+    $postgreSqlUpload = @($uploads | Where-Object { [string]$_.with.name -ceq 'verification-PostgreSqlIntegration-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}' })
+    Assert-True -Condition ($postgreSqlUpload.Count -eq 1) -Message 'The PostgreSQL suite must have exactly one artifact upload.'
+    Assert-StringSet `
+        -Expected $expectedSuiteArtifactPaths `
+        -Actual @(([string]$postgreSqlUpload[0].with.path -split '\r?\n') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) `
+        -Description 'PostgreSQL suite artifact paths'
+
+    $cleanupUpload = @($uploads | Where-Object { [string]$_.with.name -ceq 'verification-PostgreSqlCleanup-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}' })
+    Assert-True -Condition ($cleanupUpload.Count -eq 1) -Message 'The PostgreSQL cleanup evidence must have exactly one artifact upload.'
+    Assert-True -Condition ([string]$cleanupUpload[0].with.path -ceq 'TestResults/Verification/${{ github.sha }}/**') -Message 'The PostgreSQL cleanup artifact path must preserve its PostgreSqlCleanup directory root.'
+
     $sonarUploads = @($uploads | Where-Object { [string]$_.with.name -ceq 'sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}' })
     Assert-True -Condition ($sonarUploads.Count -eq 1) -Message 'The final gate must publish exactly one normalized sonar-inputs artifact.'
     Assert-True -Condition ([string]$sonarUploads[0].with.path -ceq 'TestResults/SonarInputsArtifact') -Message 'The sonar-inputs artifact must upload only the normalized producer output directory.'
@@ -1210,6 +1239,7 @@ try {
     $nonfatalUploadPath = Join-Path $task4FixtureRoot.FullName 'nonfatal-upload.yml'
     $brokenProvenancePath = Join-Path $task4FixtureRoot.FullName 'broken-provenance.yml'
     $artifactLayoutPath = Join-Path $task4FixtureRoot.FullName 'artifact-layout.yml'
+    $flattenedArtifactTopologyPath = Join-Path $task4FixtureRoot.FullName 'flattened-artifact-topology.yml'
     $unprotectedPushHeadPath = Join-Path $task4FixtureRoot.FullName 'unprotected-push-head.yml'
 
     $duplicateSuiteExecutionText = [regex]::Replace($prWorkflowText, '(?m)^(\s*)& dotnet @arguments\s*$', "`$1& dotnet @arguments`r`n`$1& dotnet @arguments", 1)
@@ -1222,6 +1252,13 @@ try {
     $nonfatalUploadText = $prWorkflowText.Replace('if-no-files-found: error', 'if-no-files-found: warn')
     $brokenProvenanceText = $prWorkflowText.Replace('-RunAttempt ${{ github.run_attempt }}', '')
     $artifactLayoutText = $prWorkflowText.Replace('TestResults/SonarInputsArtifact', 'TestResults/Collected')
+    $flattenedArtifactTopologyText = $prWorkflowText.Replace(
+        "          name: verification-`$`{{ matrix.suite }`}-`$`{{ github.run_id }`}-`$`{{ github.run_attempt }`}-`$`{{ github.sha }`}`n          path: |`n            TestResults/Verification/`$`{{ github.sha }`}/**`n            !TestResults/Verification/`$`{{ github.sha }`}/Build/**",
+        "          name: verification-`$`{{ matrix.suite }`}-`$`{{ github.run_id }`}-`$`{{ github.run_attempt }`}-`$`{{ github.sha }`}`n          path: TestResults/Verification/`$`{{ github.sha }`}/`$`{{ matrix.suite }`}/**").Replace(
+        "          name: verification-PostgreSqlIntegration-`$`{{ github.run_id }`}-`$`{{ github.run_attempt }`}-`$`{{ github.sha }`}`n          path: |`n            TestResults/Verification/`$`{{ github.sha }`}/**`n            !TestResults/Verification/`$`{{ github.sha }`}/Build/**",
+        "          name: verification-PostgreSqlIntegration-`$`{{ github.run_id }`}-`$`{{ github.run_attempt }`}-`$`{{ github.sha }`}`n          path: TestResults/Verification/`$`{{ github.sha }`}/PostgreSqlIntegration/**").Replace(
+        '          path: TestResults/Verification/${{ github.sha }}/**',
+        '          path: TestResults/Verification/${{ github.sha }}/PostgreSqlCleanup/**')
     $unprotectedPushHeadText = $prWorkflowText.Replace("-PullRequestHeadSha '`$`{{ github.event.pull_request.head.sha }}`'", '-PullRequestHeadSha ${{ github.event.pull_request.head.sha }}')
     foreach ($fixture in @(
             [pscustomobject]@{ path = $duplicateSuiteExecutionPath; text = $duplicateSuiteExecutionText; description = 'duplicate suite execution' },
@@ -1232,6 +1269,7 @@ try {
             [pscustomobject]@{ path = $nonfatalUploadPath; text = $nonfatalUploadText; description = 'nonfatal artifact upload' },
             [pscustomobject]@{ path = $brokenProvenancePath; text = $brokenProvenanceText; description = 'broken final producer provenance' },
             [pscustomobject]@{ path = $artifactLayoutPath; text = $artifactLayoutText; description = 'non-normalized Sonar artifact layout' },
+            [pscustomobject]@{ path = $flattenedArtifactTopologyPath; text = $flattenedArtifactTopologyText; description = 'flattened verification artifact topology' },
             [pscustomobject]@{ path = $unprotectedPushHeadPath; text = $unprotectedPushHeadText; description = 'unprotected push PR-head parameter' })) {
         Assert-True -Condition ($fixture.text -cne $prWorkflowText) -Message "The Task 4 $($fixture.description) fixture could not mutate the workflow."
         [System.IO.File]::WriteAllText($fixture.path, $fixture.text, [System.Text.UTF8Encoding]::new($false))
@@ -1408,7 +1446,7 @@ try {
     Assert-True -Condition ($existingOutputExitCode -ne 0) -Message 'The final evidence gate accepted an existing Sonar input destination.'
     Assert-True -Condition ([System.IO.File]::ReadAllText((Join-Path $existingOutputPath 'sentinel.txt')) -ceq 'do not overwrite') -Message 'The final evidence gate overwrote the existing Sonar input destination.'
 
-    Write-Host 'CI workflow fixture matrix passed: yaml=1, events=7, unified-sonar-happy=1, sonar-consumer-binding-pr-push=2, sonar-mutations=20, compatibility-happy=1, compatibility-missing=1, compatibility-miswired=1, compatibility-permissive=1, task4-producer-happy=1, task4-push-nullability-happy=1, task4-push-nullability-rejected=1, task4-duplicate-suite-execution=1, task4-missing-suite=1, task4-missing-coverage=1, task4-second-postgresql-runner=1, task4-sha-only-artifact=1, task4-nonfatal-upload=1, task4-broken-provenance=1, task4-artifact-layout=1, evidence-happy=1, staging-files=11, consumer-root-shape=1, manifest-run-types=string, missing-trx=1, missing-artifact=1, missing-discovery=1, malformed-trx=1, hash-tamper=1, counter-mismatch=1, name-mismatch=1, missing-coverage=1, missing-coverage-metadata=1, empty-coverage=1, malformed-coverage=1, tampered-coverage=1, duplicate-coverage=1, sixth-coverage=1, wrong-suite-coverage=1, wrong-coverage-sha=1, wrong-run=1, noncanonical-run=1, noncanonical-run-attempt=1, wrong-repository=1, existing-output=1, no-partial-publish=13.'
+    Write-Host 'CI workflow fixture matrix passed: yaml=1, events=7, unified-sonar-happy=1, sonar-consumer-binding-pr-push=2, sonar-mutations=20, compatibility-happy=1, compatibility-missing=1, compatibility-miswired=1, compatibility-permissive=1, task4-producer-happy=1, task4-push-nullability-happy=1, task4-push-nullability-rejected=1, task4-duplicate-suite-execution=1, task4-missing-suite=1, task4-missing-coverage=1, task4-second-postgresql-runner=1, task4-sha-only-artifact=1, task4-nonfatal-upload=1, task4-broken-provenance=1, task4-artifact-layout=1, task4-flattened-artifact-topology=1, evidence-happy=1, staging-files=11, consumer-root-shape=1, manifest-run-types=string, missing-trx=1, missing-artifact=1, missing-discovery=1, malformed-trx=1, hash-tamper=1, counter-mismatch=1, name-mismatch=1, missing-coverage=1, missing-coverage-metadata=1, empty-coverage=1, malformed-coverage=1, tampered-coverage=1, duplicate-coverage=1, sixth-coverage=1, wrong-suite-coverage=1, wrong-coverage-sha=1, wrong-run=1, noncanonical-run=1, noncanonical-run-attempt=1, wrong-repository=1, existing-output=1, no-partial-publish=13.'
 }
 finally {
     if (Test-Path -LiteralPath $temporaryRoot) {
