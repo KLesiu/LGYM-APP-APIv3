@@ -9,7 +9,7 @@ using Npgsql;
 
 namespace LgymApi.IntegrationTests;
 
-internal sealed class PostgreSqlTutorialRowSecurityTestEnvironment : IAsyncDisposable
+internal sealed partial class PostgreSqlTutorialRowSecurityTestEnvironment : IAsyncDisposable
 {
     private readonly PostgreSqlDatabaseLease _lease;
     private readonly string _maintenanceRole;
