@@ -472,8 +472,162 @@ function Update-FixtureTrxMetadata {
     Write-JsonFixture -Path $SummaryPath -Value $summary
 }
 
+function Write-OpenCoverFixture {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$SourcePath
+    )
+
+    $escapedSourcePath = [System.Security.SecurityElement]::Escape($SourcePath)
+    $xml = @"
+<?xml version="1.0" encoding="utf-8"?>
+<CoverageSession>
+  <Modules>
+    <Module>
+      <Files>
+        <File uid="1" fullPath="$escapedSourcePath" />
+      </Files>
+    </Module>
+  </Modules>
+</CoverageSession>
+"@
+    [System.IO.File]::WriteAllText($Path, $xml, [System.Text.UTF8Encoding]::new($false))
+}
+
+function Update-FixtureCoverageMetadata {
+    param(
+        [Parameter(Mandatory)][string]$SummaryPath,
+        [Parameter(Mandatory)][string]$CoveragePath
+    )
+
+    $summary = [System.IO.File]::ReadAllText($SummaryPath) | ConvertFrom-Json -Depth 32
+    $coverage = Get-Item -LiteralPath $CoveragePath
+    $summary.coverage.sha256 = (Get-FileHash -LiteralPath $coverage.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    $summary.coverage.bytes = $coverage.Length
+    $summary.coverage.lastWriteUtc = $coverage.LastWriteTimeUtc.ToString('O')
+    Write-JsonFixture -Path $SummaryPath -Value $summary
+}
+
+function Invoke-FinalEvidenceGate {
+    param(
+        [Parameter(Mandatory)][string]$EvidenceGatePath,
+        [Parameter(Mandatory)][string]$EvidenceRoot,
+        [Parameter(Mandatory)][string]$MergeSha,
+        [string]$Repository = 'lgym/LGYM-APP-APIv3',
+        [string]$RunId = '440001',
+        [string]$RunAttempt = '2',
+        [string]$Event = 'pull_request',
+        [string]$Ref = 'refs/pull/440/merge',
+        [string]$PullRequestHeadSha = '89abcdef0123456789abcdef0123456789abcdef',
+        [string]$SonarInputsDirectory = ''
+    )
+
+    $arguments = @(
+        '-EvidenceRoot', $EvidenceRoot,
+        '-Repository', $Repository,
+        '-RunId', $RunId,
+        '-RunAttempt', $RunAttempt,
+        '-Event', $Event,
+        '-Ref', $Ref,
+        '-MergeSha', $MergeSha,
+        '-PullRequestHeadSha', $PullRequestHeadSha
+    )
+    if (-not [string]::IsNullOrWhiteSpace($SonarInputsDirectory)) {
+        $arguments += @('-SonarInputsDirectory', $SonarInputsDirectory)
+    }
+
+    & pwsh -NoProfile -File $EvidenceGatePath @arguments *> $null
+    return $LASTEXITCODE
+}
+
+function Assert-EvidenceGateRejectedWithoutPublish {
+    param(
+        [Parameter(Mandatory)][string]$EvidenceGatePath,
+        [Parameter(Mandatory)][string]$EvidenceRoot,
+        [Parameter(Mandatory)][string]$MergeSha,
+        [Parameter(Mandatory)][string]$SonarInputsDirectory,
+        [Parameter(Mandatory)][string]$Description,
+        [string]$Repository = 'lgym/LGYM-APP-APIv3',
+        [string]$RunId = '440001',
+        [string]$RunAttempt = '2'
+    )
+
+    $exitCode = Invoke-FinalEvidenceGate `
+        -EvidenceGatePath $EvidenceGatePath `
+        -EvidenceRoot $EvidenceRoot `
+        -MergeSha $MergeSha `
+        -Repository $Repository `
+        -RunId $RunId `
+        -RunAttempt $RunAttempt `
+        -SonarInputsDirectory $SonarInputsDirectory 2>$null
+    Assert-True -Condition ($exitCode -ne 0) -Message "The final evidence gate accepted the $Description fixture."
+    Assert-True -Condition (-not (Test-Path -LiteralPath $SonarInputsDirectory)) -Message "The final evidence gate published partial Sonar inputs for the $Description fixture."
+
+    $parent = Split-Path -Parent $SonarInputsDirectory
+    $leaf = Split-Path -Leaf $SonarInputsDirectory
+    $partialDirectories = @(Get-ChildItem -LiteralPath $parent -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "^\.$([regex]::Escape($leaf))\.staging-" })
+    Assert-True -Condition ($partialDirectories.Count -eq 0) -Message "The final evidence gate left staging debris for the $Description fixture."
+    Write-Output "Rejected final-evidence $Description fixture without publication."
+}
+
+function Assert-StagedSonarInputs {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$MergeSha
+    )
+
+    $expectedSuites = @('Architecture', 'DataSeeder', 'InMemoryIntegration', 'PostgreSqlIntegration', 'Unit')
+    $expectedFiles = @('manifest.json')
+    foreach ($suite in $expectedSuites) {
+        $expectedFiles += @(
+            "TestResults/SonarInputs/$suite/$suite-$MergeSha.trx",
+            "TestResults/SonarInputs/$suite/coverage.opencover.xml"
+        )
+    }
+
+    $actualFiles = @(
+        Get-ChildItem -LiteralPath $Path -File -Recurse |
+            ForEach-Object { $_.FullName.Substring($Path.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar).Replace('\', '/') }
+    )
+    Assert-StringSet -Expected $expectedFiles -Actual $actualFiles -Description 'staged Sonar input files'
+    Assert-True -Condition ($actualFiles.Count -eq 11) -Message 'The staged Sonar input tree must contain exactly eleven files.'
+    Assert-StringSet -Expected @('manifest.json', 'TestResults') -Actual @(Get-ChildItem -LiteralPath $Path -Force | ForEach-Object { $_.Name }) -Description 'consumer-compatible artifact root entries'
+    $testResultsDirectory = Join-Path $Path 'TestResults'
+    Assert-StringSet -Expected @('SonarInputs') -Actual @(Get-ChildItem -LiteralPath $testResultsDirectory -Force | ForEach-Object { $_.Name }) -Description 'consumer-compatible TestResults entries'
+    $sonarInputsDirectory = Join-Path $testResultsDirectory 'SonarInputs'
+    Assert-StringSet -Expected $expectedSuites -Actual @(Get-ChildItem -LiteralPath $sonarInputsDirectory -Directory | ForEach-Object { $_.Name }) -Description 'consumer-compatible SonarInputs suite entries'
+    Assert-True -Condition (@(Get-ChildItem -LiteralPath $Path -Directory | Where-Object { $_.Name -in $expectedSuites }).Count -eq 0) -Message 'The artifact root must not contain suite directories.'
+
+    $manifest = [System.IO.File]::ReadAllText((Join-Path $Path 'manifest.json')) | ConvertFrom-Json -Depth 32
+    Assert-True -Condition ($manifest.schemaVersion -eq 1 -and $manifest.kind -ceq 'sonar-inputs') -Message 'The staged Sonar input manifest has an unsupported schema.'
+    Assert-True -Condition ($manifest.repository -ceq 'lgym/LGYM-APP-APIv3') -Message 'The staged Sonar input manifest repository is incorrect.'
+    Assert-True -Condition ($manifest.runId -is [string] -and $manifest.runAttempt -is [string] -and $manifest.runId -ceq '440001' -and $manifest.runAttempt -ceq '2') -Message 'The staged Sonar input manifest run provenance must be canonical decimal strings matching the CLI values.'
+    Assert-True -Condition ($manifest.event -ceq 'pull_request' -and $manifest.ref -ceq 'refs/pull/440/merge') -Message 'The staged Sonar input manifest event provenance is incorrect.'
+    Assert-True -Condition ($manifest.mergeSha -ceq $MergeSha -and $manifest.pullRequestHeadSha -ceq '89abcdef0123456789abcdef0123456789abcdef') -Message 'The staged Sonar input manifest SHA provenance is incorrect.'
+    Assert-StringSet -Expected $expectedSuites -Actual @($manifest.suites | ForEach-Object { [string]$_.suite }) -Description 'staged Sonar input manifest suites'
+    foreach ($suiteEvidence in @($manifest.suites)) {
+        $suite = [string]$suiteEvidence.suite
+        Assert-True -Condition ($suiteEvidence.trx.checkoutRelativePath -ceq "TestResults/SonarInputs/$suite/$suite-$MergeSha.trx") -Message "The staged '$suite' TRX path is not checkout-relative."
+        Assert-True -Condition ($suiteEvidence.coverage.checkoutRelativePath -ceq "TestResults/SonarInputs/$suite/coverage.opencover.xml") -Message "The staged '$suite' coverage path is not checkout-relative."
+        Assert-True -Condition ($suiteEvidence.trx.sha256 -match '^[0-9a-f]{64}$' -and $suiteEvidence.trx.bytes -gt 0) -Message "The staged '$suite' TRX metadata is incomplete."
+        Assert-True -Condition ($suiteEvidence.coverage.sha256 -match '^[0-9a-f]{64}$' -and $suiteEvidence.coverage.bytes -gt 0 -and $suiteEvidence.coverage.moduleCount -eq 1 -and $suiteEvidence.coverage.fileCount -eq 1 -and $suiteEvidence.coverage.localPathMode -ceq 'repository-rooted') -Message "The staged '$suite' coverage metadata is incomplete."
+    }
+
+    Write-Output "Inspected staged Sonar tree: $(($actualFiles | Sort-Object) -join ', ')"
+    Write-Output "Inspected staged Sonar manifest: $($manifest | ConvertTo-Json -Depth 16 -Compress)"
+}
+
 function New-EvidenceFixture {
-    param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string]$Head)
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][string]$Head,
+        [Parameter(Mandatory)][string]$RepositorySourcePath
+    )
+
+    if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
+        $null = New-Item -ItemType Directory -Path $Root -Force
+    }
+    Get-ChildItem -LiteralPath $Root -Force | Remove-Item -Recurse -Force
 
     $cleanRepository = [pscustomobject]@{
         head = $Head
@@ -495,6 +649,7 @@ function New-EvidenceFixture {
     $buildSha256 = (Get-FileHash -LiteralPath $buildPath -Algorithm SHA256).Hash.ToLowerInvariant()
     foreach ($suite in @('Unit', 'Architecture', 'InMemoryIntegration', 'PostgreSqlIntegration', 'DataSeeder')) {
         $directory = New-Item -ItemType Directory -Path (Join-Path $Root $suite) -Force
+        $evidenceDirectory = New-Item -ItemType Directory -Path (Join-Path $directory.FullName 'evidence') -Force
         $trxName = "$suite-fixture.trx"
         $testName = "$suite.FixturePass"
         $discoveryPath = Join-Path $Root "$suite-discovery.json"
@@ -512,13 +667,16 @@ function New-EvidenceFixture {
         $trxPath = Join-Path $directory.FullName $trxName
         Write-TrxFixture -Path $trxPath -TestName $testName
         $trxFile = Get-Item -LiteralPath $trxPath
-        $summaryPath = Join-Path $directory.FullName 'trx-summary.json'
+        $coveragePath = Join-Path $directory.FullName 'coverage.opencover.xml'
+        Write-OpenCoverFixture -Path $coveragePath -SourcePath $RepositorySourcePath
+        $coverageFile = Get-Item -LiteralPath $coveragePath
+        $summaryPath = Join-Path $evidenceDirectory.FullName 'trx-summary.json'
         Write-JsonFixture -Path $summaryPath -Value ([pscustomobject]@{
                 kind = 'trx-summary'
                 suite = $suite
                 completeSuite = $true
                 repository = $cleanRepository
-                command = [pscustomobject]@{ exitCode = 0 }
+                command = [pscustomobject]@{ exitCode = 0; notBeforeUtc = [System.DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O') }
                 buildManifest = [pscustomobject]@{ sha256 = $buildSha256 }
                 discoveryManifest = [pscustomobject]@{
                     sha256 = $discoverySha256
@@ -533,6 +691,16 @@ function New-EvidenceFixture {
                     testCount = 1
                     testNames = @($testName)
                     counters = [pscustomobject]@{ total = 1; executed = 1; passed = 1; failed = 0; notExecuted = 0 }
+                }
+                coverage = [pscustomobject]@{
+                    path = $coverageFile.FullName
+                    fileName = $coverageFile.Name
+                    sha256 = (Get-FileHash -LiteralPath $coverageFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                    bytes = $coverageFile.Length
+                    lastWriteUtc = $coverageFile.LastWriteTimeUtc.ToString('O')
+                    moduleCount = 1
+                    fileCount = 1
+                    localPathMode = 'repository-rooted'
                 }
             })
     }
@@ -602,7 +770,7 @@ $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("lgym-ci-workflow-
 try {
     $null = New-Item -ItemType Directory -Path $temporaryRoot -Force
     $fixtureHead = '0123456789abcdef0123456789abcdef01234567'
-    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
 
     $compatibilityFixtureRoot = New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'pr-workflows') -Force
     $prWorkflowText = [System.IO.File]::ReadAllText($prWorkflowPath)
@@ -642,50 +810,121 @@ try {
     Assert-SonarWaitFixtureRejected -Path $misplacedWaitPath -Description 'misplaced-wait'
     Assert-SonarWaitFixtureRejected -Path $pushWaitPath -Description 'push-wait'
 
-    & pwsh -NoProfile -File $evidenceGatePath -EvidenceRoot $temporaryRoot -ExpectedHead $fixtureHead
-    Assert-True -Condition ($LASTEXITCODE -eq 0) -Message 'The complete same-SHA artifact fixture failed.'
+    $sonarInputsPath = Join-Path $temporaryRoot 'SonarInputsArtifact'
+    $happyExitCode = Invoke-FinalEvidenceGate -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead -SonarInputsDirectory $sonarInputsPath
+    Assert-True -Condition ($happyExitCode -eq 0) -Message 'The complete run-aware same-SHA artifact fixture failed.'
+    Assert-StagedSonarInputs -Path $sonarInputsPath -MergeSha $fixtureHead
 
     Remove-Item -LiteralPath (Join-Path $temporaryRoot 'Unit/Unit-fixture.trx') -Force
-    & pwsh -NoProfile -File $evidenceGatePath -EvidenceRoot $temporaryRoot -ExpectedHead $fixtureHead 2>$null
-    Assert-True -Condition ($LASTEXITCODE -ne 0) -Message 'The final evidence gate accepted a missing TRX artifact.'
+    $missingTrxExitCode = Invoke-FinalEvidenceGate -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead 2>$null
+    Assert-True -Condition ($missingTrxExitCode -ne 0) -Message 'The final evidence gate accepted a missing TRX artifact.'
 
-    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead
-    Remove-Item -LiteralPath (Join-Path $temporaryRoot 'DataSeeder/trx-summary.json') -Force
-    & pwsh -NoProfile -File $evidenceGatePath -EvidenceRoot $temporaryRoot -ExpectedHead $fixtureHead 2>$null
-    Assert-True -Condition ($LASTEXITCODE -ne 0) -Message 'The final evidence gate accepted a missing suite artifact.'
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    Remove-Item -LiteralPath (Join-Path $temporaryRoot 'DataSeeder/evidence/trx-summary.json') -Force
+    $missingSuiteExitCode = Invoke-FinalEvidenceGate -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead 2>$null
+    Assert-True -Condition ($missingSuiteExitCode -ne 0) -Message 'The final evidence gate accepted a missing suite artifact.'
 
-    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
     Remove-Item -LiteralPath (Join-Path $temporaryRoot 'Unit-discovery.json') -Force
-    & pwsh -NoProfile -File $evidenceGatePath -EvidenceRoot $temporaryRoot -ExpectedHead $fixtureHead 2>$null
-    Assert-True -Condition ($LASTEXITCODE -ne 0) -Message 'The final evidence gate accepted a missing referenced discovery artifact.'
+    $missingDiscoveryExitCode = Invoke-FinalEvidenceGate -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead 2>$null
+    Assert-True -Condition ($missingDiscoveryExitCode -ne 0) -Message 'The final evidence gate accepted a missing referenced discovery artifact.'
 
-    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
     $unitTrxPath = Join-Path $temporaryRoot 'Unit/Unit-fixture.trx'
     [System.IO.File]::WriteAllText($unitTrxPath, '<TestRun', [System.Text.UTF8Encoding]::new($false))
-    Update-FixtureTrxMetadata -SummaryPath (Join-Path $temporaryRoot 'Unit/trx-summary.json') -TrxPath $unitTrxPath
-    & pwsh -NoProfile -File $evidenceGatePath -EvidenceRoot $temporaryRoot -ExpectedHead $fixtureHead 2>$null
-    Assert-True -Condition ($LASTEXITCODE -ne 0) -Message 'The final evidence gate accepted malformed TRX XML.'
+    Update-FixtureTrxMetadata -SummaryPath (Join-Path $temporaryRoot 'Unit/evidence/trx-summary.json') -TrxPath $unitTrxPath
+    $malformedTrxExitCode = Invoke-FinalEvidenceGate -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead 2>$null
+    Assert-True -Condition ($malformedTrxExitCode -ne 0) -Message 'The final evidence gate accepted malformed TRX XML.'
 
-    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
     [System.IO.File]::AppendAllText((Join-Path $temporaryRoot 'Unit/Unit-fixture.trx'), "`n<!-- hash tamper -->", [System.Text.UTF8Encoding]::new($false))
-    & pwsh -NoProfile -File $evidenceGatePath -EvidenceRoot $temporaryRoot -ExpectedHead $fixtureHead 2>$null
-    Assert-True -Condition ($LASTEXITCODE -ne 0) -Message 'The final evidence gate accepted a hash-tampered TRX artifact.'
+    $tamperedTrxExitCode = Invoke-FinalEvidenceGate -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead 2>$null
+    Assert-True -Condition ($tamperedTrxExitCode -ne 0) -Message 'The final evidence gate accepted a hash-tampered TRX artifact.'
 
-    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead
-    $counterSummaryPath = Join-Path $temporaryRoot 'Unit/trx-summary.json'
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    $counterSummaryPath = Join-Path $temporaryRoot 'Unit/evidence/trx-summary.json'
     $counterSummary = [System.IO.File]::ReadAllText($counterSummaryPath) | ConvertFrom-Json -Depth 32
     $counterSummary.trx.counters.passed = 0
     Write-JsonFixture -Path $counterSummaryPath -Value $counterSummary
-    & pwsh -NoProfile -File $evidenceGatePath -EvidenceRoot $temporaryRoot -ExpectedHead $fixtureHead 2>$null
-    Assert-True -Condition ($LASTEXITCODE -ne 0) -Message 'The final evidence gate accepted inconsistent TRX counters.'
+    $counterMismatchExitCode = Invoke-FinalEvidenceGate -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead 2>$null
+    Assert-True -Condition ($counterMismatchExitCode -ne 0) -Message 'The final evidence gate accepted inconsistent TRX counters.'
 
-    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead
-    $nameSummaryPath = Join-Path $temporaryRoot 'Unit/trx-summary.json'
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    $nameSummaryPath = Join-Path $temporaryRoot 'Unit/evidence/trx-summary.json'
     $nameSummary = [System.IO.File]::ReadAllText($nameSummaryPath) | ConvertFrom-Json -Depth 32
     $nameSummary.trx.testNames = @('Unit.ForgedDisplayName')
     Write-JsonFixture -Path $nameSummaryPath -Value $nameSummary
-    & pwsh -NoProfile -File $evidenceGatePath -EvidenceRoot $temporaryRoot -ExpectedHead $fixtureHead 2>$null
-    Assert-True -Condition ($LASTEXITCODE -ne 0) -Message 'The final evidence gate accepted a mismatched TRX display-name multiset.'
+    $nameMismatchExitCode = Invoke-FinalEvidenceGate -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead 2>$null
+    Assert-True -Condition ($nameMismatchExitCode -ne 0) -Message 'The final evidence gate accepted a mismatched TRX display-name multiset.'
+
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    Remove-Item -LiteralPath (Join-Path $temporaryRoot 'Unit/coverage.opencover.xml') -Force
+    Assert-EvidenceGateRejectedWithoutPublish -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead -SonarInputsDirectory (Join-Path $temporaryRoot 'SonarInputs-missing-coverage') -Description 'missing coverage'
+
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    $missingCoverageMetadataPath = Join-Path $temporaryRoot 'Unit/evidence/trx-summary.json'
+    $missingCoverageMetadata = [System.IO.File]::ReadAllText($missingCoverageMetadataPath) | ConvertFrom-Json -Depth 32
+    $missingCoverageMetadata.PSObject.Properties.Remove('coverage')
+    Write-JsonFixture -Path $missingCoverageMetadataPath -Value $missingCoverageMetadata
+    Assert-EvidenceGateRejectedWithoutPublish -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead -SonarInputsDirectory (Join-Path $temporaryRoot 'SonarInputs-missing-coverage-metadata') -Description 'missing coverage metadata'
+
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    [System.IO.File]::WriteAllText((Join-Path $temporaryRoot 'Unit/coverage.opencover.xml'), '', [System.Text.UTF8Encoding]::new($false))
+    Assert-EvidenceGateRejectedWithoutPublish -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead -SonarInputsDirectory (Join-Path $temporaryRoot 'SonarInputs-empty-coverage') -Description 'empty coverage'
+
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    $malformedCoveragePath = Join-Path $temporaryRoot 'Unit/coverage.opencover.xml'
+    [System.IO.File]::WriteAllText($malformedCoveragePath, '<CoverageSession', [System.Text.UTF8Encoding]::new($false))
+    Update-FixtureCoverageMetadata -SummaryPath (Join-Path $temporaryRoot 'Unit/evidence/trx-summary.json') -CoveragePath $malformedCoveragePath
+    Assert-EvidenceGateRejectedWithoutPublish -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead -SonarInputsDirectory (Join-Path $temporaryRoot 'SonarInputs-malformed-coverage') -Description 'malformed coverage'
+
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    [System.IO.File]::AppendAllText((Join-Path $temporaryRoot 'Unit/coverage.opencover.xml'), "`n<!-- hash tamper -->", [System.Text.UTF8Encoding]::new($false))
+    Assert-EvidenceGateRejectedWithoutPublish -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead -SonarInputsDirectory (Join-Path $temporaryRoot 'SonarInputs-tampered-coverage') -Description 'tampered coverage'
+
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    $duplicateCoverageDirectory = New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'Unit/duplicate') -Force
+    Copy-Item -LiteralPath (Join-Path $temporaryRoot 'Unit/coverage.opencover.xml') -Destination (Join-Path $duplicateCoverageDirectory.FullName 'coverage.opencover.xml')
+    Assert-EvidenceGateRejectedWithoutPublish -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead -SonarInputsDirectory (Join-Path $temporaryRoot 'SonarInputs-duplicate-coverage') -Description 'duplicate coverage'
+
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    $sixthCoverageDirectory = New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'Unexpected') -Force
+    Copy-Item -LiteralPath (Join-Path $temporaryRoot 'Unit/coverage.opencover.xml') -Destination (Join-Path $sixthCoverageDirectory.FullName 'coverage.opencover.xml')
+    Assert-EvidenceGateRejectedWithoutPublish -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead -SonarInputsDirectory (Join-Path $temporaryRoot 'SonarInputs-sixth-coverage') -Description 'unexpected sixth coverage'
+
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    $wrongSuiteSummaryPath = Join-Path $temporaryRoot 'Unit/evidence/trx-summary.json'
+    $wrongSuiteSummary = [System.IO.File]::ReadAllText($wrongSuiteSummaryPath) | ConvertFrom-Json -Depth 32
+    $wrongSuiteSummary.coverage.path = Join-Path $temporaryRoot 'WrongSuite/coverage.opencover.xml'
+    Write-JsonFixture -Path $wrongSuiteSummaryPath -Value $wrongSuiteSummary
+    Assert-EvidenceGateRejectedWithoutPublish -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead -SonarInputsDirectory (Join-Path $temporaryRoot 'SonarInputs-wrong-suite') -Description 'wrong suite coverage metadata'
+
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    $wrongCoverageShaSummaryPath = Join-Path $temporaryRoot 'Unit/evidence/trx-summary.json'
+    $wrongCoverageShaSummary = [System.IO.File]::ReadAllText($wrongCoverageShaSummaryPath) | ConvertFrom-Json -Depth 32
+    $wrongCoverageShaSummary.coverage.sha256 = '0' * 64
+    Write-JsonFixture -Path $wrongCoverageShaSummaryPath -Value $wrongCoverageShaSummary
+    Assert-EvidenceGateRejectedWithoutPublish -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead -SonarInputsDirectory (Join-Path $temporaryRoot 'SonarInputs-wrong-coverage-sha') -Description 'wrong coverage SHA metadata'
+
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    Assert-EvidenceGateRejectedWithoutPublish -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead -RunId 'not-a-run-id' -SonarInputsDirectory (Join-Path $temporaryRoot 'SonarInputs-wrong-run') -Description 'wrong run metadata'
+
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    Assert-EvidenceGateRejectedWithoutPublish -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead -RunId '0440001' -SonarInputsDirectory (Join-Path $temporaryRoot 'SonarInputs-noncanonical-run') -Description 'noncanonical run metadata'
+
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    Assert-EvidenceGateRejectedWithoutPublish -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead -RunAttempt '02' -SonarInputsDirectory (Join-Path $temporaryRoot 'SonarInputs-noncanonical-attempt') -Description 'noncanonical run-attempt metadata'
+
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    Assert-EvidenceGateRejectedWithoutPublish -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead -Repository 'lgym/LGYM-APP-APIv3/invalid' -SonarInputsDirectory (Join-Path $temporaryRoot 'SonarInputs-wrong-repository') -Description 'wrong repository metadata'
+
+    New-EvidenceFixture -Root $temporaryRoot -Head $fixtureHead -RepositorySourcePath $evidenceGatePath
+    $existingOutputPath = Join-Path $temporaryRoot 'SonarInputs-existing'
+    $null = New-Item -ItemType Directory -Path $existingOutputPath -Force
+    [System.IO.File]::WriteAllText((Join-Path $existingOutputPath 'sentinel.txt'), 'do not overwrite', [System.Text.UTF8Encoding]::new($false))
+    $existingOutputExitCode = Invoke-FinalEvidenceGate -EvidenceGatePath $evidenceGatePath -EvidenceRoot $temporaryRoot -MergeSha $fixtureHead -SonarInputsDirectory $existingOutputPath 2>$null
+    Assert-True -Condition ($existingOutputExitCode -ne 0) -Message 'The final evidence gate accepted an existing Sonar input destination.'
+    Assert-True -Condition ([System.IO.File]::ReadAllText((Join-Path $existingOutputPath 'sentinel.txt')) -ceq 'do not overwrite') -Message 'The final evidence gate overwrote the existing Sonar input destination.'
 
     Write-Host 'CI workflow fixture matrix passed: yaml=2, events=4, compatibility-happy=1, compatibility-missing=1, compatibility-miswired=1, compatibility-permissive=1, sonar-wait-happy=1, sonar-wait-missing=1, sonar-wait-duplicate=1, sonar-wait-misplaced=1, sonar-wait-push=1, evidence-happy=1, missing-trx=1, missing-artifact=1, missing-discovery=1, malformed-trx=1, hash-tamper=1, counter-mismatch=1, name-mismatch=1.'
 }
