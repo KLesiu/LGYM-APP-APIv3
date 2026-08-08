@@ -30,6 +30,9 @@ internal sealed class UserSessionStore : IUserSessionStore
     }
 
     public Task<bool> ValidateSessionAsync(Id<UserSession> sessionId, CancellationToken ct)
+        => ValidateSessionAsync(default, sessionId, ct);
+
+    public Task<bool> ValidateSessionAsync(Id<User> userId, Id<UserSession> sessionId, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
 
@@ -37,6 +40,7 @@ internal sealed class UserSessionStore : IUserSessionStore
             .AsNoTracking()
             .AnyAsync(
                 session => session.Id == sessionId
+                    && (userId == default || session.UserId == userId)
                     && session.RevokedAtUtc == null
                     && session.ExpiresAtUtc > now
                     && !session.IsDeleted,

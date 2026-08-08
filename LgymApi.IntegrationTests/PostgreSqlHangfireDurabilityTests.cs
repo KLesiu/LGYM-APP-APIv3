@@ -1,5 +1,7 @@
 using FluentAssertions;
 using Hangfire;
+using Hangfire.PostgreSql;
+using Hangfire.PostgreSql.Factories;
 using Hangfire.Storage;
 using LgymApi.Application;
 using LgymApi.Application.Identity.Contracts.BackgroundCommands;
@@ -292,6 +294,7 @@ public sealed class PostgreSqlHangfireDurabilityTests
                     ["Email:PasswordRecoveryBaseUrl"] = "https://app.test.local/password-recovery",
                     ["Email:TemplateRootPath"] = Path.Combine(AppContext.BaseDirectory, "EmailTemplates"),
                     ["Email:DefaultCulture"] = "en-US",
+                    ["PhotoStorage:LocalDevelopmentSigningKey"] = "test-local-photo-signing-key-32-bytes",
                     ["PushNotifications:SendEnabled"] = "false"
                 })
                 .Build();
@@ -316,6 +319,15 @@ public sealed class PostgreSqlHangfireDurabilityTests
                 {
                     var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                     await database.Database.MigrateAsync();
+                    var storageOptions = new PostgreSqlStorageOptions
+                    {
+                        PrepareSchemaIfNecessary = true,
+                        StartupConnectionMaxRetries = 0,
+                        AllowDegradedModeWithoutStorage = false
+                    };
+                    _ = new PostgreSqlStorage(
+                        new NpgsqlConnectionFactory(connectionString, storageOptions, null),
+                        storageOptions);
                     await TestDataFactory.SeedDefaultRolesAsync(database);
                     await database.SaveChangesAsync();
                 }

@@ -8,6 +8,7 @@ public sealed class PhotoStorageOptions
     public string Endpoint { get; set; } = string.Empty;
     public string AccessKeyId { get; set; } = string.Empty;
     public string SecretAccessKey { get; set; } = string.Empty;
+    public string LocalDevelopmentSigningKey { get; set; } = string.Empty;
     public int SignedUploadExpirationMinutes { get; set; } = 10;
     public int SignedReadExpirationMinutes { get; set; } = 15;
     public long MaxFileSizeBytes { get; set; } = 5_242_880;

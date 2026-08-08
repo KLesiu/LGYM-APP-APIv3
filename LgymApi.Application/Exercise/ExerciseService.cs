@@ -2,6 +2,7 @@ using LgymApi.Application.Repositories;
 using LgymApi.Application.WorkoutProgress.Persistence;
 using LgymApi.Application.WorkoutProgress.ProgressData.Models;
 using LgymApi.Application.TrainingPlanning.Contracts.PlanDay;
+using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts.Accounts;
 
@@ -51,4 +52,7 @@ public sealed partial class ExerciseService : IExerciseService
     private static WorkoutExerciseScoreReadModel MapScore(WorkoutExerciseScorePersistenceModel score)
         => new(score.Id, score.ExerciseId, score.Weight, score.Unit, score.Reps, score.Series,
             score.Training is null ? null : new WorkoutScoreTrainingReadModel(score.Training.Id, score.Training.GymId, score.Training.Gym?.Name, score.Training.CreatedAt));
+
+    private static bool CanManageGlobalExercises(AuthenticatedAccountContext? currentAccount)
+        => currentAccount?.PermissionClaims.Contains(AuthConstants.Permissions.ManageGlobalExercises, StringComparer.Ordinal) == true;
 }

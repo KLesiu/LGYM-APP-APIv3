@@ -44,11 +44,13 @@ public sealed class TutorialIntegrationTests : IntegrationTestBase
 
         registerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // Get user ID from database and initialize tutorial
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var registeredUser = await db.Users.FirstAsync(u => u.Email == "tutorial@example.com");
-        await InitializeTutorialAsync(registeredUser.Id);
+        var tutorial = await db.UserTutorialProgresses
+            .AsNoTracking()
+            .SingleAsync(progress => progress.UserId == registeredUser.Id && progress.TutorialType == TutorialType.OnboardingDemo);
+        tutorial.IsCompleted.Should().BeFalse();
 
         // Login to get token and user info
         var loginRequest = new
@@ -68,6 +70,8 @@ public sealed class TutorialIntegrationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/tutorials/active", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/tutorials/active", "own", "no-client-subject")]
     public async Task GetActiveTutorials_ReturnsOnboardingTutorial()
     {
         // Seed user and initialize tutorial
@@ -89,6 +93,8 @@ public sealed class TutorialIntegrationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/tutorials/{tutorialType}", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/tutorials/{tutorialType}", "own", "no-client-subject")]
     public async Task GetTutorialProgress_ReturnsProgressWithZeroCompletedSteps()
     {
         // Seed user and initialize tutorial
@@ -109,6 +115,7 @@ public sealed class TutorialIntegrationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/tutorials/completeStep", "own", "owner-allow")]
     public async Task CompleteStep_UpdatesProgressAndMarksStepComplete()
     {
         // Seed user and initialize tutorial
@@ -139,6 +146,7 @@ public sealed class TutorialIntegrationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/tutorials/complete", "own", "owner-allow")]
     public async Task CompleteTutorial_MarksInactiveAndClearsActiveTutorials()
     {
         // Seed user and initialize tutorial

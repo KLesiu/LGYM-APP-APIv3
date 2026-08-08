@@ -16,9 +16,9 @@ public sealed class MiddlewareRegistrationGuardTests
         "UseMiddleware<ExceptionHandlingMiddleware>",
         "UseCors",
         "UseAuthentication",
-        "UseAuthorization",
         "UseRateLimiter",
         "UseMiddleware<UserContextMiddleware>",
+        "UseAuthorization",
         "UseMiddleware<ApiIdempotencyMiddleware>"
     };
 
@@ -39,16 +39,17 @@ public sealed class MiddlewareRegistrationGuardTests
     }
 
     [Test]
-    public void SwappedMiddlewareOrderFixture_IsRejected()
+    public void AuthorizationBeforeUserContextFixture_IsRejected()
     {
+        // Given
         var root = CSharpSyntaxTree.ParseText("""
             var app = builder.Build();
             app.UseRequestLocalization(localizationOptions);
             app.UseSerilogRequestLogging();
             app.UseMiddleware<ExceptionHandlingMiddleware>();
             app.UseCors();
-            app.UseAuthorization();
             app.UseAuthentication();
+            app.UseAuthorization();
             if (!app.Environment.IsEnvironment(TestingEnvironment))
             {
                 app.UseRateLimiter();
@@ -57,11 +58,17 @@ public sealed class MiddlewareRegistrationGuardTests
             app.UseMiddleware<ApiIdempotencyMiddleware>();
             """).GetCompilationUnitRoot();
 
+        // When
         var violations = FindPipelineViolations(root);
 
+        // Then
         Assert.That(violations, Has.Count.EqualTo(1));
-        Assert.That(violations[0], Does.Contain("UseAuthentication -> UseAuthorization"));
-        Assert.That(violations[0], Does.Contain("UseAuthorization -> UseAuthentication"));
+        Assert.That(
+            violations[0],
+            Does.Contain("UseAuthentication -> UseRateLimiter -> UseMiddleware<UserContextMiddleware> -> UseAuthorization"));
+        Assert.That(
+            violations[0],
+            Does.Contain("UseAuthentication -> UseAuthorization -> UseRateLimiter -> UseMiddleware<UserContextMiddleware>"));
     }
 
     [Test]
@@ -211,9 +218,9 @@ public sealed class MiddlewareRegistrationGuardTests
             app.UseMiddleware<ExceptionHandlingMiddleware>();
             app.UseCors();
             app.UseAuthentication();
-            app.UseAuthorization();
             {{rateLimiterRegistration}}
             app.UseMiddleware<UserContextMiddleware>();
+            app.UseAuthorization();
             app.UseMiddleware<ApiIdempotencyMiddleware>();
             """).GetCompilationUnitRoot();
     }

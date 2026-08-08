@@ -10,6 +10,7 @@ namespace LgymApi.IntegrationTests;
 public sealed class AdminFlagTests : IntegrationTestBase
 {
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/isAdmin", "authenticated-global", "ordinary-authenticated-allow")]
     public async Task IsAdmin_WithAdminUser_ReturnsTrue()
     {
         var adminUser = await SeedUserAsync(name: "adminuser", email: "admin@example.com", isAdmin: true);

@@ -161,6 +161,7 @@ public sealed class TrainingTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/{id}/addTraining", "own", "owner-allow")]
     public async Task Should_CreateTrainingAndReturnComparison_When_DataIsValid()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -204,6 +205,7 @@ public sealed class TrainingTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/{id}/addTraining", "own", "foreign-object-denial-no-mutation")]
     public async Task Should_ReturnForbidden_When_RouteUserIdMismatched()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -336,6 +338,7 @@ public sealed class TrainingTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/getLastTraining", "own", "owner-allow")]
     public async Task Should_ReturnLastTraining_When_TrainingExists()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -379,6 +382,7 @@ public sealed class TrainingTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/getLastTraining", "own", "foreign-object-denial-no-mutation")]
     public async Task Should_ReturnForbidden_When_GetLastTrainingRouteUserIdMismatched()
     {
         var (_, userAToken) = await RegisterUserViaEndpointAsync(
@@ -417,6 +421,7 @@ public sealed class TrainingTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/{id}/getTrainingByDate", "own", "owner-allow")]
     public async Task Should_ReturnTrainingDetails_When_TrainingExists()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -462,6 +467,7 @@ public sealed class TrainingTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/{id}/getTrainingByDate", "own", "foreign-object-denial-no-mutation")]
     public async Task Should_ReturnForbidden_When_GetTrainingByDateRouteUserIdMismatched()
     {
         var (_, userAToken) = await RegisterUserViaEndpointAsync(
@@ -500,6 +506,7 @@ public sealed class TrainingTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/getTrainingDates", "own", "owner-allow")]
     public async Task Should_ReturnDates_When_TrainingsExist()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -540,6 +547,7 @@ public sealed class TrainingTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/{id}/getTrainingDates", "own", "foreign-object-denial-no-mutation")]
     public async Task Should_ReturnForbidden_When_GetTrainingDatesRouteUserIdMismatched()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(

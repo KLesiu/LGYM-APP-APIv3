@@ -45,6 +45,9 @@ For local work we now support API-hosted dev storage endpoints:
 - `GET /dev/photos/read/{storageKey}`
 
 Those endpoints write files to a local folder so the flow can work without an external storage server.
+Generated local URLs are short-lived HMAC-SHA256 bearer capabilities bound to the HTTP method, normalized storage key, and Unix expiry. Development startup with `PhotoStorage__Provider=Local` requires a dedicated `PhotoStorage__LocalDevelopmentSigningKey` containing at least 32 UTF-8 bytes. Keep it in user secrets or an untracked environment variable and never reuse the JWT signing key.
+
+Local uploads accept only configured `AllowedMimeTypes`, enforce `MaxFileSizeBytes` against bytes actually read from the request stream, and publish files only after an atomic temporary-file move. Invalid, expired, or tampered capabilities return 404 before local storage access.
 
 ---
 

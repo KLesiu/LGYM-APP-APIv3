@@ -1,4 +1,5 @@
 using FluentAssertions;
+using FluentAssertions.Execution;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.TrainingPlanning.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
@@ -265,20 +266,44 @@ public sealed class ServiceTransactionBehaviorTests
     }
 
     [Test]
-    public async Task UpdatePlanUseCase_WhenSuccessful_UpdatesTrackedPlanAndSavesOnce()
+    public async Task UpdatePlanUseCase_WhenOwnerUpdatesPlan_ReturnsSuccessAndSavesOnce()
     {
-        var userId = Id<User>.New();
-        var plan = new Plan { Id = Id<Plan>.New(), UserId = userId, Name = "Old" };
-        var planRepository = new PlanRepositoryStub { PlanToReturn = plan };
+        var ownerId = Id<User>.New();
+        var ownerPlan = new Plan { Id = Id<Plan>.New(), UserId = ownerId, Name = "Owner Plan" };
+        var planRepository = new PlanRepositoryStub { PlanToReturn = ownerPlan };
         var unitOfWork = new RecordingUnitOfWork();
         var useCase = new UpdatePlanUseCase(planRepository, unitOfWork);
 
-        var result = await useCase.ExecuteAsync(new UpdatePlanCommand(userId, userId, plan.Id, "Updated"), CancellationToken.None);
+        var result = await useCase.ExecuteAsync(
+            new UpdatePlanCommand(ownerId, ownerId, ownerPlan.Id, "Updated Owner Plan"),
+            CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        plan.Name.Should().Be("Updated");
+        ownerPlan.Name.Should().Be("Updated Owner Plan");
         planRepository.UpdateCalls.Should().Be(1);
         unitOfWork.SaveChangesCalls.Should().Be(1);
+    }
+
+    [Test]
+    public async Task UpdatePlanUseCase_WhenSelfRouteTargetsAnotherOwnersPlan_ReturnsNotFoundWithoutUpdatingOrSaving()
+    {
+        var attackerId = Id<User>.New();
+        var victimId = Id<User>.New();
+        var victimPlan = new Plan { Id = Id<Plan>.New(), UserId = victimId, Name = "Victim Plan" };
+        var planRepository = new PlanRepositoryStub { PlanToReturn = victimPlan };
+        var unitOfWork = new RecordingUnitOfWork();
+        var useCase = new UpdatePlanUseCase(planRepository, unitOfWork);
+
+        var result = await useCase.ExecuteAsync(
+            new UpdatePlanCommand(attackerId, attackerId, victimPlan.Id, "Attacker Update"),
+            CancellationToken.None);
+
+        using var assertionScope = new AssertionScope();
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<PlanNotFoundError>();
+        victimPlan.Name.Should().Be("Victim Plan");
+        planRepository.UpdateCalls.Should().Be(0);
+        unitOfWork.SaveChangesCalls.Should().Be(0);
     }
 
     [Test]
@@ -568,6 +593,11 @@ public sealed class ServiceTransactionBehaviorTests
         public Task<Plan?> FindByIdAsync(Id<Plan> id, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(PlanToReturn);
+        }
+
+        public Task<Plan?> FindByIdAndUserIdAsync(Id<Plan> id, Id<User> userId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(PlanToReturn is { } plan && plan.Id == id && plan.UserId == userId ? plan : null);
         }
 
         public Task SetActivePlanAsync(Id<User> userId, Id<Plan> planId, CancellationToken cancellationToken = default)

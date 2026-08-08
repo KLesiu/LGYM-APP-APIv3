@@ -24,6 +24,7 @@ The report photo module lets trainees and trainers attach progress photos to rep
 {
   "PhotoStorage": {
     "Provider": "Local",
+    "LocalDevelopmentSigningKey": "SET_VIA_USER_SECRETS_OR_ENVIRONMENT",
     "BucketName": "YOUR_BUCKET_NAME",
     "Endpoint": "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com",
     "SignedUploadExpirationMinutes": 10,
@@ -38,6 +39,7 @@ Never commit:
 
 - `PhotoStorage:AccessKeyId`
 - `PhotoStorage:SecretAccessKey`
+- `PhotoStorage:LocalDevelopmentSigningKey`
 - local config overrides that contain real credentials
 
 ### User flow

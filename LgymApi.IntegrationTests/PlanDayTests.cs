@@ -17,6 +17,7 @@ namespace LgymApi.IntegrationTests;
 public sealed class PlanDayTests : IntegrationTestBase
 {
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/planDay/{id}/createPlanDay", "own", "owner-allow")]
     public async Task CreatePlanDay_WithValidData_CreatesPlanDay()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -147,6 +148,7 @@ public sealed class PlanDayTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/planDay/{id}/getPlanDay", "own", "owner-allow")]
     public async Task GetPlanDay_WithValidId_ReturnsPlanDay()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -263,6 +265,7 @@ public sealed class PlanDayTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/planDay/{id}/getPlanDays", "own", "owner-allow")]
     public async Task GetPlanDays_WithValidPlanId_ReturnsPlanDays()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -315,6 +318,7 @@ public sealed class PlanDayTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/planDay/updatePlanDay", "own", "owner-allow")]
     public async Task UpdatePlanDay_WithValidData_UpdatesPlanDay()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -504,6 +508,7 @@ public sealed class PlanDayTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/planDay/{id}/deletePlanDay", "own", "owner-allow")]
     public async Task DeletePlanDay_WithValidId_DeletesPlanDay()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -547,6 +552,7 @@ public sealed class PlanDayTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/planDay/{id}/deletePlanDay", "own", "foreign-object-denial-no-mutation")]
     public async Task DeletePlanDay_WithOtherUsersPlanDay_ReturnsForbidden()
     {
         var (_, user1Token) = await RegisterUserViaEndpointAsync(
@@ -581,6 +587,7 @@ public sealed class PlanDayTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/planDay/{id}/createPlanDay", "own", "foreign-object-denial-no-mutation")]
     public async Task CreatePlanDay_WithOtherUsersPlan_ReturnsForbidden()
     {
         var (ownerId, ownerToken) = await RegisterUserViaEndpointAsync(
@@ -617,6 +624,7 @@ public sealed class PlanDayTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/planDay/updatePlanDay", "own", "foreign-object-denial-no-mutation")]
     public async Task UpdatePlanDay_WithOtherUsersPlanDay_ReturnsForbidden()
     {
         var (ownerId, ownerToken) = await RegisterUserViaEndpointAsync(
@@ -658,6 +666,7 @@ public sealed class PlanDayTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/planDay/{id}/getPlanDay", "own", "foreign-object-denial-no-mutation")]
     public async Task GetPlanDay_WithOtherUsersPlanDay_ReturnsForbidden()
     {
         var (ownerId, ownerToken) = await RegisterUserViaEndpointAsync(
@@ -689,6 +698,7 @@ public sealed class PlanDayTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/planDay/{id}/getPlanDays", "own", "foreign-object-denial-no-mutation")]
     public async Task GetPlanDays_WithOtherUsersPlan_ReturnsForbidden()
     {
         var (ownerId, ownerToken) = await RegisterUserViaEndpointAsync(
@@ -779,6 +789,7 @@ public sealed class PlanDayTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/planDay/{id}/getPlanDaysTypes", "own", "foreign-object-denial-no-mutation")]
     public async Task GetPlanDaysTypes_WithOtherUserId_ReturnsForbidden()
     {
         var (ownerId, ownerToken) = await RegisterUserViaEndpointAsync(
@@ -810,6 +821,7 @@ public sealed class PlanDayTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/planDay/{id}/getPlanDaysInfo", "own", "foreign-object-denial-no-mutation")]
     public async Task GetPlanDaysInfo_WithOtherUsersPlan_ReturnsForbidden()
     {
         var (ownerId, ownerToken) = await RegisterUserViaEndpointAsync(
@@ -841,6 +853,7 @@ public sealed class PlanDayTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/planDay/{id}/getPlanDaysTypes", "own", "owner-allow")]
     public async Task GetPlanDaysTypes_WithValidUserId_ReturnsTypes()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -903,6 +916,7 @@ public sealed class PlanDayTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/planDay/{id}/getPlanDaysInfo", "own", "owner-allow")]
     public async Task GetPlanDaysInfo_WithValidPlanId_ReturnsInfo()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(

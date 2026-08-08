@@ -48,6 +48,7 @@ public sealed class GoogleAuthTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/auth/google", "public", "anonymous-intended-behavior")]
     public async Task POST_AuthGoogle_ValidToken_NewUser_Returns200_AndCreatesUser()
     {
         const string email = "google-new@example.com";
@@ -72,6 +73,11 @@ public sealed class GoogleAuthTests : IntegrationTestBase
         var externalLogin = await db.UserExternalLogins.FirstOrDefaultAsync(x => x.UserId == user!.Id && x.Provider == AuthConstants.ExternalProviders.Google);
         externalLogin.Should().NotBeNull();
         externalLogin!.ProviderEmail.Should().Be(email);
+
+        var session = await db.UserSessions
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.UserId == user.Id && x.RevokedAtUtc == null);
+        session.Should().NotBeNull();
     }
 
     [Test]
@@ -142,6 +148,7 @@ public sealed class GoogleAuthTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/account/link-google", "own", "owner-allow")]
     public async Task POST_LinkGoogle_Authenticated_Success_Returns200()
     {
         const string email = "link-success@example.com";
@@ -194,6 +201,8 @@ public sealed class GoogleAuthTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/account/unlink-google", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/account/unlink-google", "own", "no-client-subject")]
     public async Task POST_UnlinkGoogle_Authenticated_Success_Returns200_AndSoftDeletesRow()
     {
         const string email = "unlink-success@example.com";
@@ -286,6 +295,8 @@ public sealed class GoogleAuthTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/account/external-logins", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/account/external-logins", "own", "no-client-subject")]
     public async Task GET_ExternalLogins_Authenticated_ReturnsProviders()
     {
         const string email = "external-list@example.com";

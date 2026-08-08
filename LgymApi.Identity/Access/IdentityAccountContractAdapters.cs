@@ -98,6 +98,15 @@ internal sealed class AccountSessionValidator : IAccountSessionValidator
 
     public Task<bool> IsValidAsync(Id<AccountSessionReference> sessionId, CancellationToken cancellationToken = default)
         => _userSessionStore.ValidateSessionAsync(sessionId.Rebind<UserSession>(), cancellationToken);
+
+    public Task<bool> IsValidAsync(
+        Id<AccountReference> accountId,
+        Id<AccountSessionReference> sessionId,
+        CancellationToken cancellationToken = default) =>
+        _userSessionStore.ValidateSessionAsync(
+            accountId.Rebind<User>(),
+            sessionId.Rebind<UserSession>(),
+            cancellationToken);
 }
 
 internal sealed class AuthenticatedAccountContextResolver : IAuthenticatedAccountContextResolver
@@ -121,7 +130,7 @@ internal sealed class AuthenticatedAccountContextResolver : IAuthenticatedAccoun
         Id<AccountSessionReference> sessionId,
         CancellationToken cancellationToken = default)
     {
-        if (!await _sessionValidator.IsValidAsync(sessionId, cancellationToken))
+        if (!await _sessionValidator.IsValidAsync(accountId, sessionId, cancellationToken))
         {
             return new AuthenticatedAccountResolution(AuthenticatedAccountResolutionStatus.SessionInvalid, null);
         }

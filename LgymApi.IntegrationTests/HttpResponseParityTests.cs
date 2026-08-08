@@ -38,7 +38,7 @@ public sealed class HttpResponseParityTests : IntegrationTestBase
             email: "parity_test@example.com");
         SetAuthorizationHeader(user.Id);
 
-        var response = await Client.GetAsync($"/api/exercise/{Id<User>.New()}/getAllUserExercises");
+        var response = await Client.GetAsync($"/api/exercise/{user.Id}/getAllUserExercises");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
 

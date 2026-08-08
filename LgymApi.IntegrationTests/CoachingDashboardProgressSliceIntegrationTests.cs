@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using LgymApi.Application.Coaching.Progress.EloChart;
 using LgymApi.Application.Coaching.Progress.ExerciseScoresChart;
@@ -13,6 +16,7 @@ using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Data.SeedData;
+using LgymApi.IntegrationTests.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -67,6 +71,97 @@ public sealed class CoachingDashboardProgressSliceIntegrationTests : Integration
             item.Id == pending.Id
             && item.Status == TrainerDashboardTraineeStatus.InvitationPending
             && item.HasPendingInvitation);
+    }
+
+    [Test]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees", "own", "owner-allow")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees", "own", "no-client-subject")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees", "own", "anonymous-denial")]
+    public async Task TrainerTraineesRoute_IsRelationshipScopedAndNonDisclosing()
+    {
+        var trainer = await SeedUserAsync("http-dashboard-trainer", "http-dashboard-trainer@example.test");
+        var linked = await SeedUserAsync("http-dashboard-linked", "http-dashboard-linked@example.test");
+        var unrelated = await SeedUserAsync("http-dashboard-unrelated", "http-dashboard-unrelated@example.test");
+        var ordinaryUser = await SeedUserAsync("http-dashboard-ordinary", "http-dashboard-ordinary@example.test");
+        var linkedAt = new DateTimeOffset(2026, 6, 22, 12, 0, 0, TimeSpan.Zero);
+
+        using (var seedScope = Factory.Services.CreateScope())
+        {
+            var database = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            database.UserRoles.Add(new UserRole
+            {
+                UserId = trainer.Id,
+                RoleId = RoleSeedDataConfiguration.TrainerRoleSeedId
+            });
+            database.TrainerTraineeLinks.Add(new TrainerTraineeLink
+            {
+                Id = Id<TrainerTraineeLink>.New(),
+                TrainerId = trainer.Id,
+                TraineeId = linked.Id,
+                CreatedAt = linkedAt,
+                UpdatedAt = linkedAt
+            });
+            await database.SaveChangesAsync();
+        }
+
+        SetAuthorizationHeader(trainer.Id);
+        using var ownerResponse = await Client.GetAsync("/api/trainer/trainees?page=1&pageSize=20");
+        ownerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var ownerDashboard = await ownerResponse.Content.ReadFromJsonAsync<TrainerDashboardResponse>();
+        ownerDashboard.Should().NotBeNull();
+        ownerDashboard!.Items.Should().ContainSingle(item =>
+            item.Id == linked.Id.ToString()
+            && item.Name == linked.Name
+            && item.Email == linked.Email.Value
+            && item.IsLinked);
+        ownerDashboard.Items.Should().NotContain(item => item.Id == unrelated.Id.ToString());
+
+        using (var unlinkScope = Factory.Services.CreateScope())
+        {
+            var database = unlinkScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var link = await database.TrainerTraineeLinks
+                .SingleAsync(candidate => candidate.TrainerId == trainer.Id && candidate.TraineeId == linked.Id);
+            database.TrainerTraineeLinks.Remove(link);
+            await database.SaveChangesAsync();
+        }
+
+        using var formerResponse = await Client.GetAsync("/api/trainer/trainees?page=1&pageSize=20");
+        formerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var formerDashboard = await formerResponse.Content.ReadFromJsonAsync<TrainerDashboardResponse>();
+        formerDashboard.Should().NotBeNull();
+        formerDashboard!.Items.Should().NotContain(item => item.Id == linked.Id.ToString());
+        formerDashboard.Items.Should().NotContain(item => item.Id == unrelated.Id.ToString());
+        var formerResponseText = await formerResponse.Content.ReadAsStringAsync();
+        formerResponseText.Should().NotContain(linked.Name);
+        formerResponseText.Should().NotContain(linked.Email.Value);
+        formerResponseText.Should().NotContain(unrelated.Name);
+        formerResponseText.Should().NotContain(unrelated.Email.Value);
+
+        using (var verifyScope = Factory.Services.CreateScope())
+        {
+            var database = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            (await database.TrainerTraineeLinks.AsNoTracking()
+                .AnyAsync(candidate => candidate.TrainerId == trainer.Id && candidate.TraineeId == linked.Id))
+                .Should().BeFalse();
+        }
+
+        SetAuthorizationHeader(ordinaryUser.Id);
+        using var ordinaryResponse = await Client.GetAsync("/api/trainer/trainees?page=1&pageSize=20");
+        ordinaryResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var ordinaryResponseText = await ordinaryResponse.Content.ReadAsStringAsync();
+        ordinaryResponseText.Should().NotContain(linked.Id.ToString());
+        ordinaryResponseText.Should().NotContain(linked.Name);
+        ordinaryResponseText.Should().NotContain(unrelated.Id.ToString());
+        ordinaryResponseText.Should().NotContain(unrelated.Name);
+
+        ClearAuthorizationHeader();
+        using var anonymousResponse = await Client.GetAsync("/api/trainer/trainees?page=1&pageSize=20");
+        anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var anonymousResponseText = await anonymousResponse.Content.ReadAsStringAsync();
+        anonymousResponseText.Should().NotContain(linked.Id.ToString());
+        anonymousResponseText.Should().NotContain(linked.Name);
+        anonymousResponseText.Should().NotContain(unrelated.Id.ToString());
+        anonymousResponseText.Should().NotContain(unrelated.Name);
     }
 
     [Test]
@@ -188,6 +283,27 @@ public sealed class CoachingDashboardProgressSliceIntegrationTests : Integration
 
         foreign.Error.Should().BeOfType<TrainerRelationshipNotFoundError>();
         empty.Error.Should().BeOfType<InvalidTrainerRelationshipError>();
+    }
+
+    private sealed class TrainerDashboardResponse
+    {
+        [JsonPropertyName("items")]
+        public List<TrainerDashboardItemResponse> Items { get; set; } = [];
+    }
+
+    private sealed class TrainerDashboardItemResponse
+    {
+        [JsonPropertyName("_id")]
+        public string Id { get; set; } = string.Empty;
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [JsonPropertyName("email")]
+        public string Email { get; set; } = string.Empty;
+
+        [JsonPropertyName("isLinked")]
+        public bool IsLinked { get; set; }
     }
 
     private static TrainerInvitation Invitation(

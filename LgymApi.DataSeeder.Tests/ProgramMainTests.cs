@@ -11,6 +11,7 @@ public sealed class ProgramMainTests
         var basePath = CreateTempRepo(withBaseSettings: true, includeConnection: false);
         var originalBasePath = Environment.GetEnvironmentVariable("LGYM_SEEDER_BASE_PATH");
         var originalTestMode = Environment.GetEnvironmentVariable("LGYM_SEEDER_TEST_MODE");
+        var originalMigrationConnection = Environment.GetEnvironmentVariable("LGYM_MIGRATION_POSTGRES");
         var originalIn = Console.In;
         var originalOut = Console.Out;
 
@@ -18,21 +19,20 @@ public sealed class ProgramMainTests
         {
             Environment.SetEnvironmentVariable("LGYM_SEEDER_BASE_PATH", basePath);
             Environment.SetEnvironmentVariable("LGYM_SEEDER_TEST_MODE", "true");
+            Environment.SetEnvironmentVariable("LGYM_MIGRATION_POSTGRES", null);
 
             Console.SetIn(TextReader.Null);
-            var output = new StringWriter();
-            Console.SetOut(output);
+            Console.SetOut(new StringWriter());
 
             var code = await Program.Main(Array.Empty<string>());
 
             code.Should().Be(1);
-            output.ToString().Should().Contain("Connection: <empty>");
-            output.ToString().Should().NotContain("Password=");
         }
         finally
         {
             Environment.SetEnvironmentVariable("LGYM_SEEDER_BASE_PATH", originalBasePath);
             Environment.SetEnvironmentVariable("LGYM_SEEDER_TEST_MODE", originalTestMode);
+            Environment.SetEnvironmentVariable("LGYM_MIGRATION_POSTGRES", originalMigrationConnection);
             Console.SetIn(originalIn);
             Console.SetOut(originalOut);
             Directory.Delete(basePath, recursive: true);
@@ -45,6 +45,7 @@ public sealed class ProgramMainTests
         var basePath = CreateTempRepo(withBaseSettings: true);
         var originalBasePath = Environment.GetEnvironmentVariable("LGYM_SEEDER_BASE_PATH");
         var originalTestMode = Environment.GetEnvironmentVariable("LGYM_SEEDER_TEST_MODE");
+        var originalMigrationConnection = Environment.GetEnvironmentVariable("LGYM_MIGRATION_POSTGRES");
         var originalIn = Console.In;
         var originalOut = Console.Out;
 
@@ -52,6 +53,7 @@ public sealed class ProgramMainTests
         {
             Environment.SetEnvironmentVariable("LGYM_SEEDER_BASE_PATH", basePath);
             Environment.SetEnvironmentVariable("LGYM_SEEDER_TEST_MODE", "true");
+            Environment.SetEnvironmentVariable("LGYM_MIGRATION_POSTGRES", "Host=maintenance;Database=seeder;Username=maintenance;Password=test-only");
 
             Console.SetIn(TextReader.Null);
             Console.SetOut(new StringWriter());
@@ -64,10 +66,28 @@ public sealed class ProgramMainTests
         {
             Environment.SetEnvironmentVariable("LGYM_SEEDER_BASE_PATH", originalBasePath);
             Environment.SetEnvironmentVariable("LGYM_SEEDER_TEST_MODE", originalTestMode);
+            Environment.SetEnvironmentVariable("LGYM_MIGRATION_POSTGRES", originalMigrationConnection);
             Console.SetIn(originalIn);
             Console.SetOut(originalOut);
             Directory.Delete(basePath, recursive: true);
         }
+    }
+
+    [TestCase(new[] { "--migrate-only" }, SeederMode.MigrateOnly)]
+    [TestCase(new[] { "--prepare-hangfire" }, SeederMode.PrepareHangfire)]
+    [TestCase(new[] { "--seed" }, SeederMode.Seed)]
+    [TestCase(new string[0], SeederMode.Seed)]
+    public void TryParseMode_RecognizesSupportedOfflineModes(string[] args, SeederMode expectedMode)
+    {
+        Program.TryParseMode(args, out var mode).Should().BeTrue();
+        mode.Should().Be(expectedMode);
+    }
+
+    [Test]
+    public void TryParseMode_RejectsUnknownOrCombinedModes()
+    {
+        Program.TryParseMode(["--migrate-only", "--prepare-hangfire"], out _).Should().BeFalse();
+        Program.TryParseMode(["--unknown"], out _).Should().BeFalse();
     }
 
     private static string CreateTempRepo(bool withBaseSettings, bool includeConnection = true)

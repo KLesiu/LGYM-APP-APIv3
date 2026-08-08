@@ -87,6 +87,7 @@ builder.Services.AddNotificationsApiAdapters();
 
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<IUserIdProvider, LgymApi.Api.Hubs.NotificationHubUserIdProvider>();
+builder.Services.AddSingleton<LgymApi.Api.Hubs.IAccountSessionConnectionRegistry, LgymApi.Api.Hubs.AccountSessionConnectionRegistry>();
 builder.Services.AddScoped<IInAppNotificationPushPublisher, LgymApi.Api.Features.InAppNotification.SignalRNotificationPushPublisher>();
 
 builder.Services.AddApiAuthentication(builder.Configuration);
@@ -172,13 +173,13 @@ app.UseSerilogRequestLogging();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseCors();
 app.UseAuthentication();
-app.UseAuthorization();
 if (!app.Environment.IsEnvironment(TestingEnvironment))
 {
     app.UseRateLimiter();
 }
 
 app.UseMiddleware<LgymApi.Api.Middleware.UserContextMiddleware>();
+app.UseAuthorization();
 app.UseMiddleware<LgymApi.Api.Middleware.ApiIdempotencyMiddleware>();
 
 app.MapGet("/health/live", static () => Results.Json(new { status = "ok" }))
@@ -186,7 +187,10 @@ app.MapGet("/health/live", static () => Results.Json(new { status = "ok" }))
 
 app.MapLocalPhotoDevelopmentEndpoints();
 app.MapControllers();
-app.MapHub<LgymApi.Api.Hubs.NotificationHub>("/hubs/notifications");
+app.MapHub<LgymApi.Api.Hubs.NotificationHub>("/hubs/notifications", options =>
+{
+    options.CloseOnAuthenticationExpiration = true;
+});
 
 await app.RunAsync();
 public partial class Program { }

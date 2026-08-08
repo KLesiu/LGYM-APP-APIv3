@@ -30,6 +30,7 @@ public sealed class EloRegistryTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/eloRegistry/{id}/getEloRegistryChart", "own", "owner-allow")]
     public async Task GetEloRegistryChart_WithSingleEntry_ReturnsChart()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -60,6 +61,7 @@ public sealed class EloRegistryTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/eloRegistry/{id}/getEloRegistryChart", "own", "foreign-object-denial-no-mutation")]
     public async Task GetEloRegistryChart_WithMismatchedRouteUserId_ReturnsForbidden()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(

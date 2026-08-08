@@ -43,6 +43,7 @@ Common environment variable overrides:
 - `ConnectionStrings__Postgres`
 - `Jwt__SigningKey`
 - `PhotoStorage__Provider`
+- `PhotoStorage__LocalDevelopmentSigningKey`
 - `PhotoStorage__AccessKeyId`
 - `PhotoStorage__SecretAccessKey`
 - `PushNotifications__SendEnabled`
@@ -61,11 +62,20 @@ Do not bake secrets or site-specific values into the image.
 - Use `ASPNETCORE_ENVIRONMENT=Development` for local dev and `ASPNETCORE_ENVIRONMENT=Production` for production
 - Publish the API on container port `8080` and map that port to a host port
 - Set `ConnectionStrings__Postgres` from the runtime environment
+- Keep `LGYM_MIGRATION_POSTGRES` out of the API process; it is used only by offline migration and Hangfire bootstrap commands
 - Set `Jwt__SigningKey` only if the mounted config does not already provide it
 - Keep PostgreSQL outside this image; for a database running on the Docker host, use `host.docker.internal` from inside the container
 
 The process runs from `/app` inside the container, so the mounted config and any relative paths must assume `/app` as the content root.
 Avoid launch profile assumptions when testing the image.
+
+### PostgreSQL deployment order
+
+1. Run `psql -X -v ON_ERROR_STOP=1 -v database_name=LGYM-APP -v database_environment=Staging -v maintenance_role=lgym_maintenance -v runtime_role=lgym_runtime -f deploy/postgres/provision-rls-pilot-roles.sql` with an operator-admin connection. Set `database_environment` to the database's real deployment environment; provisioning stores it as a database-level marker that activation and deactivation verify independently of their CLI input. Supply role passwords separately through the secret manager or an interactive `psql` password command.
+2. Set `LGYM_MIGRATION_POSTGRES` only in the offline deployment environment, then run `pwsh -File scripts/migrate-db.ps1` to apply EF migrations and prepare Hangfire.
+3. The tutorial migration installs policies in a dormant state. Do not activate them automatically. A staging operator may run `psql -X -v ON_ERROR_STOP=1 -v database_name=LGYM-APP -v target_environment=Staging -v maintenance_role=lgym_maintenance -v runtime_role=lgym_runtime -f deploy/postgres/activate-tutorial-row-security.sql`; it validates the stored database environment, target database, roles, and exact policy roles, permissiveness, and predicates, takes a transaction advisory lock, and enables/forces both tutorial tables together. The script rejects Production until the separate Task 18 go/no-go.
+4. To roll back an activated pilot without dropping policies or data, use the same variables with `deploy/postgres/deactivate-tutorial-row-security.sql`. The runtime `PostgreSqlRuntime:ProtectedTables` expectation must be changed with the database state before traffic resumes.
+5. Start the API with only `ConnectionStrings__Postgres` for `lgym_runtime`. Staging and Production reject pending migrations, elevated roles, multiplexing, missing Hangfire schema usage or any required table/sequence grant, and configured RLS policy semantic mismatches.
 
 ## Push rollout and credentials
 
@@ -329,7 +339,10 @@ Use local storage when you want the API to serve development upload/read endpoin
 
 ```env
 PhotoStorage__Provider=Local
+PhotoStorage__LocalDevelopmentSigningKey=<UNTRACKED_RANDOM_VALUE_OF_AT_LEAST_32_BYTES>
 ```
+
+The Local provider starts only in Development and requires this dedicated signing key so generated upload/read URLs are short-lived bearer capabilities. Keep the value in user secrets or an untracked environment variable; do not reuse `Jwt__SigningKey`. Testing hosts generate an ephemeral process-local key when none is configured.
 
 ### Cloudflare R2 development storage
 

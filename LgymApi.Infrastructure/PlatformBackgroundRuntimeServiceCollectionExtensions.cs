@@ -30,6 +30,9 @@ public static partial class ServiceCollectionExtensions
                 .UsePostgreSqlStorage(storage =>
                 {
                     storage.UseNpgsqlConnection(configuration.GetConnectionString("Postgres"));
+                }, new PostgreSqlStorageOptions
+                {
+                    PrepareSchemaIfNecessary = false
                 });
         });
 

@@ -34,6 +34,11 @@ internal sealed class PublicInvitationStatusUseCase : IPublicInvitationStatusUse
             return Result<PublicInvitationStatusReadModel, AppError>.Failure(new TrainerRelationshipNotFoundError(Messages.DidntFind));
         }
 
+        if (invitation.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            return Result<PublicInvitationStatusReadModel, AppError>.Failure(new TrainerRelationshipNotFoundError(Messages.DidntFind));
+        }
+
         var userExists = invitation.TraineeId.HasValue || (!string.IsNullOrWhiteSpace(invitation.InviteeEmail)
             && await _accounts.GetByEmailAsync(invitation.InviteeEmail, cancellationToken) is not null);
         return Result<PublicInvitationStatusReadModel, AppError>.Success(

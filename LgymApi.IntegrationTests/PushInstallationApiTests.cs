@@ -15,6 +15,9 @@ namespace LgymApi.IntegrationTests;
 public sealed class PushInstallationApiTests : IntegrationTestBase
 {
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/push/installations/unregister", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/push/installations/register", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/push/installations/disassociate", "own", "owner-allow")]
     public async Task PushInstallationEndpoints_UseLegacyRoutesJsonFieldsAndMessageResponse()
     {
         var user = await SeedUserAsync(name: "push-wire", email: "push-wire@example.com", password: "push-pass-123");
@@ -128,6 +131,8 @@ public sealed class PushInstallationApiTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/push/installations/unregister", "own", "foreign-object-denial-no-mutation")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/push/installations/disassociate", "own", "foreign-object-denial-no-mutation")]
     public async Task PushInstallationActions_CannotMutateAnotherUsersInstallation()
     {
         var owner = await SeedUserAsync(name: "push-owner", email: "push-owner@example.com", password: "push-pass-123");
@@ -359,6 +364,9 @@ public sealed class PushInstallationApiTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/push/installations/unregister", "own", "anonymous-denial")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/push/installations/register", "own", "anonymous-denial")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/push/installations/disassociate", "own", "anonymous-denial")]
     public async Task RegisterPushInstallation_WithoutAuthorization_IsRejectedAndCreatesNoRows()
     {
         var response = await Client.PostAsJsonAsync("/api/push/installations/register", new

@@ -196,7 +196,15 @@ public sealed class HangfireContractCompatibilityTests
         clientOnlyServices.AddPlatformServices(configuration, enableSensitiveLogging: false, isTesting: false, hostBackgroundServer: false);
         using var clientOnlyProvider = clientOnlyServices.BuildServiceProvider();
 
-        clientOnlyProvider.GetRequiredService<JobStorage>().GetType().FullName.Should().Be("Hangfire.PostgreSql.PostgreSqlStorage");
+        var runtimeStorage = clientOnlyProvider.GetRequiredService<JobStorage>();
+        runtimeStorage.GetType().FullName.Should().Be("Hangfire.PostgreSql.PostgreSqlStorage");
+        var storageOptions = runtimeStorage.GetType()
+            .GetProperty("Options", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(runtimeStorage)!;
+        var prepareSchemaIfNecessary = (bool)storageOptions.GetType()
+            .GetProperty("PrepareSchemaIfNecessary")!
+            .GetValue(storageOptions)!;
+        prepareSchemaIfNecessary.Should().BeFalse();
         FindHangfireServerDescriptor(clientOnlyServices).Should().BeNull();
         GetCompatibilityLevel().Should().Be((int)CompatibilityLevel.Version_180);
         GetConfiguredTypeSerializer().DynamicInvoke(typeof(ICommittedIntentDispatchJob))

@@ -10,6 +10,7 @@ using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Data.SeedData;
+using LgymApi.IntegrationTests.Authorization;
 using LgymApi.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,6 +28,7 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/invitations", "own", "owner-allow")]
     public async Task CreateInvitation_AsTrainer_CreatesPendingInvitation()
     {
         var trainer = await SeedTrainerAsync("trainer-invite", "trainer-invite@example.com");
@@ -331,6 +333,7 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/invitations/paginated", "own", "owner-allow")]
     public async Task GetInvitationsPaginated_AsTrainer_ReturnsCreatedInvitations()
     {
         var trainer = await SeedTrainerAsync("trainer-list", "trainer-list@example.com");
@@ -353,6 +356,29 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
         body.Should().NotBeNull();
         body!.Items.Count.Should().Be(2);
         body.Items.Select(x => x.TraineeId).Should().BeEquivalentTo(new[] { traineeA.Id.ToString(), traineeB.Id.ToString() });
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/invitations/paginated", "own", "ordinary-user-denial")]
+    public async Task GetInvitationsPaginated_AsRegularUser_ReturnsForbidden()
+    {
+        var regularUser = await SeedUserAsync("regular-list", "regular-list@example.com", "password123");
+        SetAuthorizationHeader(regularUser.Id);
+
+        using var response = await Client.PostAsJsonAsync("/api/trainer/invitations/paginated", new { page = 1, pageSize = 20 });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/invitations/paginated", "own", "anonymous-denial")]
+    public async Task GetInvitationsPaginated_WithoutAuthorization_ReturnsUnauthorized()
+    {
+        ClearAuthorizationHeader();
+
+        using var response = await Client.PostAsJsonAsync("/api/trainer/invitations/paginated", new { page = 1, pageSize = 20 });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Test]
@@ -678,6 +704,8 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/trainings/dates", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/trainings/by-date", "trainer-shared", "active-relationship-allow")]
     public async Task GetTraineeTrainingReads_AsLinkedTrainer_ReturnsOnlyOwnedTraineeData()
     {
         var trainer = await SeedTrainerAsync("trainer-read-training", "trainer-read-training@example.com");
@@ -783,6 +811,8 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/exercise-scores/chart", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/elo/chart", "trainer-shared", "active-relationship-allow")]
     public async Task GetTraineeProgressReads_AsLinkedTrainer_ReturnsExerciseAndEloCharts()
     {
         var trainer = await SeedTrainerAsync("trainer-read-progress", "trainer-read-progress@example.com");
@@ -876,6 +906,7 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/main-records/history", "trainer-shared", "active-relationship-allow")]
     public async Task GetTraineeMainRecordsHistory_AsLinkedTrainer_ReturnsHistory()
     {
         var trainer = await SeedTrainerAsync("trainer-read-records", "trainer-read-records@example.com");
@@ -924,6 +955,16 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/trainings/dates", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/trainings/dates", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/trainings/by-date", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/trainings/by-date", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/exercise-scores/chart", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/exercise-scores/chart", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/elo/chart", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/elo/chart", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/main-records/history", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/main-records/history", "trainer-shared", "foreign-object-denial-no-mutation")]
     public async Task TraineeReadEndpoints_WhenTraineeBelongsToAnotherTrainer_ReturnsNotFound()
     {
         var trainerA = await SeedTrainerAsync("trainer-read-owner-a", "trainer-read-owner-a@example.com");
@@ -1024,6 +1065,110 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/trainings/dates", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/trainings/by-date", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/exercise-scores/chart", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/elo/chart", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/main-records/history", "trainer-shared", "former-relationship-denial")]
+    public async Task TrainerProgressRoutes_AfterUnlink_DenyFormerTrainerWithoutDisclosingPersistedData()
+    {
+        var trainer = await SeedTrainerAsync("task10-former-progress-trainer", "task10-former-progress-trainer@example.com");
+        var trainee = await SeedUserAsync("task10-former-progress-trainee", "task10-former-progress-trainee@example.com", "password123");
+        var createdAt = DateTime.UtcNow.Date.AddDays(-1).AddHours(10);
+        var exerciseId = Id<Exercise>.New();
+        var eloRegistryId = Id<EloRegistry>.New();
+        var mainRecordId = Id<MainRecord>.New();
+
+        using (var seedScope = Factory.Services.CreateScope())
+        {
+            var database = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await LinkTrainerAndTraineeAsync(database, trainer.Id, trainee.Id);
+            var plan = new Plan { Id = Id<Plan>.New(), UserId = trainee.Id, Name = "Former relationship plan" };
+            var planDay = new PlanDay { Id = Id<PlanDay>.New(), PlanId = plan.Id, Name = "Former relationship day" };
+            var gym = new Gym { Id = Id<Gym>.New(), UserId = trainee.Id, Name = "Former relationship gym" };
+            var exercise = new Exercise { Id = exerciseId, Name = "Former relationship exercise", BodyPart = BodyParts.Chest };
+            var training = new Training { Id = Id<Training>.New(), UserId = trainee.Id, TypePlanDayId = planDay.Id, GymId = gym.Id, CreatedAt = createdAt };
+            database.Plans.Add(plan);
+            database.PlanDays.Add(planDay);
+            database.Gyms.Add(gym);
+            database.Exercises.Add(exercise);
+            database.Trainings.Add(training);
+            database.ExerciseScores.Add(new ExerciseScore
+            {
+                Id = Id<ExerciseScore>.New(),
+                ExerciseId = exercise.Id,
+                UserId = trainee.Id,
+                Reps = 5,
+                Series = 1,
+                Weight = 100,
+                Unit = WeightUnits.Kilograms,
+                TrainingId = training.Id,
+                CreatedAt = createdAt
+            });
+            database.EloRegistries.Add(new EloRegistry { Id = eloRegistryId, UserId = trainee.Id, Date = createdAt, Elo = 1010 });
+            database.MainRecords.Add(new MainRecord { Id = mainRecordId, UserId = trainee.Id, ExerciseId = exercise.Id, Weight = 100, Unit = WeightUnits.Kilograms, Date = createdAt });
+            await database.SaveChangesAsync();
+        }
+
+        SetAuthorizationHeader(trainer.Id);
+        using (var unlinkResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null))
+        {
+            unlinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        var responses = await Task.WhenAll(
+            Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/trainings/dates"),
+            Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/trainings/by-date", new { createdAt }),
+            Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/exercise-scores/chart", new { exerciseId = exerciseId.ToString() }),
+            Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/elo/chart"),
+            Client.GetAsync($"/api/trainer/trainees/{trainee.Id}/main-records/history"));
+
+        foreach (var response in responses)
+        {
+            using (response)
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+                (await response.Content.ReadAsStringAsync()).Should().NotContain("Former relationship");
+            }
+        }
+
+        using var verifyScope = Factory.Services.CreateScope();
+        var verifyDatabase = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        (await verifyDatabase.TrainerTraineeLinks.AsNoTracking().CountAsync(link => link.TrainerId == trainer.Id && link.TraineeId == trainee.Id)).Should().Be(0);
+        (await verifyDatabase.Trainings.AsNoTracking().CountAsync(training => training.UserId == trainee.Id)).Should().Be(1);
+        (await verifyDatabase.ExerciseScores.AsNoTracking().CountAsync(score => score.UserId == trainee.Id)).Should().Be(1);
+        (await verifyDatabase.EloRegistries.AsNoTracking().CountAsync(entry => entry.Id == eloRegistryId && entry.UserId == trainee.Id)).Should().Be(1);
+        (await verifyDatabase.MainRecords.AsNoTracking().CountAsync(record => record.Id == mainRecordId && record.UserId == trainee.Id)).Should().Be(1);
+    }
+
+    [Test]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/trainings/dates", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/trainings/by-date", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/exercise-scores/chart", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/elo/chart", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/main-records/history", "trainer-shared", "anonymous-denial")]
+    public async Task TrainerProgressRoutes_WithoutAuthentication_AreUnauthorized()
+    {
+        ClearAuthorizationHeader();
+        const string traineeId = "00000000-0000-0000-0000-000000000001";
+        const string exerciseId = "00000000-0000-0000-0000-000000000002";
+        var responses = await Task.WhenAll(
+            Client.GetAsync($"/api/trainer/trainees/{traineeId}/trainings/dates"),
+            Client.PostAsJsonAsync($"/api/trainer/trainees/{traineeId}/trainings/by-date", new { createdAt = DateTime.UtcNow }),
+            Client.PostAsJsonAsync($"/api/trainer/trainees/{traineeId}/exercise-scores/chart", new { exerciseId }),
+            Client.GetAsync($"/api/trainer/trainees/{traineeId}/elo/chart"),
+            Client.GetAsync($"/api/trainer/trainees/{traineeId}/main-records/history"));
+
+        foreach (var response in responses)
+        {
+            using (response)
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            }
+        }
+    }
+
+    [Test]
     public async Task AcceptInvitation_AsTrainee_CreatesLink()
     {
         var trainer = await SeedTrainerAsync("trainer-accept", "trainer-accept@example.com");
@@ -1050,6 +1195,7 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainee/invitations/{invitationId}/reject", "own", "owner-allow")]
     public async Task RejectInvitation_AsTrainee_ChangesInvitationStatusToRejected()
     {
         var trainer = await SeedTrainerAsync("trainer-reject", "trainer-reject@example.com");
@@ -1077,6 +1223,57 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
         var invitationEntity = await db.TrainerInvitations.FirstAsync(i => i.Id == invitationId);
         invitationEntity.Status.ToString().Should().Be("Rejected");
         invitationEntity.RespondedAt.Should().NotBeNull();
+    }
+
+    [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainee/invitations/{invitationId}/reject", "own", "foreign-object-denial-no-mutation")]
+    public async Task RejectInvitation_WhenCurrentUserDoesNotMatch_ReturnsNotFoundWithoutMutation()
+    {
+        var trainer = await SeedTrainerAsync("trainer-reject-foreign", "trainer-reject-foreign@example.com");
+        var trainee = await SeedUserAsync(name: "trainee-reject-foreign", email: "trainee-reject-foreign@example.com", password: "password123");
+        var wrongUser = await SeedUserAsync(name: "wrong-reject-user", email: "wrong-reject-user@example.com", password: "password123");
+
+        SetAuthorizationHeader(trainer.Id);
+        SetIdempotencyKey("test-invitation-reject-foreign");
+        var createResponse = await Client.PostAsJsonAsync("/api/trainer/invitations", new { traineeId = trainee.Id.ToString() });
+        ClearIdempotencyKey();
+        var invitation = await createResponse.Content.ReadFromJsonAsync<TrainerInvitationResponse>();
+        invitation.Should().NotBeNull();
+
+        SetAuthorizationHeader(wrongUser.Id);
+        using var rejectResponse = await Client.PostAsync($"/api/trainee/invitations/{invitation!.Id}/reject", null);
+        rejectResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        using var scope = Factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Id<TrainerInvitation>.TryParse(invitation.Id, out var invitationId).Should().BeTrue();
+        (await database.TrainerInvitations.SingleAsync(candidate => candidate.Id == invitationId)).Status
+            .Should().Be(TrainerInvitationStatus.Pending);
+    }
+
+    [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainee/invitations/{invitationId}/reject", "own", "anonymous-denial")]
+    public async Task RejectInvitation_WithoutAuthorization_ReturnsUnauthorizedWithoutMutation()
+    {
+        var trainer = await SeedTrainerAsync("trainer-reject-anonymous", "trainer-reject-anonymous@example.com");
+        var trainee = await SeedUserAsync(name: "trainee-reject-anonymous", email: "trainee-reject-anonymous@example.com", password: "password123");
+
+        SetAuthorizationHeader(trainer.Id);
+        SetIdempotencyKey("test-invitation-reject-anonymous");
+        var createResponse = await Client.PostAsJsonAsync("/api/trainer/invitations", new { traineeId = trainee.Id.ToString() });
+        ClearIdempotencyKey();
+        var invitation = await createResponse.Content.ReadFromJsonAsync<TrainerInvitationResponse>();
+        invitation.Should().NotBeNull();
+
+        ClearAuthorizationHeader();
+        using var rejectResponse = await Client.PostAsync($"/api/trainee/invitations/{invitation!.Id}/reject", null);
+        rejectResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        using var scope = Factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Id<TrainerInvitation>.TryParse(invitation.Id, out var invitationId).Should().BeTrue();
+        (await database.TrainerInvitations.SingleAsync(candidate => candidate.Id == invitationId)).Status
+            .Should().Be(TrainerInvitationStatus.Pending);
     }
 
     [Test]
@@ -1116,6 +1313,7 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/invitations", "own", "ordinary-user-denial")]
     public async Task CreateInvitation_AsRegularUser_ReturnsForbidden()
     {
         var regularUser = await SeedUserAsync(name: "regular-invite", email: "regular-invite@example.com", password: "password123");
@@ -1136,9 +1334,30 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/invitations", "own", "anonymous-denial")]
+    public async Task CreateInvitation_WithoutAuthorization_ReturnsUnauthorized()
+    {
+        ClearAuthorizationHeader();
+
+        using var response = await Client.PostAsJsonAsync("/api/trainer/invitations", new
+        {
+            traineeId = Id<User>.New().ToString()
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/unlink", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/unlink", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/unlink", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/unlink", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/unlink", "trainer-shared", "anonymous-denial")]
     public async Task UnlinkByTrainer_RemovesExistingLink()
     {
         var trainer = await SeedTrainerAsync("trainer-unlink", "trainer-unlink@example.com");
+        var otherTrainer = await SeedTrainerAsync("trainer-unlink-other", "trainer-unlink-other@example.com");
+        var ordinaryUser = await SeedUserAsync(name: "user-unlink-ordinary", email: "user-unlink-ordinary@example.com", password: "password123");
         var trainee = await SeedUserAsync(name: "trainee-unlink", email: "trainee-unlink@example.com", password: "password123");
 
         using (var scope = Factory.Services.CreateScope())
@@ -1153,6 +1372,15 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
             await db.SaveChangesAsync();
         }
 
+        SetAuthorizationHeader(otherTrainer.Id);
+        var foreignResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null);
+        foreignResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        SetAuthorizationHeader(ordinaryUser.Id);
+        var ordinaryResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null);
+        ordinaryResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        ClearAuthorizationHeader();
+        var anonymousResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null);
+        anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         SetAuthorizationHeader(trainer.Id);
         var response = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null);
 
@@ -1162,6 +1390,8 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
         var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
         var link = await verifyDb.TrainerTraineeLinks.FirstOrDefaultAsync(x => x.TrainerId == trainer.Id && x.TraineeId == trainee.Id);
         link.Should().BeNull();
+        var formerResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/unlink", null);
+        formerResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Test]
@@ -1213,6 +1443,8 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainee/trainer/detach", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainee/trainer/detach", "own", "no-client-subject")]
     public async Task DetachByTrainee_RemovesExistingLink()
     {
         var trainer = await SeedTrainerAsync("trainer-detach", "trainer-detach@example.com");
@@ -1242,6 +1474,22 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainee/trainer/detach", "own", "anonymous-denial")]
+    public async Task DetachByTrainee_WithoutAuthorization_ReturnsUnauthorized()
+    {
+        ClearAuthorizationHeader();
+
+        using var response = await Client.PostAsync("/api/trainee/trainer/detach", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/{planId}/assign", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/{planId}/delete", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/{planId}/update", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/unassign", "trainer-shared", "active-relationship-allow")]
     public async Task TrainerPlanManagement_AssignAndUnassignPlan_UpdatesTraineeActivePlan()
     {
         var trainer = await SeedTrainerAsync("trainer-plan-assign", "trainer-plan-assign@example.com");
@@ -1268,6 +1516,11 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
         createdPlan.IsActive.Should().BeFalse();
 
         Id<Plan>.TryParse(createdPlan.Id, out var createdPlanId).Should().BeTrue();
+        var updateResponse = await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/plans/{createdPlan.Id}/update", new { name = "Updated Trainer Plan" });
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updatedPlan = await updateResponse.Content.ReadFromJsonAsync<TrainerManagedPlanResponse>();
+        updatedPlan.Should().NotBeNull();
+        updatedPlan!.Name.Should().Be("Updated Trainer Plan");
 
         var trainerExerciseId = await CreateExerciseViaEndpointAsync(trainer.Id, templateExerciseName, BodyParts.Chest);
         await CreatePlanDayViaEndpointAsync(
@@ -1286,7 +1539,7 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
         traineePlans.Should().NotBeNull();
         traineePlans!.Should().ContainSingle();
         traineePlans.Single().Id.Should().NotBe(createdPlan.Id);
-        traineePlans.Single().Name.Should().Be(createdPlan.Name);
+        traineePlans.Single().Name.Should().Be(updatedPlan.Name);
         traineePlans.Single().IsActive.Should().BeTrue();
 
         SetAuthorizationHeader(trainee.Id);
@@ -1295,7 +1548,7 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
         var activePlan = await activeResponse.Content.ReadFromJsonAsync<TrainerManagedPlanResponse>();
         activePlan.Should().NotBeNull();
         activePlan!.Id.Should().NotBe(createdPlan.Id);
-        activePlan.Name.Should().Be(createdPlan.Name);
+        activePlan.Name.Should().Be(updatedPlan.Name);
         activePlan.IsActive.Should().BeTrue();
 
         using (var verifyScope = Factory.Services.CreateScope())
@@ -1330,9 +1583,72 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
         SetAuthorizationHeader(trainee.Id);
         var noActiveResponse = await Client.GetAsync("/api/trainee/plan/active");
         noActiveResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        SetAuthorizationHeader(trainer.Id);
+        var deleteResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/plans/{createdPlan.Id}/delete", null);
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Test]
+    [AuthorizationEvidence("GET", "/api/trainee/plan/active", "own", "owner-allow")]
+    [AuthorizationEvidence("GET", "/api/trainee/plan/active", "own", "no-client-subject")]
+    [AuthorizationEvidence("GET", "/api/trainee/plan/active", "own", "anonymous-denial")]
+    public async Task TraineeActivePlanRoute_ReturnsOnlyTheAuthenticatedTraineesPlan()
+    {
+        var trainer = await SeedTrainerAsync("task10-active-plan-trainer", "task10-active-plan-trainer@example.test");
+        var trainee = await SeedUserAsync("task10-active-plan-trainee", "task10-active-plan-trainee@example.test");
+        var otherTrainee = await SeedUserAsync("task10-active-plan-other", "task10-active-plan-other@example.test");
+        var plan = new Plan
+        {
+            Id = Id<Plan>.New(),
+            UserId = trainee.Id,
+            Name = "Protected active trainee plan",
+            IsActive = true
+        };
+
+        using (var seedScope = Factory.Services.CreateScope())
+        {
+            var database = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await LinkTrainerAndTraineeAsync(database, trainer.Id, trainee.Id);
+            database.Plans.Add(plan);
+            await database.SaveChangesAsync();
+        }
+
+        SetAuthorizationHeader(trainee.Id);
+        using var ownerResponse = await Client.GetAsync("/api/trainee/plan/active");
+        ownerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var ownerPlan = await ownerResponse.Content.ReadFromJsonAsync<TrainerManagedPlanResponse>();
+        ownerPlan.Should().NotBeNull();
+        ownerPlan!.Id.Should().Be(plan.Id.ToString());
+        ownerPlan.Name.Should().Be(plan.Name);
+        ownerPlan.IsActive.Should().BeTrue();
+
+        SetAuthorizationHeader(otherTrainee.Id);
+        using var otherResponse = await Client.GetAsync("/api/trainee/plan/active");
+        otherResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var otherResponseText = await otherResponse.Content.ReadAsStringAsync();
+        otherResponseText.Should().NotContain(plan.Id.ToString());
+        otherResponseText.Should().NotContain(plan.Name);
+
+        ClearAuthorizationHeader();
+        using var anonymousResponse = await Client.GetAsync("/api/trainee/plan/active");
+        anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var anonymousResponseText = await anonymousResponse.Content.ReadAsStringAsync();
+        anonymousResponseText.Should().NotContain(plan.Id.ToString());
+        anonymousResponseText.Should().NotContain(plan.Name);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/{planId}/assign", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/{planId}/assign", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/{planId}/delete", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/{planId}/delete", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/{planId}/update", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/{planId}/update", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/unassign", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/unassign", "trainer-shared", "former-relationship-denial")]
     public async Task TrainerPlanManagement_WhenTrainerDoesNotOwnTrainee_ReturnsNotFound()
     {
         var trainerA = await SeedTrainerAsync("trainer-plan-owner-a", "trainer-plan-owner-a@example.com");
@@ -1360,11 +1676,43 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
         }
 
         SetAuthorizationHeader(trainerA.Id);
+        using var foreignCreateResponse = await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/plans", new { name = "Foreign create" });
+        foreignCreateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
         var assignResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/plans/{planId}/assign", null);
         assignResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var foreignDeleteResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/plans/{planId}/delete", null);
+        foreignDeleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var foreignUpdateResponse = await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/plans/{planId}/update", new { name = "Blocked update" });
+        foreignUpdateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var foreignUnassignResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/plans/unassign", null);
+        foreignUnassignResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        using (var unlinkScope = Factory.Services.CreateScope())
+        {
+            var database = unlinkScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var link = await database.TrainerTraineeLinks
+                .SingleAsync(candidate => candidate.TrainerId == trainerB.Id && candidate.TraineeId == trainee.Id);
+            database.TrainerTraineeLinks.Remove(link);
+            await database.SaveChangesAsync();
+        }
+
+        using var formerCreateResponse = await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/plans", new { name = "Former create" });
+        formerCreateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var formerUnassignResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/plans/unassign", null);
+        formerUnassignResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var formerDeleteResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/plans/{planId}/delete", null);
+        formerDeleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var formerUpdateResponse = await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/plans/{planId}/update", new { name = "Blocked former update" });
+        formerUpdateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/{planId}/assign", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/unassign", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/{planId}/delete", "trainer-shared", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/{planId}/update", "trainer-shared", "foreign-object-denial-no-mutation")]
     public async Task TrainerPlanManagement_AsNonTrainer_ReturnsForbiddenWithLegacyMessage()
     {
         var user = await SeedUserAsync("managed-plan-non-trainer", "managed-plan-non-trainer@example.com");
@@ -1380,6 +1728,36 @@ public sealed class TrainerRelationshipTests : IntegrationTestBase
         var body = await response.Content.ReadFromJsonAsync<MessageResponse>();
         body.Should().NotBeNull();
         body!.Message.Should().Be(CompatibilityResourceMessage.InCulture("en", () => Messages.Unauthorized));
+        var unassignResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/plans/unassign", null);
+        unassignResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var deleteResponse = await Client.PostAsync($"/api/trainer/trainees/{trainee.Id}/plans/{Id<Plan>.New()}/delete", null);
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var updateResponse = await Client.PostAsJsonAsync($"/api/trainer/trainees/{trainee.Id}/plans/{Id<Plan>.New()}/update", new { name = "Forbidden update" });
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Test]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/{planId}/assign", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/unassign", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/{planId}/delete", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/trainer/trainees/{traineeId}/plans/{planId}/update", "trainer-shared", "anonymous-denial")]
+    public async Task TrainerPlanManagement_WithoutAuthorization_ReturnsUnauthorized()
+    {
+        ClearAuthorizationHeader();
+
+        using var response = await Client.PostAsJsonAsync($"/api/trainer/trainees/{Id<User>.New()}/plans", new
+        {
+            name = "Anonymous plan"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var unassignResponse = await Client.PostAsync($"/api/trainer/trainees/{Id<User>.New()}/plans/unassign", null);
+        unassignResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var deleteResponse = await Client.PostAsync($"/api/trainer/trainees/{Id<User>.New()}/plans/{Id<Plan>.New()}/delete", null);
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var updateResponse = await Client.PostAsJsonAsync($"/api/trainer/trainees/{Id<User>.New()}/plans/{Id<Plan>.New()}/update", new { name = "Anonymous update" });
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     private static async Task LinkTrainerAndTraineeAsync(AppDbContext db, Id<User> trainerId, Id<User> traineeId)

@@ -25,6 +25,7 @@ public sealed class AdminUserIntegrationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/admin/users/paginated", "admin", "current-permission-allow")]
     public async Task Should_ReturnPaginatedResults_When_CalledAsAdmin()
     {
         await AuthenticateAsAdminAsync();
@@ -66,6 +67,21 @@ public sealed class AdminUserIntegrationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/admin/users/{id}", "admin", "current-permission-allow")]
+    public async Task GetUser_WhenCalledAsAdmin_ReturnsUser()
+    {
+        await AuthenticateAsAdminAsync();
+        var user = await SeedUserAsync(name: "get-user", email: "get-user@example.com", password: "pass1234");
+
+        var response = await Client.GetAsync($"/api/admin/users/{user.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<AdminUserResponse>();
+        body!.Id.Should().Be(user.Id.ToString());
+    }
+
+    [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/admin/users/{id}/update", "admin", "current-permission-allow")]
     public async Task Should_UpdateFields_When_CalledAsAdmin()
     {
         await AuthenticateAsAdminAsync();
@@ -110,6 +126,7 @@ public sealed class AdminUserIntegrationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/admin/users/{id}/delete", "admin", "current-permission-allow")]
     public async Task Should_SoftDeleteUser_When_CalledAsAdmin()
     {
         await AuthenticateAsAdminAsync();
@@ -137,6 +154,7 @@ public sealed class AdminUserIntegrationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/admin/users/{id}/block", "admin", "current-permission-allow")]
     public async Task Should_BlockUser_When_CalledAsAdmin()
     {
         await AuthenticateAsAdminAsync();
@@ -164,6 +182,7 @@ public sealed class AdminUserIntegrationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/admin/users/{id}/unblock", "admin", "current-permission-allow")]
     public async Task Should_UnblockUser_When_CalledAsAdmin()
     {
         await AuthenticateAsAdminAsync();

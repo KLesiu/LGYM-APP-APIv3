@@ -21,6 +21,7 @@ using LgymApi.Application.WorkoutProgress.ApiAdapters;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
@@ -65,12 +66,14 @@ public sealed class WorkoutProgressApiHandoffTests
     {
         var exerciseService = Substitute.For<IExerciseService>();
         var accountId = Id<AccountReference>.New();
+        var currentAccount = new AuthenticatedAccountContext(accountId, null, [], [], false, false);
         var expectedInput = new AddUserExerciseInput(accountId, "Exercise", BodyParts.Back, "Description", "Image");
-        exerciseService.AddUserExerciseAsync(expectedInput, Arg.Any<CancellationToken>())
+        exerciseService.AddUserExerciseAsync(currentAccount, expectedInput, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(Result<Unit, AppError>.Success(Unit.Value)));
         var adapter = new ExerciseApiAdapter(exerciseService);
 
         var result = await adapter.AddUserExerciseAsync(
+            currentAccount,
             accountId,
             expectedInput.Name,
             expectedInput.BodyPart,
@@ -78,7 +81,7 @@ public sealed class WorkoutProgressApiHandoffTests
             expectedInput.Image);
 
         result.IsSuccess.Should().BeTrue();
-        await exerciseService.Received(1).AddUserExerciseAsync(expectedInput, Arg.Any<CancellationToken>());
+        await exerciseService.Received(1).AddUserExerciseAsync(currentAccount, expectedInput, Arg.Any<CancellationToken>());
     }
 
     [Test]

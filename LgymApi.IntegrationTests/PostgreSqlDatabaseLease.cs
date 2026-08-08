@@ -28,6 +28,8 @@ internal sealed class PostgreSqlDatabaseLease : IAsyncDisposable
 
     public string ConnectionString { get; }
 
+    internal string AdminConnectionString => _adminConnectionString;
+
     public static async Task<PostgreSqlDatabaseLease> CreateAsync(CancellationToken cancellationToken = default)
     {
         var adminConnectionString = ReadAdminConnectionString();

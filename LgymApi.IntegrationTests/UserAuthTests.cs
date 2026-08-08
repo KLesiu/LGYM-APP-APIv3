@@ -15,6 +15,7 @@ namespace LgymApi.IntegrationTests;
 public sealed class UserAuthTests : IntegrationTestBase
 {
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/register", "public", "anonymous-intended-behavior")]
     public async Task Register_WithValidData_ReturnsCreatedAndCreatesUserWithElo()
     {
         var request = new
@@ -242,6 +243,7 @@ public sealed class UserAuthTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/login", "public", "anonymous-intended-behavior")]
     public async Task Login_WithValidCredentials_ReturnsTokenAndUserInfo()
     {
         await SeedUserAsync(name: "loginuser", email: "login@example.com", password: "mypassword", elo: 1500);
@@ -320,6 +322,8 @@ public sealed class UserAuthTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/checkToken", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/checkToken", "own", "no-client-subject")]
     public async Task CheckToken_WithValidToken_ReturnsUserInfo()
     {
         var user = await SeedUserAsync(name: "tokenuser", email: "token@example.com", elo: 2000);
@@ -380,6 +384,8 @@ public sealed class UserAuthTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/logout", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/logout", "own", "no-client-subject")]
     public async Task Logout_InvalidatesCurrentJwt()
     {
         await SeedUserAsync(name: "logoutuser", email: "logout@example.com", password: "logoutpass");
@@ -407,6 +413,8 @@ public sealed class UserAuthTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/deleteAccount", "own", "owner-allow")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/deleteAccount", "own", "no-client-subject")]
     public async Task DeleteAccount_WithValidToken_AnonymizesUserAndReturnsDeleted()
     {
         var user = await SeedUserAsync(name: "todelete", email: "todelete@example.com");
@@ -430,6 +438,18 @@ public sealed class UserAuthTests : IntegrationTestBase
         updatedUser!.IsDeleted.Should().BeTrue();
         updatedUser.Name.Should().StartWith("anonymized_user_");
         updatedUser.Email.Value.Should().StartWith("anonymized_");
+    }
+
+    [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/updateTimeZone", "own", "owner-allow")]
+    public async Task UpdateTimeZone_WithAuthenticatedUser_ReturnsOk()
+    {
+        var user = await SeedUserAsync(name: "timezone-user", email: "timezone-user@example.com");
+        SetAuthorizationHeader(user.Id);
+
+        var response = await Client.PostAsJsonAsync("/api/updateTimeZone", new { preferredTimeZone = "UTC" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     private sealed class MessageResponse

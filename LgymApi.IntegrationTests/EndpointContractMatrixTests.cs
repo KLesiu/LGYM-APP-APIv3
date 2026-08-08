@@ -5,7 +5,10 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using LgymApi.IntegrationTests.Authorization;
 using LgymApi.Domain.Enums;
+using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.Mvc.Controllers;
@@ -30,6 +33,27 @@ public sealed class EndpointContractMatrixTests : IntegrationTestBase
         "TrainingController", "TutorialController", "UserController"
     ];
 
+    private static readonly string[] ApprovedAccessClasses =
+    [
+        "public", "own", "trainer-shared", "admin", "authenticated-global"
+    ];
+
+    private static readonly string[] ApprovedAccessFacets =
+    [
+        "actor-derived-subject", "foreign-object", "owned-resource", "global-visible",
+        "manager-override", "opaque-capability", "relationship-revocable"
+    ];
+
+    private static readonly string[] ApprovedEvidenceCategories =
+    [
+        "anonymous-intended-behavior", "invalid-capability-denial", "expired-capability-denial", "tampered-capability-denial",
+        "owner-allow", "anonymous-denial", "no-client-subject", "foreign-object-denial-no-mutation",
+        "active-relationship-allow", "unrelated-relationship-denial", "former-relationship-denial",
+        "current-permission-allow", "ordinary-user-denial", "stale-token-demotion-denial",
+        "ordinary-authenticated-allow", "owner-custom-allow", "foreign-custom-denial", "global-resource-allow",
+        "current-manager-allow", "stale-manager-denial", "ordinary-manager-denial"
+    ];
+
     [Test]
     public void MatrixParser_NormalizesACompleteRowAndRejectsMissingFields()
     {
@@ -38,9 +62,66 @@ public sealed class EndpointContractMatrixTests : IntegrationTestBase
         missingField.Should().Throw<AssertionException>()
             .WithMessage("*must define every contract column*");
 
-        var parsed = ParseMatrixRow("| GET | /api/example | Example.Action | anonymous | none | 200 | application/json | msg | UUID string | none | no | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix |");
+        var parsed = ParseMatrixRow("| GET | /api/example | Example.Action | anonymous | none | 200 | application/json | msg | UUID string | none | no | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | public | none | EndpointContractMatrixTests.SemanticAuthorizationParser_AcceptsCompleteClassAndFacetProfiles |");
 
-        parsed.ToDocumentRow().Should().Be("| GET | /api/example | Example.Action | anonymous | none | 200 | application/json | msg | UUID string | none | no | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix |");
+        parsed.ToDocumentRow().Should().Be("| GET | /api/example | Example.Action | anonymous | none | 200 | application/json | msg | UUID string | none | no | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | public | none | EndpointContractMatrixTests.SemanticAuthorizationParser_AcceptsCompleteClassAndFacetProfiles |");
+    }
+
+    [TestCaseSource(nameof(CompleteSemanticAuthorizationRows))]
+    [AuthorizationEvidence("GET", "/api/invitations/{invitationId}", "public", "anonymous-intended-behavior")]
+    [AuthorizationEvidence("GET", "/api/invitations/{invitationId}", "public", "invalid-capability-denial")]
+    [AuthorizationEvidence("GET", "/api/invitations/{invitationId}", "public", "expired-capability-denial")]
+    [AuthorizationEvidence("GET", "/api/invitations/{invitationId}", "public", "tampered-capability-denial")]
+    [AuthorizationEvidence("POST", "/api/logout", "own", "owner-allow")]
+    [AuthorizationEvidence("POST", "/api/logout", "own", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/logout", "own", "no-client-subject")]
+    [AuthorizationEvidence("GET", "/api/own/{id}", "own", "owner-allow")]
+    [AuthorizationEvidence("GET", "/api/own/{id}", "own", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/own/{id}", "own", "foreign-object-denial-no-mutation")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/plans", "trainer-shared", "active-relationship-allow")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/plans", "trainer-shared", "unrelated-relationship-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/plans", "trainer-shared", "former-relationship-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/trainees/{traineeId}/plans", "trainer-shared", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/admin/users/{id}", "admin", "current-permission-allow")]
+    [AuthorizationEvidence("GET", "/api/admin/users/{id}", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("GET", "/api/admin/users/{id}", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("GET", "/api/exercise/{id}/getExercise", "authenticated-global", "ordinary-authenticated-allow")]
+    [AuthorizationEvidence("GET", "/api/exercise/{id}/getExercise", "authenticated-global", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/exercise/{id}/getExercise", "authenticated-global", "owner-custom-allow")]
+    [AuthorizationEvidence("GET", "/api/exercise/{id}/getExercise", "authenticated-global", "foreign-custom-denial")]
+    [AuthorizationEvidence("GET", "/api/exercise/{id}/getExercise", "authenticated-global", "global-resource-allow")]
+    [AuthorizationEvidence("GET", "/api/exercise/{id}/getExercise", "authenticated-global", "current-manager-allow")]
+    [AuthorizationEvidence("GET", "/api/exercise/{id}/getExercise", "authenticated-global", "stale-manager-denial")]
+    [AuthorizationEvidence("GET", "/api/exercise/{id}/getExercise", "authenticated-global", "ordinary-manager-denial")]
+    public void SemanticAuthorizationParser_AcceptsCompleteClassAndFacetProfiles(string row)
+    {
+        Action parse = () => AssertAuthorizationEvidenceResolves(ParseMatrixRow(row));
+
+        parse.Should().NotThrow("a complete semantic authorization profile must preserve all existing columns and add access class, access facets, and executable authorization evidence");
+    }
+
+    [TestCaseSource(nameof(SemanticAuthorizationSchemaFailureRows))]
+    public void SemanticAuthorizationParser_RejectsMissingOrUnknownSchemaValues(string row, string expectedMessage)
+    {
+        Action parse = () => ParseMatrixRow(row);
+
+        parse.Should().Throw<AssertionException>().WithMessage(expectedMessage);
+    }
+
+    [TestCaseSource(nameof(SemanticAuthorizationGuardFailureRows))]
+    [AuthorizationEvidence("POST", "/api/logout", "own", "owner-allow")]
+    [AuthorizationEvidence("POST", "/api/logout", "own", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/exercise/{id}/getExercise", "authenticated-global", "ordinary-authenticated-allow")]
+    [AuthorizationEvidence("GET", "/api/exercise/{id}/getExercise", "authenticated-global", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/evidence/unknown-category", "own", "unknown-category")]
+    [AuthorizationEvidence("POST", "/api/evidence/method", "own", "owner-allow")]
+    [AuthorizationEvidence("GET", "/api/evidence/other-route", "own", "owner-allow")]
+    [AuthorizationEvidence("GET", "/api/evidence/class", "authenticated-global", "owner-allow")]
+    public void SemanticAuthorizationGuard_RejectsIncompleteOrMismatchedEvidence(string row, string expectedMessage)
+    {
+        Action parse = () => AssertAuthorizationEvidenceResolves(ParseMatrixRow(row));
+
+        parse.Should().Throw<AssertionException>().WithMessage(expectedMessage);
     }
 
     [Test]
@@ -65,10 +146,27 @@ public sealed class EndpointContractMatrixTests : IntegrationTestBase
         foreach (var row in matrixRows)
         {
             AssertEvidenceLocatorResolves(row.EvidenceLocator, row.EndpointKey);
+            if (row.AuthorizationEvidence != "unresolved")
+            {
+                AssertAuthorizationEvidenceResolves(row);
+            }
         }
 
         TestContext.Progress.WriteLine($"Route count: {rows.Length}");
         TestContext.Progress.WriteLine($"Route inventory SHA-256: {inventoryHash}");
+
+        var unresolved = matrixRows
+            .Where(row => row.AuthorizationEvidence == "unresolved")
+            .Select(row => row.RouteKey)
+            .OrderBy(routeKey => routeKey, StringComparer.Ordinal)
+            .ToArray();
+        if (unresolved.Length != 0)
+        {
+            throw new AssertionException(
+                $"Endpoint contract matrix field 'authorization evidence' has {unresolved.Length} unresolved routes. " +
+                "Tasks 8-10 must replace every unresolved value with executable semantic evidence. " +
+                $"First unresolved route: '{unresolved[0]}'.");
+        }
     }
 
     [Test]
@@ -286,7 +384,10 @@ public sealed class EndpointContractMatrixTests : IntegrationTestBase
                 "EnumLookupResponseSnapshotTests",
                 "RequestLocalizationIntegrationTests",
                 idempotency is null ? "no" : $"{idempotency.ScopeSource}:{idempotency.RouteTemplate}",
-                "EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix"),
+                "EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix",
+                string.Empty,
+                string.Empty,
+                string.Empty),
             matchingDescriptions.Length);
     }
 
@@ -383,27 +484,526 @@ public sealed class EndpointContractMatrixTests : IntegrationTestBase
 
     private static void AssertEvidenceLocatorResolves(string locator, string endpointKey)
     {
+        _ = ResolveExecutableTestMethod(locator, endpointKey, "evidence locator");
+    }
+
+    [Test]
+    [AuthorizationEvidence("GET", "/api/admin/users/{id}", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("GET", "/api/appconfig/{id}", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("GET", "/api/roles", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("GET", "/api/roles/permission-claims", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("GET", "/api/roles/{id}", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("POST", "/api/admin/users/paginated", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("POST", "/api/admin/users/{id}/block", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("POST", "/api/admin/users/{id}/delete", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("POST", "/api/admin/users/{id}/unblock", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("POST", "/api/admin/users/{id}/update", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("POST", "/api/appConfig/createNewAppVersion/{id}", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("POST", "/api/appconfig/paginated", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("POST", "/api/appconfig/{id}/delete", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("POST", "/api/appconfig/{id}/update", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("POST", "/api/roles", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("POST", "/api/roles/paginated", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("POST", "/api/roles/users/{id}/roles", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("POST", "/api/roles/{id}/delete", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("POST", "/api/roles/{id}/update", "admin", "ordinary-user-denial")]
+    [AuthorizationEvidence("POST", "/api/internal/push/test-event", "admin", "ordinary-user-denial")]
+    public async Task Task8_AdminRoutes_OrdinaryUserIsDenied()
+    {
+        var user = await SeedUserAsync("task8-ordinary", "task8-ordinary@example.com");
+        SetAuthorizationHeader(user.Id);
+
+        var requestIndex = 0;
+        foreach (var send in CreateTask8AdminRouteRequests(user.Id.ToString()))
+        {
+            using var response = await send();
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden, "admin request {0} must be denied before action execution", requestIndex++);
+        }
+    }
+
+    [Test]
+    [AuthorizationEvidence("GET", "/api/admin/users/{id}", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("GET", "/api/appconfig/{id}", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("GET", "/api/roles", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("GET", "/api/roles/permission-claims", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("GET", "/api/roles/{id}", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("POST", "/api/admin/users/paginated", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("POST", "/api/admin/users/{id}/block", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("POST", "/api/admin/users/{id}/delete", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("POST", "/api/admin/users/{id}/unblock", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("POST", "/api/admin/users/{id}/update", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("POST", "/api/appConfig/createNewAppVersion/{id}", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("POST", "/api/appconfig/paginated", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("POST", "/api/appconfig/{id}/delete", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("POST", "/api/appconfig/{id}/update", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("POST", "/api/roles", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("POST", "/api/roles/paginated", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("POST", "/api/roles/users/{id}/roles", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("POST", "/api/roles/{id}/delete", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("POST", "/api/roles/{id}/update", "admin", "stale-token-demotion-denial")]
+    [AuthorizationEvidence("POST", "/api/internal/push/test-event", "admin", "stale-token-demotion-denial")]
+    public async Task Task8_AdminRoutes_PreIssuedTokenIsDeniedAfterDemotion()
+    {
+        var demotedAdministrator = await SeedUserAsync("task8-demoted", "task8-demoted@example.com", isAdmin: true);
+        SetAuthorizationHeader(demotedAdministrator.Id);
+        var preIssuedToken = Client.DefaultRequestHeaders.Authorization;
+
+        var administrator = await SeedAdminAsync();
+        SetAuthorizationHeader(administrator.Id);
+        using (var demotion = await Client.PostAsJsonAsync($"/api/roles/users/{demotedAdministrator.Id}/roles", new { roles = new[] { "User" } }))
+        {
+            demotion.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        Client.DefaultRequestHeaders.Authorization = preIssuedToken;
+        var requestIndex = 0;
+        foreach (var send in CreateTask8AdminRouteRequests(demotedAdministrator.Id.ToString()))
+        {
+            using var response = await send();
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden, "demoted administrator request {0} must be denied before action execution", requestIndex++);
+        }
+    }
+
+    private IEnumerable<Func<Task<HttpResponseMessage>>> CreateTask8AdminRouteRequests(string targetId)
+    {
+        yield return () => Client.GetAsync($"/api/admin/users/{targetId}");
+        yield return () => Client.GetAsync($"/api/appconfig/{targetId}");
+        yield return () => Client.GetAsync("/api/roles");
+        yield return () => Client.GetAsync("/api/roles/permission-claims");
+        yield return () => Client.GetAsync($"/api/roles/{targetId}");
+        yield return () => Client.PostAsJsonAsync("/api/admin/users/paginated", new { page = 1, pageSize = 1 });
+        yield return () => Client.PostAsJsonAsync($"/api/admin/users/{targetId}/block", new { });
+        yield return () => Client.PostAsJsonAsync($"/api/admin/users/{targetId}/delete", new { });
+        yield return () => Client.PostAsJsonAsync($"/api/admin/users/{targetId}/unblock", new { });
+        yield return () => Client.PostAsJsonAsync($"/api/admin/users/{targetId}/update", new { });
+        yield return () => Client.PostAsJsonAsync($"/api/appConfig/createNewAppVersion/{targetId}", new
+        {
+            platform = "Android",
+            minRequiredVersion = "1.0.0",
+            latestVersion = "1.0.0",
+            forceUpdate = false,
+            updateUrl = "https://example.com",
+            releaseNotes = "Task 8"
+        });
+        yield return () => Client.PostAsJsonAsync("/api/appconfig/paginated", new { page = 1, pageSize = 1 });
+        yield return () => Client.PostAsJsonAsync($"/api/appconfig/{targetId}/delete", new { });
+        yield return () => Client.PostAsJsonAsync($"/api/appconfig/{targetId}/update", new
+        {
+            platform = "Android",
+            minRequiredVersion = "1.0.0",
+            latestVersion = "1.0.0",
+            forceUpdate = false,
+            updateUrl = "https://example.com",
+            releaseNotes = "Task 8"
+        });
+        yield return () => Client.PostAsJsonAsync("/api/roles", new { });
+        yield return () => Client.PostAsJsonAsync("/api/roles/paginated", new { page = 1, pageSize = 1 });
+        yield return () => Client.PostAsJsonAsync($"/api/roles/users/{targetId}/roles", new { roles = Array.Empty<string>() });
+        yield return () => Client.PostAsJsonAsync($"/api/roles/{targetId}/delete", new { });
+        yield return () => Client.PostAsJsonAsync($"/api/roles/{targetId}/update", new { });
+        yield return () => Client.PostAsJsonAsync("/api/internal/push/test-event", new
+        {
+            recipientUserId = targetId,
+            type = "internal.test.push",
+            eventId = "task8-stale-push-test-event",
+            entityId = (string?)null,
+            inAppNotificationId = (string?)null,
+            deeplink = (string?)null
+        });
+    }
+
+    [Test]
+    [AuthorizationEvidence("GET", "/api/account/external-logins", "own", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/checkToken", "own", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/deleteAccount", "own", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/tutorials/active", "own", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/tutorials/{tutorialType}", "own", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/account/link-google", "own", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/account/unlink-google", "own", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/changeVisibilityInRanking", "own", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/logout", "own", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/tutorials/complete", "own", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/tutorials/completeStep", "own", "anonymous-denial")]
+    [AuthorizationEvidence("POST", "/api/updateTimeZone", "own", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/trainer/checkToken", "own", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/enums", "authenticated-global", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/enums/all", "authenticated-global", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/enums/{enumType}", "authenticated-global", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/getUsersRanking", "authenticated-global", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/userInfo/{id}/getUserEloPoints", "authenticated-global", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/{id}/isAdmin", "authenticated-global", "anonymous-denial")]
+    public async Task Task8_IdentityAndReferenceRoutes_AnonymousRequestsAreDenied()
+    {
+        ClearAuthorizationHeader();
+        var id = Id<AccountReference>.New().ToString();
+        var requests = new Func<Task<HttpResponseMessage>>[]
+        {
+            () => Client.GetAsync("/api/account/external-logins"),
+            () => Client.GetAsync("/api/checkToken"),
+            () => Client.GetAsync("/api/deleteAccount"),
+            () => Client.GetAsync("/api/tutorials/active"),
+            () => Client.GetAsync("/api/tutorials/OnboardingDemo"),
+            () => Client.PostAsJsonAsync("/api/account/link-google", new { idToken = "missing" }),
+            () => Client.PostAsync("/api/account/unlink-google", null),
+            () => Client.PostAsJsonAsync("/api/changeVisibilityInRanking", new { isVisibleInRanking = true }),
+            () => Client.PostAsync("/api/logout", null),
+            () => Client.PostAsJsonAsync("/api/tutorials/complete", new { tutorialType = "OnboardingDemo" }),
+            () => Client.PostAsJsonAsync("/api/tutorials/completeStep", new { tutorialType = "OnboardingDemo", step = "CreateArea" }),
+            () => Client.PostAsJsonAsync("/api/updateTimeZone", new { preferredTimeZone = "UTC" }),
+            () => Client.GetAsync("/api/trainer/checkToken"),
+            () => Client.GetAsync("/api/enums"),
+            () => Client.GetAsync("/api/enums/all"),
+            () => Client.GetAsync("/api/enums/BodyParts"),
+            () => Client.GetAsync("/api/getUsersRanking"),
+            () => Client.GetAsync($"/api/userInfo/{id}/getUserEloPoints"),
+            () => Client.GetAsync($"/api/{id}/isAdmin")
+        };
+
+        foreach (var send in requests)
+        {
+            using var response = await send();
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+    }
+
+    private static void AssertAuthorizationEvidenceResolves(MatrixRow row)
+    {
+        var facets = ParseFacets(row.AccessFacets);
+        if (row.AccessClass == "own"
+            && row.RequestDto == "none"
+            && !row.Route.Contains('{')
+            && row.AccessFacets == "none"
+            && !facets.Contains("actor-derived-subject", StringComparer.Ordinal))
+        {
+            throw new AssertionException(
+                $"Endpoint contract matrix authorization drift for '{row.RouteKey}' field 'access facets': " +
+                "an own subjectless route requires 'actor-derived-subject' and evidence category 'no-client-subject'.");
+        }
+
+        var locators = row.AuthorizationEvidence
+            .Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var duplicateLocator = locators
+            .GroupBy(locator => locator, StringComparer.Ordinal)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicateLocator is not null)
+        {
+            throw new AssertionException(
+                $"Endpoint contract matrix authorization drift for '{row.RouteKey}' field 'authorization evidence': " +
+                $"duplicate locator '{duplicateLocator.Key}'.");
+        }
+
+        var categories = new List<string>();
+        foreach (var locator in locators)
+        {
+            var method = ResolveExecutableTestMethod(locator, row.RouteKey, "authorization evidence");
+            var attributes = method.GetCustomAttributes<AuthorizationEvidenceAttribute>(inherit: false).ToArray();
+            if (attributes.Length == 0)
+            {
+                throw new AssertionException(
+                    $"Endpoint contract matrix authorization drift for '{row.RouteKey}' field 'authorization evidence': " +
+                    $"locator '{locator}' is generic compatibility-only evidence cannot prove semantic authorization.");
+            }
+
+            var exact = attributes.Where(attribute =>
+                    attribute.Method == row.Method
+                    && attribute.Route == row.Route
+                    && attribute.AccessClass == row.AccessClass)
+                .ToArray();
+            if (exact.Length == 0)
+            {
+                AssertAuthorizationEvidenceIdentity(row, locator, attributes);
+            }
+
+            foreach (var attribute in exact)
+            {
+                if (!ApprovedEvidenceCategories.Contains(attribute.Category, StringComparer.Ordinal))
+                {
+                    throw new AssertionException(
+                        $"Endpoint contract matrix authorization drift for '{row.RouteKey}' field 'evidence category': " +
+                        $"unknown category '{attribute.Category}' at '{locator}'.");
+                }
+
+                categories.Add(attribute.Category);
+            }
+        }
+
+        var duplicateCategory = categories
+            .GroupBy(category => category, StringComparer.Ordinal)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicateCategory is not null)
+        {
+            throw new AssertionException(
+                $"Endpoint contract matrix authorization drift for '{row.RouteKey}' field 'authorization evidence categories': " +
+                $"duplicate category '{duplicateCategory.Key}'.");
+        }
+
+        var missing = RequiredEvidenceCategories(row.AccessClass, facets)
+            .Where(category => !categories.Contains(category, StringComparer.Ordinal))
+            .ToArray();
+        if (missing.Length != 0)
+        {
+            throw new AssertionException(
+                $"Endpoint contract matrix authorization drift for '{row.RouteKey}' field 'authorization evidence categories': " +
+                $"missing {string.Join(", ", missing)}.");
+        }
+    }
+
+    private static void AssertAuthorizationEvidenceIdentity(
+        MatrixRow row,
+        string locator,
+        IReadOnlyCollection<AuthorizationEvidenceAttribute> attributes)
+    {
+        var methodMismatch = attributes.FirstOrDefault(attribute =>
+            attribute.Route == row.Route && attribute.AccessClass == row.AccessClass);
+        if (methodMismatch is not null)
+        {
+            throw new AssertionException(
+                $"Endpoint contract matrix authorization drift for '{row.RouteKey}' field 'authorization evidence method': " +
+                $"expected '{row.Method}', actual '{methodMismatch.Method}' at '{locator}'.");
+        }
+
+        var classMismatch = attributes.FirstOrDefault(attribute =>
+            attribute.Method == row.Method && attribute.Route == row.Route);
+        if (classMismatch is not null)
+        {
+            throw new AssertionException(
+                $"Endpoint contract matrix authorization drift for '{row.RouteKey}' field 'authorization evidence access class': " +
+                $"expected '{row.AccessClass}', actual '{classMismatch.AccessClass}' at '{locator}'.");
+        }
+
+        var routeMismatch = attributes.LastOrDefault(attribute =>
+            attribute.Method == row.Method && attribute.AccessClass == row.AccessClass);
+        if (routeMismatch is not null)
+        {
+            throw new AssertionException(
+                $"Endpoint contract matrix authorization drift for '{row.RouteKey}' field 'authorization evidence route': " +
+                $"expected '{row.Route}', actual '{routeMismatch.Route}' at '{locator}'.");
+        }
+
+        throw new AssertionException(
+            $"Endpoint contract matrix authorization drift for '{row.RouteKey}' field 'authorization evidence': " +
+            $"locator '{locator}' has no metadata matching method, route, and access class.");
+    }
+
+    private static MethodInfo ResolveExecutableTestMethod(string locator, string endpointKey, string field)
+    {
         var parts = locator.Split('.', 2, StringSplitOptions.TrimEntries);
-        parts.Should().HaveCount(2, $"'{endpointKey}' needs a Type.Method executable evidence locator");
+        if (parts.Length != 2)
+        {
+            throw new AssertionException($"'{endpointKey}' field '{field}' needs a Type.Method executable evidence locator: '{locator}'.");
+        }
+
         var fixture = typeof(EndpointContractMatrixTests).Assembly.GetTypes()
             .SingleOrDefault(type => type.Name == parts[0]);
-        fixture.Should().NotBeNull($"'{endpointKey}' evidence locator '{locator}' must resolve to a test fixture");
-        var method = fixture!.GetMethod(parts[1], BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        method.Should().NotBeNull($"'{endpointKey}' evidence locator '{locator}' must resolve to a test method");
-        method!.GetCustomAttributes(inherit: true)
-            .Any(attribute => attribute is TestAttribute or TestCaseAttribute or TestCaseSourceAttribute)
-            .Should().BeTrue($"'{endpointKey}' evidence locator '{locator}' must resolve to an executable NUnit test");
+        if (fixture is null)
+        {
+            throw new AssertionException($"'{endpointKey}' field '{field}' locator '{locator}' must resolve to a test fixture.");
+        }
+
+        var method = fixture.GetMethod(parts[1], BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (method is null)
+        {
+            throw new AssertionException($"'{endpointKey}' field '{field}' locator '{locator}' must resolve to a test method.");
+        }
+
+        if (!method.GetCustomAttributes(inherit: true)
+                .Any(attribute => attribute is TestAttribute or TestCaseAttribute or TestCaseSourceAttribute))
+        {
+            throw new AssertionException($"'{endpointKey}' field '{field}' locator '{locator}' must resolve to an executable NUnit test.");
+        }
+
+        return method;
     }
 
     private static MatrixRow ParseMatrixRow(string line)
     {
         var values = line.Trim().Trim('|').Split('|').Select(value => value.Trim()).ToArray();
-        values.Should().HaveCount(13, $"matrix row '{line}' must define every contract column");
-        values.Should().OnlyContain(value => !string.IsNullOrWhiteSpace(value), $"matrix row '{line}' cannot omit a contract field");
-        return new MatrixRow(values[0], values[1], values[2], values[3], values[4], values[5], values[6], values[7], values[8], values[9], values[10], values[11], values[12]);
+        var routeKey = values.Length >= 2 ? $"{values[0]} {values[1]}" : line;
+        if (values.Length != 16)
+        {
+            var columns = values.Length >= 13 ? "every semantic authorization column" : "every contract column";
+            throw new AssertionException($"Matrix row '{routeKey}' must define {columns}; found {values.Length} columns.");
+        }
+
+        for (var index = 0; index < 13; index++)
+        {
+            if (string.IsNullOrWhiteSpace(values[index]))
+            {
+                throw new AssertionException($"Matrix row '{routeKey}' cannot omit contract field {index + 1}.");
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(values[13]))
+        {
+            throw new AssertionException($"Matrix row '{routeKey}' field 'access class' is required.");
+        }
+
+        if (!ApprovedAccessClasses.Contains(values[13], StringComparer.Ordinal))
+        {
+            throw new AssertionException(
+                $"Matrix row '{routeKey}' field 'access class' must be one of: {string.Join(", ", ApprovedAccessClasses)}; actual '{values[13]}'.");
+        }
+
+        if (string.IsNullOrWhiteSpace(values[14]))
+        {
+            throw new AssertionException($"Matrix row '{routeKey}' field 'access facets' must use 'none' when no facet applies.");
+        }
+
+        _ = ParseFacets(values[14], routeKey);
+        if (string.IsNullOrWhiteSpace(values[15]))
+        {
+            throw new AssertionException($"Matrix row '{routeKey}' field 'authorization evidence' is required.");
+        }
+
+        return new MatrixRow(
+            values[0], values[1], values[2], values[3], values[4], values[5], values[6], values[7],
+            values[8], values[9], values[10], values[11], values[12], values[13], values[14], values[15]);
     }
 
-    private static MatrixRow ExampleRow() => ParseMatrixRow("| GET | /api/example | Example.Action | anonymous | none | 200 | application/json | msg | UUID string | none | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix |");
+    private static string[] ParseFacets(string value, string? routeKey = null)
+    {
+        if (value == "none")
+        {
+            return [];
+        }
+
+        var facets = value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var duplicate = facets.GroupBy(facet => facet, StringComparer.Ordinal).FirstOrDefault(group => group.Count() > 1);
+        if (duplicate is not null)
+        {
+            throw new AssertionException($"Matrix row '{routeKey ?? "unknown"}' field 'access facets' duplicates '{duplicate.Key}'.");
+        }
+
+        var unknown = facets.FirstOrDefault(facet => !ApprovedAccessFacets.Contains(facet, StringComparer.Ordinal));
+        if (unknown is not null)
+        {
+            throw new AssertionException(
+                $"Matrix row '{routeKey ?? "unknown"}' field 'access facets' must contain only: " +
+                $"{string.Join(", ", ApprovedAccessFacets)}; actual '{unknown}'.");
+        }
+
+        return facets;
+    }
+
+    private static IEnumerable<string> RequiredEvidenceCategories(string accessClass, IReadOnlyCollection<string> facets)
+    {
+        string[] baseCategories = accessClass switch
+        {
+            "public" => ["anonymous-intended-behavior"],
+            "own" => ["owner-allow", "anonymous-denial"],
+            "trainer-shared" => ["active-relationship-allow", "unrelated-relationship-denial", "anonymous-denial"],
+            "admin" => ["current-permission-allow", "ordinary-user-denial", "stale-token-demotion-denial"],
+            "authenticated-global" => ["ordinary-authenticated-allow", "anonymous-denial"],
+            _ => []
+        };
+        foreach (var category in baseCategories)
+        {
+            yield return category;
+        }
+
+        foreach (var facet in facets)
+        {
+            string[] facetCategories = facet switch
+            {
+                "actor-derived-subject" => ["no-client-subject"],
+                "foreign-object" => ["foreign-object-denial-no-mutation"],
+                "owned-resource" => ["owner-custom-allow", "foreign-custom-denial"],
+                "global-visible" => ["global-resource-allow"],
+                "manager-override" => ["current-manager-allow", "stale-manager-denial", "ordinary-manager-denial"],
+                "opaque-capability" => ["invalid-capability-denial", "expired-capability-denial", "tampered-capability-denial"],
+                "relationship-revocable" => ["former-relationship-denial"],
+                _ => []
+            };
+            foreach (var category in facetCategories)
+            {
+                yield return category;
+            }
+        }
+    }
+
+    private static IEnumerable<TestCaseData> CompleteSemanticAuthorizationRows()
+    {
+        yield return new TestCaseData("| GET | /api/invitations/{invitationId} | PublicInvitationController.GetInvitationStatus | anonymous | none | 200,404 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | public | opaque-capability | EndpointContractMatrixTests.SemanticAuthorizationParser_AcceptsCompleteClassAndFacetProfiles |")
+            .SetName("public opaque-capability profile is complete");
+        yield return new TestCaseData("| POST | /api/logout | UserController.Logout | authorize | none | 200 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | own | actor-derived-subject | EndpointContractMatrixTests.SemanticAuthorizationParser_AcceptsCompleteClassAndFacetProfiles |")
+            .SetName("own actor-derived-subject profile is complete");
+        yield return new TestCaseData("| GET | /api/own/{id} | ExampleController.GetOwn | authorize | none | 200,404 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | own | foreign-object | EndpointContractMatrixTests.SemanticAuthorizationParser_AcceptsCompleteClassAndFacetProfiles |")
+            .SetName("own foreign-object profile is complete");
+        yield return new TestCaseData("| GET | /api/trainer/trainees/{traineeId}/plans | TrainerManagedPlansController.GetTraineePlans | policy.trainer.access | none | 200 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | trainer-shared | relationship-revocable | EndpointContractMatrixTests.SemanticAuthorizationParser_AcceptsCompleteClassAndFacetProfiles |")
+            .SetName("trainer-shared relationship-revocable profile is complete");
+        yield return new TestCaseData("| GET | /api/admin/users/{id} | AdminUserController.GetUser | policy.admin.access | none | 200,404 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | admin | none | EndpointContractMatrixTests.SemanticAuthorizationParser_AcceptsCompleteClassAndFacetProfiles |")
+            .SetName("admin profile is complete");
+        yield return new TestCaseData("| GET | /api/exercise/{id}/getExercise | ExerciseController.GetExercise | authorize | none | 200,404 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | authenticated-global | owned-resource,global-visible,manager-override | EndpointContractMatrixTests.SemanticAuthorizationParser_AcceptsCompleteClassAndFacetProfiles |")
+            .SetName("authenticated-global mixed-visibility profile is complete");
+    }
+
+    private static IEnumerable<TestCaseData> SemanticAuthorizationSchemaFailureRows()
+    {
+        yield return new TestCaseData(
+                "| GET | /api/example | ExampleController.Get | authorize | none | 200 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix |  | none | EndpointContractMatrixTests.SemanticAuthorizationParser_AcceptsCompleteClassAndFacetProfiles |",
+                "*GET /api/example*field 'access class'*required*")
+            .SetName("missing access class identifies route and field");
+        yield return new TestCaseData(
+                "| GET | /api/example | ExampleController.Get | authorize | none | 200 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | trainer | none | EndpointContractMatrixTests.SemanticAuthorizationParser_AcceptsCompleteClassAndFacetProfiles |",
+                "*GET /api/example*field 'access class'*public*own*trainer-shared*admin*authenticated-global*")
+            .SetName("unknown access class lists every approved value");
+        yield return new TestCaseData(
+                "| GET | /api/example | ExampleController.Get | authorize | none | 200 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | own |  | EndpointContractMatrixTests.SemanticAuthorizationParser_AcceptsCompleteClassAndFacetProfiles |",
+                "*GET /api/example*field 'access facets'*must use 'none' when no facet applies*")
+            .SetName("missing access facets requires explicit none");
+        yield return new TestCaseData(
+                "| GET | /api/example | ExampleController.Get | authorize | none | 200 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | own | delegated | EndpointContractMatrixTests.SemanticAuthorizationParser_AcceptsCompleteClassAndFacetProfiles |",
+                "*GET /api/example*field 'access facets'*actor-derived-subject*foreign-object*owned-resource*global-visible*manager-override*opaque-capability*relationship-revocable*")
+            .SetName("unknown access facet lists every approved value");
+        yield return new TestCaseData(
+                "| GET | /api/example | ExampleController.Get | authorize | none | 200 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | own | none |  |",
+                "*GET /api/example*field 'authorization evidence'*required*")
+            .SetName("missing authorization evidence identifies route and field");
+        yield return new TestCaseData(
+                "| GET | /api/example | ExampleController.Get | authorize | none | 200 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | own | none |",
+                "*GET /api/example*must define every semantic authorization column*")
+            .SetName("malformed semantic row identifies route");
+    }
+
+    private static IEnumerable<TestCaseData> SemanticAuthorizationGuardFailureRows()
+    {
+        const string fixture = "EndpointContractMatrixTests.SemanticAuthorizationGuard_RejectsIncompleteOrMismatchedEvidence";
+
+        yield return new TestCaseData(
+                $"| POST | /api/logout | UserController.Logout | authorize | none | 200 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | own | none | {fixture} |",
+                "*POST /api/logout*field 'access facets'*actor-derived-subject*no-client-subject*")
+            .SetName("subjectless own route requires actor-derived proof");
+        yield return new TestCaseData(
+                $"| GET | /api/evidence/duplicate | ExampleController.Get | authorize | none | 200 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | own | foreign-object | {fixture}; {fixture} |",
+                $"*GET /api/evidence/duplicate*field 'authorization evidence'*duplicate*{fixture}*")
+            .SetName("duplicate authorization evidence is rejected");
+        yield return new TestCaseData(
+                "| GET | /api/evidence/generic | ExampleController.Get | authorize | none | 200 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | own | foreign-object | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix |",
+                "*GET /api/evidence/generic*field 'authorization evidence'*generic compatibility-only evidence cannot prove semantic authorization*")
+            .SetName("generic compatibility-only evidence is rejected");
+        yield return new TestCaseData(
+                $"| GET | /api/evidence/unknown-category | ExampleController.Get | authorize | none | 200 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | own | foreign-object | {fixture} |",
+                "*GET /api/evidence/unknown-category*field 'evidence category'*unknown-category*")
+            .SetName("unknown evidence category is rejected");
+        yield return new TestCaseData(
+                $"| GET | /api/evidence/method | ExampleController.Get | authorize | none | 200 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | own | foreign-object | {fixture} |",
+                "*GET /api/evidence/method*field 'authorization evidence method'*expected 'GET'*actual 'POST'*")
+            .SetName("evidence method must match matrix method");
+        yield return new TestCaseData(
+                $"| GET | /api/evidence/route | ExampleController.Get | authorize | none | 200 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | own | foreign-object | {fixture} |",
+                "*GET /api/evidence/route*field 'authorization evidence route'*actual '/api/evidence/other-route'*")
+            .SetName("evidence route must match matrix route");
+        yield return new TestCaseData(
+                $"| GET | /api/evidence/class | ExampleController.Get | authorize | none | 200 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | own | foreign-object | {fixture} |",
+                "*GET /api/evidence/class*field 'authorization evidence access class'*expected 'own'*actual 'authenticated-global'*")
+            .SetName("evidence access class must match matrix class");
+        yield return new TestCaseData(
+                $"| GET | /api/exercise/{{id}}/getExercise | ExerciseController.GetExercise | authorize | none | 200,404 | application/json | ContractCompatibilityTests | TypedIdEfTests | EnumLookupResponseSnapshotTests | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | authenticated-global | owned-resource,global-visible,manager-override | {fixture} |",
+                "*GET /api/exercise/{id}/getExercise*field 'authorization evidence categories'*owner-custom-allow*foreign-custom-denial*global-resource-allow*current-manager-allow*stale-manager-denial*ordinary-manager-denial*")
+            .SetName("mixed Exercise visibility requires class and every facet category");
+    }
+
+    private static MatrixRow ExampleRow() => ParseMatrixRow("| GET | /api/example | Example.Action | anonymous | none | 200 | application/json | msg | UUID string | none | RequestLocalizationIntegrationTests | no | EndpointContractMatrixTests.LiveControllerEndpointInventory_MatchesTheBaselineMatrix | public | none | EndpointContractMatrixTests.SemanticAuthorizationParser_AcceptsCompleteClassAndFacetProfiles |");
 
     private static string FindRepositoryRoot()
     {
@@ -436,7 +1036,10 @@ public sealed class EndpointContractMatrixTests : IntegrationTestBase
         string EnumPolicyEvidence,
         string LocalizationEvidence,
         string Idempotency,
-        string EvidenceLocator)
+        string EvidenceLocator,
+        string AccessClass,
+        string AccessFacets,
+        string AuthorizationEvidence)
     {
         public string Controller => Action.Split('.', 2, StringSplitOptions.None)[0];
 
@@ -457,6 +1060,6 @@ public sealed class EndpointContractMatrixTests : IntegrationTestBase
             && !string.IsNullOrWhiteSpace(EvidenceLocator)
             && Action.Contains('.', StringComparison.Ordinal);
 
-        public string ToDocumentRow() => $"| {Method} | {Route} | {Action} | {Authorization} | {RequestDto} | {StatusCodes} | {ContentTypes} | {LegacyFieldsEvidence} | {UuidStringEvidence} | {EnumPolicyEvidence} | {LocalizationEvidence} | {Idempotency} | {EvidenceLocator} |";
+        public string ToDocumentRow() => $"| {Method} | {Route} | {Action} | {Authorization} | {RequestDto} | {StatusCodes} | {ContentTypes} | {LegacyFieldsEvidence} | {UuidStringEvidence} | {EnumPolicyEvidence} | {LocalizationEvidence} | {Idempotency} | {EvidenceLocator} | {AccessClass} | {AccessFacets} | {AuthorizationEvidence} |";
     }
 }

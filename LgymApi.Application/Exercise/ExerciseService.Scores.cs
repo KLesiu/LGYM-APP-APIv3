@@ -19,6 +19,11 @@ public sealed partial class ExerciseService : IExerciseService
             return Result<LastExerciseScoresResult, AppError>.Failure(new InvalidExerciseError(Messages.InvalidId));
         }
 
+        if (routeUserId != currentUserId)
+        {
+            return Result<LastExerciseScoresResult, AppError>.Failure(new ExerciseNotFoundError(Messages.DidntFind));
+        }
+
         var latestScores = await _exerciseScoreRepository.GetLatestByAccountExerciseSeriesAsync(
             currentUserId,
             exerciseId,
@@ -54,7 +59,7 @@ public sealed partial class ExerciseService : IExerciseService
             return Result<List<ExerciseTrainingHistoryItem>, AppError>.Failure(new InvalidExerciseError(Messages.FieldRequired));
         }
 
-        var exercise = await _exerciseRepository.FindByIdAsync(exerciseId, cancellationToken);
+        var exercise = await _exerciseRepository.FindVisibleToAccountAsync(exerciseId, currentUserId, cancellationToken);
         if (exercise == null)
         {
             return Result<List<ExerciseTrainingHistoryItem>, AppError>.Failure(new ExerciseNotFoundError(Messages.DidntFind));

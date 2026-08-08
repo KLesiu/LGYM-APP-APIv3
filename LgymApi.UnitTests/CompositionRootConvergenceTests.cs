@@ -2,6 +2,7 @@ using FluentAssertions;
 using Hangfire;
 using Hangfire.Logging;
 using LgymApi.BackgroundWorker.Jobs;
+using LgymApi.Api.Hubs;
 using LgymApi.Application;
 using LgymApi.Application.Abstractions.Storage;
 using LgymApi.Application.Coaching.ManagedPlans;
@@ -403,6 +404,7 @@ public sealed class CompositionRootConvergenceTests
         services.AddApplicationApiAdapters();
         services.AddNotificationsApiAdapters();
         services.AddSignalR();
+        services.AddSingleton<IAccountSessionConnectionRegistry, AccountSessionConnectionRegistry>();
         services.AddScoped<IInAppNotificationPushPublisher, LgymApi.Api.Features.InAppNotification.SignalRNotificationPushPublisher>();
         services.AddBackgroundWorkerServices(isTesting);
 

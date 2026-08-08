@@ -27,6 +27,22 @@ jobs:
       (github.base_ref == 'main' || github.base_ref == 'automation/modular-monolith-milestone') &&
       github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
+    env:
+      LGYM_CI_POSTGRES_ADMIN: Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=postgres;Pooling=false;Timeout=5;Command Timeout=30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
 
     steps:
       - name: Checkout
@@ -56,7 +72,7 @@ jobs:
         run: dotnet build LgymApi.sln --configuration Release --no-restore
 
       - name: Create coverage directories
-        run: mkdir -p "${{ github.workspace }}/TestResults/Unit" "${{ github.workspace }}/TestResults/Architecture" "${{ github.workspace }}/TestResults/InMemoryIntegration" "${{ github.workspace }}/TestResults/DataSeeder"
+        run: mkdir -p "${{ github.workspace }}/TestResults/Unit" "${{ github.workspace }}/TestResults/Architecture" "${{ github.workspace }}/TestResults/InMemoryIntegration" "${{ github.workspace }}/TestResults/PostgreSqlIntegration" "${{ github.workspace }}/TestResults/DataSeeder"
 
       - name: Run unit tests with coverage
         run: dotnet test LgymApi.UnitTests/LgymApi.UnitTests.csproj --configuration Release --no-build /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=${{ github.workspace }}/TestResults/Unit/coverage.opencover.xml
@@ -66,6 +82,15 @@ jobs:
 
       - name: Run declared InMemory integration tests with coverage
         run: dotnet test LgymApi.IntegrationTests/LgymApi.IntegrationTests.csproj --configuration Release --no-build --filter "TestCategory!=PostgreSql" /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=${{ github.workspace }}/TestResults/InMemoryIntegration/coverage.opencover.xml
+
+      - name: Run disposable PostgreSQL integration tests with coverage
+        shell: pwsh
+        run: >-
+          pwsh -NoProfile -File scripts/run-postgresql-integration-tests.ps1
+          -ConnectionString $env:LGYM_CI_POSTGRES_ADMIN
+          -ResultsDirectory "${{ github.workspace }}/TestResults/PostgreSqlIntegration"
+          -NoBuild
+          -CoverageOutput "${{ github.workspace }}/TestResults/PostgreSqlIntegration/coverage.opencover.xml"
 
       - name: Run DataSeeder tests with coverage
         run: dotnet test LgymApi.DataSeeder.Tests/LgymApi.DataSeeder.Tests.csproj --configuration Release --no-build /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=${{ github.workspace }}/TestResults/DataSeeder/coverage.opencover.xml
@@ -79,6 +104,22 @@ jobs:
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/automation/modular-monolith-milestone')
     runs-on: ubuntu-latest
+    env:
+      LGYM_CI_POSTGRES_ADMIN: Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=postgres;Pooling=false;Timeout=5;Command Timeout=30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
 
     steps:
       - name: Checkout
@@ -108,7 +149,7 @@ jobs:
         run: dotnet build LgymApi.sln --configuration Release --no-restore
 
       - name: Create coverage directories
-        run: mkdir -p "${{ github.workspace }}/TestResults/Unit" "${{ github.workspace }}/TestResults/Architecture" "${{ github.workspace }}/TestResults/InMemoryIntegration" "${{ github.workspace }}/TestResults/DataSeeder"
+        run: mkdir -p "${{ github.workspace }}/TestResults/Unit" "${{ github.workspace }}/TestResults/Architecture" "${{ github.workspace }}/TestResults/InMemoryIntegration" "${{ github.workspace }}/TestResults/PostgreSqlIntegration" "${{ github.workspace }}/TestResults/DataSeeder"
 
       - name: Run unit tests with coverage
         run: dotnet test LgymApi.UnitTests/LgymApi.UnitTests.csproj --configuration Release --no-build /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=${{ github.workspace }}/TestResults/Unit/coverage.opencover.xml
@@ -118,6 +159,15 @@ jobs:
 
       - name: Run declared InMemory integration tests with coverage
         run: dotnet test LgymApi.IntegrationTests/LgymApi.IntegrationTests.csproj --configuration Release --no-build --filter "TestCategory!=PostgreSql" /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=${{ github.workspace }}/TestResults/InMemoryIntegration/coverage.opencover.xml
+
+      - name: Run disposable PostgreSQL integration tests with coverage
+        shell: pwsh
+        run: >-
+          pwsh -NoProfile -File scripts/run-postgresql-integration-tests.ps1
+          -ConnectionString $env:LGYM_CI_POSTGRES_ADMIN
+          -ResultsDirectory "${{ github.workspace }}/TestResults/PostgreSqlIntegration"
+          -NoBuild
+          -CoverageOutput "${{ github.workspace }}/TestResults/PostgreSqlIntegration/coverage.opencover.xml"
 
       - name: Run DataSeeder tests with coverage
         run: dotnet test LgymApi.DataSeeder.Tests/LgymApi.DataSeeder.Tests.csproj --configuration Release --no-build /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=${{ github.workspace }}/TestResults/DataSeeder/coverage.opencover.xml

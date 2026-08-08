@@ -14,14 +14,13 @@ public static partial class ServiceCollectionExtensions
         bool isTesting = false,
         bool hostBackgroundServer = false)
     {
-        var isDevelopmentOrTesting = enableSensitiveLogging || isTesting;
-
         services.AddPlatformServices(configuration, enableSensitiveLogging, isTesting, hostBackgroundServer);
+        services.AddRowSecurity();
         services.AddTrainingPlanningInfrastructure();
         services.AddWorkoutProgressInfrastructure();
         services.AddCoachingInfrastructure();
         services.AddNutritionInfrastructure();
-        services.AddReportingInfrastructure(configuration, isDevelopmentOrTesting);
+        services.AddReportingInfrastructure(configuration, enableSensitiveLogging, isTesting);
         services.AddNotificationsInfrastructure();
 
         return services;

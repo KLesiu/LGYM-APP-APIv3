@@ -12,6 +12,7 @@ namespace LgymApi.IntegrationTests;
 public sealed class MainRecordsTests : IntegrationTestBase
 {
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/mainRecords/{id}/addNewRecord", "own", "owner-allow")]
     public async Task AddNewRecord_WithValidData_CreatesRecord()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -42,6 +43,7 @@ public sealed class MainRecordsTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/mainRecords/{id}/addNewRecord", "own", "foreign-object-denial-no-mutation")]
     public async Task AddNewRecord_WithMismatchedRouteUserId_ReturnsForbidden()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -73,6 +75,7 @@ public sealed class MainRecordsTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/mainRecords/{id}/getMainRecordsHistory", "own", "foreign-object-denial-no-mutation")]
     public async Task GetMainRecordsHistory_WithMismatchedRouteUserId_ReturnsForbidden()
     {
         var (_, userAToken) = await RegisterUserViaEndpointAsync(
@@ -94,6 +97,7 @@ public sealed class MainRecordsTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/mainRecords/{id}/getLastMainRecords", "own", "foreign-object-denial-no-mutation")]
     public async Task GetLastMainRecords_WithMismatchedRouteUserId_ReturnsForbidden()
     {
         var (_, userAToken) = await RegisterUserViaEndpointAsync(
@@ -156,6 +160,7 @@ public sealed class MainRecordsTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/mainRecords/{id}/getMainRecordsHistory", "own", "owner-allow")]
     public async Task GetMainRecordsHistory_WithRecords_ReturnsHistory()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -204,6 +209,7 @@ public sealed class MainRecordsTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/mainRecords/{id}/getLastMainRecords", "own", "owner-allow")]
     public async Task GetLastMainRecords_WithRecords_ReturnsGreatestPerExercise()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -288,6 +294,7 @@ public sealed class MainRecordsTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/mainRecords/{id}/deleteMainRecord", "own", "owner-allow")]
     public async Task DeleteMainRecord_WithValidId_DeletesRecord()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -366,6 +373,7 @@ public sealed class MainRecordsTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/mainRecords/{id}/deleteMainRecord", "own", "foreign-object-denial-no-mutation")]
     public async Task DeleteMainRecord_WithOtherUsersRecord_ReturnsForbidden()
     {
         var (_, userAToken) = await RegisterUserViaEndpointAsync(
@@ -405,6 +413,7 @@ public sealed class MainRecordsTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/mainRecords/{id}/updateMainRecords", "own", "owner-allow")]
     public async Task UpdateMainRecords_WithValidData_UpdatesRecord()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -449,6 +458,7 @@ public sealed class MainRecordsTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/mainRecords/{id}/updateMainRecords", "own", "foreign-object-denial-no-mutation")]
     public async Task UpdateMainRecords_WithOtherUsersRecordAndOwnRouteUserId_ReturnsForbidden()
     {
         var (userAId, userAToken) = await RegisterUserViaEndpointAsync(
@@ -545,6 +555,7 @@ public sealed class MainRecordsTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/mainRecords/getRecordOrPossibleRecordInExercise", "own", "owner-allow")]
     public async Task GetRecordOrPossibleRecordInExercise_WithRecord_ReturnsRecord()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(

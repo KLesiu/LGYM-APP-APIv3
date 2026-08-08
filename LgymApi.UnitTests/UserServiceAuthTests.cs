@@ -117,6 +117,31 @@ public sealed class UserServiceAuthTests
         await _commandDispatcher.Received(1).EnqueueAsync(Arg.Is<UserRegisteredCommand>(command => command.UserId == addedUser.Id));
         await _tutorialService.Received(1).InitializeOnboardingTutorialAsync(addedUser.Id, cancellationToken);
         await _unitOfWork.Received(1).SaveChangesAsync(cancellationToken);
+        Received.InOrder(() =>
+        {
+            _unitOfWork.SaveChangesAsync(cancellationToken);
+            _tutorialService.InitializeOnboardingTutorialAsync(addedUser.Id, cancellationToken);
+        });
+    }
+
+    [Test]
+    public async Task RegisterAsync_WhenTutorialInitializationThrows_ReturnsSuccessAfterUserSave()
+    {
+        var defaultRole = new Role { Id = Id<Role>.New(), Name = AuthConstants.Roles.User };
+        _userRepository.FindByNameOrEmail = (_, _, _) => Task.FromResult<User?>(null);
+        _userRepository.Add = (_, _) => Task.CompletedTask;
+        _roleRepository.GetByNames = (_, _) => Task.FromResult<List<Role>>([defaultRole]);
+        _roleRepository.AddUserRoles = (_, _, _) => Task.CompletedTask;
+        _commandDispatcher.EnqueueAsync(Arg.Any<UserRegisteredCommand>()).Returns(Task.CompletedTask);
+        _tutorialService.InitializeOnboardingTutorialAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<Result<Unit, AppError>>(new InvalidOperationException("tutorial failed")));
+
+        var result = await _registrationService.RegisterAsync(
+            new RegisterUserInput("new-user", "new@example.com", "password123", "password123", true, null));
+
+        result.IsSuccess.Should().BeTrue();
+        await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+        await _tutorialService.Received(1).InitializeOnboardingTutorialAsync(result.Value, Arg.Any<CancellationToken>());
     }
 
     [Test]

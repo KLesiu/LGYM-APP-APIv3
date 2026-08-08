@@ -5,18 +5,23 @@ namespace LgymApi.Infrastructure.Services;
 
 /// <summary>
 /// Local development implementation of IPhotoStorageProvider.
-/// Returns placeholder signed URLs for dev/test environments.
+/// Returns expiring bearer-capability URLs for dev/test environments.
 /// NOT FOR PRODUCTION USE - implement CloudflareR2PhotoStorageProvider or SupabasePhotoStorageProvider for production.
 /// </summary>
 public sealed class LocalPhotoStorageProvider : IPhotoStorageProvider
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly LocalPhotoDevelopmentStore _store;
+    private readonly LocalPhotoDevelopmentUrlSigner _urlSigner;
 
-    public LocalPhotoStorageProvider(IHttpContextAccessor httpContextAccessor, LocalPhotoDevelopmentStore store)
+    public LocalPhotoStorageProvider(
+        IHttpContextAccessor httpContextAccessor,
+        LocalPhotoDevelopmentStore store,
+        LocalPhotoDevelopmentUrlSigner urlSigner)
     {
         _httpContextAccessor = httpContextAccessor;
         _store = store;
+        _urlSigner = urlSigner;
     }
 
     public Task<string> GenerateSignedUploadUrlAsync(
@@ -27,8 +32,10 @@ public sealed class LocalPhotoStorageProvider : IPhotoStorageProvider
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var placeholderUrl = $"{GetBaseUrl()}/dev/photos/upload/{Uri.EscapeDataString(storageKey)}?expires={DateTimeOffset.UtcNow.Add(expiration):O}";
-        return Task.FromResult(placeholderUrl);
+        var capability = _urlSigner.CreateCapability(HttpMethods.Put, storageKey, expiration);
+        return Task.FromResult(
+            $"{GetBaseUrl()}/dev/photos/upload/{capability.EncodedStorageKey}" +
+            $"?v={LocalPhotoDevelopmentUrlSigner.Version}&expires={capability.ExpiresAt}&sig={capability.Signature}");
     }
 
     public Task<string> GenerateSignedReadUrlAsync(
@@ -38,8 +45,10 @@ public sealed class LocalPhotoStorageProvider : IPhotoStorageProvider
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var placeholderUrl = $"{GetBaseUrl()}/dev/photos/read/{Uri.EscapeDataString(storageKey)}?expires={DateTimeOffset.UtcNow.Add(expiration):O}";
-        return Task.FromResult(placeholderUrl);
+        var capability = _urlSigner.CreateCapability(HttpMethods.Get, storageKey, expiration);
+        return Task.FromResult(
+            $"{GetBaseUrl()}/dev/photos/read/{capability.EncodedStorageKey}" +
+            $"?v={LocalPhotoDevelopmentUrlSigner.Version}&expires={capability.ExpiresAt}&sig={capability.Signature}");
     }
 
     public Task DeleteAsync(

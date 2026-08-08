@@ -35,6 +35,10 @@ The project uses explicit Unit of Work semantics.
 - Use `BeginTransactionAsync()` only for multiple saves, intermediate flushes, rollback across those saves, or a verified owner-specific requirement.
 - Read-only repository queries should prefer `AsNoTracking()` unless tracking is explicitly needed.
 
+The API runs with only `ConnectionStrings:Postgres`; `LGYM_MIGRATION_POSTGRES` is restricted to offline DataSeeder/bootstrap commands. Local Development may migrate automatically, while Staging and Production require an already-migrated schema and a validated least-privilege runtime role. Hangfire schema preparation is likewise offline-only.
+
+The tutorial RLS pilot is a staging-only database containment layer for `UserTutorialProgresses` and `UserTutorialStepProgresses`. It supplements, never replaces, Application authorization. The Platform actor scope applies a parameterized transaction-local PostgreSQL actor setting on the service-owned transaction. Offline maintenance work owns role provisioning, migration, Hangfire preparation, and policy activation or deactivation. Production retains disabled RLS expectations until a separately approved go/no-go changes the database and configuration together before traffic. See [`tutorial-rls-pilot.md`](security/tutorial-rls-pilot.md) for the canonical runbook, diagnostics, exit criteria, and rollback.
+
 ### Practical implication
 
 If you add a repository method that mutates data, make it stage-only and ensure the caller service commits once, at the use-case boundary.
@@ -102,8 +106,13 @@ When reviewing mapper changes:
 
 - Use `AppException` for controlled domain/application errors (`BadRequest`, `Forbidden`, `NotFound`, etc.).
 - `ExceptionHandlingMiddleware` maps `AppException` and fallback exceptions to HTTP payloads.
-- `UserContextMiddleware` validates JWT `userId` and `sid` through the Identity marker-contract resolver and places immutable `AuthenticatedAccountContext` into `HttpContext.Items`.
+- `UserContextMiddleware` validates JWT `userId` and `sid` through the Identity marker-contract resolver and places immutable `AuthenticatedAccountContext` in the request feature collection.
 - New API adapters read marker IDs and facts via `HttpContext.GetAuthenticatedAccountContext()` / `GetCurrentAccountId()`. Middleware and controllers do not materialize a domain user or use a legacy user item.
+- Middleware order is localization, authentication, conditional rate limiting outside Testing, `UserContextMiddleware`, authorization, and API idempotency. Current persisted account, session, and permission facts in the authenticated context are policy authority; stale JWT permission claims are not.
+- Owner-scoped reads and writes bind the authenticated account to the target resource before materialization or mutation. For Plans, the persistence predicate requires matching Plan ID, owner ID, and non-deleted state. Exercise access distinguishes globally visible Exercises, actor-owned custom Exercises, and current `ManageGlobalExercises` overrides without disclosing foreign custom resources.
+- Development Local photo URLs are signed bearer capabilities. Their verification binds version, HTTP method, normalized storage key, and expiry before decoding or storage access; uploads also enforce MIME and streamed-size policy before an atomic temporary-file promotion.
+- The HTTP matrix has 185 classified routes. Each row has executable semantic evidence for its access class and facets, and the guard rejects unresolved, mismatched, or incomplete route evidence.
+- SignalR connection state is API-local and keyed by validated account/session pairs. Publishers revalidate each pair and prune invalid entries before direct delivery. This supports sticky single-instance hosting only; a distributed backplane requires separate design work.
 
 ## 6. Contributing a Use Case or Module-Boundary Change
 
@@ -278,6 +287,7 @@ Use the [Module Contribution Guide](MODULE_CONTRIBUTION_GUIDE.md) for owner-firs
 - `docs/modular-monolith/issue-395-final-verification.md`
 
 The project-reference manifest fixes the current solution at 18 projects and 90 unique, justified direct edges: 89 have Roslyn-resolved source/import evidence and one is the Resources analyzer edge. The import guard rejects unused edges, missing direct imports, transitive reliance, forbidden edges, duplicates, cycles, and topological-order drift. The graph document also fixes the dependency-first order and 216-edge forbidden complement.
+The authoritative 18-project, 90-edge graph remains unchanged. The SignalR test client is centrally pinned and referenced by the integration-test project as a package, not as a project-reference edge.
 The production topology remains one `AppDbContext`, one PostgreSQL database, and one migration stream. The eight owner totals remain Identity & Accounts 9, Notifications 5, Reporting 7, Training Planning 3, Workout & Progress 10, Coaching 4, Nutrition 6, and Platform / Reference Data 4, for 48 persisted entities.
 The compatibility, persistence, and Unit of Work guidance elsewhere in this guide continues to apply and is not restated here.
 

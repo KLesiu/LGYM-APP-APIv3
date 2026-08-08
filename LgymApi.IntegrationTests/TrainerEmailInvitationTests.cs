@@ -25,6 +25,7 @@ public sealed partial class TrainerEmailInvitationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainer/invitations/by-email", "own", "owner-allow")]
     public async Task CreateInvitationByEmail_WhenEmailNotInSystem_ReturnsPendingInvitationWithEmptyTraineeId()
     {
         var trainer = await SeedTrainerAsync("trainer-email-new", "trainer-email-new@example.com");
@@ -150,6 +151,24 @@ public sealed partial class TrainerEmailInvitationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainer/invitations/by-email", "own", "ordinary-user-denial")]
+    public async Task CreateInvitationByEmail_AsRegularUser_ReturnsForbidden()
+    {
+        var regularUser = await SeedUserAsync("regular-email-invite", "regular-email-invite@example.com", "password123");
+        SetAuthorizationHeader(regularUser.Id);
+
+        using var response = await Client.PostAsJsonAsync("/api/trainer/invitations/by-email", new
+        {
+            email = "regular-target@example.com",
+            preferredLanguage = "en-US",
+            preferredTimeZone = "UTC"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainer/invitations/by-email", "own", "anonymous-denial")]
     public async Task CreateInvitationByEmail_WithoutAuth_ReturnsUnauthorized()
     {
         var response = await Client.PostAsJsonAsync("/api/trainer/invitations/by-email", new
@@ -179,6 +198,7 @@ public sealed partial class TrainerEmailInvitationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainer/invitations/{invitationId}/revoke", "own", "owner-allow")]
     public async Task RevokeInvitation_WhenTrainerRevokesPendingInvitation_ReturnsOkAndMarksInvitationRevoked()
     {
         var trainer = await SeedTrainerAsync("trainer-revoke-ok", "trainer-revoke-ok@example.com");
@@ -211,6 +231,7 @@ public sealed partial class TrainerEmailInvitationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainer/invitations/{invitationId}/revoke", "own", "foreign-object-denial-no-mutation")]
     public async Task RevokeInvitation_WhenInvitationBelongsToAnotherTrainer_ReturnsNotFound()
     {
         var trainerA = await SeedTrainerAsync("trainer-revoke-a", "trainer-revoke-a@example.com");
@@ -224,6 +245,7 @@ public sealed partial class TrainerEmailInvitationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/invitations/{invitationId}", "public", "anonymous-intended-behavior")]
     public async Task GetInvitationStatus_WithValidCodeAndUnknownUser_ReturnsPendingAndUserDoesNotExist()
     {
         var trainer = await SeedTrainerAsync("trainer-public-ghost", "trainer-public-ghost@example.com");
@@ -277,6 +299,7 @@ public sealed partial class TrainerEmailInvitationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/invitations/{invitationId}", "public", "invalid-capability-denial")]
     public async Task GetInvitationStatus_WithInvalidCode_ReturnsNotFound()
     {
         var trainer = await SeedTrainerAsync("trainer-public-invalid-code", "trainer-public-invalid-code@example.com");
@@ -289,6 +312,48 @@ public sealed partial class TrainerEmailInvitationTests : IntegrationTestBase
         body.RootElement.GetProperty("title").GetString().Should().Be("Not Found");
         body.RootElement.GetProperty("status").GetInt32().Should().Be((int)HttpStatusCode.NotFound);
         body.RootElement.TryGetProperty("msg", out _).Should().BeFalse();
+    }
+
+    [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/invitations/{invitationId}", "public", "expired-capability-denial")]
+    public async Task GetInvitationStatus_WithExpiredInvitation_ReturnsNotFound()
+    {
+        var trainer = await SeedTrainerAsync("trainer-public-expired", "trainer-public-expired@example.com");
+        var invitationId = await SeedInvitationAsync(
+            trainer.Id,
+            "expired@example.com",
+            TrainerInvitationStatus.Pending,
+            "EXPIREDCODE1",
+            expiresAt: DateTimeOffset.UtcNow.AddMinutes(-1));
+
+        var response = await Client.GetAsync($"/api/invitations/{invitationId}?code=EXPIREDCODE1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainer/invitations/{invitationId}/revoke", "own", "anonymous-denial")]
+    public async Task RevokeInvitation_WithoutAuthorization_ReturnsUnauthorized()
+    {
+        var trainer = await SeedTrainerAsync("trainer-revoke-anonymous", "trainer-revoke-anonymous@example.com");
+        var invitationId = await SeedInvitationAsync(trainer.Id, "revoke-anonymous@example.com", status: TrainerInvitationStatus.Pending, code: "REVOKEANON1");
+        ClearAuthorizationHeader();
+
+        using var response = await Client.PostAsync($"/api/trainer/invitations/{invitationId}/revoke", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/invitations/{invitationId}", "public", "tampered-capability-denial")]
+    public async Task GetInvitationStatus_WithTamperedCode_ReturnsNotFound()
+    {
+        var trainer = await SeedTrainerAsync("trainer-public-tampered", "trainer-public-tampered@example.com");
+        var invitationId = await SeedInvitationAsync(trainer.Id, "tampered@example.com", TrainerInvitationStatus.Pending, "VALIDCODE001");
+
+        var response = await Client.GetAsync($"/api/invitations/{invitationId}?code=VALIDCODE002");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Test]
@@ -306,6 +371,7 @@ public sealed partial class TrainerEmailInvitationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainee/invitations/{invitationId}/accept", "own", "owner-allow")]
     public async Task AcceptInvitation_WhenEmailMatchesInvitation_SetsTraineeIdAndCreatesLink()
     {
         var trainer = await SeedTrainerAsync("trainer-accept-email", "trainer-accept-email@example.com");
@@ -330,6 +396,7 @@ public sealed partial class TrainerEmailInvitationTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainee/invitations/{invitationId}/accept", "own", "foreign-object-denial-no-mutation")]
     public async Task AcceptInvitation_WhenEmailDoesNotMatchCurrentUser_ReturnsNotFound()
     {
         var trainer = await SeedTrainerAsync("trainer-accept-mismatch", "trainer-accept-mismatch@example.com");
@@ -340,6 +407,24 @@ public sealed partial class TrainerEmailInvitationTests : IntegrationTestBase
         var response = await Client.PostAsync($"/api/trainee/invitations/{invitationId}/accept", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/trainee/invitations/{invitationId}/accept", "own", "anonymous-denial")]
+    public async Task AcceptInvitation_WithoutAuthorization_ReturnsUnauthorizedWithoutMutation()
+    {
+        var trainer = await SeedTrainerAsync("trainer-accept-anonymous", "trainer-accept-anonymous@example.com");
+        var invitationId = await SeedInvitationAsync(trainer.Id, "accept-anonymous@example.com", status: TrainerInvitationStatus.Pending, code: "ANONACCEPT1");
+        ClearAuthorizationHeader();
+
+        var response = await Client.PostAsync($"/api/trainee/invitations/{invitationId}/accept", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        using var scope = Factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var invitation = await database.TrainerInvitations.SingleAsync(candidate => candidate.Id == invitationId);
+        invitation.Status.Should().Be(TrainerInvitationStatus.Pending);
+        invitation.TraineeId.Should().BeNull();
     }
 
     private async Task<User> SeedTrainerAsync(string name, string email, string preferredLanguage = "en-US")

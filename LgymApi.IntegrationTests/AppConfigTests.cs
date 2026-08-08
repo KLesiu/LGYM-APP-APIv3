@@ -11,6 +11,7 @@ namespace LgymApi.IntegrationTests;
 public sealed class AppConfigTests : IntegrationTestBase
 {
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/appConfig/getAppVersion", "public", "anonymous-intended-behavior")]
     public async Task GetAppVersion_WithValidPlatform_ReturnsConfig()
     {
         var admin = await SeedAdminAsync();
@@ -79,6 +80,7 @@ public sealed class AppConfigTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/appConfig/createNewAppVersion/{id}", "admin", "current-permission-allow")]
     public async Task CreateNewAppVersion_AsAdmin_CreatesConfig()
     {
         var admin = await SeedAdminAsync();

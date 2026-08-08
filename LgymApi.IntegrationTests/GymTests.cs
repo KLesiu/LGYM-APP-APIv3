@@ -15,6 +15,7 @@ namespace LgymApi.IntegrationTests;
 public sealed class GymTests : IntegrationTestBase
 {
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/gym/{id}/addGym", "own", "owner-allow")]
     public async Task AddGym_WithValidData_CreatesGym()
     {
         var user = await SeedUserAsync(name: "gymuser", email: "gym@example.com");
@@ -43,6 +44,7 @@ public sealed class GymTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/gym/{id}/addGym", "own", "foreign-object-denial-no-mutation")]
     public async Task AddGym_WithMismatchedUserId_ReturnsForbidden()
     {
         var user = await SeedUserAsync(name: "user1", email: "user1@example.com");
@@ -76,6 +78,7 @@ public sealed class GymTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/gym/{id}/deleteGym", "own", "owner-allow")]
     public async Task DeleteGym_WithValidGym_MarkAsDeleted()
     {
         var user = await SeedUserAsync(name: "gymuser", email: "gym@example.com");
@@ -97,6 +100,7 @@ public sealed class GymTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/gym/{id}/deleteGym", "own", "foreign-object-denial-no-mutation")]
     public async Task DeleteGym_WithOtherUsersGym_ReturnsForbidden()
     {
         var user1 = await SeedUserAsync(name: "user1", email: "user1@example.com");
@@ -125,6 +129,7 @@ public sealed class GymTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/gym/{id}/getGyms", "own", "owner-allow")]
     public async Task GetGyms_WithMultipleGyms_ReturnsAllUserGyms()
     {
         var user = await SeedUserAsync(name: "gymuser", email: "gym@example.com");
@@ -203,6 +208,7 @@ public sealed class GymTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/gym/{id}/getGym", "own", "owner-allow")]
     public async Task GetGym_WithValidId_ReturnsGym()
     {
         var user = await SeedUserAsync(name: "gymuser", email: "gym@example.com");
@@ -220,6 +226,7 @@ public sealed class GymTests : IntegrationTestBase
     }
 
     [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("POST", "/api/gym/editGym", "own", "owner-allow")]
     public async Task EditGym_WithValidData_UpdatesGym()
     {
         var user = await SeedUserAsync(name: "gymuser", email: "gym@example.com");
@@ -242,6 +249,23 @@ public sealed class GymTests : IntegrationTestBase
         var updatedGym = await db.Gyms.FirstOrDefaultAsync(g => g.Id == gym.Id);
         updatedGym.Should().NotBeNull();
         updatedGym!.Name.Should().Be("New Name");
+    }
+
+    [Test]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/gym/{id}/getGym", "own", "foreign-object-denial-no-mutation")]
+    [LgymApi.IntegrationTests.Authorization.AuthorizationEvidence("GET", "/api/gym/{id}/getGyms", "own", "foreign-object-denial-no-mutation")]
+    public async Task GymReadRoutes_WithForeignResources_ReturnForbidden()
+    {
+        var owner = await SeedUserAsync(name: "gym-read-owner", email: "gym-read-owner@example.com");
+        var attacker = await SeedUserAsync(name: "gym-read-attacker", email: "gym-read-attacker@example.com");
+        var gym = await SeedGymAsync(owner.Id, "Private Gym");
+        SetAuthorizationHeader(attacker.Id);
+
+        using var detailResponse = await Client.GetAsync($"/api/gym/{gym.Id}/getGym");
+        using var listResponse = await Client.GetAsync($"/api/gym/{owner.Id}/getGyms");
+
+        detailResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        listResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     private async Task<Gym> SeedGymAsync(Id<User> userId, string name, bool isDeleted = false)

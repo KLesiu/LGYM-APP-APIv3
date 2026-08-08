@@ -14,22 +14,35 @@ namespace LgymApi.DataSeeder.Tests;
 public sealed class DataSeederProgramTests
 {
     [Test]
-    public void MaskConnectionString_Should_Mask_Password_And_Keep_Other_Parts()
+    public void GetMigrationConnectionString_ReadsDedicatedEnvironmentVariable()
     {
-        var masked = DataSeederProgram.MaskConnectionString("Host=localhost;Password=secret;Username=user");
+        var original = Environment.GetEnvironmentVariable("LGYM_MIGRATION_POSTGRES");
+        try
+        {
+            Environment.SetEnvironmentVariable("LGYM_MIGRATION_POSTGRES", "Host=maintenance;Database=seeder;Username=maintenance;Password=test-only");
 
-        masked.Should().Contain("Host=localhost");
-        masked.Should().Contain("Username=user");
-        masked.Should().Contain("Password=***");
-        masked.Should().NotContain("secret");
+            DataSeederProgram.GetMigrationConnectionString().Should().NotBeNullOrWhiteSpace();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("LGYM_MIGRATION_POSTGRES", original);
+        }
     }
 
     [Test]
-    public void MaskConnectionString_Should_Return_Empty_For_Whitespace()
+    public void GetMigrationConnectionString_ReturnsNull_WhenEnvironmentVariableIsMissing()
     {
-        var masked = DataSeederProgram.MaskConnectionString(" ");
+        var original = Environment.GetEnvironmentVariable("LGYM_MIGRATION_POSTGRES");
+        try
+        {
+            Environment.SetEnvironmentVariable("LGYM_MIGRATION_POSTGRES", null);
 
-        masked.Should().Be("<empty>");
+            DataSeederProgram.GetMigrationConnectionString().Should().BeNull();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("LGYM_MIGRATION_POSTGRES", original);
+        }
     }
 
     [Test]

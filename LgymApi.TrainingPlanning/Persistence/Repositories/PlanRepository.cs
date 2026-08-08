@@ -28,6 +28,11 @@ internal sealed partial class PlanRepository : IPlanRepository
     public Task<Plan?> FindByIdAsync(Id<Plan> id, CancellationToken cancellationToken = default)
         => _context.Plans.FirstOrDefaultAsync(plan => plan.Id == id && !plan.IsDeleted, cancellationToken);
 
+    public Task<Plan?> FindByIdAndUserIdAsync(Id<Plan> id, Id<User> userId, CancellationToken cancellationToken = default)
+        => _context.Plans.FirstOrDefaultAsync(
+            plan => plan.Id == id && plan.UserId == userId && !plan.IsDeleted,
+            cancellationToken);
+
     public Task<Plan?> FindActiveByUserIdAsync(Id<User> userId, CancellationToken cancellationToken = default)
         => _context.Plans.AsNoTracking().FirstOrDefaultAsync(plan => plan.UserId == userId && plan.IsActive && !plan.IsDeleted, cancellationToken);
 

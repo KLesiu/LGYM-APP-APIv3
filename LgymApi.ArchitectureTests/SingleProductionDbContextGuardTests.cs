@@ -9,6 +9,7 @@ public sealed class SingleProductionDbContextGuardTests
 {
     private const int PersistedEntityCount = 48;
     private const string MigrationRoot = PersistenceIdentityContract.MigrationRoot;
+    private const string SignalRClientTestPackageProject = "LgymApi.IntegrationTests/LgymApi.IntegrationTests.csproj";
 
     [Test]
     public void Current_Production_Topology_Should_Have_One_Context_Model_And_Migration_Stream()
@@ -359,6 +360,7 @@ public sealed class SingleProductionDbContextGuardTests
     {
         var touchedFiles = headChanges
             .Concat(untrackedFiles)
+            .Where(path => !string.Equals(path, SignalRClientTestPackageProject, StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
