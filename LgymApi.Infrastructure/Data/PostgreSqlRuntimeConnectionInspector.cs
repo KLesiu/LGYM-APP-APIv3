@@ -1,5 +1,4 @@
 using System.Data.Common;
-using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
 namespace LgymApi.Infrastructure.Data;
@@ -28,17 +27,11 @@ internal static class PostgreSqlRuntimeConnectionInspector
         var helperFunction = options.HelperFunction is null
             ? null
             : await InspectHelperFunctionAsync(connection, options.HelperFunction, cancellationToken);
-        var missingTableGrants = await FindMissingTableGrantsAsync(dbContext, connection, options.HangfireSchema, cancellationToken);
-        var missingSequenceGrants = await QueryStringListAsync(connection, """
-            SELECT format('%I.%I', namespace.nspname, class.relname)
-            FROM pg_class class
-            JOIN pg_namespace namespace ON namespace.oid = class.relnamespace
-            WHERE class.relkind = 'S'
-              AND namespace.nspname IN ('public', @hangfireSchema)
-              AND NOT has_sequence_privilege(current_user, class.oid, 'USAGE, SELECT');
-            """, cancellationToken, ("@hangfireSchema", options.HangfireSchema));
-        var hangfireSchemaExists = await ExecuteBooleanAsync(connection,
-            "SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = @schema);", cancellationToken, ("@schema", options.HangfireSchema));
+        var privileges = await PostgreSqlRuntimePrivilegeInspector.InspectAsync(
+            dbContext,
+            connection,
+            options.HangfireSchema,
+            cancellationToken);
 
         return new PostgreSqlRuntimeInspection(
             session.DatabaseName,
@@ -47,9 +40,10 @@ internal static class PostgreSqlRuntimeConnectionInspector
             session.BypassesRowSecurity,
             elevatedMemberships,
             new NpgsqlConnectionStringBuilder(connection.ConnectionString).Multiplexing,
-            hangfireSchemaExists,
-            missingTableGrants,
-            missingSequenceGrants,
+            privileges.HangfireSchemaExists,
+            privileges.HangfireSchemaUsageGranted,
+            privileges.MissingTableGrants,
+            privileges.MissingSequenceGrants,
             protectedTables,
             helperFunction);
     }
@@ -101,28 +95,10 @@ internal static class PostgreSqlRuntimeConnectionInspector
 
         var inspection = new PostgreSqlProtectedTableInspection(expectedTable.Key, reader.GetBoolean(0), reader.GetBoolean(1), reader.GetBoolean(2), []);
         await reader.CloseAsync();
-        return inspection with { Policies = await QueryPoliciesAsync(connection, expectedTable, cancellationToken) };
-    }
-
-    private static async Task<IReadOnlyList<PostgreSqlPolicyInspection>> QueryPoliciesAsync(NpgsqlConnection connection, PostgreSqlProtectedTableOptions expectedTable, CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT policy.polname, CASE policy.polcmd WHEN 'r' THEN 'SELECT' WHEN 'a' THEN 'INSERT' WHEN 'w' THEN 'UPDATE' WHEN 'd' THEN 'DELETE' ELSE 'ALL' END
-            FROM pg_policy policy
-            JOIN pg_class class ON class.oid = policy.polrelid
-            JOIN pg_namespace namespace ON namespace.oid = class.relnamespace
-            WHERE namespace.nspname = @schema AND class.relname = @table;
-            """;
-        AddParameters(command, ("@schema", expectedTable.Schema), ("@table", expectedTable.Name));
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var policies = new List<PostgreSqlPolicyInspection>();
-        while (await reader.ReadAsync(cancellationToken))
+        return inspection with
         {
-            policies.Add(new PostgreSqlPolicyInspection(reader.GetString(0), reader.GetString(1)));
-        }
-
-        return policies;
+            Policies = await PostgreSqlRuntimePolicyInspector.QueryAsync(connection, expectedTable, cancellationToken)
+        };
     }
 
     private static async Task<PostgreSqlHelperFunctionInspection?> InspectHelperFunctionAsync(NpgsqlConnection connection, PostgreSqlHelperFunctionOptions helper, CancellationToken cancellationToken)
@@ -142,26 +118,6 @@ internal static class PostgreSqlRuntimeConnectionInspector
         return await reader.ReadAsync(cancellationToken)
             ? new PostgreSqlHelperFunctionInspection(reader.GetBoolean(0), reader.GetBoolean(1), reader.GetBoolean(2))
             : null;
-    }
-
-    private static async Task<IReadOnlyList<string>> FindMissingTableGrantsAsync(AppDbContext dbContext, NpgsqlConnection connection, string hangfireSchema, CancellationToken cancellationToken)
-    {
-        var tables = dbContext.Model.GetEntityTypes()
-            .Where(entityType => !entityType.IsOwned() && entityType.GetTableName() is not null)
-            .Select(entityType => $"{entityType.GetSchema() ?? "public"}.{entityType.GetTableName()}")
-            .Append($"{hangfireSchema}.schema")
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        var missing = new List<string>();
-        foreach (var table in tables)
-        {
-            if (!await ExecuteBooleanAsync(connection, "SELECT has_table_privilege(current_user, @table, 'SELECT, INSERT, UPDATE, DELETE');", cancellationToken, ("@table", table)))
-            {
-                missing.Add(table);
-            }
-        }
-
-        return missing;
     }
 
     private static async Task<bool> ExecuteBooleanAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken, params (string Name, object Value)[] parameters)

@@ -8,7 +8,9 @@ public sealed class TutorialRowSecurityPolicyGuardTests
     private const string MigrationPath = "LgymApi.Infrastructure/Migrations/20260807160000_AddTutorialRowSecurityPolicies.cs";
     private const string ActivationScriptPath = "deploy/postgres/activate-tutorial-row-security.sql";
     private const string DeactivationScriptPath = "deploy/postgres/deactivate-tutorial-row-security.sql";
+    private const string ProvisionScriptPath = "deploy/postgres/provision-rls-pilot-roles.sql";
     private const string RuntimeConfigurationPath = "appsettings.container.example.json";
+    private const string ReadmePath = "README.md";
 
     private static readonly PolicyContract[] Policies =
     [
@@ -80,10 +82,29 @@ public sealed class TutorialRowSecurityPolicyGuardTests
         Assert.That(activation, Does.Contain("FORCE ROW LEVEL SECURITY"));
         Assert.That(activation, Does.Contain("policy_contract_matches"));
         Assert.That(activation, Does.Contain("policy.polcmd::text"));
+        Assert.That(activation, Does.Contain("policy.polroles"));
+        Assert.That(activation, Does.Contain("policy.polpermissive"));
+        Assert.That(activation, Does.Contain("pg_get_expr(policy.polqual"));
+        Assert.That(activation, Does.Contain("pg_get_expr(policy.polwithcheck"));
+        AssertDatabaseEnvironmentIdentity(activation);
+        AssertDatabaseEnvironmentIdentity(deactivation);
         Assert.That(deactivation, Does.Contain("IN ('development', 'staging', 'production')"));
         Assert.That(deactivation, Does.Not.Contain("DROP POLICY"));
         Assert.That(deactivation.IndexOf("NO FORCE ROW LEVEL SECURITY", StringComparison.Ordinal),
             Is.LessThan(deactivation.IndexOf("DISABLE ROW LEVEL SECURITY", StringComparison.Ordinal)));
+    }
+
+    [Test]
+    public void Provisioning_StoresDatabaseEnvironmentAndReadmeUsesFailClosedPsqlFlags()
+    {
+        var provisioning = Read(ProvisionScriptPath);
+        var readme = Read(ReadmePath);
+
+        Assert.That(provisioning, Does.Contain("database_environment is required"));
+        Assert.That(provisioning, Does.Contain("ALTER DATABASE"));
+        Assert.That(provisioning, Does.Contain("lgym.deployment_environment"));
+        Assert.That(readme, Does.Contain(
+            "psql -X -v ON_ERROR_STOP=1 -v database_name=LGYM-APP -v database_environment=Staging"));
     }
 
     [Test]
@@ -101,6 +122,15 @@ public sealed class TutorialRowSecurityPolicyGuardTests
         {
             Assert.That(table.GetProperty("RowSecurityEnabled").GetBoolean(), Is.False);
             Assert.That(table.GetProperty("RowSecurityForced").GetBoolean(), Is.False);
+            foreach (var policy in table.GetProperty("Policies").EnumerateArray())
+            {
+                Assert.That(
+                    policy.GetProperty("Roles").EnumerateArray().Select(role => role.GetString()),
+                    Is.EqualTo(new[] { "PUBLIC" }));
+                Assert.That(policy.GetProperty("IsPermissive").GetBoolean(), Is.True);
+                Assert.That(policy.TryGetProperty("Using", out _), Is.True);
+                Assert.That(policy.TryGetProperty("WithCheck", out _), Is.True);
+            }
         }
 
         var actualPolicies = protectedTables
@@ -110,6 +140,14 @@ public sealed class TutorialRowSecurityPolicyGuardTests
                 policy.GetProperty("Command").GetString()!)));
 
         Assert.That(actualPolicies, Is.EquivalentTo(Policies));
+    }
+
+    private static void AssertDatabaseEnvironmentIdentity(string source)
+    {
+        Assert.That(source, Does.Contain("pg_db_role_setting"));
+        Assert.That(source, Does.Contain("lgym.deployment_environment"));
+        Assert.That(source, Does.Contain("setrole = 0"));
+        Assert.That(source, Does.Contain("database_environment_matches"));
     }
 
     private static void AssertNullSafeActorExpression(string definition)

@@ -35,11 +35,17 @@ internal sealed class PostgreSqlTutorialRowSecurityTestEnvironment : IAsyncDispo
 
     public string MaintenanceRole => _maintenanceRole;
 
+    public string RuntimeRole => _runtimeRole;
+
+    public string DatabaseName => _lease.DatabaseName;
+
     public string RuntimeConnectionString { get; }
 
-    private string MaintenanceConnectionString { get; }
+    public string MaintenanceConnectionString { get; }
 
-    public static async Task<PostgreSqlTutorialRowSecurityTestEnvironment> CreateAsync()
+    public static async Task<PostgreSqlTutorialRowSecurityTestEnvironment> CreateAsync(
+        string databaseEnvironment = "Staging",
+        bool activate = true)
     {
         var lease = await PostgreSqlDatabaseLease.CreateAsync();
         var maintenanceRole = $"lgym_maintenance_it_{Id<PostgreSqlTutorialRowSecurityTestEnvironment>.New().ToString().Replace("-", "", StringComparison.Ordinal)}";
@@ -57,7 +63,7 @@ internal sealed class PostgreSqlTutorialRowSecurityTestEnvironment : IAsyncDispo
 
         try
         {
-            await environment.ProvisionAsync(maintenancePassword, runtimePassword);
+            await environment.ProvisionAsync(maintenancePassword, runtimePassword, databaseEnvironment, activate);
             environment._factory = PostgreSqlWebApplicationFactory.CreateForPreparedDatabase(lease, runtimeConnectionString);
             return environment;
         }
@@ -95,6 +101,13 @@ internal sealed class PostgreSqlTutorialRowSecurityTestEnvironment : IAsyncDispo
         return new TutorialRowSnapshot(progress.IsCompleted, progress.CompletedAt, step.CompletedAt);
     }
 
+    public async Task ExecuteMaintenanceFormattedAsync(string format, params string[] arguments)
+    {
+        await using var connection = new NpgsqlConnection(MaintenanceConnectionString);
+        await connection.OpenAsync();
+        await ExecuteFormattedAsync(connection, format, arguments);
+    }
+
     public async ValueTask DisposeAsync()
     {
         try
@@ -117,7 +130,11 @@ internal sealed class PostgreSqlTutorialRowSecurityTestEnvironment : IAsyncDispo
         }
     }
 
-    private async Task ProvisionAsync(string maintenancePassword, string runtimePassword)
+    private async Task ProvisionAsync(
+        string maintenancePassword,
+        string runtimePassword,
+        string databaseEnvironment,
+        bool activate)
     {
         await using (var adminConnection = new NpgsqlConnection(_lease.AdminConnectionString))
         {
@@ -126,6 +143,11 @@ internal sealed class PostgreSqlTutorialRowSecurityTestEnvironment : IAsyncDispo
             await CreateRoleAsync(adminConnection, _runtimeRole, runtimePassword, false);
             await ExecuteFormattedAsync(adminConnection, "REVOKE %I FROM %I", _maintenanceRole, _runtimeRole);
             await ExecuteFormattedAsync(adminConnection, "ALTER DATABASE %I OWNER TO %I", _lease.DatabaseName, _maintenanceRole);
+            await ExecuteFormattedAsync(
+                adminConnection,
+                "ALTER DATABASE %I SET lgym.deployment_environment TO %L",
+                _lease.DatabaseName,
+                databaseEnvironment);
         }
 
         await using (var database = CreateDbContext(MaintenanceConnectionString))
@@ -137,11 +159,14 @@ internal sealed class PostgreSqlTutorialRowSecurityTestEnvironment : IAsyncDispo
             await database.SaveChangesAsync();
         }
 
-        await PostgreSqlTutorialRowSecurityActivation.RunAsync(
-            MaintenanceConnectionString,
-            _lease.DatabaseName,
-            _maintenanceRole,
-            _runtimeRole);
+        if (activate)
+        {
+            await PostgreSqlTutorialRowSecurityActivation.RunAsync(
+                MaintenanceConnectionString,
+                _lease.DatabaseName,
+                _maintenanceRole,
+                _runtimeRole);
+        }
     }
 
     private static async Task CreateRoleAsync(NpgsqlConnection connection, string role, string password, bool maintenance)

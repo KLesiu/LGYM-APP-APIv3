@@ -92,7 +92,75 @@ public sealed class PostgreSqlRuntimeConnectionValidatorTests
     }
 
     [Test]
-    public void ValidateInspection_WhenProtectedTablePoliciesDiffer_FailsClosed()
+    public void ValidateInspection_WhenPolicyRolesHaveSeparateIdentityButEqualOrdinalSet_Succeeds()
+    {
+        var expectedPolicy = CreatePolicyOptions("tutorial_owner");
+        expectedPolicy.Roles.Add("lgym_runtime");
+        var options = new PostgreSqlRuntimeValidationOptions
+        {
+            ExpectedDatabase = "lgym",
+            ExpectedRole = "lgym_runtime",
+            ProtectedTables = [new PostgreSqlProtectedTableOptions
+            {
+                Name = "UserTutorialProgresses",
+                Policies = [expectedPolicy]
+            }]
+        };
+        var inspection = CreateInspectionWithPolicies([CreatePolicyInspection()]);
+
+        var action = () => PostgreSqlRuntimeConnectionValidator.ValidateInspection(inspection, options);
+
+        action.Should().NotThrow();
+    }
+
+    [TestCase(PolicyDrift.Missing)]
+    [TestCase(PolicyDrift.Extra)]
+    [TestCase(PolicyDrift.Name)]
+    [TestCase(PolicyDrift.RoleSet)]
+    [TestCase(PolicyDrift.RoleCase)]
+    [TestCase(PolicyDrift.DuplicateRole)]
+    [TestCase(PolicyDrift.Command)]
+    [TestCase(PolicyDrift.Permissiveness)]
+    [TestCase(PolicyDrift.Using)]
+    [TestCase(PolicyDrift.WithCheck)]
+    public void ValidateInspection_WhenPolicyContractDrifts_FailsClosed(PolicyDrift drift)
+    {
+        var expectedPolicy = CreatePolicyOptions("tutorial_owner");
+        expectedPolicy.Roles.Add("lgym_runtime");
+        var options = new PostgreSqlRuntimeValidationOptions
+        {
+            ExpectedDatabase = "lgym",
+            ExpectedRole = "lgym_runtime",
+            ProtectedTables = [new PostgreSqlProtectedTableOptions
+            {
+                Name = "UserTutorialProgresses",
+                Policies = [expectedPolicy]
+            }]
+        };
+        var policy = CreatePolicyInspection();
+        IReadOnlyList<PostgreSqlPolicyInspection> actualPolicies = drift switch
+        {
+            PolicyDrift.Missing => [],
+            PolicyDrift.Extra => [policy, policy with { Name = "unexpected_policy" }],
+            PolicyDrift.Name => [policy with { Name = "renamed_policy" }],
+            PolicyDrift.RoleSet => [policy with { Roles = ["PUBLIC"] }],
+            PolicyDrift.RoleCase => [policy with { Roles = ["PUBLIC", "LGYM_RUNTIME"] }],
+            PolicyDrift.DuplicateRole => [policy with { Roles = ["PUBLIC", "lgym_runtime", "lgym_runtime"] }],
+            PolicyDrift.Command => [policy with { Command = "DELETE" }],
+            PolicyDrift.Permissiveness => [policy with { IsPermissive = false }],
+            PolicyDrift.Using => [policy with { Using = "ActorOwnsParent" }],
+            PolicyDrift.WithCheck => [policy with { WithCheck = "ActorOwnsParent" }],
+            _ => throw new ArgumentOutOfRangeException(nameof(drift), drift, null)
+        };
+        var inspection = CreateInspectionWithPolicies(actualPolicies);
+
+        var action = () => PostgreSqlRuntimeConnectionValidator.ValidateInspection(inspection, options);
+
+        action.Should().Throw<InvalidOperationException>().WithMessage("*policies do not match*");
+    }
+
+    [Test]
+    public void ValidateOptions_WhenPolicySemanticContractIsIncomplete_FailsClosed()
     {
         var options = new PostgreSqlRuntimeValidationOptions
         {
@@ -101,13 +169,32 @@ public sealed class PostgreSqlRuntimeConnectionValidatorTests
             ProtectedTables = [new PostgreSqlProtectedTableOptions
             {
                 Name = "UserTutorialProgresses",
-                Policies = [new PostgreSqlPolicyOptions { Name = "tutorial_owner", Command = "SELECT" }]
+                Policies = [new PostgreSqlPolicyOptions
+                {
+                    Name = "tutorial_owner",
+                    Command = "SELECT"
+                }]
             }]
         };
 
-        var action = () => PostgreSqlRuntimeConnectionValidator.ValidateInspection(CreateInspection(), options);
+        var inspection = CreateInspection() with
+        {
+            ProtectedTables = [new PostgreSqlProtectedTableInspection(
+                "public.UserTutorialProgresses",
+                false,
+                false,
+                false,
+                [new PostgreSqlPolicyInspection(
+                    "tutorial_owner",
+                    "SELECT",
+                    ["PUBLIC"],
+                    true,
+                    "ActorOwnsRow",
+                    null)])]
+        };
+        var action = () => PostgreSqlRuntimeConnectionValidator.ValidateInspection(inspection, options);
 
-        action.Should().Throw<InvalidOperationException>().WithMessage("*policies do not match*");
+        action.Should().Throw<InvalidOperationException>();
     }
 
     [Test]
@@ -151,6 +238,32 @@ public sealed class PostgreSqlRuntimeConnectionValidatorTests
             ProtectedTables = [new PostgreSqlProtectedTableOptions { Name = "UserTutorialProgresses" }]
         };
 
+    private static PostgreSqlPolicyOptions CreatePolicyOptions(string name)
+        => new()
+        {
+            Name = name,
+            Command = "SELECT",
+            Roles = ["PUBLIC"],
+            IsPermissive = true,
+            Using = "ActorOwnsRow",
+            WithCheck = null
+        };
+
+    private static PostgreSqlPolicyInspection CreatePolicyInspection()
+        => new("tutorial_owner", "SELECT", ["lgym_runtime", "PUBLIC"], true, "ActorOwnsRow", null);
+
+    private static PostgreSqlRuntimeInspection CreateInspectionWithPolicies(
+        IReadOnlyList<PostgreSqlPolicyInspection> policies)
+        => CreateInspection() with
+        {
+            ProtectedTables = [new PostgreSqlProtectedTableInspection(
+                "public.UserTutorialProgresses",
+                false,
+                false,
+                false,
+                policies)]
+        };
+
     private static PostgreSqlRuntimeInspection CreateInspection()
         => new(
             "lgym",
@@ -160,8 +273,23 @@ public sealed class PostgreSqlRuntimeConnectionValidatorTests
             [],
             false,
             true,
+            true,
             [],
             [],
             [new PostgreSqlProtectedTableInspection("public.UserTutorialProgresses", false, false, false, [])],
             null);
+
+    public enum PolicyDrift
+    {
+        Missing,
+        Extra,
+        Name,
+        RoleSet,
+        RoleCase,
+        DuplicateRole,
+        Command,
+        Permissiveness,
+        Using,
+        WithCheck
+    }
 }

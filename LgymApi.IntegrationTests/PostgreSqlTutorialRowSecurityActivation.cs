@@ -12,20 +12,22 @@ internal static class PostgreSqlTutorialRowSecurityActivation
         string maintenanceConnectionString,
         string databaseName,
         string maintenanceRole,
-        string runtimeRole)
+        string runtimeRole,
+        string targetEnvironment = "Staging")
     {
         var connection = new NpgsqlConnectionStringBuilder(maintenanceConnectionString);
         var scriptPath = Path.Combine(FindRepositoryRoot(), ScriptRelativePath);
 
-        await RunScriptAsync(CreateProcessStartInfo(connection, databaseName, maintenanceRole, runtimeRole), scriptPath);
-        await RunScriptAsync(CreateProcessStartInfo(connection, databaseName, maintenanceRole, runtimeRole), scriptPath);
+        await RunScriptAsync(CreateProcessStartInfo(connection, databaseName, maintenanceRole, runtimeRole, targetEnvironment), scriptPath);
+        await RunScriptAsync(CreateProcessStartInfo(connection, databaseName, maintenanceRole, runtimeRole, targetEnvironment), scriptPath);
     }
 
     private static ProcessStartInfo CreateProcessStartInfo(
         NpgsqlConnectionStringBuilder connection,
         string databaseName,
         string maintenanceRole,
-        string runtimeRole)
+        string runtimeRole,
+        string targetEnvironment)
     {
         var runnerContainer = FindRunnerContainer();
         var host = connection.Host ?? throw new InvalidOperationException("The maintenance connection must include a host.");
@@ -55,7 +57,7 @@ internal static class PostgreSqlTutorialRowSecurityActivation
         startInfo.ArgumentList.Add("-v");
         startInfo.ArgumentList.Add("ON_ERROR_STOP=1");
         AddVariable(startInfo, "database_name", databaseName);
-        AddVariable(startInfo, "target_environment", "Staging");
+        AddVariable(startInfo, "target_environment", targetEnvironment);
         AddVariable(startInfo, "maintenance_role", maintenanceRole);
         AddVariable(startInfo, "runtime_role", runtimeRole);
         startInfo.ArgumentList.Add("-h");
@@ -85,16 +87,26 @@ internal static class PostgreSqlTutorialRowSecurityActivation
 
         var standardOutput = process.StandardOutput.ReadToEndAsync();
         var standardError = process.StandardError.ReadToEndAsync();
+        IOException? standardInputFailure = null;
         await using (var script = File.OpenRead(scriptPath))
         {
-            await script.CopyToAsync(process.StandardInput.BaseStream);
+            try
+            {
+                await script.CopyToAsync(process.StandardInput.BaseStream);
+            }
+            catch (IOException exception) when (process.HasExited && process.ExitCode != 0)
+            {
+                standardInputFailure = exception;
+            }
         }
 
         process.StandardInput.Close();
         await Task.WhenAll(process.WaitForExitAsync(), standardOutput, standardError);
         if (process.ExitCode != 0)
         {
-            throw new InvalidOperationException($"Tutorial RLS activation command failed with exit code {process.ExitCode}.");
+            throw new InvalidOperationException(
+                $"Tutorial RLS activation command failed with exit code {process.ExitCode}.",
+                standardInputFailure);
         }
     }
 

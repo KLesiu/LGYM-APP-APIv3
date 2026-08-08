@@ -43,6 +43,8 @@ public static class PostgreSqlRuntimeConnectionValidator
 
     public static void ValidateInspection(PostgreSqlRuntimeInspection inspection, PostgreSqlRuntimeValidationOptions options)
     {
+        options.Validate();
+
         if (!string.Equals(inspection.DatabaseName, options.ExpectedDatabase, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Runtime PostgreSQL connection targets an unexpected database.");
@@ -66,6 +68,11 @@ public static class PostgreSqlRuntimeConnectionValidator
         if (!inspection.HangfireSchemaExists)
         {
             throw new InvalidOperationException("Hangfire schema is missing. Run the offline DataSeeder with --prepare-hangfire before API startup.");
+        }
+
+        if (!inspection.HangfireSchemaUsageGranted)
+        {
+            throw new InvalidOperationException("Runtime PostgreSQL role is missing USAGE on the Hangfire schema.");
         }
 
         if (inspection.MissingTableGrants.Count != 0 || inspection.MissingSequenceGrants.Count != 0)
@@ -92,7 +99,6 @@ public static class PostgreSqlRuntimeConnectionValidator
             }
 
             var expectedPolicies = expectedTable.Policies
-                .Select(policy => new PostgreSqlPolicyInspection(policy.Name, policy.Command))
                 .OrderBy(policy => policy.Name, StringComparer.Ordinal)
                 .ThenBy(policy => policy.Command, StringComparer.Ordinal)
                 .ToArray();
@@ -100,7 +106,8 @@ public static class PostgreSqlRuntimeConnectionValidator
                 .OrderBy(policy => policy.Name, StringComparer.Ordinal)
                 .ThenBy(policy => policy.Command, StringComparer.Ordinal)
                 .ToArray();
-            if (!expectedPolicies.SequenceEqual(actualPolicies))
+            if (expectedPolicies.Length != actualPolicies.Length
+                || !expectedPolicies.Zip(actualPolicies).All(pair => PolicyMatches(pair.First, pair.Second)))
             {
                 throw new InvalidOperationException("Protected-table policies do not match the configured runtime expectation.");
             }
@@ -116,80 +123,14 @@ public static class PostgreSqlRuntimeConnectionValidator
         }
     }
 
+    private static bool PolicyMatches(PostgreSqlPolicyOptions expected, PostgreSqlPolicyInspection actual)
+        => string.Equals(expected.Name, actual.Name, StringComparison.Ordinal)
+            && string.Equals(expected.Command, actual.Command, StringComparison.Ordinal)
+            && expected.Roles
+                .OrderBy(role => role, StringComparer.Ordinal)
+                .SequenceEqual(actual.Roles.OrderBy(role => role, StringComparer.Ordinal), StringComparer.Ordinal)
+            && expected.IsPermissive!.Value == actual.IsPermissive
+            && string.Equals(expected.Using, actual.Using, StringComparison.Ordinal)
+            && string.Equals(expected.WithCheck, actual.WithCheck, StringComparison.Ordinal);
+
 }
-
-public sealed class PostgreSqlRuntimeValidationOptions
-{
-    public string ExpectedDatabase { get; init; } = string.Empty;
-    public string ExpectedRole { get; init; } = string.Empty;
-    public string HangfireSchema { get; init; } = "hangfire";
-    public List<PostgreSqlProtectedTableOptions> ProtectedTables { get; init; } = [];
-    public PostgreSqlHelperFunctionOptions? HelperFunction { get; init; }
-
-    internal void Validate()
-    {
-        if (string.IsNullOrWhiteSpace(ExpectedDatabase) || string.IsNullOrWhiteSpace(ExpectedRole) || string.IsNullOrWhiteSpace(HangfireSchema))
-        {
-            throw new InvalidOperationException("PostgreSqlRuntime must configure ExpectedDatabase, ExpectedRole, and HangfireSchema.");
-        }
-
-        foreach (var table in ProtectedTables)
-        {
-            table.Validate();
-        }
-    }
-}
-
-public sealed class PostgreSqlProtectedTableOptions
-{
-    public string Schema { get; init; } = "public";
-    public string Name { get; init; } = string.Empty;
-    public bool RowSecurityEnabled { get; init; }
-    public bool RowSecurityForced { get; init; }
-    public List<PostgreSqlPolicyOptions> Policies { get; init; } = [];
-    internal string Key => $"{Schema}.{Name}";
-
-    internal void Validate()
-    {
-        if (string.IsNullOrWhiteSpace(Schema) || string.IsNullOrWhiteSpace(Name) || Policies.Any(policy => string.IsNullOrWhiteSpace(policy.Name) || string.IsNullOrWhiteSpace(policy.Command)))
-        {
-            throw new InvalidOperationException("PostgreSqlRuntime protected-table configuration is invalid.");
-        }
-    }
-}
-
-public sealed class PostgreSqlPolicyOptions
-{
-    public string Name { get; init; } = string.Empty;
-    public string Command { get; init; } = string.Empty;
-}
-
-public sealed class PostgreSqlHelperFunctionOptions
-{
-    public string Schema { get; init; } = "public";
-    public string Name { get; init; } = string.Empty;
-}
-
-public sealed record PostgreSqlRuntimeInspection(
-    string DatabaseName,
-    string CurrentUser,
-    bool IsSuperuser,
-    bool BypassesRowSecurity,
-    IReadOnlyList<string> ElevatedMemberships,
-    bool MultiplexingEnabled,
-    bool HangfireSchemaExists,
-    IReadOnlyList<string> MissingTableGrants,
-    IReadOnlyList<string> MissingSequenceGrants,
-    IReadOnlyList<PostgreSqlProtectedTableInspection> ProtectedTables,
-    PostgreSqlHelperFunctionInspection? HelperFunction);
-
-public sealed record PostgreSqlProtectedTableInspection(
-    string Key,
-    bool RowSecurityEnabled,
-    bool RowSecurityForced,
-    bool IsOwnedByRuntimeRole,
-    IReadOnlyList<PostgreSqlPolicyInspection> Policies);
-
-public sealed record PostgreSqlPolicyInspection(string Name, string Command);
-
-public sealed record PostgreSqlHelperFunctionInspection(bool IsSecurityDefiner, bool HasSafeSearchPath, bool HasRequiredExecuteGrant);

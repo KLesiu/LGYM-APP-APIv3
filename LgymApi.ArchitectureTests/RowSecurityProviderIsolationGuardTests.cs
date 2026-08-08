@@ -11,6 +11,9 @@ public sealed class RowSecurityProviderIsolationGuardTests
     private const string ApiStartupGuardPath = "LgymApi.Api/Configuration/StartupRuntimeGuards.cs";
     private const string RuntimeConnectionInspectorPath = "LgymApi.Infrastructure/Data/PostgreSqlRuntimeConnectionInspector.cs";
     private const string RuntimeConnectionGuardPath = "LgymApi.Infrastructure/Data/PostgreSqlRuntimeConnectionValidator.cs";
+    private const string RuntimePolicyInspectorPath = "LgymApi.Infrastructure/Data/PostgreSqlRuntimePolicyInspector.cs";
+    private const string RuntimePrivilegeInspectorPath = "LgymApi.Infrastructure/Data/PostgreSqlRuntimePrivilegeInspector.cs";
+    private const string RuntimeValidationModelsPath = "LgymApi.Infrastructure/Data/PostgreSqlRuntimeValidationModels.cs";
 
     private static readonly string[] RowSecurityIdentifiers =
     [
@@ -149,6 +152,9 @@ public sealed class RowSecurityProviderIsolationGuardTests
             || string.Equals(relativePath, ApiStartupGuardPath, StringComparison.OrdinalIgnoreCase)
             || string.Equals(relativePath, RuntimeConnectionInspectorPath, StringComparison.OrdinalIgnoreCase)
             || string.Equals(relativePath, RuntimeConnectionGuardPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relativePath, RuntimePolicyInspectorPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relativePath, RuntimePrivilegeInspectorPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relativePath, RuntimeValidationModelsPath, StringComparison.OrdinalIgnoreCase)
             || relativePath.StartsWith("LgymApi.Infrastructure/Migrations/", StringComparison.OrdinalIgnoreCase)
             || relativePath.StartsWith("scripts/", StringComparison.OrdinalIgnoreCase)
             || relativePath.StartsWith("deploy/postgres/", StringComparison.OrdinalIgnoreCase);
@@ -156,7 +162,9 @@ public sealed class RowSecurityProviderIsolationGuardTests
     private static bool IsApprovedNpgsqlSource(string relativePath)
         => string.Equals(relativePath, ActorScopePath, StringComparison.OrdinalIgnoreCase)
             || string.Equals(relativePath, RuntimeConnectionInspectorPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(relativePath, RuntimeConnectionGuardPath, StringComparison.OrdinalIgnoreCase);
+            || string.Equals(relativePath, RuntimeConnectionGuardPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relativePath, RuntimePolicyInspectorPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relativePath, RuntimePrivilegeInspectorPath, StringComparison.OrdinalIgnoreCase);
 
     private static int GetLine(SyntaxTree tree, SyntaxNode node) => tree.GetLineSpan(node.Span).StartLinePosition.Line + 1;
 

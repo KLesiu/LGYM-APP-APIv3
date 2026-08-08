@@ -25,10 +25,13 @@ Run every command below from an operator workstation or deployment job with a di
 ```powershell
 psql -X -v ON_ERROR_STOP=1 `
   -v database_name=<database_name> `
+  -v database_environment=Staging `
   -v maintenance_role=<maintenance_role> `
   -v runtime_role=<runtime_role> `
   -f deploy/postgres/provision-rls-pilot-roles.sql
 ```
+
+`database_environment` must be `Development`, `Staging`, or `Production` and must describe the database being provisioned. Provisioning persists the normalized value as the database-level `lgym.deployment_environment` setting. Activation and deactivation read that independent marker from `pg_db_role_setting` for the current database and reject a mismatched `target_environment`; changing only the CLI argument cannot turn a Production database into a Staging target.
 
 2. In the offline deployment environment only, provide `LGYM_MIGRATION_POSTGRES` through secret injection and run the EF and Hangfire bootstrap. This is the only supported schema-preparation path. The API never migrates or prepares Hangfire in Staging or Production.
 
@@ -36,11 +39,11 @@ psql -X -v ON_ERROR_STOP=1 `
 pwsh -NoProfile -File scripts/migrate-db.ps1
 ```
 
-3. Confirm the startup configuration uses the runtime role and disables multiplexing. Confirm `PostgreSqlRuntime` names only the two tutorial tables, retains all eight policy name and command pairs, and still expects both RLS flags to be `false` before activation. Start the API only after the offline work completes. Startup rejects pending migrations, the wrong database or runtime role, elevated membership, superuser or `BYPASSRLS`, missing Hangfire schema or grants, table ownership by the runtime role, multiplexing, and a policy or RLS state that differs from configuration.
+3. Confirm the startup configuration uses the runtime role and disables multiplexing. Confirm `PostgreSqlRuntime` names only the two tutorial tables, retains all eight policy contracts including command, exact roles, permissiveness, `USING`, and `WITH CHECK`, and still expects both RLS flags to be `false` before activation. Start the API only after the offline work completes. Startup rejects pending migrations, the wrong database or runtime role, elevated membership, superuser or `BYPASSRLS`, missing Hangfire schema usage or any required table/sequence grant, table ownership by the runtime role, multiplexing, and a policy semantic or RLS state that differs from configuration.
 
 ## Activate in Staging
 
-Activation is manual and staging-only. The script starts one transaction, takes an advisory transaction lock, verifies the target database, maintenance connection, role properties, table ownership, and the exact eight-policy contract, then enables and forces RLS on both tables together. It rejects `Production`.
+Activation is manual and staging-only. The script starts one transaction, takes an advisory transaction lock, verifies the stored database environment, target database, maintenance connection, role properties, table ownership, and the exact eight-policy semantic contract, then enables and forces RLS on both tables together. It rejects `Production`, a missing or mismatched database marker, altered policy roles or permissiveness, and altered `USING` or `WITH CHECK` predicates.
 
 Before activation, deploy configuration that expects `RowSecurityEnabled: true` and `RowSecurityForced: true` for both protected tables, but do not restart traffic yet. Then run:
 
