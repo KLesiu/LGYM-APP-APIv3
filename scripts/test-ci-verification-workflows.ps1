@@ -311,6 +311,39 @@ function Assert-SonarWaitFixtureRejected {
     Write-Output "Rejected Sonar $Description fixture: $rejection"
 }
 
+function Assert-SonarPostgreSqlCoverageContract {
+    param(
+        [Parameter(Mandatory)][object]$Workflow,
+        [Parameter(Mandatory)][string]$RepositoryRoot
+    )
+
+    foreach ($jobId in @('sonar-required', 'sonar-push')) {
+        $job = $Workflow.jobs.$jobId
+        Assert-True -Condition ($null -ne $job.services.postgres) -Message "Sonar job '$jobId' must provision disposable PostgreSQL."
+        Assert-True -Condition ([string]$job.env.LGYM_CI_POSTGRES_ADMIN -match '^Host=localhost;') -Message "Sonar job '$jobId' must provide the disposable PostgreSQL admin connection through its environment."
+
+        $coverageDirectoryStep = @($job.steps | Where-Object { $_.name -ceq 'Create coverage directories' })
+        Assert-True -Condition ($coverageDirectoryStep.Count -eq 1 -and [string]$coverageDirectoryStep[0].run -match 'TestResults/PostgreSqlIntegration') -Message "Sonar job '$jobId' must create a PostgreSQL coverage directory."
+
+        $postgreSqlCoverageStep = @($job.steps | Where-Object { $_.name -ceq 'Run disposable PostgreSQL integration tests with coverage' })
+        Assert-True -Condition ($postgreSqlCoverageStep.Count -eq 1) -Message "Sonar job '$jobId' must run the disposable PostgreSQL coverage suite exactly once."
+        Assert-True -Condition ([string]$postgreSqlCoverageStep[0].shell -ceq 'pwsh') -Message "Sonar job '$jobId' must run the PostgreSQL coverage suite through PowerShell."
+
+        $run = [string]$postgreSqlCoverageStep[0].run
+        Assert-True -Condition ($run -match 'scripts/run-postgresql-integration-tests\.ps1') -Message "Sonar job '$jobId' must use the repository PostgreSQL runner."
+        Assert-True -Condition ($run -match '-ConnectionString\s+\$env:LGYM_CI_POSTGRES_ADMIN') -Message "Sonar job '$jobId' must pass the ephemeral PostgreSQL connection through the environment."
+        Assert-True -Condition ($run -match '-CoverageOutput') -Message "Sonar job '$jobId' must collect OpenCover output from the PostgreSQL suite."
+        Assert-True -Condition ($run -match 'TestResults/PostgreSqlIntegration/coverage\.opencover\.xml') -Message "Sonar job '$jobId' must write PostgreSQL coverage to Sonar's report glob."
+        Assert-True -Condition ($run -notmatch '(?i)--filter|-TestFilter') -Message "Sonar job '$jobId' must keep the PostgreSQL coverage suite unfiltered."
+    }
+
+    $runnerPath = Join-Path $RepositoryRoot 'scripts/run-postgresql-integration-tests.ps1'
+    $runnerText = [System.IO.File]::ReadAllText($runnerPath)
+    Assert-True -Condition ($runnerText -match '\[string\]\$CoverageOutput\s*=\s*""') -Message 'The PostgreSQL runner must accept a coverage output path.'
+    Assert-True -Condition ($runnerText -match 'CoverletOutputFormat=opencover') -Message 'The PostgreSQL runner must emit OpenCover coverage.'
+    Assert-True -Condition ($runnerText -match 'CoverletOutput=\$coverageOutput') -Message 'The PostgreSQL runner must direct Coverlet output to the requested path.'
+}
+
 function Assert-TestsCompatibilityContract {
     param([Parameter(Mandatory)][object]$Workflow)
 
@@ -551,6 +584,7 @@ foreach ($sonarJob in @($sonarWorkflow.jobs.'sonar-required', $sonarWorkflow.job
     Assert-True -Condition ($integrationStep.Count -eq 1 -and $integrationStep[0].run -match '--filter "TestCategory!=PostgreSql"') -Message 'Sonar does not use the declared InMemory integration filter.'
 }
 Assert-SonarQualityGateWaitContract -Workflow $sonarWorkflow
+Assert-SonarPostgreSqlCoverageContract -Workflow $sonarWorkflow -RepositoryRoot $repositoryRoot
 
 $requiredCiJobs = @('release-build', 'non-postgresql', 'postgresql', 'postgresql-cleanup', 'final-evidence-gate', 'tests')
 $cases = @(

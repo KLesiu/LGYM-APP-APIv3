@@ -4,7 +4,8 @@ param(
     [ValidateRange(1, 300)]
     [int]$StartupTimeoutSeconds = 60,
     [switch]$NoBuild,
-    [string]$TestFilter = ""
+    [string]$TestFilter = "",
+    [string]$CoverageOutput = ""
 )
 
 Set-StrictMode -Version Latest
@@ -167,6 +168,15 @@ if (-not [System.IO.Path]::IsPathRooted($ResultsDirectory)) {
     $ResultsDirectory = Join-Path $repositoryRoot $ResultsDirectory
 }
 
+if (-not [string]::IsNullOrWhiteSpace($CoverageOutput)) {
+    if (-not [System.IO.Path]::IsPathRooted($CoverageOutput)) {
+        $CoverageOutput = Join-Path $repositoryRoot $CoverageOutput
+    }
+
+    $coverageDirectory = Split-Path -Parent $CoverageOutput
+    $null = New-Item -ItemType Directory -Path $coverageDirectory -Force
+}
+
 $resultsPath = (New-Item -ItemType Directory -Path $ResultsDirectory -Force).FullName
 $trxFileName = "integration-tests-with-postgresql-$([Guid]::NewGuid().ToString('N')).trx"
 $originalPostgreSqlEnvironment = [Environment]::GetEnvironmentVariable("LGYM_TEST_POSTGRES", "Process")
@@ -212,6 +222,9 @@ try {
     )
     if ($NoBuild) {
         $testArguments += "--no-build"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($CoverageOutput)) {
+        $testArguments += "/p:CollectCoverage=true", "/p:CoverletOutputFormat=opencover", "/p:CoverletOutput=$CoverageOutput"
     }
     if (-not [string]::IsNullOrWhiteSpace($TestFilter)) {
         $testArguments += "--filter", $TestFilter
