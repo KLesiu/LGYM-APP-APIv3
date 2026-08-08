@@ -224,7 +224,7 @@ try {
         $testArguments += "--no-build"
     }
     if (-not [string]::IsNullOrWhiteSpace($CoverageOutput)) {
-        $testArguments += "/p:CollectCoverage=true", "/p:CoverletOutputFormat=opencover", "/p:CoverletOutput=$CoverageOutput"
+        $testArguments += "/p:CollectCoverage=true", "/p:CoverletOutputFormat=opencover", "/p:CoverletOutput=$CoverageOutput", "/p:UseSourceLink=false"
     }
     if (-not [string]::IsNullOrWhiteSpace($TestFilter)) {
         $testArguments += "--filter", $TestFilter

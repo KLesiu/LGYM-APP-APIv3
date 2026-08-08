@@ -411,6 +411,195 @@ function Assert-TestsCompatibilityFixtureRejected {
     Write-Output "Rejected tests compatibility $Description fixture: $rejection"
 }
 
+function Assert-Task4EvidenceProducerContract {
+    param(
+        [Parameter(Mandatory)][object]$Workflow,
+        [Parameter(Mandatory)][string]$RepositoryRoot
+    )
+
+    $nonPostgreSqlJob = $Workflow.jobs.'non-postgresql'
+    $matrix = @($nonPostgreSqlJob.strategy.matrix.include)
+    Assert-True -Condition ($matrix.Count -eq 4) -Message 'The non-PostgreSQL matrix must contain exactly four suites.'
+    Assert-StringSet -Expected @('Architecture', 'DataSeeder', 'InMemoryIntegration', 'Unit') -Actual @($matrix | ForEach-Object { [string]$_.suite }) -Description 'non-PostgreSQL suite matrix'
+
+    $nonPostgreSqlSteps = @($nonPostgreSqlJob.steps | Where-Object { $_.name -ceq 'Run suite with same-SHA TRX evidence' })
+    Assert-True -Condition ($nonPostgreSqlSteps.Count -eq 1) -Message 'The non-PostgreSQL matrix must contain exactly one suite execution step.'
+    $nonPostgreSqlRun = [string]$nonPostgreSqlSteps[0].run
+    Assert-True -Condition (@([regex]::Matches($nonPostgreSqlRun, '(?m)^\s*& dotnet @arguments\s*$')).Count -eq 1) -Message 'The non-PostgreSQL matrix must execute its generated test command exactly once per matrix entry.'
+    Assert-True -Condition ($nonPostgreSqlRun -match [regex]::Escape("`$suiteDirectory = Join-Path `$env:GITHUB_WORKSPACE")) -Message 'The non-PostgreSQL suite directory must be rooted at GITHUB_WORKSPACE.'
+    Assert-True -Condition ($nonPostgreSqlRun -match [regex]::Escape("`$coveragePath = Join-Path `$suiteDirectory 'coverage.opencover.xml'")) -Message 'The non-PostgreSQL coverage report must be named coverage.opencover.xml beneath its suite directory.'
+    foreach ($coverageArgument in @('/p:CollectCoverage=true', '/p:CoverletOutputFormat=opencover', '/p:CoverletOutput=$coveragePath', '/p:UseSourceLink=false')) {
+        Assert-True -Condition (@([regex]::Matches($nonPostgreSqlRun, [regex]::Escape($coverageArgument))).Count -eq 1) -Message "The non-PostgreSQL suite command must contain exactly one '$coverageArgument' coverage argument."
+    }
+    Assert-True -Condition (@([regex]::Matches($nonPostgreSqlRun, 'scripts/assert-trx\.ps1')).Count -eq 1) -Message 'The non-PostgreSQL suite must assert its evidence exactly once.'
+    Assert-True -Condition ($nonPostgreSqlRun -match [regex]::Escape('-CoveragePath $coveragePath')) -Message 'The non-PostgreSQL suite must pass its OpenCover report to assert-trx.'
+
+    $postgreSqlJob = $Workflow.jobs.postgresql
+    $postgreSqlSteps = @($postgreSqlJob.steps | Where-Object { $_.name -ceq 'Run unfiltered PostgreSQL suite with same-SHA TRX evidence' })
+    Assert-True -Condition ($postgreSqlSteps.Count -eq 1) -Message 'The PostgreSQL job must contain exactly one unfiltered suite execution step.'
+    $postgreSqlRun = [string]$postgreSqlSteps[0].run
+    Assert-True -Condition (@([regex]::Matches($postgreSqlRun, 'scripts/run-postgresql-integration-tests\.ps1')).Count -eq 2) -Message 'The PostgreSQL suite must contain one runner invocation and one command-record reference.'
+    Assert-True -Condition (@([regex]::Matches($postgreSqlRun, '(?m)^\s*& pwsh -NoProfile -File scripts/run-postgresql-integration-tests\.ps1')).Count -eq 1) -Message 'The PostgreSQL suite must invoke its runner exactly once.'
+    Assert-True -Condition ($postgreSqlRun -notmatch '(?i)--filter|-TestFilter') -Message 'The PostgreSQL suite must remain unfiltered.'
+    Assert-True -Condition ($postgreSqlRun -match [regex]::Escape("`$suiteDirectory = Join-Path `$env:GITHUB_WORKSPACE")) -Message 'The PostgreSQL suite directory must be rooted at GITHUB_WORKSPACE.'
+    Assert-True -Condition ($postgreSqlRun -match [regex]::Escape("`$coveragePath = Join-Path `$suiteDirectory 'coverage.opencover.xml'")) -Message 'The PostgreSQL coverage report must be named coverage.opencover.xml beneath its suite directory.'
+    Assert-True -Condition (@([regex]::Matches($postgreSqlRun, [regex]::Escape('-CoverageOutput $coveragePath'))).Count -eq 1) -Message 'The PostgreSQL runner invocation must bind the suite OpenCover path.'
+    Assert-True -Condition ($postgreSqlRun -match [regex]::Escape("'-CoverageOutput', `$coveragePath")) -Message 'The PostgreSQL command record must bind the suite OpenCover path.'
+    Assert-True -Condition (@([regex]::Matches($postgreSqlRun, 'scripts/assert-trx\.ps1')).Count -eq 1) -Message 'The PostgreSQL suite must assert its evidence exactly once.'
+    Assert-True -Condition ($postgreSqlRun -match [regex]::Escape('-CoveragePath $coveragePath')) -Message 'The PostgreSQL suite must pass its OpenCover report to assert-trx.'
+
+    $runnerPath = Join-Path $RepositoryRoot 'scripts/run-postgresql-integration-tests.ps1'
+    $runnerText = [System.IO.File]::ReadAllText($runnerPath)
+    Assert-True -Condition ($runnerText -match '\[string\]\$CoverageOutput\s*=\s*""') -Message 'The PostgreSQL runner must accept a coverage output path.'
+    Assert-True -Condition ($runnerText -match 'CoverletOutputFormat=opencover') -Message 'The PostgreSQL runner must emit OpenCover coverage.'
+    Assert-True -Condition ($runnerText -match 'CoverletOutput=\$CoverageOutput') -Message 'The PostgreSQL runner must direct Coverlet output to the requested path.'
+    Assert-True -Condition ($runnerText -match 'UseSourceLink=false') -Message 'The PostgreSQL runner must disable SourceLink when collecting coverage.'
+
+    $expectedArtifactNames = @(
+        'verification-build-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}',
+        'verification-${{ matrix.suite }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}',
+        'verification-PostgreSqlIntegration-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}',
+        'verification-PostgreSqlCleanup-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}',
+        'verification-final-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}',
+        'sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}'
+    )
+    $actionSteps = @(Get-WorkflowActionSteps -Workflow $Workflow)
+    $uploads = @($actionSteps | Where-Object { $_.uses -ceq 'actions/upload-artifact@v4' })
+    Assert-True -Condition ($uploads.Count -eq $expectedArtifactNames.Count) -Message 'Expected exactly six fatal verification and Sonar input artifact uploads.'
+    Assert-StringSet -Expected $expectedArtifactNames -Actual @($uploads | ForEach-Object { [string]$_.with.name }) -Description 'run-aware artifact names'
+    foreach ($upload in $uploads) {
+        Assert-True -Condition ($upload.with.'if-no-files-found' -ceq 'error') -Message "Artifact '$($upload.with.name)' must fail when files are absent."
+    }
+
+    $sonarUploads = @($uploads | Where-Object { [string]$_.with.name -ceq 'sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}' })
+    Assert-True -Condition ($sonarUploads.Count -eq 1) -Message 'The final gate must publish exactly one normalized sonar-inputs artifact.'
+    Assert-True -Condition ([string]$sonarUploads[0].with.path -ceq 'TestResults/SonarInputsArtifact') -Message 'The sonar-inputs artifact must upload only the normalized producer output directory.'
+
+    $finalGate = $Workflow.jobs.'final-evidence-gate'
+    Assert-StringSet -Expected @('non-postgresql', 'postgresql', 'postgresql-cleanup', 'release-build') -Actual @($finalGate.needs) -Description 'final evidence gate dependencies'
+    $finalDownloads = @($finalGate.steps | Where-Object { $null -ne $_.PSObject.Properties['uses'] -and $_.uses -ceq 'actions/download-artifact@v4' })
+    Assert-True -Condition ($finalDownloads.Count -eq 1) -Message 'The final gate must download exactly one current-run verification artifact set.'
+    Assert-True -Condition ([string]$finalDownloads[0].with.pattern -ceq 'verification-*-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}') -Message 'The final gate must match only the current run, attempt, and SHA verification artifacts.'
+    Assert-True -Condition ([string]$finalDownloads[0].with.path -ceq 'TestResults/Collected' -and $finalDownloads[0].with.'merge-multiple' -eq $false) -Message 'The final gate must preserve isolated verification artifact directories.'
+
+    $validatorSteps = @($finalGate.steps | Where-Object { $_.name -ceq 'Validate complete same-SHA evidence before publication' })
+    Assert-True -Condition ($validatorSteps.Count -eq 1) -Message 'The final gate must contain exactly one final evidence producer invocation.'
+    $validatorRun = [string]$validatorSteps[0].run
+    foreach ($argument in @(
+            'scripts/assert-ci-verification-evidence.ps1',
+            '-EvidenceRoot TestResults/Collected',
+            '-Repository ${{ github.repository }}',
+            '-RunId ${{ github.run_id }}',
+            '-RunAttempt ${{ github.run_attempt }}',
+            '-Event ${{ github.event_name }}',
+            '-Ref ${{ github.ref }}',
+            '-MergeSha ${{ github.sha }}',
+            "-PullRequestHeadSha '`$`{{ github.event.pull_request.head.sha }}`'",
+            '-SonarInputsDirectory TestResults/SonarInputsArtifact')) {
+        Assert-True -Condition ($validatorRun -match [regex]::Escape($argument)) -Message "The final evidence producer must receive '$argument'."
+    }
+
+    Assert-TestsCompatibilityContract -Workflow $Workflow
+}
+
+function Assert-Task4EvidenceProducerFixtureRejected {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$RepositoryRoot,
+        [Parameter(Mandatory)][string]$Description
+    )
+
+    $fixtureWorkflow = @(Get-YamlDocuments -Paths @($Path))[0]
+    $rejection = $null
+    try {
+        Assert-Task4EvidenceProducerContract -Workflow $fixtureWorkflow -RepositoryRoot $RepositoryRoot
+    }
+    catch {
+        $rejection = $_.Exception.Message
+    }
+
+    Assert-True -Condition (-not [string]::IsNullOrWhiteSpace($rejection)) -Message "The Task 4 evidence producer contract accepted the $Description fixture."
+    Write-Output "Rejected Task 4 $Description fixture: $rejection"
+}
+
+function Assert-FinalEvidenceProducerArgumentBinding {
+    param(
+        [Parameter(Mandatory)][string]$ValidatorRun,
+        [Parameter(Mandatory)][string]$ProbePath
+    )
+
+    $probe = @'
+param(
+    [Parameter(Mandatory)][string]$EvidenceRoot,
+    [Parameter(Mandatory)][string]$Repository,
+    [Parameter(Mandatory)][string]$RunId,
+    [Parameter(Mandatory)][string]$RunAttempt,
+    [Parameter(Mandatory)][string]$Event,
+    [Parameter(Mandatory)][string]$Ref,
+    [Parameter(Mandatory)][string]$MergeSha,
+    [Parameter(Mandatory)][AllowEmptyString()][string]$PullRequestHeadSha,
+    [Parameter(Mandatory)][string]$SonarInputsDirectory
+)
+
+[pscustomobject]@{
+    pullRequestHeadSha = $PullRequestHeadSha
+    sonarInputsDirectory = $SonarInputsDirectory
+} | ConvertTo-Json -Compress
+'@
+    [System.IO.File]::WriteAllText($ProbePath, $probe, [System.Text.UTF8Encoding]::new($false))
+
+    function Invoke-RenderedProducerProbe {
+        param([Parameter(Mandatory)][string]$RenderedCommand)
+
+        $output = @(& ([scriptblock]::Create($RenderedCommand)) 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            throw "The rendered producer command failed with exit code $($LASTEXITCODE): $($output -join [Environment]::NewLine)"
+        }
+
+        return (($output -join [Environment]::NewLine) | ConvertFrom-Json -Depth 8)
+    }
+
+    function Render-ProducerCommand {
+        param(
+            [Parameter(Mandatory)][string]$Event,
+            [Parameter(Mandatory)][string]$Ref,
+            [Parameter(Mandatory)][AllowEmptyString()][string]$PullRequestHeadSha
+        )
+
+        $rendered = $ValidatorRun.Replace('scripts/assert-ci-verification-evidence.ps1', "'$($ProbePath.Replace("'", "''"))'")
+        $replacements = [ordered]@{
+                '${{ github.repository }}' = 'lgym/LGYM-APP-APIv3'
+                '${{ github.run_id }}' = '440001'
+                '${{ github.run_attempt }}' = '2'
+                '${{ github.event_name }}' = $Event
+                '${{ github.ref }}' = $Ref
+                '${{ github.sha }}' = '0123456789abcdef0123456789abcdef01234567'
+                '${{ github.event.pull_request.head.sha }}' = $PullRequestHeadSha
+            }
+        foreach ($replacement in $replacements.GetEnumerator()) {
+            $rendered = $rendered.Replace([string]$replacement.Key, [string]$replacement.Value)
+        }
+
+        return $rendered
+    }
+
+    $prHeadSha = '89abcdef0123456789abcdef0123456789abcdef'
+    $prCommand = Render-ProducerCommand -Event 'pull_request' -Ref 'refs/pull/440/merge' -PullRequestHeadSha $prHeadSha
+    $prResult = Invoke-RenderedProducerProbe -RenderedCommand $prCommand
+    Assert-True -Condition ($prResult.pullRequestHeadSha -ceq $prHeadSha -and $prResult.sonarInputsDirectory -ceq 'TestResults/SonarInputsArtifact') -Message 'The rendered pull-request producer command did not bind its head SHA and Sonar input directory independently.'
+    Write-Output "Bound final producer pull_request command: $prCommand"
+
+    $pushCommand = Render-ProducerCommand -Event 'push' -Ref 'refs/heads/main' -PullRequestHeadSha ''
+    $pushResult = Invoke-RenderedProducerProbe -RenderedCommand $pushCommand
+    Assert-True -Condition ($pushResult.pullRequestHeadSha -ceq '' -and $pushResult.sonarInputsDirectory -ceq 'TestResults/SonarInputsArtifact') -Message 'The rendered push producer command did not bind an empty PR head SHA and independent Sonar input directory.'
+    Write-Output "Bound final producer push command: $pushCommand"
+
+    $unsafePushCommand = $pushCommand.Replace("-PullRequestHeadSha ''", '-PullRequestHeadSha')
+    $unsafeOutput = @(& ([scriptblock]::Create($unsafePushCommand)) 2>&1)
+    Assert-True -Condition ($LASTEXITCODE -ne 0) -Message 'The unprotected rendered push command unexpectedly bound its next switch safely.'
+    Write-Output "Rejected unprotected rendered push command: $($unsafeOutput -join [Environment]::NewLine)"
+}
+
 function New-EventContext {
     param(
         [Parameter(Mandatory)][string]$EventName,
@@ -738,13 +927,8 @@ Assert-True -Condition (($prWorkflow.jobs.postgresql.steps | Where-Object { $_.n
 Assert-True -Condition (($prWorkflow.jobs.postgresql.steps | Where-Object { $_.name -ceq 'Run unfiltered PostgreSQL suite with same-SHA TRX evidence' }).run -match 'scripts/assert-trx\.ps1') -Message 'The PostgreSQL suite does not assert TRX evidence.'
 Assert-True -Condition (($prWorkflow.jobs.'final-evidence-gate'.steps | Where-Object { $_.name -ceq 'Validate complete same-SHA evidence before publication' }).run -match 'assert-ci-verification-evidence\.ps1') -Message 'The final evidence gate does not execute the artifact validator.'
 Assert-TestsCompatibilityContract -Workflow $prWorkflow
+Assert-Task4EvidenceProducerContract -Workflow $prWorkflow -RepositoryRoot $repositoryRoot
 $actionSteps = @(Get-WorkflowActionSteps -Workflow $prWorkflow)
-$uploads = @($actionSteps | Where-Object { $_.uses -ceq 'actions/upload-artifact@v4' })
-Assert-True -Condition ($uploads.Count -eq 5) -Message 'Expected five fatal evidence artifact uploads.'
-foreach ($upload in $uploads) {
-    Assert-True -Condition ($upload.with.name -match [regex]::Escape('${{ github.sha }}')) -Message 'An evidence artifact name is not keyed by github.sha.'
-    Assert-True -Condition ($upload.with.'if-no-files-found' -ceq 'error') -Message 'An evidence artifact upload does not fail when files are absent.'
-}
 Assert-True -Condition (@($actionSteps | Where-Object { $_.uses -match 'test-reporter|dorny/' }).Count -eq 0) -Message 'A summary publisher can run before final evidence validation.'
 Assert-True -Condition ($null -eq $sonarWorkflow.jobs.'sonar-required'.PSObject.Properties['continue-on-error']) -Message 'Required Sonar analysis must not be optional.'
 foreach ($sonarJob in @($sonarWorkflow.jobs.'sonar-required', $sonarWorkflow.jobs.'sonar-push')) {
@@ -791,6 +975,46 @@ try {
     Assert-TestsCompatibilityFixtureRejected -Path $missingTestsPath -Description 'missing'
     Assert-TestsCompatibilityFixtureRejected -Path $miswiredTestsPath -Description 'miswired'
     Assert-TestsCompatibilityFixtureRejected -Path $permissiveTestsPath -Description 'permissive'
+
+    $validatorRun = [string]($prWorkflow.jobs.'final-evidence-gate'.steps | Where-Object { $_.name -ceq 'Validate complete same-SHA evidence before publication' }).run
+    Assert-FinalEvidenceProducerArgumentBinding -ValidatorRun $validatorRun -ProbePath (Join-Path $temporaryRoot 'final-evidence-binding-probe.ps1')
+
+    $task4FixtureRoot = New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'task-4-workflows') -Force
+    $duplicateSuiteExecutionPath = Join-Path $task4FixtureRoot.FullName 'duplicate-suite-execution.yml'
+    $missingSuitePath = Join-Path $task4FixtureRoot.FullName 'missing-suite.yml'
+    $missingCoveragePath = Join-Path $task4FixtureRoot.FullName 'missing-coverage.yml'
+    $secondPostgreSqlRunnerPath = Join-Path $task4FixtureRoot.FullName 'second-postgresql-runner.yml'
+    $shaOnlyArtifactPath = Join-Path $task4FixtureRoot.FullName 'sha-only-artifact.yml'
+    $nonfatalUploadPath = Join-Path $task4FixtureRoot.FullName 'nonfatal-upload.yml'
+    $brokenProvenancePath = Join-Path $task4FixtureRoot.FullName 'broken-provenance.yml'
+    $artifactLayoutPath = Join-Path $task4FixtureRoot.FullName 'artifact-layout.yml'
+    $unprotectedPushHeadPath = Join-Path $task4FixtureRoot.FullName 'unprotected-push-head.yml'
+
+    $duplicateSuiteExecutionText = [regex]::Replace($prWorkflowText, '(?m)^(\s*)& dotnet @arguments\s*$', "`$1& dotnet @arguments`r`n`$1& dotnet @arguments", 1)
+    $missingSuiteText = [regex]::Replace($prWorkflowText, '(?ms)\r?\n          - suite: DataSeeder.*?(?=\r?\n    env:)', '', 1)
+    $missingCoverageText = [regex]::Replace($prWorkflowText, "(?m)^\s*'/p:UseSourceLink=false'\r?\n", '', 1)
+    $postgreSqlRunnerInvocation = [regex]::Match($prWorkflowText, '(?ms)^\s*& pwsh -NoProfile -File scripts/run-postgresql-integration-tests\.ps1\s+.*?^\s+-NoBuild\s*$')
+    Assert-True -Condition $postgreSqlRunnerInvocation.Success -Message 'The second-PostgreSQL-runner fixture could not locate the existing runner invocation.'
+    $secondPostgreSqlRunnerText = $prWorkflowText.Insert($postgreSqlRunnerInvocation.Index + $postgreSqlRunnerInvocation.Length, [Environment]::NewLine + $postgreSqlRunnerInvocation.Value)
+    $shaOnlyArtifactText = $prWorkflowText.Replace('verification-build-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}', 'verification-build-${{ github.sha }}')
+    $nonfatalUploadText = $prWorkflowText.Replace('if-no-files-found: error', 'if-no-files-found: warn')
+    $brokenProvenanceText = $prWorkflowText.Replace('-RunAttempt ${{ github.run_attempt }}', '')
+    $artifactLayoutText = $prWorkflowText.Replace('TestResults/SonarInputsArtifact', 'TestResults/Collected')
+    $unprotectedPushHeadText = $prWorkflowText.Replace("-PullRequestHeadSha '`$`{{ github.event.pull_request.head.sha }}`'", '-PullRequestHeadSha ${{ github.event.pull_request.head.sha }}')
+    foreach ($fixture in @(
+            [pscustomobject]@{ path = $duplicateSuiteExecutionPath; text = $duplicateSuiteExecutionText; description = 'duplicate suite execution' },
+            [pscustomobject]@{ path = $missingSuitePath; text = $missingSuiteText; description = 'missing suite' },
+            [pscustomobject]@{ path = $missingCoveragePath; text = $missingCoverageText; description = 'missing coverage flag' },
+            [pscustomobject]@{ path = $secondPostgreSqlRunnerPath; text = $secondPostgreSqlRunnerText; description = 'second PostgreSQL runner invocation' },
+            [pscustomobject]@{ path = $shaOnlyArtifactPath; text = $shaOnlyArtifactText; description = 'SHA-only artifact name' },
+            [pscustomobject]@{ path = $nonfatalUploadPath; text = $nonfatalUploadText; description = 'nonfatal artifact upload' },
+            [pscustomobject]@{ path = $brokenProvenancePath; text = $brokenProvenanceText; description = 'broken final producer provenance' },
+            [pscustomobject]@{ path = $artifactLayoutPath; text = $artifactLayoutText; description = 'non-normalized Sonar artifact layout' },
+            [pscustomobject]@{ path = $unprotectedPushHeadPath; text = $unprotectedPushHeadText; description = 'unprotected push PR-head parameter' })) {
+        Assert-True -Condition ($fixture.text -cne $prWorkflowText) -Message "The Task 4 $($fixture.description) fixture could not mutate the workflow."
+        [System.IO.File]::WriteAllText($fixture.path, $fixture.text, [System.Text.UTF8Encoding]::new($false))
+        Assert-Task4EvidenceProducerFixtureRejected -Path $fixture.path -RepositoryRoot $repositoryRoot -Description $fixture.description
+    }
 
     $sonarFixtureRoot = New-Item -ItemType Directory -Path (Join-Path $temporaryRoot 'sonar-workflows') -Force
     $sonarWorkflowText = [System.IO.File]::ReadAllText($sonarWorkflowPath)

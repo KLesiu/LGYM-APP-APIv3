@@ -150,7 +150,7 @@ jobs:
       - name: Upload Release build and discovery evidence
         uses: actions/upload-artifact@v4
         with:
-          name: verification-build-${{ github.sha }}
+          name: verification-build-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: |
             TestResults/Verification/${{ github.sha }}/Build/**
             **/bin/Release/**
@@ -196,7 +196,7 @@ jobs:
       - name: Download Release build and discovery evidence
         uses: actions/download-artifact@v4
         with:
-          name: verification-build-${{ github.sha }}
+          name: verification-build-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
 
       - name: Run suite with same-SHA TRX evidence
         shell: pwsh
@@ -204,9 +204,10 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $suite = '${{ matrix.suite }}'
-          $suiteDirectory = Join-Path $env:EVIDENCE_ROOT $suite
+          $suiteDirectory = Join-Path $env:GITHUB_WORKSPACE (Join-Path $env:EVIDENCE_ROOT $suite)
           $trxDirectory = Join-Path $suiteDirectory 'trx'
           $assertionDirectory = Join-Path $suiteDirectory 'evidence'
+          $coveragePath = Join-Path $suiteDirectory 'coverage.opencover.xml'
           $null = New-Item -ItemType Directory -Path $trxDirectory -Force
           $trxFileName = "$suite-$env:GITHUB_SHA.trx"
           $arguments = @(
@@ -216,7 +217,11 @@ jobs:
               '--no-build',
               '--verbosity', 'normal',
               '--logger', "trx;LogFileName=$trxFileName",
-              '--results-directory', $trxDirectory
+              '--results-directory', $trxDirectory,
+              '/p:CollectCoverage=true',
+              '/p:CoverletOutputFormat=opencover',
+              "/p:CoverletOutput=$coveragePath",
+              '/p:UseSourceLink=false'
           )
           if ('${{ matrix.filter }}' -ne '') {
               $arguments += @('--filter', '${{ matrix.filter }}')
@@ -239,9 +244,10 @@ jobs:
               -TrxDirectory $trxDirectory `
               -ExpectedTrxFileName $trxFileName `
               -NotBeforeUtc $notBeforeUtc.ToString('O') `
-              -CommandExitCode $testExitCode `
-              -EvidenceDirectory $assertionDirectory `
-              -CommandJson ($command | ConvertTo-Json -Compress)
+               -CommandExitCode $testExitCode `
+               -EvidenceDirectory $assertionDirectory `
+               -CommandJson ($command | ConvertTo-Json -Compress) `
+               -CoveragePath $coveragePath
           if ($LASTEXITCODE -ne 0) {
               exit $LASTEXITCODE
           }
@@ -249,7 +255,7 @@ jobs:
       - name: Upload same-SHA suite evidence
         uses: actions/upload-artifact@v4
         with:
-          name: verification-${{ matrix.suite }}-${{ github.sha }}
+          name: verification-${{ matrix.suite }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: TestResults/Verification/${{ github.sha }}/${{ matrix.suite }}/**
           if-no-files-found: error
 
@@ -291,7 +297,7 @@ jobs:
       - name: Download Release build and discovery evidence
         uses: actions/download-artifact@v4
         with:
-          name: verification-build-${{ github.sha }}
+          name: verification-build-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
 
       - name: Run unfiltered PostgreSQL suite with same-SHA TRX evidence
         shell: pwsh
@@ -299,16 +305,18 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $suite = 'PostgreSqlIntegration'
-          $suiteDirectory = Join-Path $env:EVIDENCE_ROOT $suite
+          $suiteDirectory = Join-Path $env:GITHUB_WORKSPACE (Join-Path $env:EVIDENCE_ROOT $suite)
           $trxDirectory = Join-Path $suiteDirectory 'trx'
           $assertionDirectory = Join-Path $suiteDirectory 'evidence'
+          $coveragePath = Join-Path $suiteDirectory 'coverage.opencover.xml'
           $null = New-Item -ItemType Directory -Path $trxDirectory -Force
           $notBeforeUtc = [System.DateTimeOffset]::UtcNow
 
           & pwsh -NoProfile -File scripts/run-postgresql-integration-tests.ps1 `
-              -ConnectionString $env:LGYM_CI_POSTGRES_ADMIN `
-              -ResultsDirectory $trxDirectory `
-              -NoBuild
+               -ConnectionString $env:LGYM_CI_POSTGRES_ADMIN `
+               -ResultsDirectory $trxDirectory `
+               -CoverageOutput $coveragePath `
+               -NoBuild
           $testExitCode = $LASTEXITCODE
           if ($testExitCode -ne 0) {
               exit $testExitCode
@@ -317,10 +325,11 @@ jobs:
           $command = @(
               'pwsh',
               '-NoProfile',
-              '-File', 'scripts/run-postgresql-integration-tests.ps1',
-              '-ConnectionString', $env:LGYM_CI_POSTGRES_ADMIN,
-              '-ResultsDirectory', $trxDirectory,
-              '-NoBuild'
+               '-File', 'scripts/run-postgresql-integration-tests.ps1',
+               '-ConnectionString', $env:LGYM_CI_POSTGRES_ADMIN,
+               '-ResultsDirectory', $trxDirectory,
+               '-CoverageOutput', $coveragePath,
+               '-NoBuild'
           )
           & pwsh -NoProfile -File scripts/assert-trx.ps1 `
               -SuiteName $suite `
@@ -330,9 +339,10 @@ jobs:
               -DiscoveryManifestPath (Join-Path $env:EVIDENCE_ROOT 'Build/PostgreSqlIntegration-discovery.json') `
               -TrxDirectory $trxDirectory `
               -NotBeforeUtc $notBeforeUtc.ToString('O') `
-              -CommandExitCode $testExitCode `
-              -EvidenceDirectory $assertionDirectory `
-              -CommandJson ($command | ConvertTo-Json -Compress)
+               -CommandExitCode $testExitCode `
+               -EvidenceDirectory $assertionDirectory `
+               -CommandJson ($command | ConvertTo-Json -Compress) `
+               -CoveragePath $coveragePath
           if ($LASTEXITCODE -ne 0) {
               exit $LASTEXITCODE
           }
@@ -340,7 +350,7 @@ jobs:
       - name: Upload same-SHA PostgreSQL evidence
         uses: actions/upload-artifact@v4
         with:
-          name: verification-PostgreSqlIntegration-${{ github.sha }}
+          name: verification-PostgreSqlIntegration-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: TestResults/Verification/${{ github.sha }}/PostgreSqlIntegration/**
           if-no-files-found: error
 
@@ -382,7 +392,7 @@ jobs:
       - name: Upload PostgreSQL cleanup evidence
         uses: actions/upload-artifact@v4
         with:
-          name: verification-PostgreSqlCleanup-${{ github.sha }}
+          name: verification-PostgreSqlCleanup-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: TestResults/Verification/${{ github.sha }}/PostgreSqlCleanup/**
           if-no-files-found: error
 
@@ -403,19 +413,36 @@ jobs:
       - name: Download same-SHA verification artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: verification-*-${{ github.sha }}
+          pattern: verification-*-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: TestResults/Collected
           merge-multiple: false
 
       - name: Validate complete same-SHA evidence before publication
         shell: pwsh
-        run: pwsh -NoProfile -File scripts/assert-ci-verification-evidence.ps1 -EvidenceRoot TestResults/Collected -ExpectedHead ${{ github.sha }}
+        run: >-
+          pwsh -NoProfile -File scripts/assert-ci-verification-evidence.ps1
+          -EvidenceRoot TestResults/Collected
+          -Repository ${{ github.repository }}
+          -RunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -Event ${{ github.event_name }}
+          -Ref ${{ github.ref }}
+          -MergeSha ${{ github.sha }}
+          -PullRequestHeadSha '${{ github.event.pull_request.head.sha }}'
+          -SonarInputsDirectory TestResults/SonarInputsArtifact
 
       - name: Upload validated final evidence
         uses: actions/upload-artifact@v4
         with:
-          name: verification-final-${{ github.sha }}
+          name: verification-final-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: TestResults/Collected/**
+          if-no-files-found: error
+
+      - name: Upload normalized Sonar inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: TestResults/SonarInputsArtifact
           if-no-files-found: error
 
   tests:
