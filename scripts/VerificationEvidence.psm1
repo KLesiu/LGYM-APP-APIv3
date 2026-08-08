@@ -150,6 +150,7 @@ function Get-StringListSha256 {
 function Get-SortedOrdinalStrings {
     param(
         [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
         [string[]]$Values
     )
 
@@ -832,6 +833,223 @@ function Get-ValidatedTrx {
     }
 }
 
+function Test-OpenCoverNodeSkipped {
+    param(
+        [Parameter(Mandatory)]
+        [System.Xml.XmlElement]$Node
+    )
+
+    return $Node.GetAttribute("skipped") -ieq "true" -or -not [string]::IsNullOrWhiteSpace($Node.GetAttribute("skippedDueTo"))
+}
+
+function Test-OpenCoverMissingGeneratedReleaseSourcePath {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RelativePath,
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
+        [Parameter(Mandatory)]
+        [bool]$SourceWasFileUri
+    )
+
+    if ($SourceWasFileUri -or
+        (-not $RelativePath.EndsWith(".g.cs", [System.StringComparison]::OrdinalIgnoreCase) -and
+         -not $RelativePath.EndsWith(".generated.cs", [System.StringComparison]::OrdinalIgnoreCase))) {
+        return $false
+    }
+
+    $segments = @($RelativePath -split '[\\/]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $objIndex = -1
+    for ($index = 1; $index -le ($segments.Count - 4); $index++) {
+        if ($segments[$index] -ieq "obj" -and
+            $segments[$index + 1] -ieq "Release" -and
+            $segments[$index + 2] -cmatch '^net(?:coreapp|standard)?\d+(?:\.\d+)?(?:-[A-Za-z0-9.-]+)?$') {
+            if ($objIndex -ne -1) {
+                return $false
+            }
+
+            $objIndex = $index
+        }
+    }
+
+    if ($objIndex -eq -1) {
+        return $false
+    }
+
+    $projectDirectory = $RepositoryRoot
+    for ($index = 0; $index -lt $objIndex; $index++) {
+        $projectDirectory = Join-Path $projectDirectory $segments[$index]
+    }
+
+    return (Test-Path -LiteralPath $projectDirectory -PathType Container) -and
+        @((Get-ChildItem -LiteralPath $projectDirectory -Filter "*.csproj" -File)).Count -gt 0
+}
+
+function Get-ValidatedOpenCoverSourcePath {
+    param(
+        [Parameter(Mandatory)]
+        [string]$SourcePath,
+        [string]$RepositoryRoot = ""
+    )
+
+    $localPath = $SourcePath
+    $sourceWasFileUri = $false
+    if (-not [System.IO.Path]::IsPathRooted($SourcePath)) {
+        $uri = $null
+        if (-not [System.Uri]::TryCreate($SourcePath, [System.UriKind]::Absolute, [ref]$uri)) {
+            throw "The OpenCover report contains a source path that is not a local rooted path."
+        }
+
+        if (-not $uri.IsFile) {
+            throw "The OpenCover report contains a source path with a non-file URI scheme."
+        }
+
+        $localPath = $uri.LocalPath
+        $sourceWasFileUri = $true
+    }
+
+    if (-not [System.IO.Path]::IsPathRooted($localPath)) {
+        throw "The OpenCover report contains a source path that is not a local rooted path."
+    }
+
+    $absolutePath = ConvertTo-AbsolutePath -Path $localPath
+    if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) {
+        return $absolutePath
+    }
+
+    $repositoryRootPath = ConvertTo-AbsolutePath -Path $RepositoryRoot
+    $repositoryRootItem = Get-Item -LiteralPath $repositoryRootPath
+    if (($repositoryRootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne [System.IO.FileAttributes]::None) {
+        throw "The OpenCover repository root cannot be a reparse point."
+    }
+
+    $rootWithSeparator = $repositoryRootPath.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $absolutePath.StartsWith($rootWithSeparator, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "The OpenCover report contains a source path outside the verification repository root."
+    }
+
+    $relativePath = $absolutePath.Substring($rootWithSeparator.Length)
+    $traversedPath = $repositoryRootPath
+    foreach ($segment in ($relativePath -split '[\\/]+')) {
+        $traversedPath = Join-Path $traversedPath $segment
+        if (-not (Test-Path -LiteralPath $traversedPath)) {
+            break
+        }
+
+        $item = Get-Item -LiteralPath $traversedPath
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne [System.IO.FileAttributes]::None) {
+            throw "The OpenCover report contains a source path that traverses a reparse point."
+        }
+    }
+
+    if (Test-Path -LiteralPath $absolutePath -PathType Leaf) {
+        return $absolutePath
+    }
+
+    if (Test-OpenCoverMissingGeneratedReleaseSourcePath -RelativePath $relativePath -RepositoryRoot $repositoryRootPath -SourceWasFileUri $sourceWasFileUri) {
+        return $null
+    }
+
+    throw "The OpenCover report contains a source path that cannot be resolved."
+
+}
+
+function Get-ValidatedOpenCoverReport {
+    param(
+        [Parameter(Mandatory)]
+        [string]$CoveragePath,
+        [Parameter(Mandatory)]
+        [System.DateTimeOffset]$NotBeforeUtc,
+        [string]$RepositoryRoot = ""
+    )
+
+    if (-not (Test-Path -LiteralPath $CoveragePath -PathType Leaf)) {
+        throw "The OpenCover report is missing."
+    }
+
+    $coverageFile = Get-Item -LiteralPath $CoveragePath
+    if ($coverageFile.Name -cne "coverage.opencover.xml") {
+        throw "The OpenCover report file name is not the expected fresh report name."
+    }
+
+    if ($coverageFile.Length -eq 0) {
+        throw "The OpenCover report is empty."
+    }
+
+    if ($coverageFile.LastWriteTimeUtc -lt $NotBeforeUtc.UtcDateTime) {
+        throw "The OpenCover report predates the recorded test command and is stale."
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($RepositoryRoot) -and -not (Test-Path -LiteralPath $RepositoryRoot -PathType Container)) {
+        throw "The OpenCover repository root is missing."
+    }
+
+    try {
+        $settings = [System.Xml.XmlReaderSettings]::new()
+        $settings.DtdProcessing = [System.Xml.DtdProcessing]::Prohibit
+        $settings.XmlResolver = $null
+        $stringReader = [System.IO.StringReader]::new([System.IO.File]::ReadAllText($coverageFile.FullName))
+        $reader = [System.Xml.XmlReader]::Create($stringReader, $settings)
+        try {
+            $coverage = [System.Xml.XmlDocument]::new()
+            $coverage.XmlResolver = $null
+            $coverage.Load($reader)
+        }
+        finally {
+            $reader.Dispose()
+            $stringReader.Dispose()
+        }
+    }
+    catch {
+        throw "The OpenCover report is malformed XML."
+    }
+
+    if ($null -eq $coverage.DocumentElement -or $coverage.DocumentElement.LocalName -ne "CoverageSession") {
+        throw "The OpenCover report does not contain a valid CoverageSession document."
+    }
+
+    $moduleNodes = @($coverage.SelectNodes("/*[local-name()='CoverageSession']/*[local-name()='Modules']/*[local-name()='Module']"))
+    $sourcePaths = [System.Collections.Generic.List[string]]::new()
+    $moduleCount = 0
+    $fileCount = 0
+    foreach ($moduleNode in $moduleNodes) {
+        if ($moduleNode -isnot [System.Xml.XmlElement] -or (Test-OpenCoverNodeSkipped -Node $moduleNode)) {
+            continue
+        }
+
+        $moduleCount++
+        $fileNodes = @($moduleNode.SelectNodes("./*[local-name()='Files']/*[local-name()='File']"))
+        foreach ($fileNode in $fileNodes) {
+            if ($fileNode -isnot [System.Xml.XmlElement] -or (Test-OpenCoverNodeSkipped -Node $fileNode)) {
+                continue
+            }
+
+            $sourcePath = $fileNode.GetAttribute("fullPath")
+            if ([string]::IsNullOrWhiteSpace($sourcePath)) {
+                throw "The OpenCover report contains a file without a source path."
+            }
+
+            $validatedSourcePath = Get-ValidatedOpenCoverSourcePath -SourcePath $sourcePath -RepositoryRoot $RepositoryRoot
+            if ($null -ne $validatedSourcePath) {
+                $sourcePaths.Add($validatedSourcePath)
+            }
+            $fileCount++
+        }
+    }
+
+    if ($moduleCount -eq 0 -or $fileCount -eq 0) {
+        throw "The OpenCover report does not contain a non-empty non-skipped module and file set."
+    }
+
+    return [pscustomobject]@{
+        file = $coverageFile
+        moduleCount = $moduleCount
+        fileCount = $fileCount
+        localPathMode = if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) { "rooted" } else { "repository-rooted" }
+        sourcePaths = Get-SortedOrdinalStrings -Values $sourcePaths.ToArray()
+    }
+}
+
 function ConvertTo-CanonicalVSTestDisplayName {
     param(
         [Parameter(Mandatory)]
@@ -927,6 +1145,7 @@ Export-ModuleMember -Function @(
     "Get-SortedOrdinalStrings",
     "Get-StringListSha256",
     "Get-ValidatedTrx",
+    "Get-ValidatedOpenCoverReport",
     "New-FreshEvidenceDirectory",
     "Protect-EvidenceString",
     "Protect-EvidenceValue",

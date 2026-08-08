@@ -2,7 +2,21 @@ param(
     [Parameter(Mandatory)]
     [string]$EvidenceRoot,
     [Parameter(Mandatory)]
-    [string]$ExpectedHead
+    [string]$Repository,
+    [Parameter(Mandatory)]
+    [string]$RunId,
+    [Parameter(Mandatory)]
+    [string]$RunAttempt,
+    [Parameter(Mandatory)]
+    [string]$Event,
+    [Parameter(Mandatory)]
+    [string]$Ref,
+    [Parameter(Mandatory)]
+    [string]$MergeSha,
+    [Parameter(Mandatory)]
+    [AllowEmptyString()]
+    [string]$PullRequestHeadSha,
+    [string]$SonarInputsDirectory = ''
 )
 
 Set-StrictMode -Version Latest
@@ -26,7 +40,7 @@ function Get-RequiredProperty {
     return $property[0].Value
 }
 
-function Assert-ExpectedHead {
+function Assert-ExpectedMergeSha {
     param(
         [Parameter(Mandatory)]
         [object]$Document,
@@ -35,7 +49,7 @@ function Assert-ExpectedHead {
     )
 
     $repository = Get-RequiredProperty -Object $Document -Name 'repository'
-    if ((Get-RequiredProperty -Object $repository -Name 'head') -cne $ExpectedHead) {
+    if ((Get-RequiredProperty -Object $repository -Name 'head') -cne $MergeSha) {
         throw "$Description does not match the required SHA."
     }
 
@@ -181,16 +195,106 @@ function Get-ValidatedUploadedTrx {
     }
 }
 
+function Get-RequiredNonNegativeLong {
+    param(
+        [Parameter(Mandatory)][object]$Object,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    $value = Get-RequiredProperty -Object $Object -Name $Name
+    $parsed = [long]0
+    if (-not [long]::TryParse([string]$value, [ref]$parsed) -or $parsed -lt 0) {
+        throw "Evidence property '$Name' must be a non-negative integer."
+    }
+
+    return $parsed
+}
+
+function Get-RequiredDateTimeOffset {
+    param(
+        [Parameter(Mandatory)][object]$Object,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    $value = Get-RequiredProperty -Object $Object -Name $Name
+    if ($value -is [System.DateTimeOffset]) {
+        return $value
+    }
+
+    if ($value -is [System.DateTime]) {
+        return [System.DateTimeOffset]$value
+    }
+
+    $parsed = [System.DateTimeOffset]::MinValue
+    if ($value -isnot [string] -or -not [System.DateTimeOffset]::TryParse($value, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$parsed)) {
+        throw "Evidence property '$Name' must be an ISO 8601 timestamp."
+    }
+
+    return $parsed
+}
+
+function Get-ValidatedCoverageEvidence {
+    param(
+        [Parameter(Mandatory)][object]$Summary,
+        [Parameter(Mandatory)][System.IO.FileInfo]$SummaryFile,
+        [Parameter(Mandatory)][System.IO.FileInfo[]]$CoverageFiles,
+        [Parameter(Mandatory)][string]$RepositoryRoot
+    )
+
+    $suite = [string](Get-RequiredProperty -Object $Summary -Name 'suite')
+    $coverage = Get-RequiredProperty -Object $Summary -Name 'coverage'
+    if ($coverage -isnot [System.Management.Automation.PSCustomObject]) {
+        throw "Suite '$suite' does not contain coverage metadata."
+    }
+
+    $recordedPath = [string](Get-RequiredProperty -Object $coverage -Name 'path')
+    if ([System.IO.Path]::GetFileName($recordedPath) -cne 'coverage.opencover.xml' -or [System.IO.Path]::GetFileName([System.IO.Path]::GetDirectoryName($recordedPath)) -cne $suite) {
+        throw "Suite '$suite' coverage metadata is not bound to its expected report path."
+    }
+
+    if ($SummaryFile.Directory.Name -cne 'evidence' -or $null -eq $SummaryFile.Directory.Parent -or $SummaryFile.Directory.Parent.Name -cne $suite) {
+        throw "Suite '$suite' summary is not located in its expected evidence directory."
+    }
+
+    $expectedCoveragePath = Join-Path $SummaryFile.Directory.Parent.FullName 'coverage.opencover.xml'
+    $matchingCoverage = @($CoverageFiles | Where-Object { $_.FullName -ceq $expectedCoveragePath })
+    if ($matchingCoverage.Count -ne 1) {
+        throw "Suite '$suite' requires exactly one uploaded coverage report."
+    }
+
+    $notBeforeUtc = Get-RequiredDateTimeOffset -Object (Get-RequiredProperty -Object $Summary -Name 'command') -Name 'notBeforeUtc'
+    $report = Get-ValidatedOpenCoverReport -CoveragePath $matchingCoverage[0].FullName -NotBeforeUtc $notBeforeUtc -RepositoryRoot $RepositoryRoot
+    $actualSha256 = Get-FileSha256 -Path $report.file.FullName
+    if (([string](Get-RequiredProperty -Object $coverage -Name 'fileName')) -cne $report.file.Name -or
+        ([string](Get-RequiredProperty -Object $coverage -Name 'sha256')) -notmatch '^[0-9a-f]{64}$' -or
+        ([string](Get-RequiredProperty -Object $coverage -Name 'sha256')) -cne $actualSha256 -or
+        (Get-RequiredNonNegativeLong -Object $coverage -Name 'bytes') -ne $report.file.Length -or
+        (Get-RequiredNonNegativeInt -Object $coverage -Name 'moduleCount') -ne $report.moduleCount -or
+        (Get-RequiredNonNegativeInt -Object $coverage -Name 'fileCount') -ne $report.fileCount -or
+        ([string](Get-RequiredProperty -Object $coverage -Name 'localPathMode')) -cne $report.localPathMode) {
+        throw "Suite '$suite' coverage metadata does not match its validated OpenCover report."
+    }
+
+    $null = Get-RequiredDateTimeOffset -Object $coverage -Name 'lastWriteUtc'
+    return $report
+}
+
 function Assert-PassingTrxSummary {
     param(
         [Parameter(Mandatory)]
         [object]$Summary,
         [Parameter(Mandatory)]
+        [System.IO.FileInfo]$SummaryFile,
+        [Parameter(Mandatory)]
         [System.IO.FileInfo[]]$TrxFiles,
         [Parameter(Mandatory)]
         [System.IO.FileInfo]$BuildManifestFile,
         [Parameter(Mandatory)]
-        [object[]]$DiscoveryManifests
+        [object[]]$DiscoveryManifests,
+        [Parameter(Mandatory)]
+        [System.IO.FileInfo[]]$CoverageFiles,
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot
     )
 
     $suite = [string](Get-RequiredProperty -Object $Summary -Name 'suite')
@@ -198,7 +302,7 @@ function Assert-PassingTrxSummary {
         throw "Suite '$suite' is not a complete-suite assertion."
     }
 
-    Assert-ExpectedHead -Document $Summary -Description "Suite '$suite'"
+    Assert-ExpectedMergeSha -Document $Summary -Description "Suite '$suite'"
     $buildReference = Get-RequiredProperty -Object $Summary -Name 'buildManifest'
     $expectedBuildSha256 = [string](Get-RequiredProperty -Object $buildReference -Name 'sha256')
     $actualBuildSha256 = (Get-FileHash -LiteralPath $BuildManifestFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -219,8 +323,8 @@ function Assert-PassingTrxSummary {
     }
 
     $discovery = $matchingDiscovery[0].document
-    Assert-ExpectedHead -Document $discovery -Description "Suite '$suite' discovery"
-    if ($discovery.buildHead -cne $ExpectedHead -or $discovery.identityScheme -cne $discoveryReference.identityScheme -or $discovery.testListSha256 -cne $discoveryReference.testListSha256) {
+    Assert-ExpectedMergeSha -Document $discovery -Description "Suite '$suite' discovery"
+    if ($discovery.buildHead -cne $MergeSha -or $discovery.identityScheme -cne $discoveryReference.identityScheme -or $discovery.testListSha256 -cne $discoveryReference.testListSha256) {
         throw "Suite '$suite' discovery evidence does not match its TRX summary."
     }
 
@@ -272,11 +376,160 @@ function Assert-PassingTrxSummary {
     if ($identity.discovery -cne 'vstest display-name multiset' -or $identity.execution -cne 'trx executionId') {
         throw "Suite '$suite' has an unsupported asserted test identity scheme."
     }
+
+    return [pscustomobject]@{
+        suite = $suite
+        trx = $matchingTrx[0]
+        coverage = Get-ValidatedCoverageEvidence -Summary $Summary -SummaryFile $SummaryFile -CoverageFiles $CoverageFiles -RepositoryRoot $RepositoryRoot
+    }
 }
 
-if ($ExpectedHead -notmatch '^[0-9a-f]{40}$') {
-    throw 'ExpectedHead must be a full lowercase Git SHA.'
+function Get-ValidatedProvenance {
+    $parsedRunId = [long]0
+    if ($Repository -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$') {
+        throw 'Repository must be a GitHub owner/name identifier.'
+    }
+
+    if (-not [long]::TryParse($RunId, [ref]$parsedRunId) -or $parsedRunId -le 0) {
+        throw 'RunId must be a positive integer.'
+    }
+    $canonicalRunId = $parsedRunId.ToString([System.Globalization.CultureInfo]::InvariantCulture)
+    if ($RunId -cne $canonicalRunId) {
+        throw 'RunId must use canonical decimal notation.'
+    }
+
+    $parsedRunAttempt = 0
+    if (-not [int]::TryParse($RunAttempt, [ref]$parsedRunAttempt) -or $parsedRunAttempt -le 0) {
+        throw 'RunAttempt must be a positive integer.'
+    }
+    $canonicalRunAttempt = $parsedRunAttempt.ToString([System.Globalization.CultureInfo]::InvariantCulture)
+    if ($RunAttempt -cne $canonicalRunAttempt) {
+        throw 'RunAttempt must use canonical decimal notation.'
+    }
+
+    if ($Event -cnotin @('pull_request', 'push')) {
+        throw 'Event must be pull_request or push.'
+    }
+
+    if ($Event -ceq 'pull_request' -and $Ref -notmatch '^refs/pull/[1-9][0-9]*/merge$') {
+        throw 'Pull-request Ref must identify the merge ref.'
+    }
+
+    if ($Event -ceq 'push' -and $Ref -notmatch '^refs/heads/[A-Za-z0-9][A-Za-z0-9._/-]*$') {
+        throw 'Push Ref must identify a branch ref.'
+    }
+
+    if ($MergeSha -notmatch '^[0-9a-f]{40}$') {
+        throw 'MergeSha must be a full lowercase Git SHA.'
+    }
+
+    if ($Event -ceq 'pull_request' -and $PullRequestHeadSha -notmatch '^[0-9a-f]{40}$') {
+        throw 'PullRequestHeadSha must be a full lowercase Git SHA for pull_request events.'
+    }
+
+    if ($Event -ceq 'push' -and -not [string]::IsNullOrEmpty($PullRequestHeadSha)) {
+        throw 'PullRequestHeadSha must be empty for push events.'
+    }
+
+    return [pscustomobject]@{
+        repository = $Repository
+        runId = $canonicalRunId
+        runAttempt = $canonicalRunAttempt
+        event = $Event
+        ref = $Ref
+        mergeSha = $MergeSha
+        pullRequestHeadSha = if ([string]::IsNullOrEmpty($PullRequestHeadSha)) { $null } else { $PullRequestHeadSha }
+    }
 }
+
+function Publish-SonarInputs {
+    param(
+        [Parameter(Mandatory)][object[]]$SuiteEvidence,
+        [Parameter(Mandatory)][object]$Provenance,
+        [Parameter(Mandatory)][string]$Destination
+    )
+
+    $finalDirectory = [System.IO.Path]::GetFullPath($Destination)
+    if (Test-Path -LiteralPath $finalDirectory) {
+        throw 'The Sonar inputs directory already exists; refusing to overwrite validated inputs.'
+    }
+
+    $parentDirectory = Split-Path -Parent $finalDirectory
+    if (-not (Test-Path -LiteralPath $parentDirectory -PathType Container)) {
+        $null = New-Item -ItemType Directory -Path $parentDirectory -Force
+    }
+
+    $leaf = Split-Path -Leaf $finalDirectory
+    $temporaryDirectory = Join-Path $parentDirectory ".$leaf.staging-$([Guid]::NewGuid().ToString('N'))"
+    try {
+        $null = New-Item -ItemType Directory -Path $temporaryDirectory -ErrorAction Stop
+        $testResultsDirectory = New-Item -ItemType Directory -Path (Join-Path $temporaryDirectory 'TestResults') -ErrorAction Stop
+        $sonarInputsDirectory = New-Item -ItemType Directory -Path (Join-Path $testResultsDirectory.FullName 'SonarInputs') -ErrorAction Stop
+        $manifestSuites = [System.Collections.Generic.List[object]]::new()
+        foreach ($entry in $SuiteEvidence) {
+            $suiteDirectory = Join-Path $sonarInputsDirectory.FullName $entry.suite
+            $null = New-Item -ItemType Directory -Path $suiteDirectory -ErrorAction Stop
+            $trxName = "$($entry.suite)-$($Provenance.mergeSha).trx"
+            $stagedTrxPath = Join-Path $suiteDirectory $trxName
+            $stagedCoveragePath = Join-Path $suiteDirectory 'coverage.opencover.xml'
+            Copy-Item -LiteralPath $entry.trx.FullName -Destination $stagedTrxPath -ErrorAction Stop
+            Copy-Item -LiteralPath $entry.coverage.file.FullName -Destination $stagedCoveragePath -ErrorAction Stop
+
+            $stagedTrx = Get-Item -LiteralPath $stagedTrxPath
+            $stagedCoverage = Get-Item -LiteralPath $stagedCoveragePath
+            $trxSha256 = Get-FileSha256 -Path $stagedTrx.FullName
+            $coverageSha256 = Get-FileSha256 -Path $stagedCoverage.FullName
+            if ($trxSha256 -cne (Get-FileSha256 -Path $entry.trx.FullName) -or $stagedTrx.Length -ne $entry.trx.Length -or
+                $coverageSha256 -cne (Get-FileSha256 -Path $entry.coverage.file.FullName) -or $stagedCoverage.Length -ne $entry.coverage.file.Length) {
+                throw "Staged Sonar input copy for suite '$($entry.suite)' did not preserve validated bytes."
+            }
+
+            $manifestSuites.Add([pscustomobject]([ordered]@{
+                        suite = $entry.suite
+                        trx = [pscustomobject]([ordered]@{
+                                checkoutRelativePath = "TestResults/SonarInputs/$($entry.suite)/$trxName"
+                                sha256 = $trxSha256
+                                bytes = $stagedTrx.Length
+                            })
+                        coverage = [pscustomobject]([ordered]@{
+                                checkoutRelativePath = "TestResults/SonarInputs/$($entry.suite)/coverage.opencover.xml"
+                                sha256 = $coverageSha256
+                                bytes = $stagedCoverage.Length
+                                moduleCount = $entry.coverage.moduleCount
+                                fileCount = $entry.coverage.fileCount
+                                localPathMode = $entry.coverage.localPathMode
+                            })
+                    }))
+        }
+
+        $manifest = [pscustomobject]([ordered]@{
+                schemaVersion = 1
+                kind = 'sonar-inputs'
+                repository = $Provenance.repository
+                runId = $Provenance.runId
+                runAttempt = $Provenance.runAttempt
+                event = $Provenance.event
+                ref = $Provenance.ref
+                mergeSha = $Provenance.mergeSha
+                pullRequestHeadSha = $Provenance.pullRequestHeadSha
+                suites = @($manifestSuites)
+            })
+        Write-RedactedJsonFile -Path (Join-Path $temporaryDirectory 'manifest.json') -Value $manifest -NoClobber
+        [System.IO.Directory]::Move($temporaryDirectory, $finalDirectory)
+        $temporaryDirectory = $null
+    }
+    finally {
+        if ($null -ne $temporaryDirectory -and (Test-Path -LiteralPath $temporaryDirectory)) {
+            Remove-Item -LiteralPath $temporaryDirectory -Recurse -Force -ErrorAction Stop
+            if (Test-Path -LiteralPath $temporaryDirectory) {
+                throw 'The incomplete Sonar input staging directory could not be removed.'
+            }
+        }
+    }
+}
+
+$provenance = Get-ValidatedProvenance
+$repositoryRoot = Split-Path -Parent $PSScriptRoot
 
 $root = [System.IO.Path]::GetFullPath($EvidenceRoot)
 if (-not (Test-Path -LiteralPath $root -PathType Container)) {
@@ -311,7 +564,7 @@ if ($buildManifests.Count -ne 1) {
 }
 
 $build = $buildManifests[0].document
-Assert-ExpectedHead -Document $build -Description 'Release build manifest'
+Assert-ExpectedMergeSha -Document $build -Description 'Release build manifest'
 if ($build.configuration -cne 'Release' -or [int]$build.exitCode -ne 0) {
     throw 'The uploaded build manifest is not a successful Release build.'
 }
@@ -342,8 +595,14 @@ if (($actualDiscoverySuites -join "`n") -cne (($expectedSuites | Sort-Object) -j
 }
 
 $trxFiles = @(Get-ChildItem -LiteralPath $root -Filter '*.trx' -File -Recurse)
-foreach ($summary in $summaries) {
-    Assert-PassingTrxSummary -Summary $summary.document -TrxFiles $trxFiles -BuildManifestFile $buildManifests[0].file -DiscoveryManifests $discoveryManifests
+$coverageFiles = @(Get-ChildItem -LiteralPath $root -Filter 'coverage.opencover.xml' -File -Recurse)
+if ($coverageFiles.Count -ne $expectedSuites.Count) {
+    throw "Expected $($expectedSuites.Count) uploaded OpenCover reports, but found $($coverageFiles.Count)."
+}
+
+$suiteEvidence = [System.Collections.Generic.List[object]]::new()
+foreach ($summary in $summaries | Sort-Object { [string]$_.document.suite }) {
+    $suiteEvidence.Add((Assert-PassingTrxSummary -Summary $summary.document -SummaryFile $summary.file -TrxFiles $trxFiles -BuildManifestFile $buildManifests[0].file -DiscoveryManifests $discoveryManifests -CoverageFiles $coverageFiles -RepositoryRoot $repositoryRoot))
 }
 
 $cleanupProbes = @($documents | Where-Object {
@@ -354,8 +613,12 @@ if ($cleanupProbes.Count -ne 1) {
 }
 
 $cleanup = $cleanupProbes[0].document
-if ($cleanup.outcome -cne 'Passed' -or $cleanup.head -cne $ExpectedHead) {
+if ($cleanup.outcome -cne 'Passed' -or $cleanup.head -cne $MergeSha) {
     throw 'The PostgreSQL cleanup probe does not prove success for the required SHA.'
 }
 
-Write-Host "Same-SHA CI evidence passed: build=1, suites=$($expectedSuites.Count), cleanup=1, sha=$ExpectedHead."
+if (-not [string]::IsNullOrWhiteSpace($SonarInputsDirectory)) {
+    Publish-SonarInputs -SuiteEvidence $suiteEvidence.ToArray() -Provenance $provenance -Destination $SonarInputsDirectory
+}
+
+Write-Host "Same-SHA CI evidence passed: build=1, suites=$($expectedSuites.Count), cleanup=1, sha=$MergeSha."

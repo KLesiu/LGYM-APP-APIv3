@@ -14,6 +14,12 @@ concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  SONAR_HOST_URL: https://sonarcloud.io
+  SONAR_ORG: ${{ vars.SONAR_ORG != '' && vars.SONAR_ORG || secrets.SONAR_ORG }}
+  SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY != '' && vars.SONAR_PROJECT_KEY || secrets.SONAR_PROJECT_KEY }}
+  SONAR_COVERAGE_EXCLUSIONS: "**/.github/**,**/Migrations/**,**/LgymApi.Resources.Generator/**,**/LgymApi.DataSeeder/**,**/LgymApi.Application/Common/Errors/*Errors.cs"
+
 jobs:
   release-build:
     name: release-build
@@ -150,7 +156,7 @@ jobs:
       - name: Upload Release build and discovery evidence
         uses: actions/upload-artifact@v4
         with:
-          name: verification-build-${{ github.sha }}
+          name: verification-build-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: |
             TestResults/Verification/${{ github.sha }}/Build/**
             **/bin/Release/**
@@ -196,7 +202,7 @@ jobs:
       - name: Download Release build and discovery evidence
         uses: actions/download-artifact@v4
         with:
-          name: verification-build-${{ github.sha }}
+          name: verification-build-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
 
       - name: Run suite with same-SHA TRX evidence
         shell: pwsh
@@ -204,9 +210,10 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $suite = '${{ matrix.suite }}'
-          $suiteDirectory = Join-Path $env:EVIDENCE_ROOT $suite
+          $suiteDirectory = Join-Path $env:GITHUB_WORKSPACE (Join-Path $env:EVIDENCE_ROOT $suite)
           $trxDirectory = Join-Path $suiteDirectory 'trx'
           $assertionDirectory = Join-Path $suiteDirectory 'evidence'
+          $coveragePath = Join-Path $suiteDirectory 'coverage.opencover.xml'
           $null = New-Item -ItemType Directory -Path $trxDirectory -Force
           $trxFileName = "$suite-$env:GITHUB_SHA.trx"
           $arguments = @(
@@ -216,7 +223,11 @@ jobs:
               '--no-build',
               '--verbosity', 'normal',
               '--logger', "trx;LogFileName=$trxFileName",
-              '--results-directory', $trxDirectory
+              '--results-directory', $trxDirectory,
+              '/p:CollectCoverage=true',
+              '/p:CoverletOutputFormat=opencover',
+              "/p:CoverletOutput=$coveragePath",
+              '/p:UseSourceLink=false'
           )
           if ('${{ matrix.filter }}' -ne '') {
               $arguments += @('--filter', '${{ matrix.filter }}')
@@ -239,9 +250,10 @@ jobs:
               -TrxDirectory $trxDirectory `
               -ExpectedTrxFileName $trxFileName `
               -NotBeforeUtc $notBeforeUtc.ToString('O') `
-              -CommandExitCode $testExitCode `
-              -EvidenceDirectory $assertionDirectory `
-              -CommandJson ($command | ConvertTo-Json -Compress)
+               -CommandExitCode $testExitCode `
+               -EvidenceDirectory $assertionDirectory `
+               -CommandJson ($command | ConvertTo-Json -Compress) `
+               -CoveragePath $coveragePath
           if ($LASTEXITCODE -ne 0) {
               exit $LASTEXITCODE
           }
@@ -249,8 +261,10 @@ jobs:
       - name: Upload same-SHA suite evidence
         uses: actions/upload-artifact@v4
         with:
-          name: verification-${{ matrix.suite }}-${{ github.sha }}
-          path: TestResults/Verification/${{ github.sha }}/${{ matrix.suite }}/**
+          name: verification-${{ matrix.suite }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: |
+            TestResults/Verification/${{ github.sha }}/**
+            !TestResults/Verification/${{ github.sha }}/Build/**
           if-no-files-found: error
 
   postgresql:
@@ -291,7 +305,7 @@ jobs:
       - name: Download Release build and discovery evidence
         uses: actions/download-artifact@v4
         with:
-          name: verification-build-${{ github.sha }}
+          name: verification-build-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
 
       - name: Run unfiltered PostgreSQL suite with same-SHA TRX evidence
         shell: pwsh
@@ -299,16 +313,18 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $suite = 'PostgreSqlIntegration'
-          $suiteDirectory = Join-Path $env:EVIDENCE_ROOT $suite
+          $suiteDirectory = Join-Path $env:GITHUB_WORKSPACE (Join-Path $env:EVIDENCE_ROOT $suite)
           $trxDirectory = Join-Path $suiteDirectory 'trx'
           $assertionDirectory = Join-Path $suiteDirectory 'evidence'
+          $coveragePath = Join-Path $suiteDirectory 'coverage.opencover.xml'
           $null = New-Item -ItemType Directory -Path $trxDirectory -Force
           $notBeforeUtc = [System.DateTimeOffset]::UtcNow
 
           & pwsh -NoProfile -File scripts/run-postgresql-integration-tests.ps1 `
-              -ConnectionString $env:LGYM_CI_POSTGRES_ADMIN `
-              -ResultsDirectory $trxDirectory `
-              -NoBuild
+               -ConnectionString $env:LGYM_CI_POSTGRES_ADMIN `
+               -ResultsDirectory $trxDirectory `
+               -CoverageOutput $coveragePath `
+               -NoBuild
           $testExitCode = $LASTEXITCODE
           if ($testExitCode -ne 0) {
               exit $testExitCode
@@ -317,10 +333,11 @@ jobs:
           $command = @(
               'pwsh',
               '-NoProfile',
-              '-File', 'scripts/run-postgresql-integration-tests.ps1',
-              '-ConnectionString', $env:LGYM_CI_POSTGRES_ADMIN,
-              '-ResultsDirectory', $trxDirectory,
-              '-NoBuild'
+               '-File', 'scripts/run-postgresql-integration-tests.ps1',
+               '-ConnectionString', $env:LGYM_CI_POSTGRES_ADMIN,
+               '-ResultsDirectory', $trxDirectory,
+               '-CoverageOutput', $coveragePath,
+               '-NoBuild'
           )
           & pwsh -NoProfile -File scripts/assert-trx.ps1 `
               -SuiteName $suite `
@@ -330,9 +347,10 @@ jobs:
               -DiscoveryManifestPath (Join-Path $env:EVIDENCE_ROOT 'Build/PostgreSqlIntegration-discovery.json') `
               -TrxDirectory $trxDirectory `
               -NotBeforeUtc $notBeforeUtc.ToString('O') `
-              -CommandExitCode $testExitCode `
-              -EvidenceDirectory $assertionDirectory `
-              -CommandJson ($command | ConvertTo-Json -Compress)
+               -CommandExitCode $testExitCode `
+               -EvidenceDirectory $assertionDirectory `
+               -CommandJson ($command | ConvertTo-Json -Compress) `
+               -CoveragePath $coveragePath
           if ($LASTEXITCODE -ne 0) {
               exit $LASTEXITCODE
           }
@@ -340,8 +358,10 @@ jobs:
       - name: Upload same-SHA PostgreSQL evidence
         uses: actions/upload-artifact@v4
         with:
-          name: verification-PostgreSqlIntegration-${{ github.sha }}
-          path: TestResults/Verification/${{ github.sha }}/PostgreSqlIntegration/**
+          name: verification-PostgreSqlIntegration-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: |
+            TestResults/Verification/${{ github.sha }}/**
+            !TestResults/Verification/${{ github.sha }}/Build/**
           if-no-files-found: error
 
   postgresql-cleanup:
@@ -382,8 +402,8 @@ jobs:
       - name: Upload PostgreSQL cleanup evidence
         uses: actions/upload-artifact@v4
         with:
-          name: verification-PostgreSqlCleanup-${{ github.sha }}
-          path: TestResults/Verification/${{ github.sha }}/PostgreSqlCleanup/**
+          name: verification-PostgreSqlCleanup-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: TestResults/Verification/${{ github.sha }}/**
           if-no-files-found: error
 
   final-evidence-gate:
@@ -403,19 +423,36 @@ jobs:
       - name: Download same-SHA verification artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: verification-*-${{ github.sha }}
+          pattern: verification-*-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: TestResults/Collected
           merge-multiple: false
 
       - name: Validate complete same-SHA evidence before publication
         shell: pwsh
-        run: pwsh -NoProfile -File scripts/assert-ci-verification-evidence.ps1 -EvidenceRoot TestResults/Collected -ExpectedHead ${{ github.sha }}
+        run: >-
+          pwsh -NoProfile -File scripts/assert-ci-verification-evidence.ps1
+          -EvidenceRoot TestResults/Collected
+          -Repository ${{ github.repository }}
+          -RunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -Event ${{ github.event_name }}
+          -Ref ${{ github.ref }}
+          -MergeSha ${{ github.sha }}
+          -PullRequestHeadSha '${{ github.event.pull_request.head.sha }}'
+          -SonarInputsDirectory TestResults/SonarInputsArtifact
 
       - name: Upload validated final evidence
         uses: actions/upload-artifact@v4
         with:
-          name: verification-final-${{ github.sha }}
+          name: verification-final-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: TestResults/Collected/**
+          if-no-files-found: error
+
+      - name: Upload normalized Sonar inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: TestResults/SonarInputsArtifact
           if-no-files-found: error
 
   tests:
@@ -434,3 +471,149 @@ jobs:
           }
 
           Write-Output 'Required validation aggregate passed.'
+
+  sonar-required:
+    name: sonar-required
+    needs: final-evidence-gate
+    if: >-
+      needs.final-evidence-gate.result == 'success' &&
+      github.event_name == 'pull_request' &&
+      (github.base_ref == 'main' || github.base_ref == 'automation/modular-monolith-milestone') &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.102
+
+      - name: Install SonarScanner
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      - name: Sonar Begin
+        run: dotnet sonarscanner begin /k:"${{ env.SONAR_PROJECT_KEY }}" /o:"${{ env.SONAR_ORG }}" /d:sonar.host.url="${{ env.SONAR_HOST_URL }}" /d:sonar.token="${{ secrets.SONAR_TOKEN }}" /d:sonar.qualitygate.wait=true /d:sonar.exclusions="**/.github/**,**/Migrations/**" /d:sonar.coverage.exclusions="${{ env.SONAR_COVERAGE_EXCLUSIONS }}" /d:sonar.cs.opencover.reportsPaths="TestResults/SonarInputs/**/coverage.opencover.xml" /d:sonar.cs.vstest.reportsPaths="TestResults/SonarInputs/**/*.trx" /d:sonar.verbose=true
+
+      - name: Restore
+        run: dotnet restore LgymApi.sln
+
+      - name: Build
+        run: dotnet build LgymApi.sln --configuration Release --no-restore
+
+      - name: Download validated Sonar inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: ${{ runner.temp }}/sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+
+      - name: Validate downloaded Sonar inputs
+        shell: pwsh
+        run: >-
+          pwsh -NoProfile -File scripts/assert-sonar-inputs.ps1
+          -DownloadRoot '${{ runner.temp }}/sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}'
+          -CheckoutRoot '${{ github.workspace }}'
+          -Repository ${{ github.repository }}
+          -RunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -Event ${{ github.event_name }}
+          -Ref ${{ github.ref }}
+          -MergeSha ${{ github.sha }}
+          -PullRequestHeadSha '${{ github.event.pull_request.head.sha }}'
+
+      - name: Copy validated Sonar inputs into scanner checkout
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $downloadRoot = '${{ runner.temp }}/sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}'
+          $downloadSonarInputsDirectory = Join-Path $downloadRoot 'TestResults/SonarInputs'
+          $checkoutSonarInputsDirectory = Join-Path $env:GITHUB_WORKSPACE 'TestResults/SonarInputs'
+          if (Test-Path -LiteralPath $checkoutSonarInputsDirectory) {
+            throw "The scanner checkout Sonar input directory '$checkoutSonarInputsDirectory' already exists."
+          }
+          Copy-Item -LiteralPath $downloadSonarInputsDirectory -Destination $checkoutSonarInputsDirectory -Recurse
+
+      - name: Sonar End
+        run: dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+
+  sonar-push:
+    name: sonar-push
+    needs: final-evidence-gate
+    if: >-
+      needs.final-evidence-gate.result == 'success' &&
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/automation/modular-monolith-milestone')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.102
+
+      - name: Install SonarScanner
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      - name: Sonar Begin
+        run: dotnet sonarscanner begin /k:"${{ env.SONAR_PROJECT_KEY }}" /o:"${{ env.SONAR_ORG }}" /d:sonar.host.url="${{ env.SONAR_HOST_URL }}" /d:sonar.token="${{ secrets.SONAR_TOKEN }}" /d:sonar.exclusions="**/.github/**,**/Migrations/**" /d:sonar.coverage.exclusions="${{ env.SONAR_COVERAGE_EXCLUSIONS }}" /d:sonar.cs.opencover.reportsPaths="TestResults/SonarInputs/**/coverage.opencover.xml" /d:sonar.cs.vstest.reportsPaths="TestResults/SonarInputs/**/*.trx" /d:sonar.verbose=true
+
+      - name: Restore
+        run: dotnet restore LgymApi.sln
+
+      - name: Build
+        run: dotnet build LgymApi.sln --configuration Release --no-restore
+
+      - name: Download validated Sonar inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: ${{ runner.temp }}/sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+
+      - name: Validate downloaded Sonar inputs
+        shell: pwsh
+        run: >-
+          pwsh -NoProfile -File scripts/assert-sonar-inputs.ps1
+          -DownloadRoot '${{ runner.temp }}/sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}'
+          -CheckoutRoot '${{ github.workspace }}'
+          -Repository ${{ github.repository }}
+          -RunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -Event ${{ github.event_name }}
+          -Ref ${{ github.ref }}
+          -MergeSha ${{ github.sha }}
+          -PullRequestHeadSha '${{ github.event.pull_request.head.sha }}'
+
+      - name: Copy validated Sonar inputs into scanner checkout
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $downloadRoot = '${{ runner.temp }}/sonar-inputs-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}'
+          $downloadSonarInputsDirectory = Join-Path $downloadRoot 'TestResults/SonarInputs'
+          $checkoutSonarInputsDirectory = Join-Path $env:GITHUB_WORKSPACE 'TestResults/SonarInputs'
+          if (Test-Path -LiteralPath $checkoutSonarInputsDirectory) {
+            throw "The scanner checkout Sonar input directory '$checkoutSonarInputsDirectory' already exists."
+          }
+          Copy-Item -LiteralPath $downloadSonarInputsDirectory -Destination $checkoutSonarInputsDirectory -Recurse
+
+      - name: Sonar End
+        run: dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"

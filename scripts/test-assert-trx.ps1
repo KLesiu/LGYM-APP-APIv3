@@ -25,12 +25,15 @@ function Initialize-FixtureRepository {
 
     $repository = New-Item -ItemType Directory -Path (Join-Path $Root "repository") -Force
     [System.IO.File]::WriteAllText((Join-Path $repository.FullName "fixture.txt"), "fixture`n", [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText((Join-Path $repository.FullName "fixture-two.txt"), "fixture two`n", [System.Text.UTF8Encoding]::new($false))
+    $fixtureProjectDirectory = New-Item -ItemType Directory -Path (Join-Path $repository.FullName "Fixture") -Force
+    [System.IO.File]::WriteAllText((Join-Path $fixtureProjectDirectory.FullName "Fixture.csproj"), "<Project Sdk=`"Microsoft.NET.Sdk`" />`n", [System.Text.UTF8Encoding]::new($false))
     $null = & git -C $repository.FullName init --quiet
     if ($LASTEXITCODE -ne 0) {
         throw "Could not initialize the temporary fixture repository."
     }
 
-    $null = & git -C $repository.FullName add fixture.txt
+    $null = & git -C $repository.FullName add fixture.txt fixture-two.txt Fixture/Fixture.csproj
     if ($LASTEXITCODE -ne 0) {
         throw "Could not stage the fixture repository file."
     }
@@ -192,6 +195,67 @@ $results  </Results>
     [System.IO.File]::WriteAllText($Path, $xml, [System.Text.UTF8Encoding]::new($false))
 }
 
+function Write-OpenCoverFixture {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [int]$ModuleCount = 1,
+        [string[]]$SourcePaths = @(),
+        [string]$RootName = "CoverageSession",
+        [switch]$Skipped,
+        [switch]$WithDtd
+    )
+
+    $modules = [System.Text.StringBuilder]::new()
+    for ($moduleIndex = 0; $moduleIndex -lt $ModuleCount; $moduleIndex++) {
+        $skippedValue = if ($Skipped) { "true" } else { "false" }
+        [void]$modules.AppendLine("    <Module skipped=`"$skippedValue`">")
+        [void]$modules.AppendLine('      <Files>')
+        for ($fileIndex = 0; $fileIndex -lt $SourcePaths.Count; $fileIndex++) {
+            $sourcePath = [System.Security.SecurityElement]::Escape($SourcePaths[$fileIndex])
+            [void]$modules.AppendLine("        <File uid=`"$($fileIndex + 1)`" fullPath=`"$sourcePath`" />")
+        }
+
+        [void]$modules.AppendLine('      </Files>')
+        [void]$modules.AppendLine('    </Module>')
+    }
+
+    $dtd = if ($WithDtd) { '<!DOCTYPE CoverageSession [<!ENTITY blocked "blocked">]>' + [Environment]::NewLine } else { '' }
+    $xml = @"
+<?xml version="1.0" encoding="utf-8"?>
+$dtd<$RootName>
+  <Modules>
+$modules  </Modules>
+</$RootName>
+"@
+    [System.IO.File]::WriteAllText($Path, $xml, [System.Text.UTF8Encoding]::new($false))
+}
+
+function Assert-CoverageSummaryMatchesReport {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Summary,
+        [Parameter(Mandatory)]
+        [string]$CoveragePath,
+        [Parameter(Mandatory)]
+        [System.DateTimeOffset]$NotBeforeUtc,
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot
+    )
+
+    $report = Get-ValidatedOpenCoverReport -CoveragePath $CoveragePath -NotBeforeUtc $NotBeforeUtc -RepositoryRoot $RepositoryRoot
+    $summaryLastWriteUtc = ([System.DateTimeOffset]$Summary.coverage.lastWriteUtc).UtcDateTime
+    if ($Summary.coverage.fileName -cne $report.file.Name -or
+        $Summary.coverage.sha256 -cne (Get-FileSha256 -Path $report.file.FullName) -or
+        $Summary.coverage.bytes -ne $report.file.Length -or
+        $summaryLastWriteUtc -ne $report.file.LastWriteTimeUtc -or
+        $Summary.coverage.moduleCount -ne $report.moduleCount -or
+        $Summary.coverage.fileCount -ne $report.fileCount -or
+        $Summary.coverage.localPathMode -cne $report.localPathMode) {
+        throw "The coverage summary metadata does not match its validated OpenCover report."
+    }
+}
+
 function Invoke-AssertFixture {
     param(
         [Parameter(Mandatory)]
@@ -201,7 +265,8 @@ function Invoke-AssertFixture {
         [int]$CommandExitCode = 0,
         [string[]]$Command = @(),
         [switch]$Supplementary,
-        [switch]$OmitExpectedTrxFileName
+        [switch]$OmitExpectedTrxFileName,
+        [string]$CoveragePath = ""
     )
 
     if ($Command.Count -eq 0) {
@@ -228,6 +293,10 @@ function Invoke-AssertFixture {
 
     if ($Supplementary) {
         $arguments += "-Supplementary"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($CoveragePath)) {
+        $arguments += @("-CoveragePath", $CoveragePath)
     }
 
     $originalErrorActionPreference = $ErrorActionPreference
@@ -424,13 +493,190 @@ try {
     }
 
     $validJson = $validResult.output | ConvertFrom-Json -Depth 32
-    if ($validJson.kind -cne "trx-summary" -or -not $validJson.completeSuite -or $validJson.trx.testCount -ne 1) {
+    if ($validJson.kind -cne "trx-summary" -or -not $validJson.completeSuite -or $validJson.trx.testCount -ne 1 -or @($validJson.PSObject.Properties | Where-Object { $_.Name -ceq "coverage" }).Count -ne 0) {
         throw "The valid evidence output did not have the expected JSON summary schema."
     }
 
     $summaryJson = [System.IO.File]::ReadAllText((Join-Path $valid.evidenceDirectory "trx-summary.json")) | ConvertFrom-Json -Depth 32
     if ($summaryJson.repository.head -cne $repository.head -or $summaryJson.command.exitCode -ne 0) {
         throw "The saved valid evidence summary is not valid JSON with the expected same-SHA fields."
+    }
+
+    $validCoverage = New-Case -Fixture $fixture -Name "valid-coverage"
+    Write-TrxFixture -Path (Join-Path $validCoverage.trxDirectory $validCoverage.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+    $validCoveragePath = Join-Path (Split-Path -Parent $validCoverage.trxDirectory) "coverage.opencover.xml"
+    Write-OpenCoverFixture -Path $validCoveragePath -SourcePaths @((Join-Path $repository.path "fixture.txt"))
+    $validCoverageResult = Invoke-AssertFixture -Fixture $fixture -Case $validCoverage -CoveragePath $validCoveragePath
+    Assert-ZeroFixture -Name "valid OpenCover report" -Result $validCoverageResult
+    $validCoverageSummary = [System.IO.File]::ReadAllText((Join-Path $validCoverage.evidenceDirectory "trx-summary.json")) | ConvertFrom-Json -Depth 32
+    Assert-CoverageSummaryMatchesReport -Summary $validCoverageSummary -CoveragePath $validCoveragePath -NotBeforeUtc $validCoverage.notBeforeUtc -RepositoryRoot $repository.path
+    if ($validCoverageSummary.coverage.path -cne [System.IO.Path]::GetFullPath($validCoveragePath)) {
+        throw "The saved coverage summary does not record the validated OpenCover path."
+    }
+
+    $missingRepositoryContainedGeneratedReleaseSource = New-Case -Fixture $fixture -Name "missing-repository-contained-generated-release-source"
+    Write-TrxFixture -Path (Join-Path $missingRepositoryContainedGeneratedReleaseSource.trxDirectory $missingRepositoryContainedGeneratedReleaseSource.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+    $missingRepositoryContainedGeneratedReleaseCoveragePath = Join-Path (Split-Path -Parent $missingRepositoryContainedGeneratedReleaseSource.trxDirectory) "coverage.opencover.xml"
+    $missingRepositoryContainedGeneratedReleasePath = Join-Path $repository.path "Fixture\obj\Release\net10.0\Generator\Generated.g.cs"
+    Write-OpenCoverFixture -Path $missingRepositoryContainedGeneratedReleaseCoveragePath -SourcePaths @((Join-Path $repository.path "fixture.txt"), $missingRepositoryContainedGeneratedReleasePath)
+    $missingRepositoryContainedGeneratedReleaseReport = Get-ValidatedOpenCoverReport -CoveragePath $missingRepositoryContainedGeneratedReleaseCoveragePath -NotBeforeUtc $missingRepositoryContainedGeneratedReleaseSource.notBeforeUtc -RepositoryRoot $repository.path
+    if ($missingRepositoryContainedGeneratedReleaseReport.moduleCount -ne 1 -or
+        $missingRepositoryContainedGeneratedReleaseReport.fileCount -ne 2 -or
+        $missingRepositoryContainedGeneratedReleaseReport.sourcePaths -isnot [string[]] -or
+        $missingRepositoryContainedGeneratedReleaseReport.sourcePaths.Count -ne 1 -or
+        $missingRepositoryContainedGeneratedReleaseReport.sourcePaths[0] -cne (Join-Path $repository.path "fixture.txt")) {
+        throw "The missing repository-contained generated Release source was not safely omitted from materialized OpenCover source paths."
+    }
+
+    $onlyMissingRepositoryContainedGeneratedReleaseSource = New-Case -Fixture $fixture -Name "only-missing-repository-contained-generated-release-source"
+    Write-TrxFixture -Path (Join-Path $onlyMissingRepositoryContainedGeneratedReleaseSource.trxDirectory $onlyMissingRepositoryContainedGeneratedReleaseSource.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+    $onlyMissingRepositoryContainedGeneratedReleaseCoveragePath = Join-Path (Split-Path -Parent $onlyMissingRepositoryContainedGeneratedReleaseSource.trxDirectory) "coverage.opencover.xml"
+    Write-OpenCoverFixture -Path $onlyMissingRepositoryContainedGeneratedReleaseCoveragePath -SourcePaths @($missingRepositoryContainedGeneratedReleasePath)
+    $onlyMissingRepositoryContainedGeneratedReleaseReport = Get-ValidatedOpenCoverReport -CoveragePath $onlyMissingRepositoryContainedGeneratedReleaseCoveragePath -NotBeforeUtc $onlyMissingRepositoryContainedGeneratedReleaseSource.notBeforeUtc -RepositoryRoot $repository.path
+    if ($onlyMissingRepositoryContainedGeneratedReleaseReport.fileCount -ne 1 -or
+        $onlyMissingRepositoryContainedGeneratedReleaseReport.sourcePaths -isnot [string[]] -or
+        $onlyMissingRepositoryContainedGeneratedReleaseReport.sourcePaths.Count -ne 0) {
+        throw "A report containing only a missing repository-contained generated Release source did not return an empty materialized source path set."
+    }
+
+    foreach ($missingSourceCase in @(
+            [pscustomobject]@{ name = "missing-ordinary-repository-source"; path = (Join-Path $repository.path "Fixture\Missing.cs") },
+            [pscustomobject]@{ name = "missing-non-generated-release-source"; path = (Join-Path $repository.path "Fixture\obj\Release\net10.0\Generator\Generated.cs") },
+            [pscustomobject]@{ name = "missing-generated-debug-source"; path = (Join-Path $repository.path "Fixture\obj\Debug\net10.0\Generator\Generated.g.cs") },
+            [pscustomobject]@{ name = "missing-release-non-csharp-source"; path = (Join-Path $repository.path "Fixture\obj\Release\net10.0\Generator\Generated.g.txt") })) {
+        $missingSource = New-Case -Fixture $fixture -Name $missingSourceCase.name
+        Write-TrxFixture -Path (Join-Path $missingSource.trxDirectory $missingSource.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+        $missingSourceCoveragePath = Join-Path (Split-Path -Parent $missingSource.trxDirectory) "coverage.opencover.xml"
+        Write-OpenCoverFixture -Path $missingSourceCoveragePath -SourcePaths @($missingSourceCase.path)
+        Assert-NonZeroFixture -Name $missingSourceCase.name -Result (Invoke-AssertFixture -Fixture $fixture -Case $missingSource -CoveragePath $missingSourceCoveragePath)
+    }
+
+    $multiFileCoverage = New-Case -Fixture $fixture -Name "multi-file-coverage"
+    Write-TrxFixture -Path (Join-Path $multiFileCoverage.trxDirectory $multiFileCoverage.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+    $multiFileCoveragePath = Join-Path (Split-Path -Parent $multiFileCoverage.trxDirectory) "coverage.opencover.xml"
+    $multiFileSourcePaths = @((Join-Path $repository.path "fixture-two.txt"), (Join-Path $repository.path "fixture.txt"))
+    Write-OpenCoverFixture -Path $multiFileCoveragePath -ModuleCount 2 -SourcePaths $multiFileSourcePaths
+    $multiFileReport = Get-ValidatedOpenCoverReport -CoveragePath $multiFileCoveragePath -NotBeforeUtc $multiFileCoverage.notBeforeUtc -RepositoryRoot $repository.path
+    $expectedMultiFileSourcePaths = @(($multiFileSourcePaths + $multiFileSourcePaths) | Sort-Object)
+    if ($multiFileReport.sourcePaths -isnot [string[]] -or $multiFileReport.sourcePaths.Count -ne 4 -or -not (Test-StringArraysEqualOrdinal -Left $multiFileReport.sourcePaths -Right $expectedMultiFileSourcePaths)) {
+        throw "The multi-module OpenCover report did not return a flat ordinally sorted string array."
+    }
+
+    $validCoverageSummary.coverage.sha256 = "0" * 64
+    Write-FixtureJson -Path (Join-Path $validCoverage.evidenceDirectory "trx-summary.json") -Value $validCoverageSummary
+    $tamperedSummaryResult = Invoke-AssertFixture -Fixture $fixture -Case $validCoverage -CoveragePath $validCoveragePath
+    Assert-NonZeroFixture -Name "tampered coverage summary cannot be overwritten" -Result $tamperedSummaryResult
+    $tamperedSummaryRejected = $false
+    try {
+        Assert-CoverageSummaryMatchesReport -Summary $validCoverageSummary -CoveragePath $validCoveragePath -NotBeforeUtc $validCoverage.notBeforeUtc -RepositoryRoot $repository.path
+    }
+    catch {
+        $tamperedSummaryRejected = $true
+    }
+
+    if (-not $tamperedSummaryRejected) {
+        throw "Tampered coverage summary metadata was accepted."
+    }
+
+    $validCoverageSummary.coverage.sha256 = Get-FileSha256 -Path $validCoveragePath
+    Write-FixtureJson -Path (Join-Path $validCoverage.evidenceDirectory "trx-summary.json") -Value $validCoverageSummary
+
+    $missingCoverage = New-Case -Fixture $fixture -Name "missing-coverage"
+    Write-TrxFixture -Path (Join-Path $missingCoverage.trxDirectory $missingCoverage.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+    Assert-NonZeroFixture -Name "missing OpenCover report" -Result (Invoke-AssertFixture -Fixture $fixture -Case $missingCoverage -CoveragePath (Join-Path (Split-Path -Parent $missingCoverage.trxDirectory) "coverage.opencover.xml"))
+
+    $zeroByteCoverage = New-Case -Fixture $fixture -Name "zero-byte-coverage"
+    Write-TrxFixture -Path (Join-Path $zeroByteCoverage.trxDirectory $zeroByteCoverage.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+    $zeroByteCoveragePath = Join-Path (Split-Path -Parent $zeroByteCoverage.trxDirectory) "coverage.opencover.xml"
+    [System.IO.File]::WriteAllBytes($zeroByteCoveragePath, [byte[]]@())
+    Assert-NonZeroFixture -Name "zero-byte OpenCover report" -Result (Invoke-AssertFixture -Fixture $fixture -Case $zeroByteCoverage -CoveragePath $zeroByteCoveragePath)
+
+    $wrongNameCoverage = New-Case -Fixture $fixture -Name "wrong-name-coverage"
+    Write-TrxFixture -Path (Join-Path $wrongNameCoverage.trxDirectory $wrongNameCoverage.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+    $wrongNameCoveragePath = Join-Path (Split-Path -Parent $wrongNameCoverage.trxDirectory) "coverage.xml"
+    Write-OpenCoverFixture -Path $wrongNameCoveragePath -SourcePaths @((Join-Path $repository.path "fixture.txt"))
+    Assert-NonZeroFixture -Name "wrong OpenCover report name" -Result (Invoke-AssertFixture -Fixture $fixture -Case $wrongNameCoverage -CoveragePath $wrongNameCoveragePath)
+
+    $staleCoverage = New-Case -Fixture $fixture -Name "stale-coverage"
+    Write-TrxFixture -Path (Join-Path $staleCoverage.trxDirectory $staleCoverage.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+    $staleCoveragePath = Join-Path (Split-Path -Parent $staleCoverage.trxDirectory) "coverage.opencover.xml"
+    Write-OpenCoverFixture -Path $staleCoveragePath -SourcePaths @((Join-Path $repository.path "fixture.txt"))
+    (Get-Item -LiteralPath $staleCoveragePath).LastWriteTimeUtc = $staleCoverage.notBeforeUtc.UtcDateTime.AddSeconds(-1)
+    Assert-NonZeroFixture -Name "stale OpenCover report" -Result (Invoke-AssertFixture -Fixture $fixture -Case $staleCoverage -CoveragePath $staleCoveragePath)
+
+    $malformedCoverage = New-Case -Fixture $fixture -Name "malformed-coverage"
+    Write-TrxFixture -Path (Join-Path $malformedCoverage.trxDirectory $malformedCoverage.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+    $malformedCoveragePath = Join-Path (Split-Path -Parent $malformedCoverage.trxDirectory) "coverage.opencover.xml"
+    [System.IO.File]::WriteAllText($malformedCoveragePath, "<CoverageSession", [System.Text.UTF8Encoding]::new($false))
+    Assert-NonZeroFixture -Name "malformed OpenCover report" -Result (Invoke-AssertFixture -Fixture $fixture -Case $malformedCoverage -CoveragePath $malformedCoveragePath)
+
+    $dtdCoverage = New-Case -Fixture $fixture -Name "dtd-coverage"
+    Write-TrxFixture -Path (Join-Path $dtdCoverage.trxDirectory $dtdCoverage.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+    $dtdCoveragePath = Join-Path (Split-Path -Parent $dtdCoverage.trxDirectory) "coverage.opencover.xml"
+    Write-OpenCoverFixture -Path $dtdCoveragePath -SourcePaths @((Join-Path $repository.path "fixture.txt")) -WithDtd
+    Assert-NonZeroFixture -Name "DTD OpenCover report" -Result (Invoke-AssertFixture -Fixture $fixture -Case $dtdCoverage -CoveragePath $dtdCoveragePath)
+
+    $wrongRootCoverage = New-Case -Fixture $fixture -Name "wrong-root-coverage"
+    Write-TrxFixture -Path (Join-Path $wrongRootCoverage.trxDirectory $wrongRootCoverage.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+    $wrongRootCoveragePath = Join-Path (Split-Path -Parent $wrongRootCoverage.trxDirectory) "coverage.opencover.xml"
+    Write-OpenCoverFixture -Path $wrongRootCoveragePath -SourcePaths @((Join-Path $repository.path "fixture.txt")) -RootName "NotCoverageSession"
+    Assert-NonZeroFixture -Name "wrong OpenCover root" -Result (Invoke-AssertFixture -Fixture $fixture -Case $wrongRootCoverage -CoveragePath $wrongRootCoveragePath)
+
+    $zeroModuleCoverage = New-Case -Fixture $fixture -Name "zero-module-coverage"
+    Write-TrxFixture -Path (Join-Path $zeroModuleCoverage.trxDirectory $zeroModuleCoverage.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+    $zeroModuleCoveragePath = Join-Path (Split-Path -Parent $zeroModuleCoverage.trxDirectory) "coverage.opencover.xml"
+    Write-OpenCoverFixture -Path $zeroModuleCoveragePath -ModuleCount 0
+    Assert-NonZeroFixture -Name "zero-module OpenCover report" -Result (Invoke-AssertFixture -Fixture $fixture -Case $zeroModuleCoverage -CoveragePath $zeroModuleCoveragePath)
+
+    $skippedModuleCoverage = New-Case -Fixture $fixture -Name "skipped-module-coverage"
+    Write-TrxFixture -Path (Join-Path $skippedModuleCoverage.trxDirectory $skippedModuleCoverage.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+    $skippedModuleCoveragePath = Join-Path (Split-Path -Parent $skippedModuleCoverage.trxDirectory) "coverage.opencover.xml"
+    Write-OpenCoverFixture -Path $skippedModuleCoveragePath -SourcePaths @((Join-Path $repository.path "fixture.txt")) -Skipped
+    Assert-NonZeroFixture -Name "skipped-only OpenCover report" -Result (Invoke-AssertFixture -Fixture $fixture -Case $skippedModuleCoverage -CoveragePath $skippedModuleCoveragePath)
+
+    $zeroFileCoverage = New-Case -Fixture $fixture -Name "zero-file-coverage"
+    Write-TrxFixture -Path (Join-Path $zeroFileCoverage.trxDirectory $zeroFileCoverage.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+    $zeroFileCoveragePath = Join-Path (Split-Path -Parent $zeroFileCoverage.trxDirectory) "coverage.opencover.xml"
+    Write-OpenCoverFixture -Path $zeroFileCoveragePath
+    Assert-NonZeroFixture -Name "zero-file OpenCover report" -Result (Invoke-AssertFixture -Fixture $fixture -Case $zeroFileCoverage -CoveragePath $zeroFileCoveragePath)
+
+    foreach ($uriScheme in @("http", "https", "git")) {
+        $uriCoverage = New-Case -Fixture $fixture -Name "$uriScheme-uri-coverage"
+        Write-TrxFixture -Path (Join-Path $uriCoverage.trxDirectory $uriCoverage.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+        $uriCoveragePath = Join-Path (Split-Path -Parent $uriCoverage.trxDirectory) "coverage.opencover.xml"
+        Write-OpenCoverFixture -Path $uriCoveragePath -SourcePaths @("$uriScheme`://example.invalid/fixture.cs")
+        Assert-NonZeroFixture -Name "$uriScheme URI OpenCover source" -Result (Invoke-AssertFixture -Fixture $fixture -Case $uriCoverage -CoveragePath $uriCoveragePath)
+    }
+
+    $outsideRootCoverage = New-Case -Fixture $fixture -Name "outside-root-coverage"
+    Write-TrxFixture -Path (Join-Path $outsideRootCoverage.trxDirectory $outsideRootCoverage.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+    $outsideRootSourcePath = Join-Path $temporaryRoot "outside-root-source.cs"
+    [System.IO.File]::WriteAllText($outsideRootSourcePath, "fixture`n", [System.Text.UTF8Encoding]::new($false))
+    $outsideRootCoveragePath = Join-Path (Split-Path -Parent $outsideRootCoverage.trxDirectory) "coverage.opencover.xml"
+    Write-OpenCoverFixture -Path $outsideRootCoveragePath -SourcePaths @($outsideRootSourcePath)
+    Assert-NonZeroFixture -Name "outside-repository OpenCover source" -Result (Invoke-AssertFixture -Fixture $fixture -Case $outsideRootCoverage -CoveragePath $outsideRootCoveragePath)
+
+    $junctionTarget = New-Item -ItemType Directory -Path (Join-Path $temporaryRoot "junction-target") -Force
+    $junctionTargetSource = Join-Path $junctionTarget.FullName "outside.cs"
+    [System.IO.File]::WriteAllText($junctionTargetSource, "fixture`n", [System.Text.UTF8Encoding]::new($false))
+    $junctionPath = Join-Path $repository.path "outside-junction"
+    $junctionFixtureOutcome = "skipped"
+    $junctionOutput = @(& cmd /c "mklink /J `"$junctionPath`" `"$($junctionTarget.FullName)`"" 2>&1)
+    if ($LASTEXITCODE -eq 0) {
+        try {
+            $junctionCoverage = New-Case -Fixture $fixture -Name "junction-root-escape-coverage"
+            Write-TrxFixture -Path (Join-Path $junctionCoverage.trxDirectory $junctionCoverage.expectedTrxFileName) -TestNames @("Fixture.Pass") -Total 1 -Executed 1 -Passed 1 -Failed 0 -NotExecuted 0
+            $junctionCoveragePath = Join-Path (Split-Path -Parent $junctionCoverage.trxDirectory) "coverage.opencover.xml"
+            Write-OpenCoverFixture -Path $junctionCoveragePath -SourcePaths @((Join-Path $junctionPath "outside.cs"))
+            Assert-NonZeroFixture -Name "junction OpenCover source outside repository" -Result (Invoke-AssertFixture -Fixture $fixture -Case $junctionCoverage -CoveragePath $junctionCoveragePath)
+            $junctionFixtureOutcome = "rejected"
+        }
+        finally {
+            $null = & cmd /c "rmdir `"$junctionPath`""
+        }
+    }
+    else {
+        Write-Host "junction OpenCover fixture skipped because Windows could not create a junction."
     }
 
     $targeted = New-Case -Fixture $fixture -Name "targeted" -Tests @("Fixture.Target") -Filters @("FullyQualifiedName~Fixture.Target")
@@ -520,7 +766,7 @@ try {
         Remove-Item -LiteralPath $dirtyPath -Force
     }
 
-    Write-Host "assert-trx fixture matrix passed: full=1, colliding-display=1, targeted=1, failure=16, localized-listing=1, configuration=1."
+    Write-Host "assert-trx fixture matrix passed: full=1, colliding-display=1, targeted=1, coverage=1, missing-generated-release=2, multi-file=flat-4, junction=$junctionFixtureOutcome, failure=16, coverage-failure=19, localized-listing=1, configuration=1."
 }
 finally {
     if (Test-Path -LiteralPath $temporaryRoot) {
