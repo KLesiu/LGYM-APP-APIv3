@@ -14,7 +14,7 @@ Main areas:
 - Module shells: `LgymApi.Platform`, `LgymApi.Identity`, `LgymApi.TrainingPlanning`, and `LgymApi.Notifications`
 - Background jobs: `LgymApi.BackgroundWorker` and `LgymApi.BackgroundWorker.Common`
 - Data seeding: `LgymApi.DataSeeder`
-- Tests: `LgymApi.UnitTests`, `LgymApi.IntegrationTests`, `LgymApi.ArchitectureTests`, `LgymApi.DataSeeder.Tests`, `LgymApi.TestUtils`
+- Tests: `LgymApi.UnitTests`, `LgymApi.IntegrationTests`, `LgymApi.E2ETests`, `LgymApi.ArchitectureTests`, `LgymApi.DataSeeder.Tests`, `LgymApi.TestUtils`
 
 ## Instruction Hierarchy
 
@@ -73,6 +73,7 @@ Final responses for such tasks should mention which `.csproj` files changed and 
 | `LgymApi.DataSeeder/LgymApi.DataSeeder.csproj` | Console executable for deterministic data seeding/bootstrap using infrastructure and EF tooling. | Do not make API startup depend on this executable. |
 | `LgymApi.UnitTests/LgymApi.UnitTests.csproj` | Focused unit tests for service, domain, application, mapping, API, and infrastructure units. | Use NUnit, FluentAssertions, NSubstitute, and shared helpers from `LgymApi.TestUtils`. |
 | `LgymApi.IntegrationTests/LgymApi.IntegrationTests.csproj` | End-to-end API tests with `WebApplicationFactory`, middleware, auth, serialization, localization, and test persistence. | Reuse integration helpers and validate legacy contract compatibility for changed endpoints. |
+| `LgymApi.E2ETests/LgymApi.E2ETests.csproj` | Standalone package-only E2E harness foundation for configuration, runner-policy, boundary, and disposable PostgreSQL container checks. It has zero project references and is not one of the main solution's 18 projects or 90 direct edges. | Keep it outside `LgymApi.sln`; use only package dependencies and future public HTTP. Do not add product references, in-process API startup, direct persistence access, browser scenarios, or private artifacts. |
 | `LgymApi.ArchitectureTests/LgymApi.ArchitectureTests.csproj` | Roslyn guard tests for dependency direction, ID boundaries, DI placement, feature layout, mapping, enums, and unit-of-work rules. | Treat failures as architecture violations unless an intentional exception is documented. |
 | `LgymApi.DataSeeder.Tests/LgymApi.DataSeeder.Tests.csproj` | Tests for DataSeeder behavior and seeding assumptions. | Update when seeder inputs, defaults, or seeded entities change. |
 | `LgymApi.TestUtils/LgymApi.TestUtils.csproj` | Shared test builders, fakes, fixtures, and setup helpers; referenced by test projects but not a test project itself. | Centralize reusable fakes and builders here and avoid hidden side effects. |
@@ -90,6 +91,7 @@ Final responses for such tasks should mention which `.csproj` files changed and 
 - Restore with `dotnet restore LgymApi.sln`.
 - Sanity-check with `dotnet build LgymApi.sln --configuration Release --no-restore`.
 - Run the API with `dotnet run --project LgymApi.Api`.
+- Restore and build the standalone E2E harness with `dotnet restore LgymApi.E2ETests.sln` and `dotnet build LgymApi.E2ETests.sln --configuration Release --no-restore`.
 - Do not retarget frameworks or change solution wiring unless the task requires it.
 - Restore normally runs in locked mode; do not update lock state unless the task requires it.
 
@@ -149,4 +151,5 @@ dotnet test LgymApi.UnitTests/LgymApi.UnitTests.csproj --configuration Release -
 dotnet test LgymApi.ArchitectureTests/LgymApi.ArchitectureTests.csproj --configuration Release --no-build
 dotnet test LgymApi.IntegrationTests/LgymApi.IntegrationTests.csproj --configuration Release --no-build
 dotnet test LgymApi.DataSeeder.Tests/LgymApi.DataSeeder.Tests.csproj --configuration Release --no-build
+dotnet test LgymApi.E2ETests/LgymApi.E2ETests.csproj --configuration Release --no-build --settings LgymApi.E2ETests/LgymApi.E2ETests.runsettings --filter "TestCategory=Harness"
 ```
