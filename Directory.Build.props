@@ -17,6 +17,7 @@
        - LgymApi.ArchitectureTests
        - LgymApi.DataSeeder.Tests
        - LgymApi.TestUtils
+       - LgymApi.E2ETests
        Rationale: Test project nullable compliance will be addressed after production code baseline.
     
     2. EF Core generated migration artifacts (automatically excluded via #nullable disable):
@@ -40,7 +41,7 @@
     <IsGatedProductionProject Condition="'$(MSBuildProjectName)' == 'LgymApi.BackgroundWorker.Common'">true</IsGatedProductionProject>
 
     <!-- Explicitly mark test projects as non-gated for clarity and future reference -->
-    <IsTestProject Condition="'$(MSBuildProjectName)' == 'LgymApi.UnitTests' Or '$(MSBuildProjectName)' == 'LgymApi.IntegrationTests' Or '$(MSBuildProjectName)' == 'LgymApi.ArchitectureTests' Or '$(MSBuildProjectName)' == 'LgymApi.DataSeeder.Tests' Or '$(MSBuildProjectName)' == 'LgymApi.TestUtils'">true</IsTestProject>
+    <IsTestProject Condition="'$(MSBuildProjectName)' == 'LgymApi.UnitTests' Or '$(MSBuildProjectName)' == 'LgymApi.IntegrationTests' Or '$(MSBuildProjectName)' == 'LgymApi.ArchitectureTests' Or '$(MSBuildProjectName)' == 'LgymApi.DataSeeder.Tests' Or '$(MSBuildProjectName)' == 'LgymApi.TestUtils' Or '$(MSBuildProjectName)' == 'LgymApi.E2ETests'">true</IsTestProject>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(IsGatedProductionProject)' == 'true'">
