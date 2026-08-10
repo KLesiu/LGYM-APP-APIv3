@@ -30,6 +30,37 @@ public sealed class DockerContainerProbeTests
             typeof(InvalidOperationException));
     }
 
+    [Test]
+    public void Inspection_timeout_terminates_and_reaps_the_probe_process()
+    {
+        using var timeoutCancellation = new CancellationTokenSource();
+        timeoutCancellation.Cancel();
+        var processId = 0;
+
+        try
+        {
+            var exception = Assert.ThrowsAsync<InvalidOperationException>(
+                async () => await DockerContainerProbe.IsAbsentAsync(
+                    timeoutCancellation.Token,
+                    () =>
+                    {
+                        var process = StartBlockingProcess();
+                        processId = process.Id;
+                        return process;
+                    }));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(exception!.Message, Is.EqualTo("Docker inspection exceeded the configured shutdown timeout."));
+                Assert.That(IsProcessRunning(processId), Is.False, "The timed-out Docker inspection process must be reaped before the timeout propagates.");
+            });
+        }
+        finally
+        {
+            KillIfRunning(processId);
+        }
+    }
+
     private static void AssertCancellationReapsProcess(
         CancellationToken timeoutToken,
         CancellationToken callerToken,

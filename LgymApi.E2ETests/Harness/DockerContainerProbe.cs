@@ -86,7 +86,7 @@ internal static class DockerContainerProbe
         }
     }
 
-    private static async Task<bool> IsAbsentAsync(string containerId, CancellationToken cancellationToken)
+    private static Task<bool> IsAbsentAsync(string containerId, CancellationToken cancellationToken)
     {
         var startInfo = new ProcessStartInfo("docker")
         {
@@ -100,10 +100,19 @@ internal static class DockerContainerProbe
         startInfo.ArgumentList.Add("{{.Id}}");
         startInfo.ArgumentList.Add(containerId);
 
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Could not start Docker inspection for PostgreSQL cleanup.");
-        var standardErrorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        var standardOutputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        return IsAbsentAsync(
+            cancellationToken,
+            () => Process.Start(startInfo)
+                ?? throw new InvalidOperationException("Could not start Docker inspection for PostgreSQL cleanup."));
+    }
+
+    internal static async Task<bool> IsAbsentAsync(
+        CancellationToken cancellationToken,
+        Func<Process> startProcess)
+    {
+        using var process = startProcess();
+        var standardErrorTask = process.StandardError.ReadToEndAsync();
+        var standardOutputTask = process.StandardOutput.ReadToEndAsync();
 
         try
         {
@@ -111,10 +120,9 @@ internal static class DockerContainerProbe
         }
         catch (OperationCanceledException)
         {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
+            await TerminateAndWaitAsync(process);
+            _ = await standardOutputTask;
+            _ = await standardErrorTask;
 
             throw new InvalidOperationException("Docker inspection exceeded the configured shutdown timeout.");
         }
