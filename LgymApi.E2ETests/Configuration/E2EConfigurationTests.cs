@@ -64,18 +64,25 @@ public sealed class E2EConfigurationTests
         });
     }
 
-    [Test]
-    public void Unsupported_LGYM_setting_fails_with_a_sanitized_deterministic_diagnostic()
+    [TestCase("LGYM_E2E__Unexpected")]
+    [TestCase("LGYM_E2E")]
+    [TestCase("LGYM_E2E__WebSource")]
+    public void Unsupported_LGYM_setting_fails_with_a_sanitized_deterministic_diagnostic(string variableName)
     {
+        const string injectedValue = "unsupported-scalar";
         WithEnvironmentVariables(
-            new Dictionary<string, string?> { ["LGYM_E2E__Unexpected"] = "ignored" },
+            new Dictionary<string, string?> { [variableName] = injectedValue },
             () =>
             {
                 var exception = Assert.Throws<InvalidOperationException>(() => LoadOutputConfiguration());
 
-                Assert.That(
-                    exception!.Message,
-                    Is.EqualTo("Invalid E2E configuration: schema contains an unsupported setting."));
+                Assert.Multiple(() =>
+                {
+                    Assert.That(
+                        exception!.Message,
+                        Is.EqualTo("Invalid E2E configuration: schema contains an unsupported setting."));
+                    Assert.That(exception.Message, Does.Not.Contain(injectedValue));
+                });
             });
     }
 

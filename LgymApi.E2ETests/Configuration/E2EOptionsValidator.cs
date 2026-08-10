@@ -15,6 +15,11 @@ public static class E2EOptionsValidator
         ArgumentNullException.ThrowIfNull(section);
 
         var errors = new List<string>();
+        if (section.Value is not null)
+        {
+            errors.Add("schema contains an unsupported setting.");
+        }
+
         ValidateSection(section, "WebSource", ["RepositoryUrl", "CommitSha"], ["SourcePath"], errors);
         ValidateSection(section, "Api", ["PublishedDllPath", "Port"], [], errors);
         ValidateSection(section, "Web", ["Port"], [], errors);
@@ -117,6 +122,11 @@ public static class E2EOptionsValidator
         {
             errors.Add($"schema is missing required section: E2E.{sectionName}.");
             return;
+        }
+
+        if (section.Value is not null)
+        {
+            errors.Add("schema contains an unsupported setting.");
         }
 
         var allowedKeys = requiredKeys.Concat(optionalKeys).ToHashSet(StringComparer.Ordinal);
