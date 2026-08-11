@@ -116,11 +116,23 @@ appsettings.Production.json
 appsettings.Local.json
 appsettings.*.json
 !appsettings.json
+!LgymApi.E2ETests/appsettings.E2E.json
 appsettings.container.json
 appsettings.*.container.json
 appsettings.secrets.json
 *.local.secrets.json
 !appsettings.container.example.json
+
+# Standalone E2E private runtime and browser artifacts
+/.e2e-private/
+LgymApi.E2ETests/.playwright/
+LgymApi.E2ETests/ms-playwright/
+LgymApi.E2ETests/playwright-report/
+LgymApi.E2ETests/test-results/
+LgymApi.E2ETests/traces/
+LgymApi.E2ETests/screenshots/
+LgymApi.E2ETests/reports/
+LgymApi.E2ETests/runtime/
 
 # .env files
 .env
