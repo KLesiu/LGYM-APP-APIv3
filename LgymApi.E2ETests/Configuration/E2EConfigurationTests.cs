@@ -12,6 +12,8 @@ public sealed class E2EConfigurationTests
     private const string HttpTimeoutVariable = "LGYM_E2E__Timeouts__HttpRequestSeconds";
 
     [Test]
+    [Category("Harness")]
+    [Category("ApiHostProof")]
     public void Committed_safe_configuration_loads_with_exact_defaults()
     {
         var options = LoadOutputConfiguration();
@@ -28,6 +30,7 @@ public sealed class E2EConfigurationTests
             Assert.That(options.Database.Image, Is.EqualTo("postgres:17.10-alpine3.24"));
             Assert.That(options.Database.NamePrefix, Is.EqualTo("lgym_e2e"));
             Assert.That(options.Timeouts.ContainerStartupSeconds, Is.EqualTo(120));
+            Assert.That(options.Timeouts.ApiPublishSeconds, Is.EqualTo(300));
             Assert.That(options.Timeouts.ApiStartupSeconds, Is.EqualTo(120));
             Assert.That(options.Timeouts.WebStartupSeconds, Is.EqualTo(120));
             Assert.That(options.Timeouts.ProcessShutdownSeconds, Is.EqualTo(15));
@@ -49,7 +52,7 @@ public sealed class E2EConfigurationTests
             ["E2E__Web__Port"] = "9999"
         };
 
-        WithEnvironmentVariables(variables, () =>
+        EnvironmentVariableScope.Run(variables, () =>
         {
             Assert.That(Directory.Exists(sourcePath), Is.False);
 
@@ -70,7 +73,7 @@ public sealed class E2EConfigurationTests
     public void Unsupported_LGYM_setting_fails_with_a_sanitized_deterministic_diagnostic(string variableName)
     {
         const string injectedValue = "unsupported-scalar";
-        WithEnvironmentVariables(
+        EnvironmentVariableScope.Run(
             new Dictionary<string, string?> { [variableName] = injectedValue },
             () =>
             {
@@ -89,7 +92,7 @@ public sealed class E2EConfigurationTests
     [Test]
     public void Invalid_environment_value_type_fails_without_echoing_the_value()
     {
-        WithEnvironmentVariables(
+        EnvironmentVariableScope.Run(
             new Dictionary<string, string?> { [HttpTimeoutVariable] = "not-an-integer" },
             () =>
             {
@@ -124,6 +127,8 @@ public sealed class E2EConfigurationTests
 
     [TestCase(nameof(E2ETimeoutsOptions.ContainerStartupSeconds), 0)]
     [TestCase(nameof(E2ETimeoutsOptions.ContainerStartupSeconds), 601)]
+    [TestCase(nameof(E2ETimeoutsOptions.ApiPublishSeconds), 0)]
+    [TestCase(nameof(E2ETimeoutsOptions.ApiPublishSeconds), 601)]
     [TestCase(nameof(E2ETimeoutsOptions.ApiStartupSeconds), 0)]
     [TestCase(nameof(E2ETimeoutsOptions.ApiStartupSeconds), 601)]
     [TestCase(nameof(E2ETimeoutsOptions.WebStartupSeconds), 0)]
@@ -138,6 +143,8 @@ public sealed class E2EConfigurationTests
     [TestCase(nameof(E2ETimeoutsOptions.ScenarioSeconds), 1801)]
     [TestCase(nameof(E2ETimeoutsOptions.TestSessionSeconds), 0)]
     [TestCase(nameof(E2ETimeoutsOptions.TestSessionSeconds), 3601)]
+    [Category("Harness")]
+    [Category("ApiHostProof")]
     public void Invalid_timeout_boundaries_fail_with_the_exact_range_diagnostic(string timeoutName, int value)
     {
         var options = CreateValidOptions();
@@ -164,6 +171,7 @@ public sealed class E2EConfigurationTests
         Timeouts = new E2ETimeoutsOptions
         {
             ContainerStartupSeconds = 120,
+            ApiPublishSeconds = 300,
             ApiStartupSeconds = 120,
             WebStartupSeconds = 120,
             ProcessShutdownSeconds = 15,
@@ -215,6 +223,7 @@ public sealed class E2EConfigurationTests
         switch (timeoutName)
         {
             case nameof(E2ETimeoutsOptions.ContainerStartupSeconds): timeouts.ContainerStartupSeconds = value; break;
+            case nameof(E2ETimeoutsOptions.ApiPublishSeconds): timeouts.ApiPublishSeconds = value; break;
             case nameof(E2ETimeoutsOptions.ApiStartupSeconds): timeouts.ApiStartupSeconds = value; break;
             case nameof(E2ETimeoutsOptions.WebStartupSeconds): timeouts.WebStartupSeconds = value; break;
             case nameof(E2ETimeoutsOptions.ProcessShutdownSeconds): timeouts.ProcessShutdownSeconds = value; break;
@@ -229,6 +238,7 @@ public sealed class E2EConfigurationTests
     private static string ExpectedTimeoutError(string timeoutName) => timeoutName switch
     {
         nameof(E2ETimeoutsOptions.ContainerStartupSeconds) => "Timeouts.ContainerStartupSeconds must be between 1 and 600 seconds.",
+        nameof(E2ETimeoutsOptions.ApiPublishSeconds) => "Timeouts.ApiPublishSeconds must be between 1 and 600 seconds.",
         nameof(E2ETimeoutsOptions.ApiStartupSeconds) => "Timeouts.ApiStartupSeconds must be between 1 and 600 seconds.",
         nameof(E2ETimeoutsOptions.WebStartupSeconds) => "Timeouts.WebStartupSeconds must be between 1 and 600 seconds.",
         nameof(E2ETimeoutsOptions.ProcessShutdownSeconds) => "Timeouts.ProcessShutdownSeconds must be between 1 and 120 seconds.",
@@ -246,29 +256,4 @@ public sealed class E2EConfigurationTests
         Assert.That(exception!.Message, Is.EqualTo("Invalid E2E configuration: " + expectedError));
     }
 
-    private static void WithEnvironmentVariables(IReadOnlyDictionary<string, string?> variables, Action assertion)
-    {
-        var originals = variables.Keys.ToDictionary(name => name, Environment.GetEnvironmentVariable, StringComparer.Ordinal);
-        try
-        {
-            foreach (var (name, value) in variables)
-            {
-                Environment.SetEnvironmentVariable(name, value);
-            }
-
-            assertion();
-        }
-        finally
-        {
-            foreach (var (name, value) in originals)
-            {
-                Environment.SetEnvironmentVariable(name, value);
-            }
-
-            foreach (var (name, value) in originals)
-            {
-                Assert.That(Environment.GetEnvironmentVariable(name), Is.EqualTo(value), $"Environment variable '{name}' was not restored.");
-            }
-        }
-    }
 }

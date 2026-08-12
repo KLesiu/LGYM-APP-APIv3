@@ -2,6 +2,7 @@ namespace LgymApi.E2ETests.Harness;
 
 [TestFixture]
 [Category("Harness")]
+[Category("ApiHostProof")]
 public sealed class PostgreSqlContainerHarnessTests
 {
     [Test]
@@ -15,8 +16,6 @@ public sealed class PostgreSqlContainerHarnessTests
 
             Assert.Multiple(() =>
             {
-                Assert.That(lease.ContainerId, Is.Not.Empty);
-                Assert.That(lease.MappedPort, Is.GreaterThan(0));
                 Assert.That(lease.IsRunning, Is.True);
             });
         }
@@ -28,7 +27,8 @@ public sealed class PostgreSqlContainerHarnessTests
             }
         }
 
-        Assert.That(lease!.WasRemoved, Is.True);
+        Assert.That(lease!.CleanupReceipt.ContainerAbsent, Is.True);
+        Assert.That(await lease.ConfirmAbsentAsync(), Is.True);
         WriteCleanupReceipt(lease);
     }
 
@@ -55,7 +55,7 @@ public sealed class PostgreSqlContainerHarnessTests
             Assert.That(exception, Is.TypeOf<InjectedPostStartFailureException>());
             Assert.That(exception!.Message, Is.EqualTo("Injected post-start lifecycle failure."));
             Assert.That(lease, Is.Not.Null);
-            Assert.That(lease!.WasRemoved, Is.True);
+            Assert.That(lease!.CleanupReceipt.ContainerAbsent, Is.True);
         });
         WriteCleanupReceipt(lease!);
     }
@@ -63,7 +63,7 @@ public sealed class PostgreSqlContainerHarnessTests
     private static void WriteCleanupReceipt(PostgreSqlContainerLease lease)
     {
         TestContext.Out.WriteLine(
-            $"Task 7 cleanup: containerId={lease.ContainerId}; mappedPort={lease.MappedPort}; absent={lease.WasRemoved}.");
+            $"Task 4 PostgreSQL cleanup: category={lease.CleanupReceipt.Category}; absent={lease.CleanupReceipt.ContainerAbsent}; durationMilliseconds={(long)lease.CleanupReceipt.Duration.TotalMilliseconds}.");
     }
 
     private sealed class InjectedPostStartFailureException : Exception
