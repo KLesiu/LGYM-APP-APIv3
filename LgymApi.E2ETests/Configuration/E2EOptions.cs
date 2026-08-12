@@ -54,6 +54,8 @@ public sealed class E2ETimeoutsOptions
 {
     public int ContainerStartupSeconds { get; set; }
 
+    public int ApiPublishSeconds { get; set; } = 300;
+
     public int ApiStartupSeconds { get; set; }
 
     public int WebStartupSeconds { get; set; }

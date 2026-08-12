@@ -42,3 +42,17 @@
 - API composition follows the guarded public facade order: Platform, Identity, Training Planning, Notifications, remaining Application, Infrastructure, API adapters, then Worker.
 - Workout & Progress API handoff keeps Exercise and Main Records behind their owner-oriented API adapters because they construct owner input models; Gym, Measurements, Exercise Scores, Training, and ELO Registry controllers inject their existing owner service contracts directly. All seven controllers retain the existing mapping profiles and HTTP contracts.
 - API content links Notifications-owned email templates to `EmailTemplates/<Template>/<en|pl>.email` under the runtime base directory.
+
+## External API Host Matrix
+
+| Environment | Provider | Startup migration | Schema guards | Rate limiter | Hangfire dashboard/server/jobs | Worker schedulers |
+| --- | --- | --- | --- | --- | --- | --- |
+| Testing | Npgsql registration | skipped | skipped | disabled | suppressed | no-op |
+| E2E | Npgsql | apply normal EF migrations | enabled after migration | enabled | suppressed | no-op |
+| Development | Npgsql | apply normal EF migrations | enabled | enabled | unchanged/enabled | Hangfire |
+| Staging/Production/unknown | Npgsql | never auto-apply; reject pending | enabled | enabled | unchanged/enabled | Hangfire |
+
+- `ApiEnvironmentNames` is the case-insensitive authority for exact `Testing`, exact `E2E`, and their shared test-safe composition. Testing alone skips migration and guards. E2E migrates first, then runs startup guards before readiness. Development retains automatic migration; Staging, Production, and unknown environments reject pending migrations.
+- Testing alone disables rate-limiter registration and middleware. E2E keeps the limiter active, including password recovery. Both test-safe environments suppress the Hangfire dashboard and recurring runtime before authentication, returning `404` for `/hangfire`, and select no-op worker schedulers without Hangfire storage, server, or jobs.
+- The external E2E host reads its generated configuration only through `LGYM_APP_CONFIG_PATH`. That file and all runtime secrets stay in an ignored per-run private directory. The child receives only `SystemRoot`, `WINDIR`, `TEMP`, `TMP`, `ASPNETCORE_ENVIRONMENT`, `DOTNET_ENVIRONMENT`, `ASPNETCORE_URLS`, `LGYM_APP_CONFIG_PATH`, `DOTNET_NOLOGO`, and `DOTNET_CLI_TELEMETRY_OPTOUT`.
+- E2E accepts normalized CORS configuration only when it is the exact singleton `http://localhost:8083`. Credentialed preflight and actual requests use that origin; other origins receive no CORS allow headers. Broader E2E configuration fails before readiness without changing Development or production CORS behavior.

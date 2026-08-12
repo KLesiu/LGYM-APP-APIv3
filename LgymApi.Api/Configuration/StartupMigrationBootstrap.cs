@@ -38,6 +38,12 @@ public static class StartupMigrationBootstrap
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(environmentName);
         ArgumentException.ThrowIfNullOrWhiteSpace(testingEnvironmentName);
-        return string.Equals(environmentName, Environments.Development, StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(environmentName, testingEnvironmentName, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return string.Equals(environmentName, Environments.Development, StringComparison.OrdinalIgnoreCase) ||
+               ApiEnvironmentNames.IsE2E(environmentName);
     }
 }

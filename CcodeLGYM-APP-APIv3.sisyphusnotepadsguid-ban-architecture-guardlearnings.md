@@ -1,5 +1,11 @@
 
 
+## 2026-08-12 Task: API host final manifest duplicate proof handling (SAFE)
+
+- Updated `SanitizedApiHostEvidenceManifest.Create` to collapse duplicate required proof rows only when every duplicate outcome is `Passed`; any non-passed duplicate remains rejected.
+- Regenerated the canonical manifest from the current raw TRX via `WriteForCurrentRunAsync`.
+- Focused manifest tests: 6 passed. Canonical counters: 97/97/97/0/0; proofs: 12, all passed.
+
 ## 2026-03-28 Task 8: API layer Guid migration (COMPLETED)
 
 ### Scope

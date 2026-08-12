@@ -30,6 +30,7 @@ public static class E2EOptionsValidator
             "Timeouts",
             [
                 "ContainerStartupSeconds",
+                "ApiPublishSeconds",
                 "ApiStartupSeconds",
                 "WebStartupSeconds",
                 "ProcessShutdownSeconds",
@@ -198,6 +199,7 @@ public static class E2EOptionsValidator
     private static void ValidateTimeouts(E2ETimeoutsOptions timeouts, List<string> errors)
     {
         ValidateRange(timeouts.ContainerStartupSeconds, 1, 600, "Timeouts.ContainerStartupSeconds", "seconds", errors);
+        ValidateRange(timeouts.ApiPublishSeconds, 1, 600, "Timeouts.ApiPublishSeconds", "seconds", errors);
         ValidateRange(timeouts.ApiStartupSeconds, 1, 600, "Timeouts.ApiStartupSeconds", "seconds", errors);
         ValidateRange(timeouts.WebStartupSeconds, 1, 600, "Timeouts.WebStartupSeconds", "seconds", errors);
         ValidateRange(timeouts.ProcessShutdownSeconds, 1, 120, "Timeouts.ProcessShutdownSeconds", "seconds", errors);

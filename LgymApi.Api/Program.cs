@@ -25,8 +25,6 @@ using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Debugging;
 
-const string TestingEnvironment = "Testing";
-
 var builder = WebApplication.CreateBuilder(args);
 
 ExternalConfigBootstrap.Configure(
@@ -34,6 +32,10 @@ ExternalConfigBootstrap.Configure(
     builder.Environment.ContentRootPath,
     builder.Environment.EnvironmentName,
     args);
+
+var environmentName = builder.Environment.EnvironmentName;
+var isTesting = ApiEnvironmentNames.IsTesting(environmentName);
+var isTestSafe = ApiEnvironmentNames.IsTestSafe(environmentName);
 
 SelfLog.Enable(msg => Console.Error.WriteLine(msg));
 
@@ -51,7 +53,7 @@ builder.Services.AddSwaggerGen(options =>
     options.SchemaFilter<EnumAsStringSchemaFilter>();
 });
 var configuredCorsOrigins = builder.Configuration.GetSection(ConfigKeys.CorsAllowedOrigins).Get<string[]>();
-var corsAllowedOrigins = CorsOriginResolver.ResolveAllowedOrigins(configuredCorsOrigins, builder.Environment.IsDevelopment());
+var corsAllowedOrigins = CorsOriginResolver.ResolveAllowedOrigins(configuredCorsOrigins, environmentName);
 
 builder.Services.AddCors(options =>
 {
@@ -69,7 +71,6 @@ builder.Services.AddCors(options =>
 builder.Services.AddHttpContextAccessor();
 var localizationOptions = builder.Services.AddApiLocalization();
 builder.Services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
-var isTesting = builder.Environment.IsEnvironment(TestingEnvironment);
 
 builder.Services
     .AddPlatformModule()
@@ -80,7 +81,7 @@ builder.Services
     .AddInfrastructure(
         builder.Configuration,
         builder.Environment.IsDevelopment(),
-        isTesting,
+        isTestSafe,
         hostBackgroundServer: false)
     .AddApplicationApiAdapters();
 builder.Services.AddNotificationsApiAdapters();
@@ -94,7 +95,7 @@ builder.Services.AddApiAuthentication(builder.Configuration);
 
 builder.Services.AddApiAuthorizationPolicies();
 
-if (!builder.Environment.IsEnvironment(TestingEnvironment))
+if (!isTesting)
 {
     builder.Services.AddRateLimiter(options =>
     {
@@ -110,7 +111,7 @@ if (!builder.Environment.IsEnvironment(TestingEnvironment))
             if (isPasswordRecovery)
             {
                 var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-                return RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
+                return RateLimitPartition.GetFixedWindowLimiter($"password-recovery:{ip}", _ => new FixedWindowRateLimiterOptions
                 {
                     // Intentional: stricter rate limit for sensitive password recovery endpoints.
                     PermitLimit = 5,
@@ -124,7 +125,7 @@ if (!builder.Environment.IsEnvironment(TestingEnvironment))
             if (isAuth)
             {
                 var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-                return RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
+                return RateLimitPartition.GetFixedWindowLimiter($"auth:{ip}", _ => new FixedWindowRateLimiterOptions
                 {
                     // Intentional: allow higher burst for auth retries from mobile networks/devices.
                     PermitLimit = 200,
@@ -134,8 +135,8 @@ if (!builder.Environment.IsEnvironment(TestingEnvironment))
 
             var userId = context.User.FindFirst(AuthConstants.ClaimNames.UserId)?.Value;
             var key = string.IsNullOrWhiteSpace(userId)
-                ? context.Connection.RemoteIpAddress?.ToString() ?? "unknown"
-                : userId;
+                ? $"anonymous:{context.Connection.RemoteIpAddress?.ToString() ?? "unknown"}"
+                : $"account:{userId}";
 
             return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
             {
@@ -147,13 +148,13 @@ if (!builder.Environment.IsEnvironment(TestingEnvironment))
     });
 }
 
-builder.Services.AddBackgroundWorkerServices(isTesting, hostBackgroundServer: true);
+builder.Services.AddBackgroundWorkerServices(isTestSafe, hostBackgroundServer: true);
 
 var app = builder.Build();
 
-await StartupMigrationBootstrap.ApplyAsync(app, TestingEnvironment);
+await StartupMigrationBootstrap.ApplyAsync(app, ApiEnvironmentNames.Testing);
 
-if (!app.Environment.IsEnvironment(TestingEnvironment))
+if (!ApiEnvironmentNames.IsTesting(app.Environment.EnvironmentName))
 {
     await StartupRuntimeGuards.ValidateDatabaseSchemaAsync(app.Services);
 }
@@ -166,14 +167,14 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-ProgramHangfire.ConfigureRecurringJobs(app, TestingEnvironment);
+ProgramHangfire.ConfigureRecurringJobs(app, ApiEnvironmentNames.Testing);
 
 app.UseRequestLocalization(localizationOptions);
 app.UseSerilogRequestLogging();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseCors();
 app.UseAuthentication();
-if (!app.Environment.IsEnvironment(TestingEnvironment))
+if (!ApiEnvironmentNames.IsTesting(app.Environment.EnvironmentName))
 {
     app.UseRateLimiter();
 }
