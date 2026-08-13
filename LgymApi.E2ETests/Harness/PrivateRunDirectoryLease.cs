@@ -108,23 +108,32 @@ internal sealed class PrivateRunDirectoryLease : IAsyncDisposable
 
     internal async Task FinalizeLifecycleFailureAsync(CancellationToken cancellationToken = default)
     {
-        ValidateOwnedRunDirectory();
-        var artifactDirectory = Path.Combine(RunDirectory, "artifacts");
-        _layout.EnsureSafePath(artifactDirectory);
-
-        foreach (var entry in Directory.GetFileSystemEntries(RunDirectory))
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(CleanupTimeout);
+        try
         {
-            _layout.EnsureSafePath(entry);
-            if (string.Equals(Path.GetFileName(entry), "artifacts", StringComparison.Ordinal))
+            ValidateOwnedRunDirectory();
+            var artifactDirectory = Path.Combine(RunDirectory, "artifacts");
+            _layout.EnsureSafePath(artifactDirectory);
+
+            foreach (var entry in Directory.GetFileSystemEntries(RunDirectory))
             {
-                continue;
+                _layout.EnsureSafePath(entry);
+                if (string.Equals(Path.GetFileName(entry), "artifacts", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                await _cleaner.DeleteAsync(entry, timeout.Token);
             }
 
-            await _cleaner.DeleteAsync(entry, cancellationToken);
+            ValidateOwnedRunDirectory();
+            _layout.EnsureSafePath(artifactDirectory);
         }
-
-        ValidateOwnedRunDirectory();
-        _layout.EnsureSafePath(artifactDirectory);
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            throw new InvalidOperationException(CleanupMessage);
+        }
     }
 
     internal static PrivateRunDirectoryLease Create(
@@ -232,7 +241,9 @@ internal sealed class PrivateRunDirectoryLease : IAsyncDisposable
     {
         _layout.EnsureOwnedRunDirectory(RunDirectory);
         _layout.EnsureSafePath(directory);
-        await _cleaner.DeleteAsync(directory, cancellationToken);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(CleanupTimeout);
+        await _cleaner.DeleteAsync(directory, timeout.Token);
     }
 
     private void ValidateOwnedRunDirectory()

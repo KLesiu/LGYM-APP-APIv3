@@ -6,6 +6,7 @@ internal sealed class LifecycleRunDirectoryLease : IAsyncDisposable
 {
     private readonly PrivateRunDirectoryLease _runLease;
     private readonly HashSet<string> _caseIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _finalizationLock = new(1, 1);
     private int _finalized;
 
     private LifecycleRunDirectoryLease(PrivateRunDirectoryLease runLease)
@@ -38,6 +39,7 @@ internal sealed class LifecycleRunDirectoryLease : IAsyncDisposable
         }
         catch
         {
+            _runLease.DeleteLifecycleScenarioAsync(caseId).GetAwaiter().GetResult();
             _caseIds.Remove(caseId);
             throw;
         }
@@ -54,18 +56,29 @@ internal sealed class LifecycleRunDirectoryLease : IAsyncDisposable
 
     private async ValueTask FinalizeAsync(bool success)
     {
-        if (Interlocked.Exchange(ref _finalized, 1) != 0)
+        await _finalizationLock.WaitAsync();
+        try
         {
-            return;
-        }
+            if (Volatile.Read(ref _finalized) != 0)
+            {
+                return;
+            }
 
-        if (success)
+            if (success)
+            {
+                await _runLease.DisposeAsync();
+            }
+            else
+            {
+                await _runLease.FinalizeLifecycleFailureAsync();
+            }
+
+            Volatile.Write(ref _finalized, 1);
+        }
+        finally
         {
-            await _runLease.DisposeAsync();
-            return;
+            _finalizationLock.Release();
         }
-
-        await _runLease.FinalizeLifecycleFailureAsync();
     }
 }
 
@@ -73,6 +86,7 @@ internal sealed class LifecycleScenarioDirectoryLease : IAsyncDisposable
 {
     private readonly PrivateRunDirectoryLease _runLease;
     private readonly HashSet<string> _components = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private int _disposed;
 
     internal LifecycleScenarioDirectoryLease(PrivateRunDirectoryLease runLease, string caseId)
@@ -100,12 +114,21 @@ internal sealed class LifecycleScenarioDirectoryLease : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        await _disposeLock.WaitAsync();
+        try
         {
-            return;
-        }
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                return;
+            }
 
-        await _runLease.DeleteLifecycleScenarioAsync(CaseId);
+            await _runLease.DeleteLifecycleScenarioAsync(CaseId);
+            Volatile.Write(ref _disposed, 1);
+        }
+        finally
+        {
+            _disposeLock.Release();
+        }
     }
 
     private LifecycleComponentDirectoryLease CreateComponent(string componentName)
@@ -132,6 +155,7 @@ internal sealed class LifecycleComponentDirectoryLease : IAsyncDisposable
     private readonly PrivateRunDirectoryLease _runLease;
     private readonly string _caseId;
     private readonly string _componentName;
+    private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private int _disposed;
 
     internal LifecycleComponentDirectoryLease(PrivateRunDirectoryLease runLease, string caseId, string componentName)
@@ -146,11 +170,20 @@ internal sealed class LifecycleComponentDirectoryLease : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        await _disposeLock.WaitAsync();
+        try
         {
-            return;
-        }
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                return;
+            }
 
-        await _runLease.DeleteLifecycleComponentAsync(_caseId, _componentName);
+            await _runLease.DeleteLifecycleComponentAsync(_caseId, _componentName);
+            Volatile.Write(ref _disposed, 1);
+        }
+        finally
+        {
+            _disposeLock.Release();
+        }
     }
 }

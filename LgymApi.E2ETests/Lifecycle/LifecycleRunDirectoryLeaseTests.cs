@@ -176,6 +176,96 @@ public sealed class LifecycleRunDirectoryLeaseTests
         }
     }
 
-    private static PrivateRunDirectoryRequest CreateRequest(string? repositoryRoot = null) =>
-        new(repositoryRoot ?? RepositoryRoot.Find(), ".e2e-private/runs", TimeSpan.FromSeconds(2));
+    [Test]
+    public async Task LifecycleRunDirectory_retries_success_finalization_after_a_transient_cleanup_failure()
+    {
+        var cleaner = new FailOnceCleaner();
+        var run = LifecycleRunDirectoryLease.Create(CreateRequest(), cleaner);
+
+        Assert.ThrowsAsync<InvalidOperationException>(async () => await run.FinalizeSuccessAsync());
+        Assert.That(Directory.Exists(run.RunDirectory), Is.True);
+
+        await run.FinalizeSuccessAsync();
+
+        Assert.That(Directory.Exists(run.RunDirectory), Is.False);
+    }
+
+    [Test]
+    public async Task LifecycleRunDirectory_retries_component_disposal_after_a_transient_cleanup_failure()
+    {
+        var cleaner = new FailOnceCleaner();
+        await using var run = LifecycleRunDirectoryLease.Create(CreateRequest(), cleaner);
+        var component = run.CreateScenario("retry-component").CreateApiComponent();
+
+        Assert.ThrowsAsync<IOException>(async () => await component.DisposeAsync());
+        Assert.That(Directory.Exists(component.ComponentDirectory), Is.True);
+
+        await component.DisposeAsync();
+
+        Assert.That(Directory.Exists(component.ComponentDirectory), Is.False);
+    }
+
+    [Test]
+    public async Task LifecycleRunDirectory_bounds_failure_finalization_and_allows_a_later_retry()
+    {
+        var cleaner = new NeverCompletingCleaner();
+        var run = LifecycleRunDirectoryLease.Create(CreateRequest(cleanupTimeout: TimeSpan.FromMilliseconds(100)), cleaner);
+        run.CreateScenario("bounded-failure").CreateApiComponent();
+
+        var failureFinalization = run.FinalizeFailureAsync().AsTask();
+        var completed = await Task.WhenAny(failureFinalization, Task.Delay(TimeSpan.FromMilliseconds(300)));
+
+        Assert.That(completed, Is.SameAs(failureFinalization));
+        var exception = Assert.ThrowsAsync<InvalidOperationException>(async () => await failureFinalization);
+        Assert.That(exception!.Message, Is.EqualTo(PrivateRunDirectoryLease.CleanupMessage));
+
+        cleaner.Complete();
+        await run.FinalizeFailureAsync();
+
+        Assert.That(Directory.GetFileSystemEntries(run.RunDirectory), Is.EqualTo(new[] { Path.Combine(run.RunDirectory, "artifacts") }));
+        Directory.Delete(run.RunDirectory, recursive: true);
+    }
+
+    [Test]
+    public async Task LifecycleRunDirectory_rolls_back_partial_scenario_when_artifact_creation_hits_a_reparse_point()
+    {
+        var repositoryRoot = RepositoryRoot.Find();
+        var foreignDirectory = Path.Combine(repositoryRoot, ".e2e-private", "lifecycle-artifact-foreign");
+        var foreignMarker = Path.Combine(foreignDirectory, "foreign.marker");
+        Directory.CreateDirectory(foreignDirectory);
+        File.WriteAllText(foreignMarker, "foreign");
+        await using var run = LifecycleRunDirectoryLease.Create(CreateRequest(repositoryRoot));
+        var artifactDirectory = Path.Combine(run.RunDirectory, "artifacts");
+        Directory.CreateSymbolicLink(artifactDirectory, foreignDirectory);
+
+        try
+        {
+            var exception = Assert.Throws<InvalidOperationException>(() => run.CreateScenario("partial-case"));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(exception!.Message, Is.EqualTo(PrivateRunDirectoryLease.PathValidationMessage));
+                Assert.That(Directory.Exists(Path.Combine(run.RunDirectory, "scenarios", "partial-case")), Is.False);
+                Assert.That(File.Exists(foreignMarker), Is.True);
+                Assert.That(Directory.Exists(Path.Combine(foreignDirectory, "partial-case")), Is.False);
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(artifactDirectory))
+            {
+                Directory.Delete(artifactDirectory);
+            }
+
+            if (Directory.Exists(foreignDirectory))
+            {
+                Directory.Delete(foreignDirectory, recursive: true);
+            }
+        }
+    }
+
+    private static PrivateRunDirectoryRequest CreateRequest(
+        string? repositoryRoot = null,
+        TimeSpan? cleanupTimeout = null) =>
+        new(repositoryRoot ?? RepositoryRoot.Find(), ".e2e-private/runs", cleanupTimeout ?? TimeSpan.FromSeconds(2));
 }
