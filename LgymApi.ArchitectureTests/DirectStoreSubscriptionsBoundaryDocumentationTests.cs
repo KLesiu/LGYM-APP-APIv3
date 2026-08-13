@@ -254,6 +254,47 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
                 violation.Category == "provider SDK" && violation.Dependency.Contains("SubscriptionPurchaseV2", StringComparison.Ordinal)));
     }
 
+    [TestCase(
+        "public Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2 Get() => null!;",
+        "provider SDK",
+        "Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2")]
+    [TestCase(
+        "protected Google.Apis.Auth.OAuth2.ServiceAccountCredential Credential { get; } = null!;",
+        "credential family",
+        "Google.Apis.Auth.OAuth2.ServiceAccountCredential")]
+    [TestCase(
+        "public System.Collections.Generic.List<Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2[]> Values { get; } = [];",
+        "provider SDK",
+        "Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2")]
+    public void Unresolved_Provider_Types_In_Exposed_Signatures_Should_Be_Rejected(
+        string member,
+        string category,
+        string dependency)
+    {
+        var source = $$"""
+            namespace LgymApi.Identity.Contracts.Subscriptions;
+            public sealed class Exposure { {{member}} }
+            """;
+
+        Assert.That(
+            ScanFixturePublicSurface(source),
+            Has.Some.Matches<PublicSurfaceViolation>(violation =>
+                violation.Category == category && violation.Dependency == dependency));
+    }
+
+    [Test]
+    public void Unresolved_Provider_Neutral_Type_Should_Remain_Allowed()
+    {
+        const string source = """
+            namespace LgymApi.Identity.Contracts.Subscriptions;
+            public sealed record Exposure(
+                Future.Contracts.NeutralReference Value,
+                Neutral.Google.Apis.AndroidPublisher.Reference ProviderNamedValue);
+            """;
+
+        Assert.That(ScanFixturePublicSurface(source), Is.Empty);
+    }
+
     [Test]
     public void Synthetic_Document_Should_Reject_A_Removed_Mermaid_Edge()
     {
@@ -526,6 +567,22 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
         Assert.That(
             () => ParseAndValidateDocument(markdown),
             Throws.InvalidOperationException.With.Message.Contains("structured future-state/project-graph marker"));
+    }
+
+    [Test]
+    public void Mermaid_Fixture_Mutations_Should_Reject_Windows_Line_Endings()
+    {
+        var markdown = CreateValidMarkdown()
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace("\n", "\r\n", StringComparison.Ordinal)
+            .Replace(
+                "    Identity -->|projection read| CurrentAccess\r\n",
+                string.Empty,
+                StringComparison.Ordinal);
+
+        Assert.That(
+            () => ParseAndValidateDocument(markdown),
+            Throws.InvalidOperationException.With.Message.Contains("Identity -> CurrentAccess"));
     }
 
     private static SubscriptionDocument ParseAndValidateDocument(string markdown)
@@ -870,6 +927,18 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
                         }
                     }
                 }
+
+                foreach (var exposedSyntax in GetExposedTypeSyntax(type))
+                {
+                    foreach (var unresolvedSyntax in exposedSyntax.DescendantNodesAndSelf().OfType<TypeSyntax>()
+                                 .Where(candidate => model.GetTypeInfo(candidate).Type is IErrorTypeSymbol))
+                    {
+                        if (TryClassifyForbiddenUnresolvedType(unresolvedSyntax, out var category, out var dependency))
+                        {
+                            AddViolation(violations, tree, type, category, dependency);
+                        }
+                    }
+                }
             }
         }
 
@@ -917,6 +986,37 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
         }
 
         category = string.Empty;
+        return false;
+    }
+
+    private static bool TryClassifyForbiddenUnresolvedType(
+        TypeSyntax type,
+        out string category,
+        out string dependency)
+    {
+        var qualifiedType = type.ToString().Replace("global::", string.Empty, StringComparison.Ordinal);
+        (string Namespace, string Category)[] forbiddenNamespaces =
+        [
+            ("Google.Apis.Auth.OAuth2", "credential family"),
+            ("Google.Apis.AndroidPublisher", "provider SDK"),
+            ("Apple.AppStoreServer", "provider SDK")
+        ];
+        foreach (var forbidden in forbiddenNamespaces)
+        {
+            var start = qualifiedType.IndexOf($"{forbidden.Namespace}.", StringComparison.Ordinal);
+            if (start < 0 || start > 0 && qualifiedType[start - 1] is not ('<' or '(' or '[' or ',' or ' '))
+            {
+                continue;
+            }
+
+            var end = qualifiedType.IndexOfAny(['<', '>', '[', ']', ',', '?'], start);
+            category = forbidden.Category;
+            dependency = end < 0 ? qualifiedType[start..] : qualifiedType[start..end];
+            return true;
+        }
+
+        category = string.Empty;
+        dependency = string.Empty;
         return false;
     }
 
@@ -1000,6 +1100,125 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
                     }
                 }
 
+                break;
+        }
+    }
+
+    private static IEnumerable<TypeSyntax> GetExposedTypeSyntax(INamedTypeSymbol type)
+    {
+        foreach (var syntaxReference in type.DeclaringSyntaxReferences)
+        {
+            foreach (var syntax in GetSignatureTypeSyntax(syntaxReference.GetSyntax()))
+            {
+                yield return syntax;
+            }
+        }
+
+        foreach (var member in type.GetMembers().Where(IsPublicSurfaceMember))
+        {
+            foreach (var syntaxReference in member.DeclaringSyntaxReferences)
+            {
+                foreach (var syntax in GetSignatureTypeSyntax(syntaxReference.GetSyntax()))
+                {
+                    yield return syntax;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<TypeSyntax> GetSignatureTypeSyntax(SyntaxNode declaration)
+    {
+        switch (declaration)
+        {
+            case BaseTypeDeclarationSyntax type:
+                foreach (var baseType in type.BaseList?.Types ?? [])
+                {
+                    yield return baseType.Type;
+                }
+
+                if (type is TypeDeclarationSyntax typeDeclaration)
+                {
+                    foreach (var constraint in typeDeclaration.ConstraintClauses.SelectMany(clause => clause.Constraints).OfType<TypeConstraintSyntax>())
+                    {
+                        yield return constraint.Type;
+                    }
+
+                    if (typeDeclaration.ParameterList != null)
+                    {
+                        foreach (var parameterType in typeDeclaration.ParameterList.Parameters.Select(parameter => parameter.Type).OfType<TypeSyntax>())
+                        {
+                            yield return parameterType;
+                        }
+                    }
+                }
+
+                break;
+            case DelegateDeclarationSyntax @delegate:
+                yield return @delegate.ReturnType;
+                foreach (var parameterType in @delegate.ParameterList.Parameters.Select(parameter => parameter.Type).OfType<TypeSyntax>())
+                {
+                    yield return parameterType;
+                }
+
+                break;
+            case FieldDeclarationSyntax field:
+                yield return field.Declaration.Type;
+                break;
+            case EventFieldDeclarationSyntax eventField:
+                yield return eventField.Declaration.Type;
+                break;
+            case PropertyDeclarationSyntax property:
+                yield return property.Type;
+                break;
+            case IndexerDeclarationSyntax indexer:
+                yield return indexer.Type;
+                foreach (var parameterType in indexer.ParameterList.Parameters.Select(parameter => parameter.Type).OfType<TypeSyntax>())
+                {
+                    yield return parameterType;
+                }
+
+                break;
+            case EventDeclarationSyntax @event:
+                yield return @event.Type;
+                break;
+            case MethodDeclarationSyntax method:
+                yield return method.ReturnType;
+                foreach (var parameterType in method.ParameterList.Parameters.Select(parameter => parameter.Type).OfType<TypeSyntax>())
+                {
+                    yield return parameterType;
+                }
+
+                foreach (var constraint in method.ConstraintClauses.SelectMany(clause => clause.Constraints).OfType<TypeConstraintSyntax>())
+                {
+                    yield return constraint.Type;
+                }
+
+                break;
+            case ConstructorDeclarationSyntax constructor:
+                foreach (var parameterType in constructor.ParameterList.Parameters.Select(parameter => parameter.Type).OfType<TypeSyntax>())
+                {
+                    yield return parameterType;
+                }
+
+                break;
+            case OperatorDeclarationSyntax @operator:
+                yield return @operator.ReturnType;
+                foreach (var parameterType in @operator.ParameterList.Parameters.Select(parameter => parameter.Type).OfType<TypeSyntax>())
+                {
+                    yield return parameterType;
+                }
+
+                break;
+            case ConversionOperatorDeclarationSyntax conversion:
+                yield return conversion.Type;
+                foreach (var parameterType in conversion.ParameterList.Parameters.Select(parameter => parameter.Type).OfType<TypeSyntax>())
+                {
+                    yield return parameterType;
+                }
+
+                break;
+            case ParameterSyntax { Type: not null } parameter:
+                yield return parameter.Type;
                 break;
         }
     }
@@ -1360,7 +1579,7 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
                 Infrastructure -->|persistence| Hangfire
                 Identity -->|projection read| CurrentAccess
             ```
-            """;
+            """.Replace("\r\n", "\n", StringComparison.Ordinal);
     }
 
     private sealed record TableContract(string Prefix, IReadOnlyList<string> Columns, IReadOnlyList<string> Ids);
