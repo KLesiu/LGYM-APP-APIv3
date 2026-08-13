@@ -69,13 +69,18 @@ public sealed class WebSourceRunLifecycleTests
             Assert.That(secondRequest.EnvironmentVariables["REACT_APP_BACKEND"], Is.EqualTo("http://127.0.0.1:48124/"));
             Assert.That(firstRequest.EnvironmentVariables["BROWSER"], Is.EqualTo("none"));
             Assert.That(firstRequest.EnvironmentVariables, Does.Not.ContainKey("LGYM_TASK4_SECRET"));
-            Assert.That(firstRequest.EnvironmentVariables["HOME"], Is.Not.EqualTo(secondRequest.EnvironmentVariables["HOME"]));
-            Assert.That(firstRequest.EnvironmentVariables["APPDATA"], Is.Not.EqualTo(secondRequest.EnvironmentVariables["APPDATA"]));
-            Assert.That(firstRequest.EnvironmentVariables["TEMP"], Is.Not.EqualTo(secondRequest.EnvironmentVariables["TEMP"]));
+            Assert.That(secondRequest.EnvironmentVariables["BROWSER"], Is.EqualTo("none"));
+            Assert.That(secondRequest.EnvironmentVariables, Does.Not.ContainKey("LGYM_TASK4_SECRET"));
+            foreach (var variableName in new[] { "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP" })
+            {
+                Assert.That(firstRequest.EnvironmentVariables[variableName], Is.Not.EqualTo(secondRequest.EnvironmentVariables[variableName]));
+                Assert.That(PrivateRunDirectoryLayout.IsDescendantOrSame(firstRuntime.ComponentDirectory, firstRequest.EnvironmentVariables[variableName]!), Is.True);
+                Assert.That(PrivateRunDirectoryLayout.IsDescendantOrSame(secondRuntime.ComponentDirectory, secondRequest.EnvironmentVariables[variableName]!), Is.True);
+            }
             Assert.That(firstRequest.EnvironmentVariables["npm_config_cache"], Is.EqualTo(secondRequest.EnvironmentVariables["npm_config_cache"]));
-            Assert.That(PrivateRunDirectoryLayout.IsDescendantOrSame(firstRuntime.ComponentDirectory, firstRequest.EnvironmentVariables["HOME"]!), Is.True);
-            Assert.That(PrivateRunDirectoryLayout.IsDescendantOrSame(secondRuntime.ComponentDirectory, secondRequest.EnvironmentVariables["HOME"]!), Is.True);
             Assert.That(first.Identity, Is.Not.EqualTo(second.Identity));
+            Assert.That(source.SourceReceipt.SourceStatePreserved, Is.True);
+            Assert.That(source.SourceReceipt.PinnedCommitSha, Is.EqualTo("1111111111111111111111111111111111111111"));
         });
 
             await second.DisposeAsync();
@@ -124,6 +129,18 @@ public sealed class WebSourceRunLifecycleTests
             },
             new ExpoWebDependencies(starter, new ScriptedExpoWebPortProbe(false),
                 new ScriptedExpoWebReadinessMonitor([ExpoWebReadinessOutcome.StartupTimeout]))));
+        Assert.Multiple(() =>
+        {
+            Assert.That(starter.Processes[0].DisposeCount, Is.EqualTo(1));
+        });
+        var firstCleanupReceipt = starter.Processes[0].CleanupReceipt;
+        Assert.That(firstCleanupReceipt, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(firstCleanupReceipt!.Cleanup.AllAbsentOrReused, Is.True);
+            Assert.That(firstCleanupReceipt.DrainCompleted, Is.True);
+            Assert.That(firstCleanupReceipt.InspectionCompleted, Is.True);
+        });
         await timedOutScenario.DisposeAsync();
 
         var nextScenario = run.CreateScenario("scenario-expo-fresh");
@@ -149,14 +166,53 @@ public sealed class WebSourceRunLifecycleTests
         });
     }
 
+    [Test]
+    public async Task WebSourceRun_borrowed_cleanup_is_bounded_retryable_and_preserves_the_lifecycle_root()
+    {
+        await using var fixture = await Task3WebSourceRunFixture.CreateAsync();
+        await using var run = LifecycleRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
+            fixture.OwnerRoot,
+            ".e2e-private/runs",
+            TimeSpan.FromMilliseconds(100)));
+        var sourceCleaner = new BlockingSourceCleaner();
+        var dependencies = CreateDependencies(fixture, new Task3NodeNpmCommandRunner(), sourceCleaner);
+        var request = fixture.CreateRequest();
+        request.Options.Timeouts.ProcessShutdownSeconds = 1;
+        var source = await WebSourceRunLease.CreateAsync(request, dependencies, run);
+        await source.EnsureInstalledAsync();
+
+        var cleanup = source.DisposeAsync().AsTask();
+        var completed = await Task.WhenAny(cleanup, Task.Delay(TimeSpan.FromMilliseconds(1500)));
+
+        Assert.That(completed, Is.SameAs(cleanup));
+        Assert.ThrowsAsync<WebSourceRunCleanupException>(async () => await cleanup);
+        Assert.Multiple(() =>
+        {
+            Assert.That(Directory.Exists(run.RunDirectory), Is.True);
+            Assert.That(Directory.Exists(source.SourceDirectory), Is.True);
+            Assert.That(sourceCleaner.ObservedCancellation, Is.True);
+        });
+
+        sourceCleaner.Release();
+        await source.DisposeAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(Directory.Exists(run.RunDirectory), Is.True);
+            Assert.That(Directory.Exists(source.SourceDirectory), Is.False);
+        });
+    }
+
     private static WebSourceRunDependencies CreateDependencies(
         Task3WebSourceRunFixture fixture,
-        Task3NodeNpmCommandRunner npm) =>
+        Task3NodeNpmCommandRunner npm,
+        IRunDirectoryCleaner? sourceCleaner = null) =>
         new()
         {
             Stager = new Task3WebSourceStager(),
             ToolResolver = fixture.CreateToolResolver(),
-            CommandRunner = npm
+            CommandRunner = npm,
+            SourceCleaner = sourceCleaner ?? new FileSystemRunDirectoryCleaner()
         };
 
     private static Configuration.E2EOptions CreateOptions() => new()
@@ -188,19 +244,42 @@ public sealed class WebSourceRunLifecycleTests
     private sealed class RecordingExpoWebProcess : IExpoWebProcess
     {
         public Task<ExpoWebProcessExit> Exit { get; } = new TaskCompletionSource<ExpoWebProcessExit>().Task;
-        public OwnedExternalProcessCleanupReceipt CleanupReceipt { get; } = new(
-            new ExternalProcessOutput(string.Empty, false),
-            new ExternalProcessOutput(string.Empty, false),
-            new ProcessCleanupReceipt([], true),
-            true,
-            true);
-        OwnedExternalProcessCleanupReceipt? IExpoWebProcess.CleanupReceipt => CleanupReceipt;
+        public OwnedExternalProcessCleanupReceipt? CleanupReceipt { get; private set; }
         internal int DisposeCount { get; private set; }
 
         public ValueTask DisposeAsync()
         {
             DisposeCount++;
+            CleanupReceipt = new OwnedExternalProcessCleanupReceipt(
+                new ExternalProcessOutput(string.Empty, false),
+                new ExternalProcessOutput(string.Empty, false),
+                new ProcessCleanupReceipt([], true),
+                true,
+                true);
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class BlockingSourceCleaner : IRunDirectoryCleaner
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal bool ObservedCancellation { get; private set; }
+
+        public async Task DeleteAsync(string runDirectory, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await _release.Task.WaitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                ObservedCancellation = true;
+                throw;
+            }
+
+            await new FileSystemRunDirectoryCleaner().DeleteAsync(runDirectory, cancellationToken);
+        }
+
+        internal void Release() => _release.TrySetResult();
     }
 }

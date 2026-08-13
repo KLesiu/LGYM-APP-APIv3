@@ -5,6 +5,40 @@ namespace LgymApi.E2ETests.Harness;
 public sealed class PinnedWebSourceStagerCleanupTests
 {
     [Test]
+    public async Task PinnedWebSource_borrowed_failure_bounds_source_validation_without_deleting_the_run_root()
+    {
+        await using var fixture = await PinnedWebSourceFixture.CreateAsync();
+        var lease = PrivateRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
+            fixture.OwnerRoot,
+            ".e2e-private/runs",
+            TimeSpan.FromMilliseconds(100)));
+        var git = new BlockingPostArchiveStatusGitRunner(
+            new ExternalGitCommandRunner(fixture.GitExecutable),
+            Path.Combine(fixture.SourcePath, "post-archive.txt"));
+        var stager = new PinnedWebSourceStager(git);
+
+        var staging = stager.StageAsync(new PinnedWebSourceRequest(
+            fixture.SourcePath,
+            fixture.PinnedCommit,
+            lease,
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromMilliseconds(100),
+            DisposeRunLeaseOnFailure: false));
+        var completed = await Task.WhenAny(staging, Task.Delay(TimeSpan.FromSeconds(3)));
+
+        Assert.That(completed, Is.SameAs(staging));
+        Assert.That(async () => await staging, Throws.InstanceOf<OperationCanceledException>());
+        Assert.Multiple(() =>
+        {
+            Assert.That(git.ObservedCancellation, Is.True);
+            Assert.That(Directory.Exists(lease.RunDirectory), Is.True);
+            Assert.That(Directory.Exists(Path.Combine(lease.RunDirectory, "web-source")), Is.False);
+        });
+
+        await lease.DisposeAsync();
+    }
+
+    [Test]
     public async Task PinnedWebSource_cleanup_fault_still_checks_source_state_and_disposes_owned_run()
     {
         await using var fixture = await PinnedWebSourceFixture.CreateAsync();
@@ -68,6 +102,47 @@ public sealed class PinnedWebSourceStagerCleanupTests
                 PostArchiveStatusChecks++;
             }
 
+            return result;
+        }
+    }
+
+    private sealed class BlockingPostArchiveStatusGitRunner(IExternalGitCommandRunner inner, string mutationPath) : IExternalGitCommandRunner
+    {
+        private bool _archiveCreated;
+        private int _postArchiveStatusChecks;
+        internal bool ObservedCancellation { get; private set; }
+
+        public async Task<ExternalGitCommandResult<T>> RunAsync<T>(
+            string workingDirectory,
+            IReadOnlyList<string> arguments,
+            Func<Stream, CancellationToken, Task<T>> readStandardOutput,
+            ExternalGitCommandTimeouts timeouts,
+            CancellationToken cancellationToken = default)
+        {
+            if (_archiveCreated && arguments.FirstOrDefault() == "status" && _postArchiveStatusChecks++ > 0)
+            {
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    ObservedCancellation = true;
+                    throw;
+                }
+            }
+
+            var result = await inner.RunAsync(
+                workingDirectory,
+                arguments,
+                readStandardOutput,
+                timeouts,
+                cancellationToken);
+            if (arguments.Any(argument => argument == "archive"))
+            {
+                _archiveCreated = true;
+                await File.AppendAllTextAsync(mutationPath, "changed-after-archive\n", cancellationToken);
+            }
             return result;
         }
     }

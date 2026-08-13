@@ -100,7 +100,8 @@ internal sealed class PinnedWebSourceStager
             {
                 if (worktree is not null)
                 {
-                    await _inspector.EnsureUnchangedAsync(worktree, timeouts, CancellationToken.None);
+                    using var stateValidation = new CancellationTokenSource(request.ShutdownTimeout);
+                    await _inspector.EnsureUnchangedAsync(worktree, timeouts, stateValidation.Token);
                 }
             }
             catch (Exception exception)

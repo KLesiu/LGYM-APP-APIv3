@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using LgymApi.E2ETests.Configuration;
 using LgymApi.E2ETests.Lifecycle;
@@ -37,6 +38,7 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
     {
         _runLease = runLease;
         SourceDirectory = stage.SourceDirectory;
+        SourceReceipt = stage.Receipt;
         _tools = tools;
         _dependencies = dependencies;
         _secretCanaries = secretCanaries;
@@ -51,6 +53,8 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
     internal string RunDirectory => _runLease.RunDirectory;
 
     internal string SourceDirectory { get; }
+
+    internal PinnedWebSourceReceipt SourceReceipt { get; }
 
     internal string NpmCacheDirectory { get; }
 
@@ -166,8 +170,25 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
     {
         lock (_sync)
         {
-            _cleanup ??= CleanupAsync();
+            _cleanup ??= CleanupWithRetryAsync();
             return new ValueTask(_cleanup);
+        }
+    }
+
+    private async Task CleanupWithRetryAsync()
+    {
+        try
+        {
+            await CleanupAsync();
+        }
+        catch
+        {
+            lock (_sync)
+            {
+                _cleanup = null;
+            }
+
+            throw;
         }
     }
 
@@ -234,9 +255,14 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
     private async Task CleanupAsync()
     {
         Exception? failure = null;
+        using var cleanupDeadline = new CancellationTokenSource(_shutdownTimeout);
+        var startedAt = Stopwatch.GetTimestamp();
         try
         {
-            await _dependencies.CacheCleaner.DeleteAsync(_runLease, NpmCacheDirectory, _shutdownTimeout);
+            await _dependencies.CacheCleaner.DeleteAsync(
+                _runLease,
+                NpmCacheDirectory,
+                RemainingCleanupTime(startedAt));
         }
         catch (PrivateRunCleanupException exception)
         {
@@ -253,11 +279,17 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
         {
             try
             {
-                await new FileSystemRunDirectoryCleaner().DeleteAsync(SourceDirectory, CancellationToken.None);
+                using var cleanup = new CancellationTokenSource(_shutdownTimeout);
+                using var linkedCleanup = CancellationTokenSource.CreateLinkedTokenSource(cleanupDeadline.Token, cleanup.Token);
+                await _dependencies.SourceCleaner.DeleteAsync(SourceDirectory, linkedCleanup.Token);
             }
-            catch (PrivateRunCleanupException exception)
+            catch (Exception exception) when (exception is PrivateRunCleanupException or OperationCanceledException)
             {
-                CleanupStage = CleanupStage == PrivateRunCleanupStage.Unknown ? exception.Stage : CleanupStage;
+                CleanupStage = CleanupStage == PrivateRunCleanupStage.Unknown
+                    ? exception is PrivateRunCleanupException cleanupException
+                        ? cleanupException.Stage
+                        : PrivateRunCleanupStage.EntryDelete
+                    : CleanupStage;
                 failure ??= new IOException();
             }
 
@@ -290,6 +322,12 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
         {
             throw new WebSourceRunCleanupException(CleanupStage);
         }
+    }
+
+    private TimeSpan RemainingCleanupTime(long startedAt)
+    {
+        var remaining = _shutdownTimeout - Stopwatch.GetElapsedTime(startedAt);
+        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }
 
     private static bool IsSupported(string output)

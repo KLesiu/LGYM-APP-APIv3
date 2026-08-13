@@ -90,5 +90,7 @@ internal sealed class WebSourceRunDependencies
 
     public IWebSourceCacheCleaner CacheCleaner { get; init; } = new WebSourceCacheCleaner();
 
+    public IRunDirectoryCleaner SourceCleaner { get; init; } = new FileSystemRunDirectoryCleaner();
+
     public IRunDirectoryCleaner RunDirectoryCleaner { get; init; } = new FileSystemRunDirectoryCleaner();
 }
