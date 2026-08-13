@@ -11,10 +11,11 @@ internal sealed class ExpoWebLease : IAsyncDisposable
     private readonly object _sync = new();
     private Task? _cleanup;
 
-    private ExpoWebLease(IExpoWebProcess process, bool browserSuppressed)
+    private ExpoWebLease(IExpoWebProcess process, bool browserSuppressed, ExpoWebIdentity identity)
     {
         _process = process;
         BrowserSuppressed = browserSuppressed;
+        Identity = identity;
     }
 
     internal Uri BaseUri { get; } = new("http://localhost:8083/");
@@ -22,6 +23,8 @@ internal sealed class ExpoWebLease : IAsyncDisposable
     internal ExpoWebCleanupReceipt? CleanupReceipt { get; private set; }
 
     internal bool BrowserSuppressed { get; }
+
+    internal ExpoWebIdentity Identity { get; }
 
     internal bool PortWasAvailableBeforeStart { get; private set; }
 
@@ -74,7 +77,7 @@ internal sealed class ExpoWebLease : IAsyncDisposable
                 lifetime.Token);
             if (outcome == ExpoWebReadinessOutcome.Ready)
             {
-                return new ExpoWebLease(process, request.Source.CreateExpoEnvironment(request.ScenarioApiBaseUri)["BROWSER"] == "none")
+                return new ExpoWebLease(process, CreateEnvironment(request)["BROWSER"] == "none", ExpoWebIdentity.Create())
                 {
                     PortWasAvailableBeforeStart = true
                 };
@@ -132,11 +135,16 @@ internal sealed class ExpoWebLease : IAsyncDisposable
         FileName = request.Source.NodeExecutable,
         Arguments = [request.Source.NpmCliScript, "run", "web"],
         WorkingDirectory = request.Source.SourceDirectory,
-        EnvironmentVariables = request.Source.CreateExpoEnvironment(request.ScenarioApiBaseUri),
+        EnvironmentVariables = CreateEnvironment(request),
         ClearEnvironment = true,
         ExecutionTimeout = startupTimeout,
         ShutdownTimeout = shutdownTimeout
         };
+
+    private static Dictionary<string, string?> CreateEnvironment(ExpoWebStartRequest request) =>
+        request.RuntimeDirectory is null
+            ? request.Source.CreateExpoEnvironment(request.ScenarioApiBaseUri)
+            : request.Source.CreateExpoEnvironment(request.ScenarioApiBaseUri, request.RuntimeDirectory);
 
     private static ExpoWebStartupFailureCategory CategoryFor(ExpoWebReadinessOutcome outcome) => outcome switch
     {

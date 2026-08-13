@@ -67,6 +67,12 @@ internal interface IWebSourceStager
         E2EOptions options,
         PrivateRunDirectoryLease runLease,
         CancellationToken cancellationToken);
+
+    Task<PinnedWebSourceStage> StageForLifecycleAsync(
+        E2EOptions options,
+        PrivateRunDirectoryLease runLease,
+        CancellationToken cancellationToken) =>
+        StageAsync(options, runLease, cancellationToken);
 }
 
 internal sealed class WebSourceStager(string gitExecutable) : IWebSourceStager
@@ -78,4 +84,16 @@ internal sealed class WebSourceStager(string gitExecutable) : IWebSourceStager
         PrivateRunDirectoryLease runLease,
         CancellationToken cancellationToken) =>
         _inner.StageAsync(options, runLease, cancellationToken);
+
+    public Task<PinnedWebSourceStage> StageForLifecycleAsync(
+        E2EOptions options,
+        PrivateRunDirectoryLease runLease,
+        CancellationToken cancellationToken) =>
+        _inner.StageAsync(new PinnedWebSourceRequest(
+            options.WebSource.SourcePath ?? string.Empty,
+            options.WebSource.CommitSha,
+            runLease,
+            TimeSpan.FromSeconds(options.Timeouts.WebStartupSeconds),
+            TimeSpan.FromSeconds(options.Timeouts.ProcessShutdownSeconds),
+            DisposeRunLeaseOnFailure: false), cancellationToken);
 }

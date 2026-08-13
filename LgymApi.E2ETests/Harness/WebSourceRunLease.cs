@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using LgymApi.E2ETests.Configuration;
+using LgymApi.E2ETests.Lifecycle;
 
 namespace LgymApi.E2ETests.Harness;
 
@@ -17,6 +18,7 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
     private readonly TimeSpan _sessionTimeout;
     private readonly TimeSpan _shutdownTimeout;
     private readonly DateTime _sessionDeadlineUtc;
+    private readonly bool _ownsRunLease;
     private readonly object _sync = new();
     private Task? _installation;
     private Task? _cleanup;
@@ -29,7 +31,9 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
         IReadOnlyList<string> secretCanaries,
         string gitExecutable,
         TimeSpan sessionTimeout,
-        TimeSpan shutdownTimeout)
+        TimeSpan shutdownTimeout,
+        bool ownsRunLease,
+        string npmCacheDirectory)
     {
         _runLease = runLease;
         SourceDirectory = stage.SourceDirectory;
@@ -40,7 +44,8 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
         _sessionTimeout = sessionTimeout;
         _shutdownTimeout = shutdownTimeout;
         _sessionDeadlineUtc = DateTime.UtcNow.Add(sessionTimeout);
-        NpmCacheDirectory = runLease.ResolveCacheOwnedPath(".e2e-private/npm-cache");
+        _ownsRunLease = ownsRunLease;
+        NpmCacheDirectory = npmCacheDirectory;
     }
 
     internal string RunDirectory => _runLease.RunDirectory;
@@ -60,6 +65,17 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
     internal Dictionary<string, string?> CreateExpoEnvironment(Uri scenarioApiBaseUri)
     {
         var environment = _environment.Create(RunDirectory, NpmCacheDirectory);
+        environment["EXPO_NO_TELEMETRY"] = "1";
+        environment["BROWSER"] = "none";
+        environment["REACT_APP_BACKEND"] = scenarioApiBaseUri.AbsoluteUri;
+        return environment;
+    }
+
+    internal Dictionary<string, string?> CreateExpoEnvironment(
+        Uri scenarioApiBaseUri,
+        LifecycleComponentDirectoryLease runtimeDirectory)
+    {
+        var environment = _environment.CreateScenarioRuntime(runtimeDirectory.ComponentDirectory, NpmCacheDirectory);
         environment["EXPO_NO_TELEMETRY"] = "1";
         environment["BROWSER"] = "none";
         environment["REACT_APP_BACKEND"] = scenarioApiBaseUri.AbsoluteUri;
@@ -93,11 +109,47 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
                 request.SecretCanaries,
                 request.GitExecutable,
                 sessionTimeout,
-                shutdownTimeout);
+                shutdownTimeout,
+                ownsRunLease: true,
+                runLease.ResolveCacheOwnedPath(".e2e-private/npm-cache"));
         }
         catch
         {
             await runLease.DisposeAsync();
+            throw;
+        }
+    }
+
+    internal static async Task<WebSourceRunLease> CreateAsync(
+        WebSourceRunRequest request,
+        WebSourceRunDependencies dependencies,
+        LifecycleRunDirectoryLease runOwner,
+        CancellationToken cancellationToken = default)
+    {
+        var sessionTimeout = TimeSpan.FromSeconds(request.Options.Timeouts.TestSessionSeconds);
+        var shutdownTimeout = TimeSpan.FromSeconds(request.Options.Timeouts.ProcessShutdownSeconds);
+        if (sessionTimeout <= TimeSpan.Zero || shutdownTimeout <= TimeSpan.Zero)
+        {
+            throw new InvalidOperationException(InstallationMessage);
+        }
+
+        try
+        {
+            var stage = await dependencies.Stager.StageForLifecycleAsync(request.Options, runOwner.RunLease, cancellationToken);
+            return new WebSourceRunLease(
+                runOwner.RunLease,
+                stage,
+                dependencies.ToolResolver.Resolve(),
+                dependencies,
+                request.SecretCanaries,
+                request.GitExecutable,
+                sessionTimeout,
+                shutdownTimeout,
+                ownsRunLease: false,
+                Path.Combine(stage.SourceDirectory, "npm-cache"));
+        }
+        catch
+        {
             throw;
         }
     }
@@ -184,7 +236,7 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
         Exception? failure = null;
         try
         {
-            await _dependencies.CacheCleaner.DeleteAsync(_runLease, _shutdownTimeout);
+            await _dependencies.CacheCleaner.DeleteAsync(_runLease, NpmCacheDirectory, _shutdownTimeout);
         }
         catch (PrivateRunCleanupException exception)
         {
@@ -195,6 +247,26 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
         {
             CleanupStage = PrivateRunCleanupStage.CacheDelete;
             failure = exception;
+        }
+
+        if (!_ownsRunLease)
+        {
+            try
+            {
+                await new FileSystemRunDirectoryCleaner().DeleteAsync(SourceDirectory, CancellationToken.None);
+            }
+            catch (PrivateRunCleanupException exception)
+            {
+                CleanupStage = CleanupStage == PrivateRunCleanupStage.Unknown ? exception.Stage : CleanupStage;
+                failure ??= new IOException();
+            }
+
+            if (failure is not null)
+            {
+                throw new WebSourceRunCleanupException(CleanupStage);
+            }
+
+            return;
         }
 
         try

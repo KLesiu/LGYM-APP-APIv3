@@ -20,6 +20,8 @@ internal sealed class LifecycleRunDirectoryLease : IAsyncDisposable
 
     internal string RunDirectory => _runLease.RunDirectory;
 
+    internal PrivateRunDirectoryLease RunLease => _runLease;
+
     internal static LifecycleRunDirectoryLease Create(
         PrivateRunDirectoryRequest request,
         IRunDirectoryCleaner? cleaner = null) =>

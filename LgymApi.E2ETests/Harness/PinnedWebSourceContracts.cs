@@ -5,7 +5,8 @@ internal sealed record PinnedWebSourceRequest(
     string CommitSha,
     PrivateRunDirectoryLease RunLease,
     TimeSpan ExecutionTimeout,
-    TimeSpan ShutdownTimeout);
+    TimeSpan ShutdownTimeout,
+    bool DisposeRunLeaseOnFailure = true);
 
 internal sealed record PinnedWebSourceReceipt(
     string PinnedCommitSha,
