@@ -12,30 +12,25 @@ public sealed class PostgreSqlContainerLease : IAsyncDisposable
 {
     private const int PostgreSqlPort = 5432;
     private const string PostgreSqlUsername = "postgres";
-    private readonly PostgreSqlContainer _container;
-    private readonly string _containerId;
-    private readonly string _connectionString;
+    private readonly IPostgreSqlContainerLeaseOperations _operations;
     private readonly TimeSpan _cleanupTimeout;
     private readonly ScenarioResourceIdentity _identity;
+    private readonly SemaphoreSlim _cleanupGate = new(1, 1);
     private int _disposed;
 
     private PostgreSqlContainerLease(
-        PostgreSqlContainer container,
-        string containerId,
-        string connectionString,
+        IPostgreSqlContainerLeaseOperations operations,
         TimeSpan cleanupTimeout,
         ScenarioResourceIdentity identity)
     {
-        _container = container;
-        _containerId = containerId;
-        _connectionString = connectionString;
+        _operations = operations;
         _cleanupTimeout = cleanupTimeout;
         _identity = identity;
     }
 
-    internal string ConnectionString => _connectionString;
+    internal string ConnectionString => _operations.ConnectionString;
 
-    internal bool IsRunning => _container.State == TestcontainersStates.Running;
+    internal bool IsRunning => _operations.IsRunning;
 
     internal PostgreSqlCleanupReceipt CleanupReceipt { get; private set; } = new("container-cleanup", false, TimeSpan.Zero);
 
@@ -55,82 +50,160 @@ public sealed class PostgreSqlContainerLease : IAsyncDisposable
             .WithLogger(NullLogger.Instance)
             .Build();
 
+        return await StartAsync(
+            new TestcontainersPostgreSqlContainerLeaseOperations(container),
+            TimeSpan.FromSeconds(options.Timeouts.ProcessShutdownSeconds),
+            startupTimeout.Token);
+    }
+
+    internal static async Task<PostgreSqlContainerLease> StartAsync(
+        IPostgreSqlContainerLeaseOperations operations,
+        TimeSpan cleanupTimeout,
+        CancellationToken cancellationToken = default)
+    {
         try
         {
-            await container.StartAsync(startupTimeout.Token);
-
-            var containerId = container.Id;
-            if (string.IsNullOrWhiteSpace(containerId))
-            {
-                throw new InvalidOperationException("Testcontainers started PostgreSQL without a container ID.");
-            }
-
-            return new PostgreSqlContainerLease(
-                container,
-                containerId,
-                container.GetConnectionString(),
-                TimeSpan.FromSeconds(options.Timeouts.ProcessShutdownSeconds),
-                ScenarioResourceIdentity.Create());
+            await operations.StartAsync(cancellationToken);
+            return new PostgreSqlContainerLease(operations, cleanupTimeout, ScenarioResourceIdentity.Create());
         }
         catch
         {
-            await DisposeStartupFailureAsync(
-                container,
-                TimeSpan.FromSeconds(options.Timeouts.ProcessShutdownSeconds));
+            await DisposeStartupFailureAsync(operations, cleanupTimeout);
             throw;
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-        {
-            return;
-        }
-
-        var startedAt = Stopwatch.GetTimestamp();
-        var wasRemoved = false;
+        await _cleanupGate.WaitAsync();
         try
         {
-            using var timeout = new CancellationTokenSource(_cleanupTimeout);
-            await _container.DisposeAsync().AsTask().WaitAsync(timeout.Token);
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                return;
+            }
+
+            CleanupReceipt = await CleanupAsync(_operations, _cleanupTimeout);
+            Interlocked.Exchange(ref _disposed, 1);
         }
         finally
         {
-            wasRemoved = await DockerContainerProbe.WaitUntilAbsentAsync(_containerId, _cleanupTimeout);
-            CleanupReceipt = new PostgreSqlCleanupReceipt(
-                "container-cleanup",
-                wasRemoved,
-                Stopwatch.GetElapsedTime(startedAt));
+            _cleanupGate.Release();
+        }
+    }
+
+    private static string CreateRandomValue() => RandomNumberGenerator.GetHexString(16).ToLowerInvariant();
+
+    private static async Task DisposeStartupFailureAsync(
+        IPostgreSqlContainerLeaseOperations operations,
+        TimeSpan cleanupTimeout)
+    {
+        _ = await CleanupAsync(operations, cleanupTimeout);
+    }
+
+    private static async Task<PostgreSqlCleanupReceipt> CleanupAsync(
+        IPostgreSqlContainerLeaseOperations operations,
+        TimeSpan cleanupTimeout)
+    {
+        var startedAt = Stopwatch.GetTimestamp();
+        using var cleanupDeadline = new CancellationTokenSource(cleanupTimeout);
+        var wasRemoved = false;
+        Exception? disposalFailure = null;
+        try
+        {
+            await operations.DisposeAsync(cleanupDeadline.Token);
+        }
+        catch (Exception exception)
+        {
+            disposalFailure = exception;
+        }
+
+        try
+        {
+            wasRemoved = await operations.WaitUntilAbsentAsync(cleanupDeadline.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            wasRemoved = false;
+        }
+
+        if (disposalFailure is not null)
+        {
+            throw new InvalidOperationException("Testcontainers PostgreSQL cleanup failed.", disposalFailure);
         }
 
         if (!wasRemoved)
         {
             throw new InvalidOperationException("Testcontainers PostgreSQL cleanup exceeded the configured shutdown timeout.");
         }
+
+        return new PostgreSqlCleanupReceipt(
+            "container-cleanup",
+            wasRemoved,
+            Stopwatch.GetElapsedTime(startedAt));
     }
 
-    private static string CreateRandomValue() => RandomNumberGenerator.GetHexString(16).ToLowerInvariant();
-
-    private static async Task DisposeStartupFailureAsync(PostgreSqlContainer container, TimeSpan cleanupTimeout)
+    internal async Task<bool> ConfirmAbsentAsync()
     {
-        var containerId = container.Id;
-        using var timeout = new CancellationTokenSource(cleanupTimeout);
-        await container.DisposeAsync().AsTask().WaitAsync(timeout.Token);
-        if (!string.IsNullOrWhiteSpace(containerId) &&
-            !await DockerContainerProbe.WaitUntilAbsentAsync(containerId, cleanupTimeout))
+        using var deadline = new CancellationTokenSource(_cleanupTimeout);
+        try
         {
-            throw new InvalidOperationException("Testcontainers PostgreSQL startup cleanup exceeded the configured shutdown timeout.");
+            return await _operations.WaitUntilAbsentAsync(deadline.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
         }
     }
-
-    internal Task<bool> ConfirmAbsentAsync() => DockerContainerProbe.WaitUntilAbsentAsync(_containerId, _cleanupTimeout);
 
     internal ScenarioResourceObservation CreateObservation() =>
         new(_identity, ConfirmAbsentAsync);
 
     public override string ToString() => "<postgresql-container-lease>";
 
+}
+
+internal interface IPostgreSqlContainerLeaseOperations
+{
+    string ConnectionString { get; }
+
+    bool IsRunning { get; }
+
+    Task StartAsync(CancellationToken cancellationToken);
+
+    Task DisposeAsync(CancellationToken cancellationToken);
+
+    Task<bool> WaitUntilAbsentAsync(CancellationToken cancellationToken);
+}
+
+internal sealed class TestcontainersPostgreSqlContainerLeaseOperations(PostgreSqlContainer container)
+    : IPostgreSqlContainerLeaseOperations
+{
+    private string? _containerId;
+
+    public string ConnectionString => container.GetConnectionString();
+
+    public bool IsRunning => container.State == TestcontainersStates.Running;
+
+    public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        await container.StartAsync(cancellationToken);
+        _containerId = container.Id;
+        if (string.IsNullOrWhiteSpace(_containerId))
+        {
+            throw new InvalidOperationException("Testcontainers started PostgreSQL without a container ID.");
+        }
+    }
+
+    public Task DisposeAsync(CancellationToken cancellationToken) =>
+        container.DisposeAsync().AsTask().WaitAsync(cancellationToken);
+
+    public Task<bool> WaitUntilAbsentAsync(CancellationToken cancellationToken)
+    {
+        return string.IsNullOrWhiteSpace(_containerId)
+            ? Task.FromResult(true)
+            : DockerContainerProbe.WaitUntilAbsentAsync(_containerId, cancellationToken);
+    }
 }
 
 internal sealed record PostgreSqlCleanupReceipt(string Category, bool ContainerAbsent, TimeSpan Duration);

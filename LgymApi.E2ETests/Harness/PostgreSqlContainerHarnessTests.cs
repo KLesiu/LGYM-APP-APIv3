@@ -6,7 +6,6 @@ namespace LgymApi.E2ETests.Harness;
 [TestFixture]
 [Category("Harness")]
 [Category("ApiHostProof")]
-[Category("HarnessDocker")]
 public sealed class PostgreSqlContainerHarnessTests
 {
     [Test]
@@ -32,6 +31,7 @@ public sealed class PostgreSqlContainerHarnessTests
     }
 
     [Test]
+    [Category("HarnessDocker")]
     public async Task PostgreSQL_container_starts_with_module_readiness_and_is_removed_on_disposal()
     {
         PostgreSqlContainerLease? lease = null;
@@ -65,6 +65,7 @@ public sealed class PostgreSqlContainerHarnessTests
     }
 
     [Test]
+    [Category("HarnessDocker")]
     public void PostgreSQL_container_is_removed_when_a_test_local_failure_occurs_after_start()
     {
         PostgreSqlContainerLease? lease = null;
@@ -93,6 +94,7 @@ public sealed class PostgreSqlContainerHarnessTests
     }
 
     [Test]
+    [Category("HarnessDocker")]
     public async Task PostgreSQL_sequential_leases_have_distinct_redacted_observations_and_are_absent()
     {
         var first = await PostgreSqlContainerLease.StartAsync();
