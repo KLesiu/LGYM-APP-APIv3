@@ -51,6 +51,11 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
             ExternalApiHostInfrastructure.CreateDefault(),
             cancellationToken);
 
+    internal static Task<ExternalApiHostLease> StartAsync(
+        ExternalApiHostCompositionRequest request,
+        CancellationToken cancellationToken = default) =>
+        StartAsync(request, ExternalApiHostInfrastructure.CreateDefault(), cancellationToken);
+
     internal static async Task<ExternalApiHostLease> StartAsync(
         ExternalApiHostCompositionRequest request,
         ExternalApiHostInfrastructure infrastructure,

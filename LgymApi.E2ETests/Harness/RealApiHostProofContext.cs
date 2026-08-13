@@ -1,4 +1,5 @@
 using LgymApi.E2ETests.Configuration;
+using LgymApi.E2ETests.Lifecycle;
 
 namespace LgymApi.E2ETests.Harness;
 
@@ -60,27 +61,35 @@ internal sealed class RealApiHostProofContext
         CancellationToken cancellationToken)
     {
         var database = await PostgreSqlContainerLease.StartAsync(cancellationToken);
+        await using var scenarioDatabase = new ScenarioDatabaseOwnership(
+            new PostgreSqlApiHostDatabaseLease(database),
+            database.CreateObservation());
+        var hostDatabase = scenarioDatabase.TransferToApiHost();
         var host = await ExternalApiHostLease.StartAsync(
-            new ExternalApiHostRequest(Publication, database, Options, RepositoryRoot)
+            new ExternalApiHostCompositionRequest(Publication, hostDatabase, Options, RepositoryRoot)
             {
                 EnvironmentName = environmentName
             },
             cancellationToken);
-        return new RealApiHostProofLease(host, database, Options);
+        return new RealApiHostProofLease(host, scenarioDatabase.Observation, Options);
     }
 
     internal async Task<ApiHostStartupFailureReceipt> StartWithInvalidCorsAsync(
         CancellationToken cancellationToken)
     {
         var database = await PostgreSqlContainerLease.StartAsync(cancellationToken);
+        await using var scenarioDatabase = new ScenarioDatabaseOwnership(
+            new PostgreSqlApiHostDatabaseLease(database),
+            database.CreateObservation());
         var runtimeFactory = new Task7RuntimeFactory();
         var processStarter = new Task7ProcessStarter();
         try
         {
+            var hostDatabase = scenarioDatabase.TransferToApiHost();
             var host = await ExternalApiHostLease.StartAsync(
                 new ExternalApiHostCompositionRequest(
                     Publication,
-                    new PostgreSqlApiHostDatabaseLease(database),
+                    hostDatabase,
                     Options,
                     RepositoryRoot)
                 {
@@ -103,7 +112,7 @@ internal sealed class RealApiHostProofContext
                 Ready: false,
                 ProcessTreeAbsent: processStarter.ExactProcessTreeAbsent,
                 PrivateRunAbsent: runtimeFactory.RunDirectory is null || !Directory.Exists(runtimeFactory.RunDirectory),
-                ContainerAbsent: await database.ConfirmAbsentAsync());
+                ContainerAbsent: await scenarioDatabase.Observation.ConfirmAbsentAsync());
         }
     }
 }
@@ -111,12 +120,12 @@ internal sealed class RealApiHostProofContext
 internal sealed class RealApiHostProofLease : IAsyncDisposable
 {
     private readonly ExternalApiHostLease _host;
-    private readonly PostgreSqlContainerLease _database;
+    private readonly ScenarioResourceObservation _database;
     private int _disposed;
 
     internal RealApiHostProofLease(
         ExternalApiHostLease host,
-        PostgreSqlContainerLease database,
+        ScenarioResourceObservation database,
         E2EOptions options)
     {
         _host = host;

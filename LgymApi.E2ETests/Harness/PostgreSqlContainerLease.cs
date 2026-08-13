@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Diagnostics;
 using DotNet.Testcontainers.Containers;
 using LgymApi.E2ETests.Configuration;
+using LgymApi.E2ETests.Lifecycle;
 using Microsoft.Extensions.Logging.Abstractions;
 using Testcontainers.PostgreSql;
 
@@ -15,18 +16,21 @@ public sealed class PostgreSqlContainerLease : IAsyncDisposable
     private readonly string _containerId;
     private readonly string _connectionString;
     private readonly TimeSpan _cleanupTimeout;
+    private readonly ScenarioResourceIdentity _identity;
     private int _disposed;
 
     private PostgreSqlContainerLease(
         PostgreSqlContainer container,
         string containerId,
         string connectionString,
-        TimeSpan cleanupTimeout)
+        TimeSpan cleanupTimeout,
+        ScenarioResourceIdentity identity)
     {
         _container = container;
         _containerId = containerId;
         _connectionString = connectionString;
         _cleanupTimeout = cleanupTimeout;
+        _identity = identity;
     }
 
     internal string ConnectionString => _connectionString;
@@ -65,11 +69,14 @@ public sealed class PostgreSqlContainerLease : IAsyncDisposable
                 container,
                 containerId,
                 container.GetConnectionString(),
-                TimeSpan.FromSeconds(options.Timeouts.ProcessShutdownSeconds));
+                TimeSpan.FromSeconds(options.Timeouts.ProcessShutdownSeconds),
+                ScenarioResourceIdentity.Create());
         }
         catch
         {
-            await container.DisposeAsync();
+            await DisposeStartupFailureAsync(
+                container,
+                TimeSpan.FromSeconds(options.Timeouts.ProcessShutdownSeconds));
             throw;
         }
     }
@@ -105,7 +112,22 @@ public sealed class PostgreSqlContainerLease : IAsyncDisposable
 
     private static string CreateRandomValue() => RandomNumberGenerator.GetHexString(16).ToLowerInvariant();
 
+    private static async Task DisposeStartupFailureAsync(PostgreSqlContainer container, TimeSpan cleanupTimeout)
+    {
+        var containerId = container.Id;
+        using var timeout = new CancellationTokenSource(cleanupTimeout);
+        await container.DisposeAsync().AsTask().WaitAsync(timeout.Token);
+        if (!string.IsNullOrWhiteSpace(containerId) &&
+            !await DockerContainerProbe.WaitUntilAbsentAsync(containerId, cleanupTimeout))
+        {
+            throw new InvalidOperationException("Testcontainers PostgreSQL startup cleanup exceeded the configured shutdown timeout.");
+        }
+    }
+
     internal Task<bool> ConfirmAbsentAsync() => DockerContainerProbe.WaitUntilAbsentAsync(_containerId, _cleanupTimeout);
+
+    internal ScenarioResourceObservation CreateObservation() =>
+        new(_identity, ConfirmAbsentAsync);
 
     public override string ToString() => "<postgresql-container-lease>";
 
