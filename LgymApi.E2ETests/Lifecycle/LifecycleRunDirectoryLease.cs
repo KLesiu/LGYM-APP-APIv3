@@ -1,0 +1,156 @@
+using LgymApi.E2ETests.Harness;
+
+namespace LgymApi.E2ETests.Lifecycle;
+
+internal sealed class LifecycleRunDirectoryLease : IAsyncDisposable
+{
+    private readonly PrivateRunDirectoryLease _runLease;
+    private readonly HashSet<string> _caseIds = new(StringComparer.OrdinalIgnoreCase);
+    private int _finalized;
+
+    private LifecycleRunDirectoryLease(PrivateRunDirectoryLease runLease)
+    {
+        _runLease = runLease;
+        RunId = Path.GetFileName(runLease.RunDirectory);
+        PrivateRunDirectoryLease.EnsureCanonicalLifecycleId(RunId);
+    }
+
+    internal string RunId { get; }
+
+    internal string RunDirectory => _runLease.RunDirectory;
+
+    internal static LifecycleRunDirectoryLease Create(
+        PrivateRunDirectoryRequest request,
+        IRunDirectoryCleaner? cleaner = null) =>
+        new(PrivateRunDirectoryLease.Create(request, cleaner));
+
+    internal LifecycleScenarioDirectoryLease CreateScenario(string caseId)
+    {
+        PrivateRunDirectoryLease.EnsureCanonicalLifecycleId(caseId);
+        if (Volatile.Read(ref _finalized) != 0 || !_caseIds.Add(caseId))
+        {
+            throw new InvalidOperationException(PrivateRunDirectoryLease.PathValidationMessage);
+        }
+
+        try
+        {
+            return new LifecycleScenarioDirectoryLease(_runLease, caseId);
+        }
+        catch
+        {
+            _caseIds.Remove(caseId);
+            throw;
+        }
+    }
+
+    internal ValueTask FinalizeSuccessAsync() =>
+        FinalizeAsync(success: true);
+
+    internal ValueTask FinalizeFailureAsync() =>
+        FinalizeAsync(success: false);
+
+    public ValueTask DisposeAsync() =>
+        FinalizeSuccessAsync();
+
+    private async ValueTask FinalizeAsync(bool success)
+    {
+        if (Interlocked.Exchange(ref _finalized, 1) != 0)
+        {
+            return;
+        }
+
+        if (success)
+        {
+            await _runLease.DisposeAsync();
+            return;
+        }
+
+        await _runLease.FinalizeLifecycleFailureAsync();
+    }
+}
+
+internal sealed class LifecycleScenarioDirectoryLease : IAsyncDisposable
+{
+    private readonly PrivateRunDirectoryLease _runLease;
+    private readonly HashSet<string> _components = new(StringComparer.Ordinal);
+    private int _disposed;
+
+    internal LifecycleScenarioDirectoryLease(PrivateRunDirectoryLease runLease, string caseId)
+    {
+        _runLease = runLease;
+        CaseId = caseId;
+        ScenarioDirectory = runLease.CreateLifecycleScenarioDirectory(caseId);
+        ArtifactDirectory = runLease.CreateLifecycleArtifactDirectory(caseId);
+    }
+
+    internal string CaseId { get; }
+
+    internal string ScenarioDirectory { get; }
+
+    internal string ArtifactDirectory { get; }
+
+    internal LifecycleComponentDirectoryLease CreateApiComponent() =>
+        CreateComponent("api");
+
+    internal LifecycleComponentDirectoryLease CreateWebRuntimeComponent() =>
+        CreateComponent("web-runtime");
+
+    internal LifecycleComponentDirectoryLease CreateBrowserRuntimeComponent() =>
+        CreateComponent("browser-runtime");
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        await _runLease.DeleteLifecycleScenarioAsync(CaseId);
+    }
+
+    private LifecycleComponentDirectoryLease CreateComponent(string componentName)
+    {
+        if (Volatile.Read(ref _disposed) != 0 || !_components.Add(componentName))
+        {
+            throw new InvalidOperationException(PrivateRunDirectoryLease.PathValidationMessage);
+        }
+
+        try
+        {
+            return new LifecycleComponentDirectoryLease(_runLease, CaseId, componentName);
+        }
+        catch
+        {
+            _components.Remove(componentName);
+            throw;
+        }
+    }
+}
+
+internal sealed class LifecycleComponentDirectoryLease : IAsyncDisposable
+{
+    private readonly PrivateRunDirectoryLease _runLease;
+    private readonly string _caseId;
+    private readonly string _componentName;
+    private int _disposed;
+
+    internal LifecycleComponentDirectoryLease(PrivateRunDirectoryLease runLease, string caseId, string componentName)
+    {
+        _runLease = runLease;
+        _caseId = caseId;
+        _componentName = componentName;
+        ComponentDirectory = runLease.CreateLifecycleComponentDirectory(caseId, componentName);
+    }
+
+    internal string ComponentDirectory { get; }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        await _runLease.DeleteLifecycleComponentAsync(_caseId, _componentName);
+    }
+}
