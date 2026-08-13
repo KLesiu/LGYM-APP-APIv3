@@ -4,6 +4,24 @@ namespace LgymApi.E2ETests.Harness;
 
 internal sealed record PrivateRunDirectoryRequest(string RepositoryRoot, string PrivateRunRoot, TimeSpan CleanupTimeout);
 
+internal enum PrivateRunCleanupStage
+{
+    Unknown,
+    CachePathValidation,
+    CacheDelete,
+    RunValidation,
+    Validation,
+    Enumeration,
+    Attributes,
+    EntryDelete,
+    ParentDelete
+}
+
+internal sealed class PrivateRunCleanupException(PrivateRunCleanupStage stage) : InvalidOperationException
+{
+    internal PrivateRunCleanupStage Stage { get; } = stage;
+}
+
 internal interface IRunDirectoryCleaner
 {
     Task DeleteAsync(string runDirectory, CancellationToken cancellationToken);
@@ -16,6 +34,8 @@ internal sealed class PrivateRunDirectoryLease : IAsyncDisposable
 
     private readonly PrivateRunDirectoryLayout _layout;
     private readonly IRunDirectoryCleaner _cleaner;
+    private static readonly TimeSpan SharingViolationRetryDelay = TimeSpan.FromMilliseconds(100);
+    private const int SharingViolationHResult = unchecked((int)0x80070020);
     private int _cleaned;
 
     private PrivateRunDirectoryLease(PrivateRunDirectoryLayout layout, string runDirectory, IRunDirectoryCleaner cleaner)
@@ -26,6 +46,8 @@ internal sealed class PrivateRunDirectoryLease : IAsyncDisposable
     }
 
     internal string RunDirectory { get; }
+
+    internal PrivateRunCleanupStage CleanupStage { get; private set; }
 
     internal void EnsureSafeRuntimeArtifact(string artifactPath)
     {
@@ -39,6 +61,12 @@ internal sealed class PrivateRunDirectoryLease : IAsyncDisposable
         _layout.EnsureSafePath(apiDirectory);
         _layout.EnsureSafePath(artifactPath);
     }
+
+    internal string ResolveWebOwnedPath(string relativeRoot) =>
+        _layout.ResolveWebOwnedPath(RunDirectory, relativeRoot);
+
+    internal string ResolveCacheOwnedPath(string relativeRoot) =>
+        _layout.ResolveCacheOwnedPath(relativeRoot);
 
     internal static PrivateRunDirectoryLease Create(
         PrivateRunDirectoryRequest request,
@@ -69,18 +97,59 @@ internal sealed class PrivateRunDirectoryLease : IAsyncDisposable
 
         try
         {
-            _layout.EnsureOwnedRunDirectory(RunDirectory);
+            ValidateOwnedRunDirectory();
             using var timeout = new CancellationTokenSource(CleanupTimeout);
-            await _cleaner.DeleteAsync(RunDirectory, timeout.Token);
+            while (true)
+            {
+                try
+                {
+                    await _cleaner.DeleteAsync(RunDirectory, timeout.Token);
+                    break;
+                }
+                catch (IOException exception) when (exception.HResult == SharingViolationHResult)
+                {
+                    await Task.Delay(SharingViolationRetryDelay, timeout.Token);
+                    try
+                    {
+                        ValidateOwnedRunDirectory();
+                    }
+                    catch (PrivateRunCleanupException)
+                    {
+                        throw;
+                    }
+                    catch (Exception validationException) when (validationException is IOException or UnauthorizedAccessException)
+                    {
+                        throw new PrivateRunCleanupException(PrivateRunCleanupStage.RunValidation);
+                    }
+                }
+            }
             Interlocked.Exchange(ref _cleaned, 1);
+        }
+        catch (PrivateRunCleanupException exception)
+        {
+            CleanupStage = exception.Stage;
+            throw;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or OperationCanceledException)
         {
+            CleanupStage = PrivateRunCleanupStage.Unknown;
             throw new InvalidOperationException(CleanupMessage);
         }
     }
 
     private TimeSpan CleanupTimeout => _layout.CleanupTimeout;
+
+    private void ValidateOwnedRunDirectory()
+    {
+        try
+        {
+            _layout.EnsureOwnedRunDirectory(RunDirectory);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new PrivateRunCleanupException(PrivateRunCleanupStage.RunValidation);
+        }
+    }
 }
 
 internal sealed class PrivateRunDirectoryLayout
@@ -158,6 +227,29 @@ internal sealed class PrivateRunDirectoryLayout
         EnsureSafePath(runDirectory);
     }
 
+    internal string ResolveWebOwnedPath(string runDirectory, string relativeRoot)
+    {
+        EnsureOwnedRunDirectory(runDirectory);
+        var childDirectory = NormalizeOwnedRoot(relativeRoot) switch
+        {
+            "web-source" => "web-source",
+            "web-runtime" => "web-runtime",
+            _ => throw new InvalidOperationException(PrivateRunDirectoryLease.PathValidationMessage)
+        };
+        return ResolveOwnedPath(runDirectory, childDirectory);
+    }
+
+    internal string ResolveCacheOwnedPath(string relativeRoot)
+    {
+        var childDirectory = NormalizeOwnedRoot(relativeRoot) switch
+        {
+            ".e2e-private/npm-cache" => "npm-cache",
+            ".e2e-private/browsers" => "browsers",
+            _ => throw new InvalidOperationException(PrivateRunDirectoryLease.PathValidationMessage)
+        };
+        return ResolveOwnedPath(PrivateRoot, childDirectory);
+    }
+
     internal void EnsureSafePath(string candidatePath)
     {
         if (!IsDescendantOrSame(RepositoryRoot, candidatePath))
@@ -173,6 +265,29 @@ internal sealed class PrivateRunDirectoryLayout
             currentPath = Path.Combine(currentPath, segment);
             EnsureNotReparsePoint(currentPath);
         }
+    }
+
+    private string ResolveOwnedPath(string ownerRoot, string childDirectory)
+    {
+        var resolvedPath = Path.GetFullPath(Path.Combine(ownerRoot, childDirectory));
+        if (!IsStrictDescendant(ownerRoot, resolvedPath))
+        {
+            throw new InvalidOperationException(PrivateRunDirectoryLease.PathValidationMessage);
+        }
+
+        EnsureSafePath(ownerRoot);
+        EnsureSafePath(resolvedPath);
+        return resolvedPath;
+    }
+
+    private static string NormalizeOwnedRoot(string relativeRoot)
+    {
+        if (string.IsNullOrWhiteSpace(relativeRoot))
+        {
+            throw new InvalidOperationException(PrivateRunDirectoryLease.PathValidationMessage);
+        }
+
+        return relativeRoot.Replace('\\', '/');
     }
 
     private static bool IsStrictDescendant(string parentPath, string candidatePath) =>
@@ -199,21 +314,48 @@ internal sealed class PrivateRunDirectoryLayout
 
 internal sealed class FileSystemRunDirectoryCleaner : IRunDirectoryCleaner
 {
+    private static readonly TimeSpan SharingViolationRetryDelay = TimeSpan.FromMilliseconds(100);
+    private const int SharingViolationHResult = unchecked((int)0x80070020);
+    private readonly IRunDirectoryFileSystem _fileSystem;
+
+    internal FileSystemRunDirectoryCleaner(IRunDirectoryFileSystem? fileSystem = null)
+    {
+        _fileSystem = fileSystem ?? new RunDirectoryFileSystem();
+    }
+
     public Task DeleteAsync(string runDirectory, CancellationToken cancellationToken) =>
         DeleteDirectoryAsync(runDirectory, cancellationToken);
 
-    private static async Task DeleteDirectoryAsync(string directory, CancellationToken cancellationToken)
+    private async Task DeleteDirectoryAsync(string directory, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!Directory.Exists(directory))
+        if (!_fileSystem.DirectoryExists(directory))
         {
             return;
         }
 
-        foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
+        string[] entries;
+        try
+        {
+            entries = _fileSystem.GetEntries(directory);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new PrivateRunCleanupException(PrivateRunCleanupStage.Enumeration);
+        }
+
+        foreach (var entry in entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var attributes = File.GetAttributes(entry);
+            FileAttributes attributes;
+            try
+            {
+                attributes = _fileSystem.GetAttributes(entry);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                throw new PrivateRunCleanupException(PrivateRunCleanupStage.Attributes);
+            }
             if ((attributes & FileAttributes.Directory) != 0 &&
                 (attributes & FileAttributes.ReparsePoint) == 0)
             {
@@ -221,16 +363,78 @@ internal sealed class FileSystemRunDirectoryCleaner : IRunDirectoryCleaner
             }
             else if ((attributes & FileAttributes.Directory) != 0)
             {
-                Directory.Delete(entry);
+                await DeleteAsync(entry, isDirectory: true, PrivateRunCleanupStage.EntryDelete, cancellationToken);
             }
             else
             {
-                File.Delete(entry);
+                await DeleteAsync(entry, isDirectory: false, PrivateRunCleanupStage.EntryDelete, cancellationToken);
             }
             await Task.Yield();
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        Directory.Delete(directory);
+        await DeleteAsync(directory, isDirectory: true, PrivateRunCleanupStage.ParentDelete, cancellationToken);
     }
+
+    private async Task DeleteAsync(
+        string path,
+        bool isDirectory,
+        PrivateRunCleanupStage stage,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                if (isDirectory)
+                {
+                    _fileSystem.DeleteDirectory(path);
+                }
+                else
+                {
+                    _fileSystem.DeleteFile(path);
+                }
+
+                return;
+            }
+            catch (IOException exception) when (stage == PrivateRunCleanupStage.EntryDelete &&
+                                               exception.HResult == SharingViolationHResult)
+            {
+                try
+                {
+                    await Task.Delay(SharingViolationRetryDelay, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw new PrivateRunCleanupException(PrivateRunCleanupStage.EntryDelete);
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                throw new PrivateRunCleanupException(stage);
+            }
+        }
+    }
+}
+
+
+
+
+internal interface IRunDirectoryFileSystem
+{
+    bool DirectoryExists(string path);
+    string[] GetEntries(string path);
+    FileAttributes GetAttributes(string path);
+    void DeleteDirectory(string path);
+    void DeleteFile(string path);
+}
+
+internal sealed class RunDirectoryFileSystem : IRunDirectoryFileSystem
+{
+    public bool DirectoryExists(string path) => Directory.Exists(path);
+    public string[] GetEntries(string path) => Directory.GetFileSystemEntries(path);
+    public FileAttributes GetAttributes(string path) => File.GetAttributes(path);
+    public void DeleteDirectory(string path) => Directory.Delete(path);
+    public void DeleteFile(string path) => File.Delete(path);
 }

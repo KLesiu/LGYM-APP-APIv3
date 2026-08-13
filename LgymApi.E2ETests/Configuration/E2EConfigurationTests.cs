@@ -21,7 +21,7 @@ public sealed class E2EConfigurationTests
         Assert.Multiple(() =>
         {
             Assert.That(options.WebSource.RepositoryUrl, Is.EqualTo("https://github.com/KLesiu/LGYM-APP-MOBILE.git"));
-            Assert.That(options.WebSource.CommitSha, Is.EqualTo("8f59d96ec368f509b1565e3296cd89d2a082a952"));
+        Assert.That(options.WebSource.CommitSha, Is.EqualTo("cd930cce76c030b0ffe631f0bdd79712f97d171f"));
             Assert.That(options.WebSource.SourcePath, Is.Null);
             Assert.That(options.Api.PublishedDllPath, Is.EqualTo(".e2e-private/published-api/LgymApi.Api.dll"));
             Assert.That(options.Api.Port, Is.Zero);
@@ -33,7 +33,7 @@ public sealed class E2EConfigurationTests
             Assert.That(options.Timeouts.ApiPublishSeconds, Is.EqualTo(300));
             Assert.That(options.Timeouts.ApiStartupSeconds, Is.EqualTo(120));
             Assert.That(options.Timeouts.WebStartupSeconds, Is.EqualTo(120));
-            Assert.That(options.Timeouts.ProcessShutdownSeconds, Is.EqualTo(15));
+            Assert.That(options.Timeouts.ProcessShutdownSeconds, Is.EqualTo(90));
             Assert.That(options.Timeouts.HttpRequestSeconds, Is.EqualTo(30));
             Assert.That(options.Timeouts.BrowserActionMilliseconds, Is.EqualTo(15000));
             Assert.That(options.Timeouts.ScenarioSeconds, Is.EqualTo(180));
@@ -162,7 +162,7 @@ public sealed class E2EConfigurationTests
         WebSource = new E2EWebSourceOptions
         {
             RepositoryUrl = "https://github.com/KLesiu/LGYM-APP-MOBILE.git",
-            CommitSha = "8f59d96ec368f509b1565e3296cd89d2a082a952"
+            CommitSha = "cd930cce76c030b0ffe631f0bdd79712f97d171f"
         },
         Api = new E2EApiOptions { PublishedDllPath = ".e2e-private/published-api/LgymApi.Api.dll", Port = 0 },
         Web = new E2EWebOptions { Port = 8083 },
@@ -174,7 +174,7 @@ public sealed class E2EConfigurationTests
             ApiPublishSeconds = 300,
             ApiStartupSeconds = 120,
             WebStartupSeconds = 120,
-            ProcessShutdownSeconds = 15,
+            ProcessShutdownSeconds = 90,
             HttpRequestSeconds = 30,
             BrowserActionMilliseconds = 15000,
             ScenarioSeconds = 180,
