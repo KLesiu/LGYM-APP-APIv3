@@ -105,6 +105,12 @@ internal sealed class ExternalApiProcessLease : IExternalApiProcess
             {
                 CaptureCleanupReceipt(exception.Receipt);
             }
+            catch (ExternalProcessPostLaunchException exception)
+            {
+                CaptureCleanupReceipt(exception.Receipt);
+                CompleteDisposal();
+                throw;
+            }
             catch (InvalidOperationException exception) when (
                 string.Equals(exception.Message, ExternalProcessRunner.StartFailureMessage, StringComparison.Ordinal))
             {
@@ -188,6 +194,10 @@ internal sealed class ExternalApiProcessLease : IExternalApiProcess
             return exception.Receipt is null
                 ? new ExternalApiProcessExit(ExternalApiProcessExitKind.Failed)
                 : FromFailureReceipt(exception.Receipt);
+        }
+        catch (ExternalProcessPostLaunchException exception)
+        {
+            return FromFailureReceipt(exception.Receipt);
         }
         catch (InvalidOperationException)
         {

@@ -10,13 +10,14 @@ public sealed class DatabaseBackedApiReadinessProbeTests
 {
     private static readonly BoundaryRule[] ForbiddenRules =
     [
-        new("product namespace", @"(?:using\s+|global::)LgymApi\.(Api|Application|Domain|Infrastructure|Identity|Platform|TrainingPlanning|Notifications|BackgroundWorker)"),
+        new("product namespace", @"\bLgymApi\.(?:Api|Application|Domain|Infrastructure|Identity|Platform|TrainingPlanning|Notifications|BackgroundWorker(?:\.Common)?|Resources(?:\.Generator)?)(?:\.|\b)"),
         new("Entity Framework", @"(?:using\s+|global::)?Microsoft\.EntityFrameworkCore|\bDbContext\b"),
         new("Npgsql", @"(?:using\s+|global::)?Npgsql|\bNpgsqlConnection\b"),
         new("repository", @"\b\w*Repository\b"),
         new("in-process host", @"\bWebApplicationFactory\b"),
         new("container persistence", @"\bTestcontainers\b"),
         new("SQL", @"\b(SELECT|INSERT|UPDATE|DELETE|ALTER|DROP|CREATE)\s+", RegexOptions.IgnoreCase),
+        new("direct SQL API", @"\b(?:ExecuteSql(?:Raw|Interpolated)?|FromSql(?:Raw|Interpolated)?|SqlQueryRaw)\s*\("),
         new("test endpoint", @"(?:api/(?:internal|test)|proof/|test-only)", RegexOptions.IgnoreCase)
     ];
 
@@ -274,16 +275,16 @@ public sealed class DatabaseBackedApiReadinessProbeTests
             RepositoryRoot.Find(),
             "LgymApi.E2ETests",
             "Lifecycle");
-        var violations = Directory.GetFiles(lifecycleDirectory, "*.cs")
-            .Where(path => !path.EndsWith("Tests.cs", StringComparison.Ordinal))
-            .SelectMany(path => FindBoundaryViolations(path, File.ReadAllText(path)))
-            .ToArray();
+        var violations = FindLifecycleBoundaryViolations(lifecycleDirectory).ToArray();
 
         Assert.That(violations, Is.Empty, string.Join(Environment.NewLine, violations));
     }
 
     [TestCase("using LgymApi.Domain;")]
     [TestCase("global::LgymApi.Infrastructure")]
+    [TestCase("LgymApi.Domain.Account")]
+    [TestCase("LgymApi.Resources.Messages")]
+    [TestCase("LgymApi.Resources.Generator.ResourceGenerator")]
     [TestCase("using Microsoft.EntityFrameworkCore;")]
     [TestCase("global::Microsoft.EntityFrameworkCore.DbContext")]
     [TestCase("using Npgsql;")]
@@ -291,6 +292,7 @@ public sealed class DatabaseBackedApiReadinessProbeTests
     [TestCase("WebApplicationFactory")]
     [TestCase("Testcontainers")]
     [TestCase("SELECT * FROM users")]
+    [TestCase("database.ExecuteSqlRaw(unsafeCommand)")]
     [TestCase("api/internal/example")]
     [TestCase("api/test/example")]
     [TestCase("proof/example")]
@@ -301,6 +303,38 @@ public sealed class DatabaseBackedApiReadinessProbeTests
 
         Assert.That(violations, Is.Not.Empty);
     }
+
+    [Test]
+    public void DatabaseBacked_readiness_source_policy_scans_nested_non_test_files()
+    {
+        var lifecycleDirectory = Path.Combine(
+            RepositoryRoot.Find(),
+            "LgymApi.E2ETests",
+            "Lifecycle");
+        var fixtureDirectory = Path.Combine(lifecycleDirectory, "task-3-policy-fixture");
+        var fixturePath = Path.Combine(fixtureDirectory, "NestedBoundaryBypass.cs");
+        Directory.CreateDirectory(fixtureDirectory);
+        File.WriteAllText(fixturePath, "LgymApi.Resources.Messages");
+
+        try
+        {
+            var violations = FindLifecycleBoundaryViolations(lifecycleDirectory).ToArray();
+
+            Assert.That(violations, Is.Not.Empty);
+        }
+        finally
+        {
+            if (Directory.Exists(fixtureDirectory))
+            {
+                Directory.Delete(fixtureDirectory, recursive: true);
+            }
+        }
+    }
+
+    private static IEnumerable<string> FindLifecycleBoundaryViolations(string lifecycleDirectory) =>
+        Directory.EnumerateFiles(lifecycleDirectory, "*.cs", SearchOption.AllDirectories)
+            .Where(path => !path.EndsWith("Tests.cs", StringComparison.Ordinal))
+            .SelectMany(path => FindBoundaryViolations(path, File.ReadAllText(path)));
 
     private static IEnumerable<string> FindBoundaryViolations(string path, string source) =>
         ForbiddenRules

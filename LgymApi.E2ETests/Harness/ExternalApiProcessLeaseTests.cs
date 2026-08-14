@@ -23,27 +23,12 @@ public sealed class ExternalApiProcessLeaseTests
         var lease = new ExternalApiProcessLease(runner, request);
         await fixture.WaitUntilReadyOrFailedAsync(lease.Exit, TimeSpan.FromSeconds(3));
 
-        InvalidOperationException? exception;
-        try
-        {
-            exception = Assert.ThrowsAsync<InvalidOperationException>(async () => await lease.DisposeAsync());
-        }
-        finally
-        {
-            if (capturedIdentities.Count != 0)
-            {
-                WindowsProcessTree.TerminateKnownIdentities(capturedIdentities);
-                using var absenceDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                await WindowsProcessTree.WaitUntilAllAbsentOrReusedAsync(
-                    capturedIdentities,
-                    absenceDeadline.Token);
-            }
-        }
+        var exception = Assert.CatchAsync<InvalidOperationException>(async () => await lease.DisposeAsync());
 
         Assert.Multiple(() =>
         {
-            Assert.That(exception!.Message, Is.EqualTo("Injected post-launch process failure."));
-            Assert.That(lease.ProcessTreeAbsent, Is.False);
+            Assert.That(exception!.Message, Is.EqualTo("The external process failed after launch."));
+            Assert.That(lease.ProcessTreeAbsent, Is.True);
             Assert.That(capturedIdentities.Count, Is.GreaterThanOrEqualTo(2));
             Assert.That(WindowsProcessTree.AllAbsentOrReused(capturedIdentities), Is.True);
         });

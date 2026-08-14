@@ -14,6 +14,7 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
     internal const string CleanupFailureMessage = "External API host cleanup failed.";
     private const string CanonicalPrivateRunRoot = ".e2e-private/runs";
     private const int MaximumDynamicPortAttempts = 3;
+    private const int MaximumStartupCleanupAttempts = 2;
     private static readonly TimeSpan ReadinessPollInterval = TimeSpan.FromMilliseconds(100);
     private IApiHostDatabaseLease? _database;
     private readonly ExternalApiHostInfrastructure _infrastructure;
@@ -103,13 +104,7 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
         {
             var callerCanceled = exception is OperationCanceledException && cancellationToken.IsCancellationRequested;
             var startupTimedOut = startupTimeout.IsCancellationRequested;
-            try
-            {
-                await lease.DisposeAsync();
-            }
-            catch (ExternalApiHostCleanupException)
-            {
-            }
+            await lease.CleanupFailedStartupAsync();
 
             if (exception is ExternalApiHostCleanupException)
             {
@@ -150,9 +145,14 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         using var deadline = new CancellationTokenSource(_cleanupTimeout);
+        await DisposeAsync(deadline.Token);
+    }
+
+    private async ValueTask DisposeAsync(CancellationToken cleanupToken)
+    {
         try
         {
-            await _disposeLock.WaitAsync(deadline.Token);
+            await _disposeLock.WaitAsync(cleanupToken);
         }
         catch (OperationCanceledException)
         {
@@ -170,9 +170,9 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
             ExternalApiHostCleanupResult result;
             try
             {
-                result = await _cleanupAttempt.WaitAsync(deadline.Token);
+                result = await _cleanupAttempt.WaitAsync(cleanupToken);
             }
-            catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+            catch (OperationCanceledException) when (cleanupToken.IsCancellationRequested)
             {
                 CleanupReceipt = CreatePendingCleanupReceipt();
                 throw new ExternalApiHostCleanupException(CleanupReceipt);
@@ -199,6 +199,27 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
         finally
         {
             _disposeLock.Release();
+        }
+    }
+
+    private async Task CleanupFailedStartupAsync()
+    {
+        using var deadline = new CancellationTokenSource(_cleanupTimeout);
+        for (var attempt = 0;
+             attempt < MaximumStartupCleanupAttempts && !CleanupReceipt.AllResourcesAbsent;
+             attempt++)
+        {
+            try
+            {
+                await DisposeAsync(deadline.Token);
+            }
+            catch (ExternalApiHostCleanupException) when (!deadline.IsCancellationRequested)
+            {
+            }
+            catch (ExternalApiHostCleanupException)
+            {
+                return;
+            }
         }
     }
 

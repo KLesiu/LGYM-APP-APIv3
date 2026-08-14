@@ -71,3 +71,9 @@ internal sealed class ExternalProcessCleanupException(ExternalProcessFailureRece
 {
     public ExternalProcessFailureReceipt? Receipt { get; } = receipt;
 }
+
+internal sealed class ExternalProcessPostLaunchException(ExternalProcessFailureReceipt receipt)
+    : InvalidOperationException(ExternalProcessRunner.PostLaunchFailureMessage)
+{
+    internal ExternalProcessFailureReceipt Receipt { get; } = receipt;
+}

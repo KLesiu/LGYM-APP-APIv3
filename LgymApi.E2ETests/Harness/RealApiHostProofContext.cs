@@ -121,6 +121,7 @@ internal sealed class RealApiHostProofLease : IAsyncDisposable
 {
     private readonly ExternalApiHostLease _host;
     private readonly ScenarioResourceObservation _database;
+    private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private int _disposed;
 
     internal RealApiHostProofLease(
@@ -145,16 +146,26 @@ internal sealed class RealApiHostProofLease : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        await _disposeLock.WaitAsync();
+        try
         {
-            return;
-        }
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                return;
+            }
 
-        Client.Dispose();
-        await _host.DisposeAsync();
-        if (!await _database.ConfirmAbsentAsync())
+            Client.Dispose();
+            await _host.DisposeAsync();
+            if (!await _database.ConfirmAbsentAsync())
+            {
+                throw new InvalidOperationException("Real API host PostgreSQL cleanup could not be proven.");
+            }
+
+            Volatile.Write(ref _disposed, 1);
+        }
+        finally
         {
-            throw new InvalidOperationException("Real API host PostgreSQL cleanup could not be proven.");
+            _disposeLock.Release();
         }
     }
 }

@@ -7,6 +7,71 @@ namespace LgymApi.E2ETests.Lifecycle;
 [Category("Lifecycle")]
 public sealed class DatabaseBackedApiReadinessNegativePathTests
 {
+    [TestCase("readiness")]
+    [TestCase("caller-cancellation")]
+    public void DatabaseBacked_failed_startup_retries_all_unresolved_cleanup_before_preserving_primary_failure(
+        string failureKind)
+    {
+        using var fixture = new ExternalApiHostTestFixture();
+        using var callerCancellation = new CancellationTokenSource();
+        var cleanupOrder = new List<string>();
+        var database = new FakeApiHostDatabaseLease(cleanupOrder, cleanupFails: true);
+        var runtimeFactory = new FakeApiHostRuntimeFactory(
+            fixture.RepositoryRoot,
+            cleanupOrder,
+            cleanupFails: true);
+        var processStarter = new FakeExternalApiProcessStarter(
+            [null],
+            cleanupOrder,
+            cleanupFailures: [true]);
+        IDatabaseBackedApiReadinessProbe databaseProbe = failureKind == "caller-cancellation"
+            ? new CancelingDatabaseReadinessProbe(callerCancellation)
+            : new ScriptedDatabaseBackedApiReadinessProbe(
+                [DatabaseBackedApiReadinessOutcome.UnexpectedStatus]);
+
+        var exception = Assert.CatchAsync<Exception>(() => ExternalApiHostLease.StartAsync(
+            fixture.CreateRequest(database),
+            new ExternalApiHostInfrastructure(
+                runtimeFactory,
+                processStarter,
+                new ScriptedApiHostReadinessMonitor([ApiHostReadinessOutcome.Ready]),
+                new FakeLoopbackPortAllocator([47110]),
+                databaseProbe),
+            failureKind == "caller-cancellation" ? callerCancellation.Token : CancellationToken.None));
+        var receipt = ReadCleanupReceipt(exception!);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                exception,
+                failureKind == "caller-cancellation"
+                    ? Is.TypeOf<OperationCanceledException>()
+                    : Is.TypeOf<ExternalApiHostStartupException>());
+            Assert.That(
+                exception!.Message,
+                Is.EqualTo(failureKind == "caller-cancellation"
+                    ? ExternalApiHostLease.CallerCancellationMessage
+                    : ExternalApiHostLease.StartupFailureMessage));
+            Assert.That(receipt, Is.Not.Null);
+            Assert.That(receipt?.ProcessTreeAbsent, Is.True);
+            Assert.That(receipt?.RuntimeDirectoryAbsent, Is.True);
+            Assert.That(receipt?.DatabaseAbsent, Is.True);
+            Assert.That(receipt?.FailureCount, Is.EqualTo(6));
+            Assert.That(receipt?.AttemptedCategories, Is.EqualTo(new[]
+            {
+                "api-process",
+                "runtime-configuration",
+                "postgresql",
+                "api-process",
+                "runtime-configuration",
+                "postgresql"
+            }));
+            Assert.That(processStarter.Processes.Single().DisposeCount, Is.EqualTo(2));
+            Assert.That(runtimeFactory.Lease!.DisposeCount, Is.EqualTo(2));
+            Assert.That(database.DisposeCount, Is.EqualTo(2));
+        });
+    }
+
     [TestCase("unexpected-status")]
     [TestCase("http-failure")]
     [TestCase("http-timeout")]
