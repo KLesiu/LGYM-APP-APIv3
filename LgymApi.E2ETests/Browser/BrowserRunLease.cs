@@ -81,10 +81,15 @@ internal sealed class BrowserRunLease : IAsyncDisposable
             });
             return new BrowserRunLease(runtime, browser, TimeSpan.FromMilliseconds(request.ActionTimeoutMilliseconds));
         }
-        catch (PlaywrightException)
+        catch (Exception exception)
         {
-            runtime?.Dispose();
-            throw new InvalidOperationException(PrerequisiteMessage);
+            DisposeRuntimeAfterFailedInitialization(runtime);
+            if (exception is PlaywrightException)
+            {
+                throw new InvalidOperationException(PrerequisiteMessage);
+            }
+
+            throw;
         }
         finally
         {
@@ -120,6 +125,17 @@ internal sealed class BrowserRunLease : IAsyncDisposable
         runtimeDirectory.EnsureSafeArtifact(path);
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    private static void DisposeRuntimeAfterFailedInitialization(IBrowserRuntime? runtime)
+    {
+        try
+        {
+            runtime?.Dispose();
+        }
+        catch (Exception)
+        {
+        }
     }
 
     private async Task CleanupAsync()

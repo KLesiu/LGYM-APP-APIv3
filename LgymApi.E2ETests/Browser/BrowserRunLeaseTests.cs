@@ -67,6 +67,7 @@ public sealed class BrowserRunLeaseTests
         {
             LaunchException = new PlaywrightException("browser executable missing at private absolute path")
         };
+        factory.Runtime.DisposeException = new InvalidOperationException("cleanup canary");
 
         try
         {
@@ -86,6 +87,33 @@ public sealed class BrowserRunLeaseTests
         {
             Environment.SetEnvironmentVariable(BrowserRunLease.BrowsersPathVariable, original);
         }
+    }
+
+    [Test]
+    public async Task Runtime_child_failure_disposes_Playwright_once_without_masking_the_original_error()
+    {
+        await using var run = LifecycleRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
+            RepositoryRoot.Find(),
+            ".e2e-private/runs",
+            TimeSpan.FromSeconds(2)));
+        var scenario = run.CreateScenario("browser-runtime-partial-init");
+        var browserRuntime = scenario.CreateBrowserRuntimeComponent();
+        await File.WriteAllTextAsync(Path.Combine(browserRuntime.ComponentDirectory, "artifacts"), "blocking file");
+        var factory = new RecordingBrowserRuntimeFactory();
+        factory.Runtime.DisposeException = new InvalidOperationException("cleanup canary");
+
+        var exception = Assert.ThrowsAsync<IOException>(async () =>
+            await BrowserRunLease.CreateAsync(new BrowserRunRequest(run.RunLease, 500)
+            {
+                RuntimeDirectory = browserRuntime
+            }, factory));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception!.Message, Does.Not.Contain("cleanup canary"));
+            Assert.That(factory.CreateCount, Is.EqualTo(1));
+            Assert.That(factory.Runtime.Events, Is.EqualTo(new[] { "playwright-dispose" }));
+        });
     }
 
     [Test]
@@ -188,6 +216,7 @@ internal sealed class RecordingBrowserRuntime : IBrowserRuntime
     internal string? EnvironmentAtLaunch { get; private set; }
     internal BrowserTypeLaunchOptions? Options { get; private set; }
     internal Exception? LaunchException { get; set; }
+    internal Exception? DisposeException { get; set; }
 
     public Task<IBrowserHandle> LaunchChromiumAsync(BrowserTypeLaunchOptions options)
     {
@@ -201,7 +230,14 @@ internal sealed class RecordingBrowserRuntime : IBrowserRuntime
         return Task.FromResult<IBrowserHandle>(new RecordingBrowserHandle(Events));
     }
 
-    public void Dispose() => Events.Add("playwright-dispose");
+    public void Dispose()
+    {
+        Events.Add("playwright-dispose");
+        if (DisposeException is not null)
+        {
+            throw DisposeException;
+        }
+    }
 }
 
 internal sealed class RecordingBrowserHandle(List<string> events) : IBrowserHandle
