@@ -21,8 +21,13 @@ internal static class ExternalApiHostCleanup
         var processExit = await ObserveProcessExitAsync(process);
         failureCount += processExit.FailureCount;
         failureCount += await DisposeResourceAsync(runtime, RuntimeCategory, categories);
-        failureCount += await DisposeResourceAsync(database, DatabaseCategory, categories);
-        var databaseAbsent = await ConfirmDatabaseAbsentAsync(database);
+        var databaseDisposed = await DisposeDatabaseAsync(database, categories);
+        if (!databaseDisposed)
+        {
+            failureCount++;
+        }
+
+        var databaseAbsent = await ConfirmDatabaseAbsentAsync(database, databaseDisposed);
         if (!databaseAbsent)
         {
             failureCount++;
@@ -87,6 +92,27 @@ internal static class ExternalApiHostCleanup
         }
     }
 
+    private static async Task<bool> DisposeDatabaseAsync(
+        IApiHostDatabaseLease? database,
+        ICollection<string> categories)
+    {
+        if (database is null)
+        {
+            return true;
+        }
+
+        categories.Add(DatabaseCategory);
+        try
+        {
+            await database.DisposeAsync();
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     private static async Task<(int FailureCount, bool HangfireServerStartObserved)> ObserveProcessExitAsync(
         IExternalApiProcess? process)
     {
@@ -106,16 +132,23 @@ internal static class ExternalApiHostCleanup
         }
     }
 
-    private static async Task<bool> ConfirmDatabaseAbsentAsync(IApiHostDatabaseLease? database)
+    private static async Task<bool> ConfirmDatabaseAbsentAsync(
+        IApiHostDatabaseLease? database,
+        bool databaseDisposed)
     {
         if (database is null)
         {
             return true;
         }
 
+        if (database is not IApiHostDatabaseAbsenceObservation observation)
+        {
+            return databaseDisposed;
+        }
+
         try
         {
-            return await database.ConfirmAbsentAsync();
+            return await observation.ConfirmAbsentAsync();
         }
         catch (Exception)
         {

@@ -87,8 +87,6 @@ internal sealed class Task7DatabaseLease(PostgreSqlContainerLease database, stri
     public string ConnectionString => connectionString ?? database.ConnectionString;
 
     public ValueTask DisposeAsync() => database.DisposeAsync();
-
-    public Task<bool> ConfirmAbsentAsync() => database.ConfirmAbsentAsync();
 }
 
 internal sealed class Task7RuntimeFactory : IApiHostRuntimeLeaseFactory

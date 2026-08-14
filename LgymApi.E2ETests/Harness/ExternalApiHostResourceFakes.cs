@@ -2,7 +2,7 @@ namespace LgymApi.E2ETests.Harness;
 
 internal sealed class FakeApiHostDatabaseLease(
     ICollection<string> cleanupOrder,
-    bool cleanupFails = false) : IApiHostDatabaseLease
+    bool cleanupFails = false) : IApiHostDatabaseLease, IApiHostDatabaseAbsenceObservation
 {
     private int _cleanupFailuresRemaining = cleanupFails ? 1 : 0;
 

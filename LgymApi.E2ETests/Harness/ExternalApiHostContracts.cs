@@ -32,7 +32,10 @@ internal sealed record ExternalApiHostCompositionRequest(
 internal interface IApiHostDatabaseLease : IAsyncDisposable
 {
     string ConnectionString { get; }
+}
 
+internal interface IApiHostDatabaseAbsenceObservation
+{
     Task<bool> ConfirmAbsentAsync();
 }
 
@@ -129,7 +132,8 @@ internal sealed class ExternalApiHostCleanupException(ExternalApiHostCleanupRece
     internal ExternalApiHostCleanupReceipt Receipt { get; } = receipt;
 }
 
-internal sealed class PostgreSqlApiHostDatabaseLease(PostgreSqlContainerLease lease) : IApiHostDatabaseLease
+internal sealed class PostgreSqlApiHostDatabaseLease(PostgreSqlContainerLease lease)
+    : IApiHostDatabaseLease, IApiHostDatabaseAbsenceObservation
 {
     public string ConnectionString => lease.ConnectionString;
 

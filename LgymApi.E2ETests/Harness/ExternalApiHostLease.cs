@@ -15,13 +15,14 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
     private const string CanonicalPrivateRunRoot = ".e2e-private/runs";
     private const string TestingEnvironmentName = "Testing";
     private const int MaximumDynamicPortAttempts = 3;
-    private const int MaximumStartupCleanupAttempts = 2;
+    private static readonly TimeSpan FailedStartupCleanupRetryDelay = TimeSpan.FromMilliseconds(100);
     private static readonly TimeSpan ReadinessPollInterval = TimeSpan.FromMilliseconds(100);
     private IApiHostDatabaseLease? _database;
     private readonly ExternalApiHostInfrastructure _infrastructure;
     private readonly TimeSpan _cleanupTimeout;
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private Task<ExternalApiHostCleanupResult>? _cleanupAttempt;
+    private Task<ExternalApiHostCleanupReceipt>? _failedStartupCleanup;
     private IApiHostRuntimeLease? _runtime;
     private IExternalApiProcess? _process;
     private int _disposed;
@@ -105,7 +106,7 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
         {
             var callerCanceled = exception is OperationCanceledException && cancellationToken.IsCancellationRequested;
             var startupTimedOut = startupTimeout.IsCancellationRequested;
-            await lease.CleanupFailedStartupAsync();
+            await lease.WaitForFailedStartupCleanupAsync();
 
             if (exception is ExternalApiHostCleanupException)
             {
@@ -203,25 +204,37 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
         }
     }
 
-    private async Task CleanupFailedStartupAsync()
+    private async Task WaitForFailedStartupCleanupAsync()
     {
-        using var deadline = new CancellationTokenSource(_cleanupTimeout);
-        for (var attempt = 0;
-             attempt < MaximumStartupCleanupAttempts && !CleanupReceipt.AllResourcesAbsent;
-             attempt++)
+        _failedStartupCleanup ??= CoordinateFailedStartupCleanupAsync();
+        try
+        {
+            await _failedStartupCleanup.WaitAsync(_cleanupTimeout);
+        }
+        catch (TimeoutException)
+        {
+        }
+    }
+
+    private async Task<ExternalApiHostCleanupReceipt> CoordinateFailedStartupCleanupAsync()
+    {
+        while (!CleanupReceipt.AllResourcesAbsent)
         {
             try
             {
-                await DisposeAsync(deadline.Token);
-            }
-            catch (ExternalApiHostCleanupException) when (!deadline.IsCancellationRequested)
-            {
+                await DisposeAsync(CancellationToken.None);
             }
             catch (ExternalApiHostCleanupException)
             {
-                return;
+            }
+
+            if (!CleanupReceipt.AllResourcesAbsent)
+            {
+                await Task.Delay(FailedStartupCleanupRetryDelay);
             }
         }
+
+        return CleanupReceipt;
     }
 
     private ExternalApiHostCleanupReceipt CreatePendingCleanupReceipt() => CleanupReceipt with
