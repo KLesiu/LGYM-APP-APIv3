@@ -148,6 +148,40 @@ public sealed class ScenarioLifecycleLeaseTests
     }
 
     [Test]
+    public async Task ScenarioLifecycleLease_retained_cleanup_must_complete_before_its_observation_is_reused()
+    {
+        await using var fixture = await ScenarioLifecycleFixture.CreateAsync();
+        var firstDependencies = new RecordingScenarioLifecycleDependencies(blockedCleanup: "external-api-host");
+        var first = await ScenarioLifecycleLease.CreateAsync(
+            fixture.CreateRequest("scenario-lifecycle-retained-observation", shutdownSeconds: 1),
+            firstDependencies);
+
+        try
+        {
+            Assert.ThrowsAsync<ScenarioLifecycleCleanupException>(async () => await first.DisposeAsync());
+            await firstDependencies.BlockingCleanup!.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            var retainedCleanup = first.WaitForRetainedCleanupAsync(CancellationToken.None);
+            Assert.That(retainedCleanup.IsCompleted, Is.False);
+
+            firstDependencies.BlockingCleanup.Release();
+            await retainedCleanup.WaitAsync(TimeSpan.FromSeconds(2));
+
+            var secondDependencies = new RecordingScenarioLifecycleDependencies();
+            var second = await ScenarioLifecycleLease.CreateAsync(
+                fixture.CreateRequest("scenario-lifecycle-after-retained", first.Observation),
+                secondDependencies);
+            await second.DisposeAsync();
+
+            Assert.That(second.Receipt.PreviousResourcesAbsent, Is.True);
+        }
+        finally
+        {
+            firstDependencies.BlockingCleanup!.Release();
+        }
+    }
+
+    [Test]
     public async Task ScenarioLifecycleLease_preserves_the_primary_startup_failure_while_browser_cleanup_is_retained()
     {
         await using var fixture = await ScenarioLifecycleFixture.CreateAsync();

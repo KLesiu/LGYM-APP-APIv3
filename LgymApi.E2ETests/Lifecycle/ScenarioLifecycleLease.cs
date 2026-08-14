@@ -297,10 +297,10 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
 
     public override string ToString() => "<scenario-lifecycle-lease>";
 
-    private LifecycleScenarioDirectoryLease GetFailureArtifactOwner() => _scenarioPaths
+    internal LifecycleScenarioDirectoryLease GetFailureArtifactOwner() => _scenarioPaths
         ?? throw new InvalidOperationException("E2E scenario failure artifact ownership is unavailable.");
 
-    private async Task FinalizeFailureAsync(
+    internal async Task FinalizeFailureAsync(
         LifecycleScenarioDirectoryLease artifactOwner,
         ScenarioFailureArtifactWriter artifactWriter)
     {
@@ -322,6 +322,20 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
         lock (_cleanupLock)
         {
             return _cleanup ??= CleanupAsync();
+        }
+    }
+
+    internal async Task WaitForRetainedCleanupAsync(CancellationToken cancellationToken)
+    {
+        Task? retainedCleanup;
+        lock (_cleanupLock)
+        {
+            retainedCleanup = _retainedCleanupObservation;
+        }
+
+        if (retainedCleanup is not null)
+        {
+            await retainedCleanup.WaitAsync(cancellationToken);
         }
     }
 
