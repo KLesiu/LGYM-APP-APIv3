@@ -48,14 +48,28 @@ public sealed class LifecycleScenarioHooks
         }
 
         var run = LifecycleRunStateHolder.Get();
+        var artifactOwner = lease.GetFailureArtifactOwner();
         try
         {
             await lease.DisposeAsync();
-            run?.RecordSuccessfulScenario(CaseIdFor(_scenarioContext), lease);
+            if (_scenarioContext.TestError is null)
+            {
+                run?.RecordSuccessfulScenario(CaseIdFor(_scenarioContext), lease);
+            }
+            else if (run is not null)
+            {
+                run.RecordFailedScenario(lease);
+                await run.FinalizeFailedScenarioAsync(lease, artifactOwner);
+            }
         }
         catch
         {
-            run?.RecordFailure();
+            if (run is not null)
+            {
+                run.RecordFailedScenario(lease);
+                await run.FinalizeFailedScenarioAsync(lease, artifactOwner);
+            }
+
             throw;
         }
     }
@@ -119,7 +133,7 @@ internal sealed class LifecycleRunState : IAsyncDisposable
     private readonly CancellationTokenSource _provisioning;
     private readonly object _sync = new();
     private readonly List<FinalLifecycleScenarioReceipt> _completedScenarios = [];
-    private ScenarioLifecycleObservation? _previous;
+    private ScenarioLifecycleLease? _previous;
     private bool _hasFailure;
 
     private LifecycleRunState(
@@ -199,7 +213,7 @@ internal sealed class LifecycleRunState : IAsyncDisposable
 
     internal async Task<ScenarioLifecycleLease> CreateScenarioAsync(string caseId)
     {
-        ScenarioLifecycleObservation? previous;
+        ScenarioLifecycleLease? previous;
         lock (_sync)
         {
             previous = _previous;
@@ -207,6 +221,11 @@ internal sealed class LifecycleRunState : IAsyncDisposable
 
         using var scenario = CancellationTokenSource.CreateLinkedTokenSource(_provisioning.Token);
         scenario.CancelAfter(TimeSpan.FromSeconds(_api.Options.Timeouts.ScenarioSeconds));
+        if (previous is not null)
+        {
+            await previous.WaitForRetainedCleanupAsync(scenario.Token);
+        }
+
         return await ScenarioLifecycleLease.CreateAsync(
             new ScenarioLifecycleRequest(
                 _run,
@@ -215,7 +234,7 @@ internal sealed class LifecycleRunState : IAsyncDisposable
                 _api.Publication,
                 _api.RepositoryRoot,
                 caseId,
-                previous),
+                previous?.Observation),
             cancellationToken: scenario.Token);
     }
 
@@ -226,7 +245,7 @@ internal sealed class LifecycleRunState : IAsyncDisposable
             "scenario-paths", "postgresql", "external-api-host", "expo", "browser-run", "browser-scenario"], StringComparer.Ordinal);
         lock (_sync)
         {
-            _previous = lease.Observation;
+            _previous = lease;
             _completedScenarios.Add(new FinalLifecycleScenarioReceipt(
                 caseId,
                 receipt.AcquiredCategories,
@@ -254,12 +273,28 @@ internal sealed class LifecycleRunState : IAsyncDisposable
         }
     }
 
+    internal void RecordFailedScenario(ScenarioLifecycleLease lease)
+    {
+        lock (_sync)
+        {
+            _previous = lease;
+            _hasFailure = true;
+        }
+    }
+
+    internal Task FinalizeFailedScenarioAsync(
+        ScenarioLifecycleLease lease,
+        LifecycleScenarioDirectoryLease artifactOwner) => lease.FinalizeFailureAsync(
+        artifactOwner,
+        new ScenarioFailureArtifactWriter(_api.Publication.Receipt));
+
     public async ValueTask DisposeAsync()
     {
         Exception? primaryFailure = null;
         var finalizationFailed = false;
         try
         {
+            await WaitForRetainedScenarioCleanupAsync();
             await _source.DisposeAsync();
         }
         catch (Exception exception)
@@ -299,6 +334,24 @@ internal sealed class LifecycleRunState : IAsyncDisposable
 
             ExceptionDispatchInfo.Capture(primaryFailure).Throw();
         }
+    }
+
+    private async Task WaitForRetainedScenarioCleanupAsync()
+    {
+        ScenarioLifecycleLease? previous;
+        lock (_sync)
+        {
+            previous = _previous;
+        }
+
+        if (previous is null)
+        {
+            return;
+        }
+
+        using var timeout = new CancellationTokenSource(
+            TimeSpan.FromSeconds(_api.Options.Timeouts.ProcessShutdownSeconds));
+        await previous.WaitForRetainedCleanupAsync(timeout.Token);
     }
 
     private bool HasFailure()
