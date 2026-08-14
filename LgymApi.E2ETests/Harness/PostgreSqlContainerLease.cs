@@ -41,9 +41,10 @@ public sealed class PostgreSqlContainerLease : IAsyncDisposable
         startupTimeout.CancelAfter(TimeSpan.FromSeconds(options.Timeouts.ContainerStartupSeconds));
         await DockerContainerProbe.EnsureAvailableAsync(startupTimeout.Token, cancellationToken);
 
+        var containerName = $"{options.Database.NamePrefix}-{CreateRandomValue()}";
         var container = new PostgreSqlBuilder(options.Database.Image)
             .WithDatabase($"{options.Database.NamePrefix}_{CreateRandomValue()}")
-            .WithName($"{options.Database.NamePrefix}-{CreateRandomValue()}")
+            .WithName(containerName)
             .WithUsername(PostgreSqlUsername)
             .WithPassword(CreateRandomValue())
             .WithCleanUp(true)
@@ -51,7 +52,7 @@ public sealed class PostgreSqlContainerLease : IAsyncDisposable
             .Build();
 
         return await StartAsync(
-            new TestcontainersPostgreSqlContainerLeaseOperations(container),
+            new TestcontainersPostgreSqlContainerLeaseOperations(container, containerName),
             TimeSpan.FromSeconds(options.Timeouts.ProcessShutdownSeconds),
             startupTimeout.Token);
     }
@@ -176,10 +177,12 @@ internal interface IPostgreSqlContainerLeaseOperations
     Task<bool> WaitUntilAbsentAsync(CancellationToken cancellationToken);
 }
 
-internal sealed class TestcontainersPostgreSqlContainerLeaseOperations(PostgreSqlContainer container)
+internal sealed class TestcontainersPostgreSqlContainerLeaseOperations(
+    PostgreSqlContainer container,
+    string containerLocator)
     : IPostgreSqlContainerLeaseOperations
 {
-    private string? _containerId;
+    private Task? _disposal;
 
     public string ConnectionString => container.GetConnectionString();
 
@@ -188,21 +191,44 @@ internal sealed class TestcontainersPostgreSqlContainerLeaseOperations(PostgreSq
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         await container.StartAsync(cancellationToken);
-        _containerId = container.Id;
-        if (string.IsNullOrWhiteSpace(_containerId))
+        if (string.IsNullOrWhiteSpace(container.Id))
         {
             throw new InvalidOperationException("Testcontainers started PostgreSQL without a container ID.");
         }
     }
 
-    public Task DisposeAsync(CancellationToken cancellationToken) =>
-        container.DisposeAsync().AsTask().WaitAsync(cancellationToken);
+    public Task DisposeAsync(CancellationToken cancellationToken)
+    {
+        var disposal = Volatile.Read(ref _disposal);
+        if (disposal is null)
+        {
+            var started = container.DisposeAsync().AsTask();
+            disposal = Interlocked.CompareExchange(ref _disposal, started, null) ?? started;
+            if (ReferenceEquals(disposal, started))
+            {
+                _ = started.ContinueWith(
+                    completed =>
+                    {
+                        _ = completed.Exception;
+                        if (completed.IsFaulted)
+                        {
+                            Interlocked.CompareExchange(ref _disposal, null, completed);
+                        }
+                    },
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+            }
+        }
+
+        return disposal.WaitAsync(cancellationToken);
+    }
 
     public Task<bool> WaitUntilAbsentAsync(CancellationToken cancellationToken)
     {
-        return string.IsNullOrWhiteSpace(_containerId)
-            ? Task.FromResult(true)
-            : DockerContainerProbe.WaitUntilAbsentAsync(_containerId, cancellationToken);
+        return string.IsNullOrWhiteSpace(containerLocator)
+            ? Task.FromResult(false)
+            : DockerContainerProbe.WaitUntilAbsentAsync(containerLocator, cancellationToken);
     }
 }
 
