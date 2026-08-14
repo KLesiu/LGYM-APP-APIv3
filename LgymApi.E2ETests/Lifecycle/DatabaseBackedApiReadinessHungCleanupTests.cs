@@ -29,13 +29,11 @@ public sealed class DatabaseBackedApiReadinessHungCleanupTests
                 new ScriptedApiHostReadinessMonitor([ApiHostReadinessOutcome.Ready]),
                 new FakeLoopbackPortAllocator([47118]),
                 new ScriptedDatabaseBackedApiReadinessProbe(
-                    [DatabaseBackedApiReadinessOutcome.UnexpectedStatus]))));
+                    [DatabaseBackedApiReadinessOutcome.UnexpectedStatus]))))!;
 
-        var terminalReceipt = await exception!.CleanupCompletion;
+        var terminalReceipt = await exception.CleanupCompletion;
         var attemptsAtDeadline = state.TotalAttempts;
-        state.ReleaseHungCleanup();
-        await state.AllResourcesAbsent.WaitAsync(TimeSpan.FromSeconds(2));
-        var lateReceipt = await WaitForPositiveReceiptAsync(exception);
+        var lateReceipt = await ReleaseAndDrainAsync(state, exception);
         var attemptsAfterRelease = state.TotalAttempts;
         await Task.Delay(TimeSpan.FromMilliseconds(300));
 
@@ -48,6 +46,7 @@ public sealed class DatabaseBackedApiReadinessHungCleanupTests
             Assert.That(attemptsAfterRelease, Is.GreaterThanOrEqualTo(attemptsAtDeadline));
             Assert.That(state.TotalAttempts, Is.EqualTo(attemptsAfterRelease));
             Assert.That(state.MaximumConcurrency, Is.EqualTo(1));
+            Assert.That(state.CurrentConcurrency, Is.Zero);
             Assert.That(lateReceipt.AllResourcesAbsent, Is.True);
             Assert.That(lateReceipt.AttemptedCategories, Is.EqualTo(new[]
             {
@@ -85,10 +84,10 @@ public sealed class DatabaseBackedApiReadinessHungCleanupTests
                 new ScriptedApiHostReadinessMonitor([ApiHostReadinessOutcome.Ready]),
                 new FakeLoopbackPortAllocator([47117]),
                 new ScriptedDatabaseBackedApiReadinessProbe(
-                    [DatabaseBackedApiReadinessOutcome.UnexpectedStatus]))));
+                    [DatabaseBackedApiReadinessOutcome.UnexpectedStatus]))))!;
         var startupElapsed = stopwatch.Elapsed;
         var completion = await Task.WhenAny(
-            exception!.CleanupCompletion,
+            exception.CleanupCompletion,
             Task.Delay(TimeSpan.FromSeconds(4)));
         stopwatch.Stop();
 
@@ -100,24 +99,61 @@ public sealed class DatabaseBackedApiReadinessHungCleanupTests
         var attemptsAtTerminal = state.TotalAttempts;
         await Task.Delay(TimeSpan.FromMilliseconds(300));
 
-        Assert.Multiple(() =>
+        try
         {
-            Assert.That(exception.Message, Is.EqualTo(ExternalApiHostLease.StartupFailureMessage));
-            Assert.That(startupElapsed, Is.LessThan(TimeSpan.FromSeconds(2)));
-            Assert.That(stopwatch.Elapsed, Is.LessThan(TimeSpan.FromSeconds(5)));
-            Assert.That(state.ProcessAttempts, Is.EqualTo(expectedProcessAttempts));
-            Assert.That(state.RuntimeAttempts, Is.EqualTo(expectedRuntimeAttempts));
-            Assert.That(state.DatabaseAttempts, Is.EqualTo(expectedDatabaseAttempts));
-            Assert.That(state.TotalAttempts, Is.EqualTo(attemptsAtTerminal));
-            Assert.That(state.MaximumConcurrency, Is.EqualTo(1));
-            Assert.That(terminalReceipt.ProcessTreeAbsent, Is.False);
-            Assert.That(terminalReceipt.RuntimeDirectoryAbsent, Is.False);
-            Assert.That(terminalReceipt.DatabaseAbsent, Is.False);
-            Assert.That(terminalReceipt.AttemptedCategories, Is.Empty);
-            Assert.That(terminalReceipt.FailureCount, Is.EqualTo(1));
-            Assert.That(terminalReceipt.AttemptHistoryTruncated, Is.False);
-            Assert.That(terminalReceipt.FailureCountSaturated, Is.False);
-        });
+            Assert.Multiple(() =>
+            {
+                Assert.That(exception.Message, Is.EqualTo(ExternalApiHostLease.StartupFailureMessage));
+                Assert.That(startupElapsed, Is.LessThan(TimeSpan.FromSeconds(2)));
+                Assert.That(stopwatch.Elapsed, Is.LessThan(TimeSpan.FromSeconds(5)));
+                Assert.That(state.ProcessAttempts, Is.EqualTo(expectedProcessAttempts));
+                Assert.That(state.RuntimeAttempts, Is.EqualTo(expectedRuntimeAttempts));
+                Assert.That(state.DatabaseAttempts, Is.EqualTo(expectedDatabaseAttempts));
+                Assert.That(state.TotalAttempts, Is.EqualTo(attemptsAtTerminal));
+                Assert.That(state.MaximumConcurrency, Is.EqualTo(1));
+                Assert.That(state.CurrentConcurrency, Is.EqualTo(1));
+                Assert.That(terminalReceipt.ProcessTreeAbsent, Is.False);
+                Assert.That(terminalReceipt.RuntimeDirectoryAbsent, Is.False);
+                Assert.That(terminalReceipt.DatabaseAbsent, Is.False);
+                Assert.That(terminalReceipt.AttemptedCategories, Is.Empty);
+                Assert.That(terminalReceipt.FailureCount, Is.EqualTo(1));
+                Assert.That(terminalReceipt.AttemptHistoryTruncated, Is.False);
+                Assert.That(terminalReceipt.FailureCountSaturated, Is.False);
+            });
+        }
+        finally
+        {
+            var lateReceipt = await ReleaseAndDrainAsync(state, exception);
+            var attemptsAfterDrain = state.TotalAttempts;
+            await Task.Delay(TimeSpan.FromMilliseconds(300));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(state.ProcessAttempts, Is.EqualTo(1));
+                Assert.That(state.RuntimeAttempts, Is.EqualTo(1));
+                Assert.That(state.DatabaseAttempts, Is.EqualTo(1));
+                Assert.That(state.TotalAttempts, Is.EqualTo(attemptsAfterDrain));
+                Assert.That(state.MaximumConcurrency, Is.EqualTo(1));
+                Assert.That(state.CurrentConcurrency, Is.Zero);
+                Assert.That(lateReceipt.AllResourcesAbsent, Is.True);
+                Assert.That(lateReceipt.AttemptedCategories, Is.EqualTo(new[]
+                {
+                    ExternalApiHostCleanup.ProcessCategory,
+                    ExternalApiHostCleanup.RuntimeCategory,
+                    ExternalApiHostCleanup.DatabaseCategory
+                }));
+                Assert.That(lateReceipt.FailureCount, Is.EqualTo(1));
+            });
+        }
+    }
+
+    private static async Task<ExternalApiHostCleanupReceipt> ReleaseAndDrainAsync(
+        HungCleanupState state,
+        ExternalApiHostStartupException exception)
+    {
+        state.ReleaseHungCleanup();
+        await state.AllResourcesAbsent.WaitAsync(TimeSpan.FromSeconds(2));
+        return await WaitForPositiveReceiptAsync(exception);
     }
 
     private static async Task<ExternalApiHostCleanupReceipt> WaitForPositiveReceiptAsync(
@@ -143,6 +179,8 @@ public sealed class DatabaseBackedApiReadinessHungCleanupTests
         internal Task AllResourcesAbsent => _allResourcesAbsent.Task;
 
         internal int DatabaseAttempts { get; private set; }
+
+        internal int CurrentConcurrency => Volatile.Read(ref _concurrency);
 
         internal bool DatabaseAbsent { get; set; }
 
