@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using LgymApi.E2ETests.Configuration;
 using LgymApi.E2ETests.Lifecycle;
 
@@ -109,7 +108,8 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
         {
             var callerCanceled = exception is OperationCanceledException && cancellationToken.IsCancellationRequested;
             var startupTimedOut = startupTimeout.IsCancellationRequested;
-            await lease.WaitForFailedStartupCleanupAsync();
+            var cleanupCompletion = lease.StartFailedStartupCleanup();
+            await lease.WaitForFailedStartupCleanupAsync(cleanupCompletion);
 
             if (exception is ExternalApiHostCleanupException)
             {
@@ -123,27 +123,38 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
                     null,
                     cancellationToken);
                 cancellationFailure.Data[nameof(ExternalApiHostCleanupReceipt)] = lease.CleanupReceipt;
+                cancellationFailure.Data[nameof(ExternalApiHostStartupException.CleanupCompletion)] = cleanupCompletion;
                 throw cancellationFailure;
             }
 
             if (startupTimedOut)
             {
-                throw new ExternalApiHostStartupException(StartupTimeoutMessage, lease.CleanupReceipt);
+                throw new ExternalApiHostStartupException(
+                    StartupTimeoutMessage,
+                    lease.CleanupReceipt,
+                    cleanupCompletion);
             }
 
             if (exception is ExternalApiHostStartupException startupFailure)
             {
-                throw new ExternalApiHostStartupException(startupFailure.Message, lease.CleanupReceipt);
+                throw new ExternalApiHostStartupException(
+                    startupFailure.Message,
+                    lease.CleanupReceipt,
+                    cleanupCompletion);
             }
 
             if (exception is InvalidOperationException invalidOperation &&
                 IsPublicationValidationMessage(invalidOperation.Message))
             {
                 invalidOperation.Data[nameof(ExternalApiHostCleanupReceipt)] = lease.CleanupReceipt;
+                invalidOperation.Data[nameof(ExternalApiHostStartupException.CleanupCompletion)] = cleanupCompletion;
                 throw;
             }
 
-            throw new ExternalApiHostStartupException(StartupFailureMessage, lease.CleanupReceipt);
+            throw new ExternalApiHostStartupException(
+                StartupFailureMessage,
+                lease.CleanupReceipt,
+                cleanupCompletion);
         }
     }
 
@@ -153,7 +164,9 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
         await DisposeAsync(deadline.Token);
     }
 
-    private async ValueTask DisposeAsync(CancellationToken cleanupToken)
+    private async ValueTask DisposeAsync(
+        CancellationToken cleanupToken,
+        bool retainTimedOutAttempt = true)
     {
         try
         {
@@ -179,6 +192,11 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
             }
             catch (OperationCanceledException) when (cleanupToken.IsCancellationRequested)
             {
+                if (!retainTimedOutAttempt)
+                {
+                    _cleanupAttempt = null;
+                }
+
                 CleanupReceipt = CreatePendingCleanupReceipt();
                 throw new ExternalApiHostCleanupException(CleanupReceipt);
             }
@@ -207,12 +225,15 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
         }
     }
 
-    private async Task WaitForFailedStartupCleanupAsync()
-    {
+    private Task<ExternalApiHostCleanupReceipt> StartFailedStartupCleanup() =>
         _failedStartupCleanup ??= CoordinateFailedStartupCleanupAsync();
+
+    private async Task WaitForFailedStartupCleanupAsync(
+        Task<ExternalApiHostCleanupReceipt> cleanupCompletion)
+    {
         try
         {
-            await _failedStartupCleanup.WaitAsync(_cleanupTimeout);
+            await cleanupCompletion.WaitAsync(_cleanupTimeout);
         }
         catch (TimeoutException)
         {
@@ -221,33 +242,37 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
 
     private async Task<ExternalApiHostCleanupReceipt> CoordinateFailedStartupCleanupAsync()
     {
-        var startedAt = Stopwatch.GetTimestamp();
         var cleanupBudget = TimeSpan.FromTicks(
             _cleanupTimeout.Ticks * FailedStartupCleanupDeadlineMultiplier);
+        using var cleanupDeadline = new CancellationTokenSource(cleanupBudget);
         for (var attempt = 1; attempt <= MaximumFailedStartupCleanupAttempts; attempt++)
         {
             try
             {
-                await DisposeAsync(CancellationToken.None);
+                await DisposeAsync(
+                    cleanupDeadline.Token,
+                    retainTimedOutAttempt: false);
             }
             catch (ExternalApiHostCleanupException)
             {
             }
 
             if (CleanupReceipt.AllResourcesAbsent ||
-                attempt == MaximumFailedStartupCleanupAttempts)
-            {
-                break;
-            }
-
-            var remaining = cleanupBudget - Stopwatch.GetElapsedTime(startedAt);
-            if (remaining <= TimeSpan.Zero)
+                attempt == MaximumFailedStartupCleanupAttempts ||
+                cleanupDeadline.IsCancellationRequested)
             {
                 break;
             }
 
             var retryDelay = TimeSpan.FromTicks(FailedStartupCleanupRetryDelay.Ticks * attempt);
-            await Task.Delay(retryDelay <= remaining ? retryDelay : remaining);
+            try
+            {
+                await Task.Delay(retryDelay, cleanupDeadline.Token);
+            }
+            catch (OperationCanceledException) when (cleanupDeadline.IsCancellationRequested)
+            {
+                break;
+            }
         }
 
         return CleanupReceipt;

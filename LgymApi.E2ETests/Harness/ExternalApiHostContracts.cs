@@ -120,10 +120,14 @@ internal sealed class ExternalApiHostStartupException : InvalidOperationExceptio
 {
     internal ExternalApiHostStartupException(
         string message,
-        ExternalApiHostCleanupReceipt? cleanupReceipt = null) : base(message)
+        ExternalApiHostCleanupReceipt? cleanupReceipt = null,
+        Task<ExternalApiHostCleanupReceipt>? cleanupCompletion = null) : base(message)
     {
         CleanupReceipt = cleanupReceipt ?? new ExternalApiHostCleanupReceipt(false, false, false, [], 0);
+        CleanupCompletion = cleanupCompletion ?? Task.FromResult(CleanupReceipt);
     }
+
+    internal Task<ExternalApiHostCleanupReceipt> CleanupCompletion { get; }
 
     internal ExternalApiHostCleanupReceipt CleanupReceipt { get; }
 }
