@@ -55,7 +55,8 @@ internal sealed class BrowserRunLease : IAsyncDisposable
 
     internal static async Task<BrowserRunLease> CreateAsync(
         BrowserRunRequest request,
-        IBrowserRuntimeFactory? factory = null)
+        IBrowserRuntimeFactory? factory = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request.PrivatePaths);
         if (request.ActionTimeoutMilliseconds is < 100 or > 120_000)
@@ -64,26 +65,44 @@ internal sealed class BrowserRunLease : IAsyncDisposable
         }
 
         var browserRoot = request.PrivatePaths.ResolveCacheOwnedPath(".e2e-private/browsers");
-        await EnvironmentLock.WaitAsync();
+        var timeout = TimeSpan.FromMilliseconds(request.ActionTimeoutMilliseconds);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(timeout);
+        try
+        {
+            await EnvironmentLock.WaitAsync(deadline.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new InvalidOperationException(PrerequisiteMessage);
+        }
+
         var originalBrowserPath = Environment.GetEnvironmentVariable(BrowsersPathVariable);
-        IBrowserRuntime? runtime = null;
+        var releaseEnvironment = true;
         try
         {
             Environment.SetEnvironmentVariable(BrowsersPathVariable, browserRoot);
-            runtime = await (factory ?? PlaywrightBrowserRuntimeFactory.Instance).CreateAsync();
-            var browser = await runtime.LaunchChromiumAsync(new BrowserTypeLaunchOptions
+            var initialization = InitializeAsync(factory ?? PlaywrightBrowserRuntimeFactory.Instance, request);
+            try
             {
-                Headless = true,
-                Timeout = request.ActionTimeoutMilliseconds,
-                ArtifactsDir = CreateRuntimeDirectory(request.RuntimeDirectory, "artifacts"),
-                DownloadsPath = CreateRuntimeDirectory(request.RuntimeDirectory, "downloads"),
-                TracesDir = CreateRuntimeDirectory(request.RuntimeDirectory, "traces")
-            });
-            return new BrowserRunLease(runtime, browser, TimeSpan.FromMilliseconds(request.ActionTimeoutMilliseconds));
+                var initialized = await initialization.WaitAsync(deadline.Token);
+                return new BrowserRunLease(initialized.Runtime, initialized.Browser, timeout);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                releaseEnvironment = false;
+                throw new BrowserRetainedOperationException(
+                    PrerequisiteMessage,
+                    ObserveLateInitializationAsync(initialization, timeout, originalBrowserPath));
+            }
         }
         catch (Exception exception)
         {
-            DisposeRuntimeAfterFailedInitialization(runtime);
+            if (exception is BrowserRetainedOperationException)
+            {
+                throw;
+            }
+
             if (exception is PlaywrightException)
             {
                 throw new InvalidOperationException(PrerequisiteMessage);
@@ -93,8 +112,11 @@ internal sealed class BrowserRunLease : IAsyncDisposable
         }
         finally
         {
-            Environment.SetEnvironmentVariable(BrowsersPathVariable, originalBrowserPath);
-            EnvironmentLock.Release();
+            if (releaseEnvironment)
+            {
+                Environment.SetEnvironmentVariable(BrowsersPathVariable, originalBrowserPath);
+                EnvironmentLock.Release();
+            }
         }
     }
 
@@ -109,8 +131,22 @@ internal sealed class BrowserRunLease : IAsyncDisposable
 
     public override string ToString() => "<browser-run-lease>";
 
-    internal Task<IBrowserContext> NewContextAsync(BrowserNewContextOptions options) =>
-        _browser.NewContextAsync(options);
+    internal async Task<IBrowserContext> NewContextAsync(
+        BrowserNewContextOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        var creation = _browser.NewContextAsync(options);
+        try
+        {
+            return await creation.WaitAsync(_cleanupTimeout, cancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            throw new BrowserRetainedOperationException(
+                BrowserScenarioLease.SetupMessage,
+                ObserveLateContextAsync(creation, _cleanupTimeout));
+        }
+    }
 
     private static string? CreateRuntimeDirectory(
         LifecycleComponentDirectoryLease? runtimeDirectory,
@@ -125,6 +161,70 @@ internal sealed class BrowserRunLease : IAsyncDisposable
         runtimeDirectory.EnsureSafeArtifact(path);
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    private static async Task<(IBrowserRuntime Runtime, IBrowserHandle Browser)> InitializeAsync(
+        IBrowserRuntimeFactory factory,
+        BrowserRunRequest request)
+    {
+        var runtime = await factory.CreateAsync();
+        try
+        {
+            var browser = await runtime.LaunchChromiumAsync(new BrowserTypeLaunchOptions
+            {
+                Headless = true,
+                Timeout = request.ActionTimeoutMilliseconds,
+                ArtifactsDir = CreateRuntimeDirectory(request.RuntimeDirectory, "artifacts"),
+                DownloadsPath = CreateRuntimeDirectory(request.RuntimeDirectory, "downloads"),
+                TracesDir = CreateRuntimeDirectory(request.RuntimeDirectory, "traces")
+            });
+            return (runtime, browser);
+        }
+        catch
+        {
+            DisposeRuntimeAfterFailedInitialization(runtime);
+            throw;
+        }
+    }
+
+    private static async Task ObserveLateInitializationAsync(
+        Task<(IBrowserRuntime Runtime, IBrowserHandle Browser)> initialization,
+        TimeSpan timeout,
+        string? originalBrowserPath)
+    {
+        try
+        {
+            var initialized = await initialization;
+            try
+            {
+                await initialized.Browser.CloseAsync().WaitAsync(timeout);
+            }
+            catch (Exception)
+            {
+            }
+
+            DisposeRuntimeAfterFailedInitialization(initialized.Runtime);
+        }
+        catch (Exception)
+        {
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(BrowsersPathVariable, originalBrowserPath);
+            EnvironmentLock.Release();
+        }
+    }
+
+    private static async Task ObserveLateContextAsync(Task<IBrowserContext> creation, TimeSpan timeout)
+    {
+        try
+        {
+            var context = await creation;
+            await context.CloseAsync().WaitAsync(timeout);
+        }
+        catch (Exception)
+        {
+        }
     }
 
     private static void DisposeRuntimeAfterFailedInitialization(IBrowserRuntime? runtime)
@@ -159,6 +259,12 @@ internal sealed class BrowserRunLease : IAsyncDisposable
             throw new InvalidOperationException(CleanupMessage);
         }
     }
+}
+
+internal sealed class BrowserRetainedOperationException(string message, Task terminalObservation)
+    : InvalidOperationException(message), IRetainedAsyncFailure
+{
+    public Task TerminalObservation { get; } = terminalObservation;
 }
 
 internal sealed class PlaywrightBrowserRuntimeFactory : IBrowserRuntimeFactory

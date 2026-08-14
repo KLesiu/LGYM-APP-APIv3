@@ -165,6 +165,8 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
     internal ScenarioLifecycleObservation Observation => _observation
         ?? throw new InvalidOperationException("E2E scenario lifecycle observation is unavailable.");
 
+    internal ScenarioLifecycleObservation? TryGetObservation() => _observation;
+
     internal ScenarioLifecycleReceipt Receipt { get; private set; }
 
     internal static async Task<ScenarioLifecycleReceipt> ExecuteAsync(
@@ -197,6 +199,8 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
     internal static async Task<ScenarioLifecycleLease> CreateAsync(
         ScenarioLifecycleRequest request,
         IScenarioLifecycleDependencies? dependencies = null,
+        ScenarioFailureArtifactWriter? acquisitionFailureArtifactWriter = null,
+        Action<ScenarioLifecycleLease>? created = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -209,6 +213,7 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
 
         dependencies ??= DefaultScenarioLifecycleDependencies.Instance;
         var lease = new ScenarioLifecycleLease(shutdownTimeout);
+        created?.Invoke(lease);
         using var scenarioTimeoutSource = new CancellationTokenSource(scenarioTimeout);
         using var scenarioLifetime = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
@@ -280,11 +285,22 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
         catch (Exception exception)
         {
             await lease.GetCleanupTask();
+            if (acquisitionFailureArtifactWriter is not null && lease._scenarioPaths is not null)
+            {
+                await lease.FinalizeFailureAsync(lease._scenarioPaths, acquisitionFailureArtifactWriter);
+            }
+
             exception.Data[nameof(ScenarioLifecycleReceipt)] = lease.Receipt;
             ExceptionDispatchInfo.Capture(exception).Throw();
             throw;
         }
     }
+
+    internal static Task<ScenarioLifecycleLease> CreateAsync(
+        ScenarioLifecycleRequest request,
+        IScenarioLifecycleDependencies? dependencies,
+        CancellationToken cancellationToken) =>
+        CreateAsync(request, dependencies, null, null, cancellationToken);
 
     public async ValueTask DisposeAsync()
     {
@@ -325,19 +341,42 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
         }
     }
 
-    internal async Task WaitForRetainedCleanupAsync(CancellationToken cancellationToken)
+    internal async Task WaitForTerminalCleanupAsync(CancellationToken cancellationToken)
     {
-        Task? retainedCleanup;
-        lock (_cleanupLock)
+        _ = GetCleanupTask();
+        while (true)
         {
-            retainedCleanup = _retainedCleanupObservation;
-        }
+            Task? pending;
+            lock (_cleanupLock)
+            {
+                pending = _browserAcquisition is { IsTerminal: false }
+                    ? _browserAcquisition.Observer
+                    : _retainedCleanupObservation;
+            }
 
-        if (retainedCleanup is not null)
-        {
-            await retainedCleanup.WaitAsync(cancellationToken);
+            if (pending is not null)
+            {
+                await pending.WaitAsync(cancellationToken);
+                continue;
+            }
+
+            if (_cleanupStage != ScenarioLifecycleCleanupStage.Complete)
+            {
+                await GetCleanupTask().WaitAsync(cancellationToken);
+                continue;
+            }
+
+            if (!Receipt.DatabaseAbsent || !Receipt.ApiAbsent || !Receipt.ExpoAbsent || !Receipt.ScenarioPathsAbsent)
+            {
+                throw new InvalidOperationException("A prior E2E scenario resource is still present.");
+            }
+
+            return;
         }
     }
+
+    internal Task WaitForRetainedCleanupAsync(CancellationToken cancellationToken) =>
+        WaitForTerminalCleanupAsync(cancellationToken);
 
     private async Task<ScenarioLifecycleReceipt> CleanupAsync()
     {
@@ -534,6 +573,11 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
             acquisition.Abandon();
             throw;
         }
+        catch (Exception exception) when (exception is IRetainedAsyncFailure)
+        {
+            acquisition.Abandon();
+            throw;
+        }
         catch
         {
             await acquisition.Observer;
@@ -556,6 +600,17 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
         catch (Exception exception)
         {
             terminalFault = exception;
+        }
+
+        if (terminalFault is IRetainedAsyncFailure retainedFailure)
+        {
+            try
+            {
+                await retainedFailure.TerminalObservation;
+            }
+            catch (Exception)
+            {
+            }
         }
 
         await _cleanupGate.WaitAsync();
@@ -673,6 +728,13 @@ internal interface IScenarioLifecycleAcquisition
     ScenarioLifecycleAcquisitionStage Stage { get; }
 
     bool IsTerminal { get; }
+
+    Task Observer { get; }
+}
+
+internal interface IRetainedAsyncFailure
+{
+    Task TerminalObservation { get; }
 }
 
 internal sealed class ScenarioLifecycleAcquisition<T>(
@@ -700,7 +762,7 @@ internal sealed class ScenarioLifecycleAcquisition<T>(
 
     internal Task<T> RawTask { get; } = rawTask;
 
-    internal Task Observer { get; set; } = Task.CompletedTask;
+    public Task Observer { get; set; } = Task.CompletedTask;
 
     internal T? Resource { get; private set; }
 
@@ -794,7 +856,7 @@ internal sealed class DefaultScenarioLifecycleDependencies : IScenarioLifecycleD
             request.Options.Timeouts.BrowserActionMilliseconds)
         {
             RuntimeDirectory = browserRuntime
-        }));
+        }, cancellationToken: cancellationToken));
     }
 
     public async Task<IScenarioLifecycleBrowserScenario> StartBrowserScenarioAsync(
@@ -810,7 +872,8 @@ internal sealed class DefaultScenarioLifecycleDependencies : IScenarioLifecycleD
 
         return new BrowserScenarioResource(await BrowserScenarioLifecycleAdapter.CreateAsync(
             browser.Lease,
-            request.Options.Timeouts.BrowserActionMilliseconds));
+            request.Options.Timeouts.BrowserActionMilliseconds,
+            cancellationToken));
     }
 
     private sealed class ExternalApiHostScenarioResource(ExternalApiHostLease lease) : IScenarioLifecycleApiHost

@@ -6,8 +6,9 @@ internal static class BrowserScenarioLifecycleAdapter
 {
     internal static Task<BrowserScenarioLease> CreateAsync(
         BrowserRunLease browserRun,
-        int actionTimeoutMilliseconds) =>
-        BrowserScenarioLease.CreateForLifecycleAsync(browserRun, actionTimeoutMilliseconds);
+        int actionTimeoutMilliseconds,
+        CancellationToken cancellationToken = default) =>
+        BrowserScenarioLease.CreateForLifecycleAsync(browserRun, actionTimeoutMilliseconds, cancellationToken);
 }
 
 internal sealed class BrowserScenarioLease : IAsyncDisposable
@@ -36,18 +37,21 @@ internal sealed class BrowserScenarioLease : IAsyncDisposable
 
     internal static async Task<BrowserScenarioLease> CreateAsync(
         BrowserRunLease browserRun,
-        int actionTimeoutMilliseconds) =>
-        await CreateAsync(browserRun, actionTimeoutMilliseconds, retainPartialCleanup: false);
+        int actionTimeoutMilliseconds,
+        CancellationToken cancellationToken = default) =>
+        await CreateAsync(browserRun, actionTimeoutMilliseconds, retainPartialCleanup: false, cancellationToken);
 
     internal static async Task<BrowserScenarioLease> CreateForLifecycleAsync(
         BrowserRunLease browserRun,
-        int actionTimeoutMilliseconds) =>
-        await CreateAsync(browserRun, actionTimeoutMilliseconds, retainPartialCleanup: true);
+        int actionTimeoutMilliseconds,
+        CancellationToken cancellationToken = default) =>
+        await CreateAsync(browserRun, actionTimeoutMilliseconds, retainPartialCleanup: true, cancellationToken);
 
     private static async Task<BrowserScenarioLease> CreateAsync(
         BrowserRunLease browserRun,
         int actionTimeoutMilliseconds,
-        bool retainPartialCleanup)
+        bool retainPartialCleanup,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(browserRun);
         if (actionTimeoutMilliseconds is < 100 or > 120_000)
@@ -62,16 +66,39 @@ internal sealed class BrowserScenarioLease : IAsyncDisposable
             {
                 BaseURL = BaseUrl,
                 Locale = Locale
-            });
+            }, cancellationToken);
             context.SetDefaultTimeout(actionTimeoutMilliseconds);
-            var page = await context.NewPageAsync();
+            var pageCreation = context.NewPageAsync();
+            IPage page;
+            try
+            {
+                page = await pageCreation.WaitAsync(TimeSpan.FromMilliseconds(actionTimeoutMilliseconds), cancellationToken);
+            }
+            catch (TimeoutException)
+            {
+                var partialClose = await ClosePartialContextAsync(context, actionTimeoutMilliseconds, retainPartialCleanup);
+                throw new BrowserRetainedOperationException(
+                    SetupMessage,
+                    Task.WhenAll(ObserveLatePageAsync(pageCreation, actionTimeoutMilliseconds), partialClose));
+            }
+
             return new BrowserScenarioLease(page, context, actionTimeoutMilliseconds);
         }
-        catch (PlaywrightException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            throw;
+        }
+        catch (Exception exception) when (exception is PlaywrightException or BrowserRetainedOperationException)
+        {
+            Task partialClose = Task.CompletedTask;
             if (context is not null)
             {
-                await ClosePartialContextAsync(context, actionTimeoutMilliseconds, retainPartialCleanup);
+                partialClose = await ClosePartialContextAsync(context, actionTimeoutMilliseconds, retainPartialCleanup);
+            }
+
+            if (exception is BrowserRetainedOperationException retained)
+            {
+                throw new BrowserRetainedOperationException(SetupMessage, Task.WhenAll(retained.TerminalObservation, partialClose));
             }
 
             throw new InvalidOperationException(SetupMessage);
@@ -89,7 +116,7 @@ internal sealed class BrowserScenarioLease : IAsyncDisposable
 
     public override string ToString() => "<browser-scenario-lease>";
 
-    private static async Task ClosePartialContextAsync(
+    private static async Task<Task> ClosePartialContextAsync(
         IBrowserContext context,
         int timeoutMilliseconds,
         bool retainToTerminal)
@@ -101,27 +128,43 @@ internal sealed class BrowserScenarioLease : IAsyncDisposable
         }
         catch (Exception)
         {
-            return;
-        }
-
-        if (retainToTerminal)
-        {
-            try
-            {
-                await rawClose;
-            }
-            catch (Exception)
-            {
-            }
-
-            return;
+            return Task.CompletedTask;
         }
 
         try
         {
             await rawClose.WaitAsync(TimeSpan.FromMilliseconds(timeoutMilliseconds));
+            return Task.CompletedTask;
         }
-        catch (Exception exception) when (exception is PlaywrightException or TimeoutException)
+        catch (TimeoutException)
+        {
+            return ObserveLatePartialCloseAsync(rawClose);
+        }
+        catch (PlaywrightException)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
+    private static async Task ObserveLatePageAsync(Task<IPage> pageCreation, int timeoutMilliseconds)
+    {
+        try
+        {
+            var page = await pageCreation;
+            await page.CloseAsync().WaitAsync(TimeSpan.FromMilliseconds(timeoutMilliseconds));
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private static async Task ObserveLatePartialCloseAsync(Task rawClose)
+    {
+        try
+        {
+            await rawClose;
+        }
+        catch (Exception)
         {
         }
     }

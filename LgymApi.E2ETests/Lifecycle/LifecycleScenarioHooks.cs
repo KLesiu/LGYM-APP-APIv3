@@ -223,19 +223,29 @@ internal sealed class LifecycleRunState : IAsyncDisposable
         scenario.CancelAfter(TimeSpan.FromSeconds(_api.Options.Timeouts.ScenarioSeconds));
         if (previous is not null)
         {
-            await previous.WaitForRetainedCleanupAsync(scenario.Token);
+            await previous.WaitForTerminalCleanupAsync(scenario.Token);
         }
 
-        return await ScenarioLifecycleLease.CreateAsync(
-            new ScenarioLifecycleRequest(
-                _run,
-                _source,
-                _api.Options,
-                _api.Publication,
-                _api.RepositoryRoot,
-                caseId,
-                previous?.Observation),
-            cancellationToken: scenario.Token);
+        try
+        {
+            return await ScenarioLifecycleLease.CreateAsync(
+                new ScenarioLifecycleRequest(
+                    _run,
+                    _source,
+                    _api.Options,
+                    _api.Publication,
+                    _api.RepositoryRoot,
+                    caseId,
+                    previous?.TryGetObservation()),
+                acquisitionFailureArtifactWriter: new ScenarioFailureArtifactWriter(_api.Publication.Receipt),
+                created: RegisterAcquiringScenario,
+                cancellationToken: scenario.Token);
+        }
+        catch
+        {
+            RecordFailure();
+            throw;
+        }
     }
 
     internal void RecordSuccessfulScenario(string caseId, ScenarioLifecycleLease lease)
@@ -351,7 +361,7 @@ internal sealed class LifecycleRunState : IAsyncDisposable
 
         using var timeout = new CancellationTokenSource(
             TimeSpan.FromSeconds(_api.Options.Timeouts.ProcessShutdownSeconds));
-        await previous.WaitForRetainedCleanupAsync(timeout.Token);
+            await previous.WaitForTerminalCleanupAsync(timeout.Token);
     }
 
     private bool HasFailure()
@@ -359,6 +369,14 @@ internal sealed class LifecycleRunState : IAsyncDisposable
         lock (_sync)
         {
             return _hasFailure;
+        }
+    }
+
+    private void RegisterAcquiringScenario(ScenarioLifecycleLease lease)
+    {
+        lock (_sync)
+        {
+            _previous = lease;
         }
     }
 

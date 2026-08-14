@@ -142,6 +142,28 @@ public sealed class BrowserRunLeaseTests
     }
 
     [Test]
+    public async Task Create_bounds_a_hung_Playwright_factory_and_releases_the_environment_lock_after_late_completion()
+    {
+        await using var paths = CreatePaths(RepositoryRoot.Find());
+        var factory = new BlockingBrowserRuntimeFactory();
+        var creation = BrowserRunLease.CreateAsync(new BrowserRunRequest(paths, 100), factory);
+
+        await factory.Started.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        var exception = Assert.CatchAsync<InvalidOperationException>(async () => await creation);
+        try
+        {
+            Assert.That(exception!.Message, Is.EqualTo(BrowserRunLease.PrerequisiteMessage));
+        }
+        finally
+        {
+            factory.Completion.TrySetResult(factory.Runtime);
+        }
+
+        await factory.Runtime.Disposed.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.That(factory.Runtime.Events, Is.EqualTo(new[] { "browser-close", "playwright-dispose" }));
+    }
+
+    [Test]
     public async Task Lifecycle_browser_runs_use_distinct_canonical_runtime_children_while_binaries_stay_run_scoped()
     {
         await using var run = LifecycleRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
@@ -249,5 +271,33 @@ internal sealed class RecordingBrowserHandle(List<string> events) : IBrowserHand
     {
         events.Add("browser-close");
         return Task.CompletedTask;
+    }
+}
+
+internal sealed class BlockingBrowserRuntimeFactory : IBrowserRuntimeFactory
+{
+    internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    internal TaskCompletionSource<IBrowserRuntime> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    internal BlockingBrowserRuntime Runtime { get; } = new();
+
+    public Task<IBrowserRuntime> CreateAsync()
+    {
+        Started.TrySetResult();
+        return Completion.Task;
+    }
+}
+
+internal sealed class BlockingBrowserRuntime : IBrowserRuntime
+{
+    internal List<string> Events { get; } = [];
+    internal TaskCompletionSource Disposed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task<IBrowserHandle> LaunchChromiumAsync(BrowserTypeLaunchOptions options) =>
+        Task.FromResult<IBrowserHandle>(new RecordingBrowserHandle(Events));
+
+    public void Dispose()
+    {
+        Events.Add("playwright-dispose");
+        Disposed.TrySetResult();
     }
 }

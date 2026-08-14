@@ -98,7 +98,7 @@ public sealed class BrowserScenarioLeaseTests
 
     [TestCase(false)]
     [TestCase(true)]
-    public async Task Lifecycle_page_failure_retains_partial_context_close_until_terminal(bool closeFaults)
+    public async Task Lifecycle_page_failure_bounds_partial_context_close_while_retaining_its_late_completion(bool closeFaults)
     {
         await using var paths = CreatePaths();
         var closeCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -114,7 +114,7 @@ public sealed class BrowserScenarioLeaseTests
         {
             await factory.ContextCloseStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
             await Task.Delay(250);
-            Assert.That(creation.IsCompleted, Is.False);
+            Assert.That(creation.IsCompleted, Is.True);
 
             if (closeFaults)
             {
