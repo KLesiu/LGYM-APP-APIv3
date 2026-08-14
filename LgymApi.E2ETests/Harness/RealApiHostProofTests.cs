@@ -1,5 +1,5 @@
 using System.Net;
-using System.Net.Http.Json;
+using LgymApi.E2ETests.Lifecycle;
 
 namespace LgymApi.E2ETests.Harness;
 
@@ -35,11 +35,29 @@ public sealed class RealApiHostProofTests
     {
         using var deadline = CreateDeadline();
         var context = await RealApiHostProofContext.CreateAsync(deadline.Token);
-        await using var host = await context.StartAsync("E2E", deadline.Token);
+        var host = await context.StartAsync("E2E", deadline.Token);
+        HttpStatusCode statusCode;
+        try
+        {
+            using var response = await DatabaseBackedApiReadinessProbe.PostInvalidLoginAsync(
+                host.Client,
+                origin: null,
+                deadline.Token);
+            statusCode = response.StatusCode;
+        }
+        finally
+        {
+            await host.DisposeAsync();
+        }
 
-        using var response = await PostInvalidLoginAsync(host.Client, origin: null, deadline.Token);
-
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        Assert.Multiple(() =>
+        {
+            Assert.That(statusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+            Assert.That(host.CleanupReceipt.ProcessTreeAbsent, Is.True);
+            Assert.That(host.CleanupReceipt.RuntimeDirectoryAbsent, Is.True);
+            Assert.That(host.CleanupReceipt.DatabaseAbsent, Is.True);
+            Assert.That(host.CleanupReceipt.FailureCount, Is.Zero);
+        });
         TestContext.Out.WriteLine("receipt category=migration-readiness ready=true login=401");
     }
 
@@ -147,24 +165,4 @@ public sealed class RealApiHostProofTests
         return new CancellationTokenSource(TimeSpan.FromSeconds(options.Timeouts.TestSessionSeconds));
     }
 
-    internal static Task<HttpResponseMessage> PostInvalidLoginAsync(
-        HttpClient client,
-        string? origin,
-        CancellationToken cancellationToken)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Post, "api/login")
-        {
-            Content = JsonContent.Create(new
-            {
-                name = "e2e-missing-account",
-                password = "e2e-invalid-password"
-            })
-        };
-        if (origin is not null)
-        {
-            request.Headers.Add("Origin", origin);
-        }
-
-        return client.SendAsync(request, cancellationToken);
-    }
 }

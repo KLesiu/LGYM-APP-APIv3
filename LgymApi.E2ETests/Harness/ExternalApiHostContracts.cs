@@ -1,4 +1,5 @@
 using LgymApi.E2ETests.Configuration;
+using LgymApi.E2ETests.Lifecycle;
 
 namespace LgymApi.E2ETests.Harness;
 
@@ -24,11 +25,15 @@ internal sealed record ExternalApiHostCompositionRequest(
     internal IReadOnlyList<string>? CorsAllowedOrigins { get; init; }
 
     internal ApiRuntimeConfigurationProfile RuntimeProfile { get; init; } = ApiRuntimeConfigurationProfile.E2E;
+
+    internal LifecycleComponentDirectoryLease? ApiRuntimeDirectory { get; init; }
 }
 
 internal interface IApiHostDatabaseLease : IAsyncDisposable
 {
     string ConnectionString { get; }
+
+    Task<bool> ConfirmAbsentAsync();
 }
 
 internal interface IApiHostRuntimeLease : IAsyncDisposable
@@ -36,6 +41,8 @@ internal interface IApiHostRuntimeLease : IAsyncDisposable
     string ConfigurationPath { get; }
 
     string PrivateTempDirectory { get; }
+
+    bool RuntimeDirectoryAbsent { get; }
 }
 
 internal interface IApiHostRuntimeLeaseFactory
@@ -49,20 +56,57 @@ internal sealed record ExternalApiHostInfrastructure(
     IApiHostRuntimeLeaseFactory RuntimeFactory,
     IExternalApiProcessStarter ProcessStarter,
     IApiHostReadinessMonitor ReadinessMonitor,
-    ILoopbackPortAllocator PortAllocator)
+    ILoopbackPortAllocator PortAllocator,
+    IDatabaseBackedApiReadinessProbe? DatabaseReadinessProbe = null)
 {
     internal static ExternalApiHostInfrastructure CreateDefault() => new(
         new ApiHostRuntimeLeaseFactory(),
         new ExternalApiProcessStarter(),
         new ApiHostReadinessMonitor(),
-        new LoopbackPortAllocator());
+        new LoopbackPortAllocator(),
+        new DatabaseBackedApiReadinessProbe());
+}
+
+internal enum DatabaseBackedApiReadinessOutcome
+{
+    Ready,
+    HttpFailure,
+    HttpTimeout,
+    UnexpectedStatus
+}
+
+internal interface IDatabaseBackedApiReadinessProbe
+{
+    Task<DatabaseBackedApiReadinessOutcome> WaitUntilReadyAsync(
+        Uri baseAddress,
+        ApiHostReadinessBounds bounds,
+        CancellationToken cancellationToken);
 }
 
 internal sealed record ExternalApiHostCleanupReceipt(
+    bool ProcessTreeAbsent,
+    bool RuntimeDirectoryAbsent,
+    bool DatabaseAbsent,
     IReadOnlyList<string> AttemptedCategories,
     int FailureCount)
 {
     public override string ToString() => "<external-api-host-cleanup>";
+}
+
+internal sealed class ExternalApiHostObservation(
+    ScenarioResourceIdentity identity,
+    Func<ExternalApiHostCleanupReceipt> cleanupReceipt)
+{
+    internal ScenarioResourceIdentity Identity { get; } = identity;
+
+    internal ExternalApiHostCleanupReceipt CleanupReceipt => cleanupReceipt();
+
+    internal Task<bool> ConfirmAbsentAsync() => Task.FromResult(
+        CleanupReceipt.ProcessTreeAbsent &&
+        CleanupReceipt.RuntimeDirectoryAbsent &&
+        CleanupReceipt.DatabaseAbsent);
+
+    public override string ToString() => "<external-api-host-observation>";
 }
 
 internal sealed class ExternalApiHostStartupException(string message) : InvalidOperationException(message);
@@ -79,6 +123,8 @@ internal sealed class PostgreSqlApiHostDatabaseLease(PostgreSqlContainerLease le
 
     public ValueTask DisposeAsync() => lease.DisposeAsync();
 
+    public Task<bool> ConfirmAbsentAsync() => Task.FromResult(lease.CleanupReceipt.ContainerAbsent);
+
     public override string ToString() => "<api-host-database-lease>";
 }
 
@@ -88,7 +134,9 @@ internal sealed class ApiHostRuntimeLeaseFactory : IApiHostRuntimeLeaseFactory
         RuntimeConfigurationRequest request,
         CancellationToken cancellationToken)
     {
-        var lease = await RuntimeConfigurationLease.CreateAsync(request, cancellationToken);
+        var lease = request.ApiRuntimeDirectory is null
+            ? await RuntimeConfigurationLease.CreateAsync(request, cancellationToken)
+            : await RuntimeConfigurationLease.CreateAsync(request, request.ApiRuntimeDirectory, cancellationToken);
         try
         {
             return new ApiHostRuntimeLease(lease);
@@ -115,7 +163,13 @@ internal sealed class ApiHostRuntimeLease : IApiHostRuntimeLease
 
     public string PrivateTempDirectory { get; }
 
-    public ValueTask DisposeAsync() => _lease.DisposeAsync();
+    public bool RuntimeDirectoryAbsent { get; private set; }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _lease.DisposeAsync();
+        RuntimeDirectoryAbsent = !Directory.Exists(_lease.RunDirectory);
+    }
 
     public override string ToString() => "<api-host-runtime-lease>";
 }

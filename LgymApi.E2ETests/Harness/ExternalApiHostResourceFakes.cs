@@ -6,16 +6,21 @@ internal sealed class FakeApiHostDatabaseLease(
 {
     internal int DisposeCount { get; private set; }
 
+    internal bool IsAbsent { get; private set; }
+
     public string ConnectionString => "in-memory-task-5-connection";
 
     public ValueTask DisposeAsync()
     {
         DisposeCount++;
         cleanupOrder.Add("postgresql");
+        IsAbsent = !cleanupFails;
         return cleanupFails
             ? ValueTask.FromException(new IOException("Injected private database cleanup failure."))
             : ValueTask.CompletedTask;
     }
+
+    public Task<bool> ConfirmAbsentAsync() => Task.FromResult(IsAbsent);
 }
 
 internal sealed class FakeApiHostRuntimeFactory(
@@ -49,10 +54,13 @@ internal sealed class FakeApiHostRuntimeLease(
 
     public string PrivateTempDirectory { get; } = Path.Combine(fixtureRoot, "api", "temp");
 
+    public bool RuntimeDirectoryAbsent { get; private set; }
+
     public ValueTask DisposeAsync()
     {
         DisposeCount++;
         cleanupOrder.Add("runtime-configuration");
+        RuntimeDirectoryAbsent = !cleanupFails;
         return cleanupFails
             ? ValueTask.FromException(new IOException("Injected private runtime cleanup failure."))
             : ValueTask.CompletedTask;

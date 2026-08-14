@@ -54,6 +54,19 @@ internal sealed class CancelingApiHostReadinessMonitor(CancellationTokenSource c
     }
 }
 
+internal sealed class ScriptedDatabaseBackedApiReadinessProbe(
+    IEnumerable<DatabaseBackedApiReadinessOutcome>? outcomes = null) : IDatabaseBackedApiReadinessProbe
+{
+    private readonly Queue<DatabaseBackedApiReadinessOutcome> _outcomes = new(
+        outcomes ?? [DatabaseBackedApiReadinessOutcome.Ready]);
+
+    public Task<DatabaseBackedApiReadinessOutcome> WaitUntilReadyAsync(
+        Uri baseAddress,
+        ApiHostReadinessBounds bounds,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(_outcomes.Dequeue());
+}
+
 internal sealed class FakeLoopbackPortAllocator(IEnumerable<int> ports) : ILoopbackPortAllocator
 {
     private readonly Queue<int> _ports = new(ports);

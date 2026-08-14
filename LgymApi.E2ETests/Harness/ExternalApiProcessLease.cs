@@ -21,6 +21,8 @@ internal interface IExternalApiProcess : IAsyncDisposable
     Task<ExternalApiProcessExit> Exit { get; }
 
     TimeSpan ExitObservationTimeout { get; }
+
+    bool ProcessTreeAbsent { get; }
 }
 
 internal interface IExternalApiProcessStarter
@@ -54,6 +56,8 @@ internal sealed class ExternalApiProcessLease : IExternalApiProcess
     public TimeSpan ExitObservationTimeout { get; }
 
     internal bool ExactProcessTreeAbsent { get; private set; }
+
+    public bool ProcessTreeAbsent => ExactProcessTreeAbsent;
 
     public async ValueTask DisposeAsync()
     {

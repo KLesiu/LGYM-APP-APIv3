@@ -59,6 +59,8 @@ internal sealed class FakeExternalApiProcess : IExternalApiProcess
 
     internal int DisposeCount { get; private set; }
 
+    public bool ProcessTreeAbsent { get; private set; }
+
     public ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -69,6 +71,7 @@ internal sealed class FakeExternalApiProcess : IExternalApiProcess
         DisposeCount++;
         _cleanupOrder.Add("api-process");
         _exit.TrySetResult(new ExternalApiProcessExit(ExternalApiProcessExitKind.Failed));
+        ProcessTreeAbsent = !_cleanupFails;
         return _cleanupFails
             ? ValueTask.FromException(new IOException("Injected private process cleanup failure."))
             : ValueTask.CompletedTask;

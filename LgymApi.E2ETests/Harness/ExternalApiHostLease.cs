@@ -1,4 +1,5 @@
 using LgymApi.E2ETests.Configuration;
+using LgymApi.E2ETests.Lifecycle;
 
 namespace LgymApi.E2ETests.Harness;
 
@@ -31,9 +32,14 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
     internal Uri BaseAddress { get; private set; } = null!;
 
     internal ExternalApiHostCleanupReceipt CleanupReceipt { get; private set; } =
-        new([], 0);
+        new(false, false, false, [], 0);
+
+    internal ScenarioResourceIdentity Identity { get; } = ScenarioResourceIdentity.Create();
 
     internal bool HangfireServerStartObserved { get; private set; }
+
+    internal ExternalApiHostObservation CreateObservation() =>
+        new(Identity, () => CleanupReceipt);
 
     internal static Task<ExternalApiHostLease> StartAsync(
         ExternalApiHostRequest request,
@@ -77,7 +83,8 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
                     new ApiRuntimeDatabase(request.Database.ConnectionString),
                     request.RuntimeProfile)
                 {
-                    CorsAllowedOrigins = request.CorsAllowedOrigins
+                    CorsAllowedOrigins = request.CorsAllowedOrigins,
+                    ApiRuntimeDirectory = request.ApiRuntimeDirectory
                 },
                 startupTimeout.Token);
             await lease.StartProcessAsync(request, startupTimeout.Token);
@@ -178,8 +185,18 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
                 startupToken);
             if (outcome == ApiHostReadinessOutcome.Ready)
             {
-                BaseAddress = baseAddress;
-                return;
+                var databaseOutcome = await (_infrastructure.DatabaseReadinessProbe ?? new DatabaseBackedApiReadinessProbe())
+                    .WaitUntilReadyAsync(
+                    baseAddress,
+                    new ApiHostReadinessBounds(
+                        TimeSpan.FromSeconds(request.Options.Timeouts.HttpRequestSeconds),
+                        ReadinessPollInterval),
+                    startupToken);
+                if (databaseOutcome == DatabaseBackedApiReadinessOutcome.Ready)
+                {
+                    BaseAddress = baseAddress;
+                    return;
+                }
             }
 
             await StopProcessAttemptAsync();
@@ -213,7 +230,7 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
             catch (Exception)
             {
                 throw new ExternalApiHostCleanupException(
-                    new ExternalApiHostCleanupReceipt([ExternalApiHostCleanup.ProcessCategory], 1));
+                    new ExternalApiHostCleanupReceipt(false, false, false, [ExternalApiHostCleanup.ProcessCategory], 1));
             }
         }
     }

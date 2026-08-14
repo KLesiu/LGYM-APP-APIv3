@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using LgymApi.E2ETests.Given;
 using LgymApi.E2ETests.Harness;
+using LgymApi.E2ETests.Lifecycle;
 
 namespace LgymApi.E2ETests.PublicHttpGiven;
 
@@ -17,7 +18,7 @@ public sealed class PublicHttpGivenRequestTests
         using var httpClient = CreateHttpClient(handler);
 
         // When
-        using var response = await RealApiHostProofTests.PostInvalidLoginAsync(
+        using var response = await DatabaseBackedApiReadinessProbe.PostInvalidLoginAsync(
             httpClient,
             origin: null,
             CancellationToken.None);

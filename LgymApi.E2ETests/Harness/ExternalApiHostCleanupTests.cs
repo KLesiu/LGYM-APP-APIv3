@@ -70,7 +70,10 @@ public sealed class ExternalApiHostCleanupTests
         Assert.Multiple(() =>
         {
             Assert.That(exception!.Message, Is.EqualTo(ExternalApiHostLease.CleanupFailureMessage));
-            Assert.That(exception.Receipt.FailureCount, Is.EqualTo(2));
+            Assert.That(exception.Receipt.FailureCount, Is.EqualTo(4));
+            Assert.That(exception.Receipt.ProcessTreeAbsent, Is.False);
+            Assert.That(exception.Receipt.RuntimeDirectoryAbsent, Is.False);
+            Assert.That(exception.Receipt.DatabaseAbsent, Is.True);
             Assert.That(exception.Receipt.AttemptedCategories, Is.EqualTo(new[]
             {
                 "api-process",
@@ -154,9 +157,12 @@ public sealed class ExternalApiHostCleanupTests
 
         public TimeSpan ExitObservationTimeout => TimeSpan.FromMilliseconds(25);
 
+        public bool ProcessTreeAbsent { get; private set; }
+
         public ValueTask DisposeAsync()
         {
             _cleanupOrder.Add("api-process");
+            ProcessTreeAbsent = true;
             return ValueTask.CompletedTask;
         }
     }

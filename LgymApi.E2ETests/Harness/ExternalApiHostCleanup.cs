@@ -12,8 +12,8 @@ internal static class ExternalApiHostCleanup
 
     internal static async Task<ExternalApiHostCleanupResult> DisposeAsync(
         IExternalApiProcess? process,
-        IAsyncDisposable? runtime,
-        IAsyncDisposable database)
+        IApiHostRuntimeLease? runtime,
+        IApiHostDatabaseLease database)
     {
         var categories = new List<string>(3);
         var failureCount = 0;
@@ -22,8 +22,31 @@ internal static class ExternalApiHostCleanup
         failureCount += processExit.FailureCount;
         failureCount += await DisposeResourceAsync(runtime, RuntimeCategory, categories);
         failureCount += await DisposeResourceAsync(database, DatabaseCategory, categories);
+        var databaseAbsent = await ConfirmDatabaseAbsentAsync(database);
+        if (!databaseAbsent)
+        {
+            failureCount++;
+        }
+
+        var processTreeAbsent = process is null || process.ProcessTreeAbsent;
+        var runtimeDirectoryAbsent = runtime is null || runtime.RuntimeDirectoryAbsent;
+        if (!processTreeAbsent)
+        {
+            failureCount++;
+        }
+
+        if (!runtimeDirectoryAbsent)
+        {
+            failureCount++;
+        }
+
         return new ExternalApiHostCleanupResult(
-            new ExternalApiHostCleanupReceipt(categories, failureCount),
+            new ExternalApiHostCleanupReceipt(
+                processTreeAbsent,
+                runtimeDirectoryAbsent,
+                databaseAbsent,
+                categories,
+                failureCount),
             processExit.HangfireServerStartObserved);
     }
 
@@ -31,6 +54,9 @@ internal static class ExternalApiHostCleanup
         ExternalApiHostCleanupException first,
         ExternalApiHostCleanupReceipt second) =>
         new(new ExternalApiHostCleanupReceipt(
+            first.Receipt.ProcessTreeAbsent && second.ProcessTreeAbsent,
+            first.Receipt.RuntimeDirectoryAbsent && second.RuntimeDirectoryAbsent,
+            first.Receipt.DatabaseAbsent && second.DatabaseAbsent,
             first.Receipt.AttemptedCategories.Concat(second.AttemptedCategories).ToArray(),
             first.Receipt.FailureCount + second.FailureCount));
 
@@ -72,6 +98,18 @@ internal static class ExternalApiHostCleanup
         catch (Exception)
         {
             return (1, false);
+        }
+    }
+
+    private static async Task<bool> ConfirmDatabaseAbsentAsync(IApiHostDatabaseLease database)
+    {
+        try
+        {
+            return await database.ConfirmAbsentAsync();
+        }
+        catch (Exception)
+        {
+            return false;
         }
     }
 }

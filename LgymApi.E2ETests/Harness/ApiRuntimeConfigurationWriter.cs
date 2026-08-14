@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using LgymApi.E2ETests.Lifecycle;
 
 namespace LgymApi.E2ETests.Harness;
 
@@ -17,12 +18,14 @@ internal sealed record RuntimeConfigurationRequest(
     ApiRuntimeConfigurationProfile Profile)
 {
     internal IReadOnlyList<string>? CorsAllowedOrigins { get; init; }
+
+    internal LifecycleComponentDirectoryLease? ApiRuntimeDirectory { get; init; }
 }
 
 internal sealed record RuntimeConfigurationFileWriteRequest(
     string Path,
     byte[] Content,
-    PrivateRunDirectoryLease DirectoryLease);
+    Action<string> EnsureSafeRuntimeArtifact);
 
 internal interface IRuntimeConfigurationFileWriter
 {
@@ -45,24 +48,38 @@ internal sealed class RuntimeConfigurationInfrastructure(
 internal sealed class RuntimeConfigurationLease : IAsyncDisposable
 {
     private const string ConfigurationFileName = "appsettings.e2e.json";
-    private readonly PrivateRunDirectoryLease _directoryLease;
+    private readonly PrivateRunDirectoryLease? _directoryLease;
+    private readonly LifecycleComponentDirectoryLease? _apiRuntimeDirectory;
+    private readonly Action<string> _ensureSafeRuntimeArtifact;
 
     private RuntimeConfigurationLease(PrivateRunDirectoryLease directoryLease)
     {
         _directoryLease = directoryLease;
-        ConfigurationPath = Path.Combine(directoryLease.RunDirectory, "api", ConfigurationFileName);
+        RunDirectory = directoryLease.RunDirectory;
+        ConfigurationPath = Path.Combine(RunDirectory, "api", ConfigurationFileName);
+        _ensureSafeRuntimeArtifact = directoryLease.EnsureSafeRuntimeArtifact;
+    }
+
+    private RuntimeConfigurationLease(LifecycleComponentDirectoryLease apiRuntimeDirectory)
+    {
+        _apiRuntimeDirectory = apiRuntimeDirectory;
+        RunDirectory = apiRuntimeDirectory.ComponentDirectory;
+        ConfigurationPath = Path.Combine(RunDirectory, ConfigurationFileName);
+        _ensureSafeRuntimeArtifact = path => EnsureSafeApiRuntimeArtifact(apiRuntimeDirectory, path);
     }
 
     internal string ConfigurationPath { get; }
 
-    internal string RunDirectory => _directoryLease.RunDirectory;
+    internal string RunDirectory { get; }
 
     internal string CreatePrivateTempDirectory()
     {
-        var tempDirectory = Path.Combine(RunDirectory, "api", "temp");
-        _directoryLease.EnsureSafeRuntimeArtifact(tempDirectory);
+        var tempDirectory = _apiRuntimeDirectory is null
+            ? Path.Combine(RunDirectory, "api", "temp")
+            : Path.Combine(RunDirectory, "temp");
+        _ensureSafeRuntimeArtifact(tempDirectory);
         Directory.CreateDirectory(tempDirectory);
-        _directoryLease.EnsureSafeRuntimeArtifact(tempDirectory);
+        _ensureSafeRuntimeArtifact(tempDirectory);
         return tempDirectory;
     }
 
@@ -87,30 +104,88 @@ internal sealed class RuntimeConfigurationLease : IAsyncDisposable
         var directoryLease = PrivateRunDirectoryLease.Create(request.Directory, infrastructure.DirectoryCleaner);
         var lease = new RuntimeConfigurationLease(directoryLease);
 
+        return await WriteAsync(request, lease, infrastructure, cancellationToken);
+    }
+
+    internal static Task<RuntimeConfigurationLease> CreateAsync(
+        RuntimeConfigurationRequest request,
+        LifecycleComponentDirectoryLease apiRuntimeDirectory,
+        CancellationToken cancellationToken = default) =>
+        CreateAsync(request, apiRuntimeDirectory, RuntimeConfigurationInfrastructure.CreateDefault(), cancellationToken);
+
+    internal static async Task<RuntimeConfigurationLease> CreateAsync(
+        RuntimeConfigurationRequest request,
+        LifecycleComponentDirectoryLease apiRuntimeDirectory,
+        RuntimeConfigurationInfrastructure infrastructure,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(apiRuntimeDirectory);
+        ArgumentNullException.ThrowIfNull(infrastructure);
+        if (string.IsNullOrWhiteSpace(request.Database.ConnectionString))
+        {
+            throw new InvalidOperationException("E2E runtime configuration input is invalid.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var lease = new RuntimeConfigurationLease(apiRuntimeDirectory);
+        return await WriteAsync(request, lease, infrastructure, cancellationToken);
+    }
+
+    private static async Task<RuntimeConfigurationLease> WriteAsync(
+        RuntimeConfigurationRequest request,
+        RuntimeConfigurationLease lease,
+        RuntimeConfigurationInfrastructure infrastructure,
+        CancellationToken cancellationToken)
+    {
+
         try
         {
             var apiDirectory = Path.GetDirectoryName(lease.ConfigurationPath)!;
             Directory.CreateDirectory(apiDirectory);
-            directoryLease.EnsureSafeRuntimeArtifact(apiDirectory);
-            directoryLease.EnsureSafeRuntimeArtifact(lease.ConfigurationPath);
+            lease._ensureSafeRuntimeArtifact(apiDirectory);
+            lease._ensureSafeRuntimeArtifact(lease.ConfigurationPath);
             await infrastructure.FileWriter.WriteAsync(
                 new RuntimeConfigurationFileWriteRequest(
                     lease.ConfigurationPath,
                     ApiRuntimeConfigurationWriter.CreateJson(request),
-                    directoryLease),
+                    lease._ensureSafeRuntimeArtifact),
                 cancellationToken);
             return lease;
         }
         catch
         {
-            await directoryLease.DisposeAsync();
+            await lease.DisposeAsync();
             throw;
         }
     }
 
-    public ValueTask DisposeAsync() => _directoryLease.DisposeAsync();
+    public ValueTask DisposeAsync() => _apiRuntimeDirectory is null
+        ? _directoryLease!.DisposeAsync()
+        : _apiRuntimeDirectory.DisposeAsync();
 
     public override string ToString() => "<runtime-configuration-lease>";
+
+    private static void EnsureSafeApiRuntimeArtifact(
+        LifecycleComponentDirectoryLease apiRuntimeDirectory,
+        string artifactPath)
+    {
+        var componentDirectory = Path.GetFullPath(apiRuntimeDirectory.ComponentDirectory);
+        var fullArtifactPath = Path.GetFullPath(artifactPath);
+        if (!PrivateRunDirectoryLayout.IsDescendantOrSame(componentDirectory, fullArtifactPath))
+        {
+            throw new InvalidOperationException(PrivateRunDirectoryLease.PathValidationMessage);
+        }
+
+        foreach (var path in new[] { componentDirectory, fullArtifactPath })
+        {
+            if ((Directory.Exists(path) || File.Exists(path)) &&
+                (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new InvalidOperationException(PrivateRunDirectoryLease.PathValidationMessage);
+            }
+        }
+    }
 }
 
 internal static class ApiRuntimeConfigurationWriter
@@ -190,9 +265,9 @@ internal sealed class AtomicRuntimeConfigurationFileWriter : IRuntimeConfigurati
 
         try
         {
-            request.DirectoryLease.EnsureSafeRuntimeArtifact(directory);
-            request.DirectoryLease.EnsureSafeRuntimeArtifact(request.Path);
-            request.DirectoryLease.EnsureSafeRuntimeArtifact(temporaryPath);
+            request.EnsureSafeRuntimeArtifact(directory);
+            request.EnsureSafeRuntimeArtifact(request.Path);
+            request.EnsureSafeRuntimeArtifact(temporaryPath);
             await using (var stream = new FileStream(
                 temporaryPath,
                 FileMode.CreateNew,
@@ -201,16 +276,16 @@ internal sealed class AtomicRuntimeConfigurationFileWriter : IRuntimeConfigurati
                 bufferSize: 4096,
                 FileOptions.Asynchronous | FileOptions.WriteThrough))
             {
-                request.DirectoryLease.EnsureSafeRuntimeArtifact(temporaryPath);
+                request.EnsureSafeRuntimeArtifact(temporaryPath);
                 await stream.WriteAsync(request.Content, cancellationToken);
                 await stream.FlushAsync(cancellationToken);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            request.DirectoryLease.EnsureSafeRuntimeArtifact(temporaryPath);
-            request.DirectoryLease.EnsureSafeRuntimeArtifact(request.Path);
+            request.EnsureSafeRuntimeArtifact(temporaryPath);
+            request.EnsureSafeRuntimeArtifact(request.Path);
             File.Move(temporaryPath, request.Path);
-            request.DirectoryLease.EnsureSafeRuntimeArtifact(request.Path);
+            request.EnsureSafeRuntimeArtifact(request.Path);
         }
         finally
         {
