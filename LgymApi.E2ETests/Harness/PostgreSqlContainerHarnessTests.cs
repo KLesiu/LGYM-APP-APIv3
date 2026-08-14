@@ -95,6 +95,16 @@ public sealed class PostgreSqlContainerHarnessTests
 
     [Test]
     [Category("HarnessDocker")]
+    public void PostgreSQL_post_container_start_callback_failure_proves_private_locator_absence()
+    {
+        var exception = Assert.ThrowsAsync<InjectedStartupCallbackFailure>(() => PostgreSqlContainerLease.StartAsync(
+            (_, _) => Task.FromException(new InjectedStartupCallbackFailure())));
+
+        Assert.That(exception!.Message, Is.EqualTo("Injected post-container startup failure."));
+    }
+
+    [Test]
+    [Category("HarnessDocker")]
     public async Task PostgreSQL_sequential_leases_have_distinct_redacted_observations_and_are_absent()
     {
         var first = await PostgreSqlContainerLease.StartAsync();
@@ -127,6 +137,14 @@ public sealed class PostgreSqlContainerHarnessTests
     {
         public InjectedPostStartFailureException()
             : base("Injected post-start lifecycle failure.")
+        {
+        }
+    }
+
+    private sealed class InjectedStartupCallbackFailure : Exception
+    {
+        public InjectedStartupCallbackFailure()
+            : base("Injected post-container startup failure.")
         {
         }
     }

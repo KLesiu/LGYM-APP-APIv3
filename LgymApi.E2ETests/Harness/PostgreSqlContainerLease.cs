@@ -16,7 +16,12 @@ public sealed class PostgreSqlContainerLease : IAsyncDisposable
     private readonly TimeSpan _cleanupTimeout;
     private readonly ScenarioResourceIdentity _identity;
     private readonly SemaphoreSlim _cleanupGate = new(1, 1);
-    private int _disposed;
+    private readonly object _cleanupStateLock = new();
+    private PostgreSqlCleanupAttempt? _cleanupAttempt;
+    private PostgreSqlCleanupState _cleanupState;
+
+    private const string CleanupFailureMessage = "Testcontainers PostgreSQL cleanup failed.";
+    private const string CleanupTimeoutMessage = "Testcontainers PostgreSQL cleanup exceeded the configured shutdown timeout.";
 
     private PostgreSqlContainerLease(
         IPostgreSqlContainerLeaseOperations operations,
@@ -34,7 +39,12 @@ public sealed class PostgreSqlContainerLease : IAsyncDisposable
 
     internal PostgreSqlCleanupReceipt CleanupReceipt { get; private set; } = new("container-cleanup", false, TimeSpan.Zero);
 
-    public static async Task<PostgreSqlContainerLease> StartAsync(CancellationToken cancellationToken = default)
+    public static Task<PostgreSqlContainerLease> StartAsync(CancellationToken cancellationToken = default) =>
+        StartAsync(null, cancellationToken);
+
+    internal static async Task<PostgreSqlContainerLease> StartAsync(
+        Func<PostgreSqlContainer, CancellationToken, Task>? startupCallback,
+        CancellationToken cancellationToken = default)
     {
         var options = E2EConfiguration.Load(TestContext.CurrentContext.TestDirectory, RepositoryRoot.Find());
         using var startupTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -42,14 +52,19 @@ public sealed class PostgreSqlContainerLease : IAsyncDisposable
         await DockerContainerProbe.EnsureAvailableAsync(startupTimeout.Token, cancellationToken);
 
         var containerName = $"{options.Database.NamePrefix}-{CreateRandomValue()}";
-        var container = new PostgreSqlBuilder(options.Database.Image)
+        var builder = new PostgreSqlBuilder(options.Database.Image)
             .WithDatabase($"{options.Database.NamePrefix}_{CreateRandomValue()}")
             .WithName(containerName)
             .WithUsername(PostgreSqlUsername)
             .WithPassword(CreateRandomValue())
             .WithCleanUp(true)
-            .WithLogger(NullLogger.Instance)
-            .Build();
+            .WithLogger(NullLogger.Instance);
+        if (startupCallback is not null)
+        {
+            builder = builder.WithStartupCallback(startupCallback);
+        }
+
+        var container = builder.Build();
 
         return await StartAsync(
             new TestcontainersPostgreSqlContainerLeaseOperations(container, containerName),
@@ -69,79 +84,125 @@ public sealed class PostgreSqlContainerLease : IAsyncDisposable
         }
         catch
         {
-            await DisposeStartupFailureAsync(operations, cleanupTimeout);
+            var failedLease = new PostgreSqlContainerLease(operations, cleanupTimeout, ScenarioResourceIdentity.Create());
+            try
+            {
+                await failedLease.DisposeAsync();
+            }
+            catch (InvalidOperationException cleanupFailure)
+            {
+                throw new InvalidOperationException(cleanupFailure.Message);
+            }
+
             throw;
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _cleanupGate.WaitAsync();
+        using var cleanupDeadline = new CancellationTokenSource(_cleanupTimeout);
+        PostgreSqlCleanupAttempt cleanupAttempt;
         try
         {
-            if (Volatile.Read(ref _disposed) != 0)
+            await _cleanupGate.WaitAsync(cleanupDeadline.Token);
+            try
             {
-                return;
+                cleanupAttempt = GetOrStartCleanupAttempt();
+            }
+            finally
+            {
+                _cleanupGate.Release();
             }
 
-            CleanupReceipt = await CleanupAsync(_operations, _cleanupTimeout);
-            Interlocked.Exchange(ref _disposed, 1);
+            var outcome = await cleanupAttempt.Completion.WaitAsync(cleanupDeadline.Token);
+            if (!outcome.Succeeded)
+            {
+                throw new InvalidOperationException(outcome.FailureMessage);
+            }
+
+            CleanupReceipt = outcome.Receipt!;
         }
-        finally
+        catch (OperationCanceledException)
         {
-            _cleanupGate.Release();
+            throw new InvalidOperationException(CleanupTimeoutMessage);
         }
     }
 
     private static string CreateRandomValue() => RandomNumberGenerator.GetHexString(16).ToLowerInvariant();
 
-    private static async Task DisposeStartupFailureAsync(
-        IPostgreSqlContainerLeaseOperations operations,
-        TimeSpan cleanupTimeout)
+    private PostgreSqlCleanupAttempt GetOrStartCleanupAttempt()
     {
-        _ = await CleanupAsync(operations, cleanupTimeout);
+        lock (_cleanupStateLock)
+        {
+            if (_cleanupState is PostgreSqlCleanupState.InFlight or PostgreSqlCleanupState.Succeeded)
+            {
+                return _cleanupAttempt!;
+            }
+
+            var cleanupAttempt = new PostgreSqlCleanupAttempt(CaptureRawDisposalTask());
+            _cleanupAttempt = cleanupAttempt;
+            _cleanupState = PostgreSqlCleanupState.InFlight;
+            cleanupAttempt.Completion = CompleteCleanupAttemptAsync(cleanupAttempt);
+            return cleanupAttempt;
+        }
     }
 
-    private static async Task<PostgreSqlCleanupReceipt> CleanupAsync(
-        IPostgreSqlContainerLeaseOperations operations,
-        TimeSpan cleanupTimeout)
+    private Task CaptureRawDisposalTask()
+    {
+        try
+        {
+            return _operations.DisposeAsync();
+        }
+        catch (Exception exception)
+        {
+            return Task.FromException(exception);
+        }
+    }
+
+    private async Task<PostgreSqlCleanupOutcome> CompleteCleanupAttemptAsync(PostgreSqlCleanupAttempt cleanupAttempt)
     {
         var startedAt = Stopwatch.GetTimestamp();
-        using var cleanupDeadline = new CancellationTokenSource(cleanupTimeout);
-        var wasRemoved = false;
         Exception? disposalFailure = null;
         try
         {
-            await operations.DisposeAsync(cleanupDeadline.Token);
+            await cleanupAttempt.RawDisposal;
         }
         catch (Exception exception)
         {
             disposalFailure = exception;
         }
 
+        var wasRemoved = false;
         try
         {
-            wasRemoved = await operations.WaitUntilAbsentAsync(cleanupDeadline.Token);
+            using var absenceDeadline = new CancellationTokenSource(_cleanupTimeout);
+            wasRemoved = await _operations.WaitUntilAbsentAsync(absenceDeadline.Token);
         }
-        catch (OperationCanceledException)
+        catch (Exception)
         {
             wasRemoved = false;
         }
 
-        if (disposalFailure is not null)
+        var outcome = disposalFailure is not null
+            ? PostgreSqlCleanupOutcome.Failed(CleanupFailureMessage)
+            : !wasRemoved
+                ? PostgreSqlCleanupOutcome.Failed(CleanupTimeoutMessage)
+                : PostgreSqlCleanupOutcome.Success(new PostgreSqlCleanupReceipt(
+                    "container-cleanup",
+                    true,
+                    Stopwatch.GetElapsedTime(startedAt)));
+
+        lock (_cleanupStateLock)
         {
-            throw new InvalidOperationException("Testcontainers PostgreSQL cleanup failed.", disposalFailure);
+            if (ReferenceEquals(_cleanupAttempt, cleanupAttempt))
+            {
+                _cleanupState = outcome.Succeeded
+                    ? PostgreSqlCleanupState.Succeeded
+                    : PostgreSqlCleanupState.Failed;
+            }
         }
 
-        if (!wasRemoved)
-        {
-            throw new InvalidOperationException("Testcontainers PostgreSQL cleanup exceeded the configured shutdown timeout.");
-        }
-
-        return new PostgreSqlCleanupReceipt(
-            "container-cleanup",
-            wasRemoved,
-            Stopwatch.GetElapsedTime(startedAt));
+        return outcome;
     }
 
     internal async Task<bool> ConfirmAbsentAsync()
@@ -172,7 +233,7 @@ internal interface IPostgreSqlContainerLeaseOperations
 
     Task StartAsync(CancellationToken cancellationToken);
 
-    Task DisposeAsync(CancellationToken cancellationToken);
+    Task DisposeAsync();
 
     Task<bool> WaitUntilAbsentAsync(CancellationToken cancellationToken);
 }
@@ -182,8 +243,6 @@ internal sealed class TestcontainersPostgreSqlContainerLeaseOperations(
     string containerLocator)
     : IPostgreSqlContainerLeaseOperations
 {
-    private Task? _disposal;
-
     public string ConnectionString => container.GetConnectionString();
 
     public bool IsRunning => container.State == TestcontainersStates.Running;
@@ -197,32 +256,7 @@ internal sealed class TestcontainersPostgreSqlContainerLeaseOperations(
         }
     }
 
-    public Task DisposeAsync(CancellationToken cancellationToken)
-    {
-        var disposal = Volatile.Read(ref _disposal);
-        if (disposal is null)
-        {
-            var started = container.DisposeAsync().AsTask();
-            disposal = Interlocked.CompareExchange(ref _disposal, started, null) ?? started;
-            if (ReferenceEquals(disposal, started))
-            {
-                _ = started.ContinueWith(
-                    completed =>
-                    {
-                        _ = completed.Exception;
-                        if (completed.IsFaulted)
-                        {
-                            Interlocked.CompareExchange(ref _disposal, null, completed);
-                        }
-                    },
-                    CancellationToken.None,
-                    TaskContinuationOptions.ExecuteSynchronously,
-                    TaskScheduler.Default);
-            }
-        }
-
-        return disposal.WaitAsync(cancellationToken);
-    }
+    public Task DisposeAsync() => container.DisposeAsync().AsTask();
 
     public Task<bool> WaitUntilAbsentAsync(CancellationToken cancellationToken)
     {
@@ -233,3 +267,25 @@ internal sealed class TestcontainersPostgreSqlContainerLeaseOperations(
 }
 
 internal sealed record PostgreSqlCleanupReceipt(string Category, bool ContainerAbsent, TimeSpan Duration);
+
+internal enum PostgreSqlCleanupState
+{
+    Idle,
+    InFlight,
+    Succeeded,
+    Failed
+}
+
+internal sealed class PostgreSqlCleanupAttempt(Task rawDisposal)
+{
+    internal Task RawDisposal { get; } = rawDisposal;
+
+    internal Task<PostgreSqlCleanupOutcome> Completion { get; set; } = null!;
+}
+
+internal sealed record PostgreSqlCleanupOutcome(bool Succeeded, PostgreSqlCleanupReceipt? Receipt, string FailureMessage)
+{
+    internal static PostgreSqlCleanupOutcome Success(PostgreSqlCleanupReceipt receipt) => new(true, receipt, string.Empty);
+
+    internal static PostgreSqlCleanupOutcome Failed(string failureMessage) => new(false, null, failureMessage);
+}
