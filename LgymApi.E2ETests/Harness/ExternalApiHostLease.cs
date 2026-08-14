@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using LgymApi.E2ETests.Configuration;
 using LgymApi.E2ETests.Lifecycle;
 
@@ -15,6 +16,8 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
     private const string CanonicalPrivateRunRoot = ".e2e-private/runs";
     private const string TestingEnvironmentName = "Testing";
     private const int MaximumDynamicPortAttempts = 3;
+    private const int FailedStartupCleanupDeadlineMultiplier = 3;
+    internal const int MaximumFailedStartupCleanupAttempts = 3;
     private static readonly TimeSpan FailedStartupCleanupRetryDelay = TimeSpan.FromMilliseconds(100);
     private static readonly TimeSpan ReadinessPollInterval = TimeSpan.FromMilliseconds(100);
     private IApiHostDatabaseLease? _database;
@@ -218,7 +221,10 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
 
     private async Task<ExternalApiHostCleanupReceipt> CoordinateFailedStartupCleanupAsync()
     {
-        while (!CleanupReceipt.AllResourcesAbsent)
+        var startedAt = Stopwatch.GetTimestamp();
+        var cleanupBudget = TimeSpan.FromTicks(
+            _cleanupTimeout.Ticks * FailedStartupCleanupDeadlineMultiplier);
+        for (var attempt = 1; attempt <= MaximumFailedStartupCleanupAttempts; attempt++)
         {
             try
             {
@@ -228,19 +234,27 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
             {
             }
 
-            if (!CleanupReceipt.AllResourcesAbsent)
+            if (CleanupReceipt.AllResourcesAbsent ||
+                attempt == MaximumFailedStartupCleanupAttempts)
             {
-                await Task.Delay(FailedStartupCleanupRetryDelay);
+                break;
             }
+
+            var remaining = cleanupBudget - Stopwatch.GetElapsedTime(startedAt);
+            if (remaining <= TimeSpan.Zero)
+            {
+                break;
+            }
+
+            var retryDelay = TimeSpan.FromTicks(FailedStartupCleanupRetryDelay.Ticks * attempt);
+            await Task.Delay(retryDelay <= remaining ? retryDelay : remaining);
         }
 
         return CleanupReceipt;
     }
 
-    private ExternalApiHostCleanupReceipt CreatePendingCleanupReceipt() => CleanupReceipt with
-    {
-        FailureCount = CleanupReceipt.FailureCount + 1
-    };
+    private ExternalApiHostCleanupReceipt CreatePendingCleanupReceipt() =>
+        ExternalApiHostCleanup.RecordFailure(CleanupReceipt);
 
     public override string ToString() => "<external-api-host-lease>";
 

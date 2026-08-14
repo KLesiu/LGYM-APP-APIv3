@@ -6,6 +6,8 @@ internal sealed record ExternalApiHostCleanupResult(
 
 internal static class ExternalApiHostCleanup
 {
+    internal const int MaximumRetainedAttemptedCategories = 12;
+    internal const int MaximumRetainedFailureCount = 1024;
     internal const string ProcessCategory = "api-process";
     internal const string RuntimeCategory = "runtime-configuration";
     internal const string DatabaseCategory = "postgresql";
@@ -62,13 +64,27 @@ internal static class ExternalApiHostCleanup
         var attemptedProcess = second.AttemptedCategories.Contains(ProcessCategory, StringComparer.Ordinal);
         var attemptedRuntime = second.AttemptedCategories.Contains(RuntimeCategory, StringComparer.Ordinal);
         var attemptedDatabase = second.AttemptedCategories.Contains(DatabaseCategory, StringComparer.Ordinal);
+        var categoryCount = (long)first.AttemptedCategories.Count + second.AttemptedCategories.Count;
+        var failureCount = (long)first.FailureCount + second.FailureCount;
         return new ExternalApiHostCleanupReceipt(
             attemptedProcess ? second.ProcessTreeAbsent : first.ProcessTreeAbsent,
             attemptedRuntime ? second.RuntimeDirectoryAbsent : first.RuntimeDirectoryAbsent,
             attemptedDatabase ? second.DatabaseAbsent : first.DatabaseAbsent,
-            first.AttemptedCategories.Concat(second.AttemptedCategories).ToArray(),
-            first.FailureCount + second.FailureCount);
+            first.AttemptedCategories
+                .Concat(second.AttemptedCategories)
+                .Take(MaximumRetainedAttemptedCategories)
+                .ToArray(),
+            (int)Math.Min(failureCount, MaximumRetainedFailureCount),
+            first.AttemptHistoryTruncated || second.AttemptHistoryTruncated ||
+                categoryCount > MaximumRetainedAttemptedCategories,
+            first.FailureCountSaturated || second.FailureCountSaturated ||
+                failureCount > MaximumRetainedFailureCount);
     }
+
+    internal static ExternalApiHostCleanupReceipt RecordFailure(ExternalApiHostCleanupReceipt receipt) =>
+        receipt.FailureCount >= MaximumRetainedFailureCount
+            ? receipt with { FailureCountSaturated = true }
+            : receipt with { FailureCount = receipt.FailureCount + 1 };
 
     private static async Task<int> DisposeResourceAsync(
         IAsyncDisposable? resource,

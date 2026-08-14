@@ -91,7 +91,9 @@ internal sealed record ExternalApiHostCleanupReceipt(
     bool RuntimeDirectoryAbsent,
     bool DatabaseAbsent,
     IReadOnlyList<string> AttemptedCategories,
-    int FailureCount)
+    int FailureCount,
+    bool AttemptHistoryTruncated = false,
+    bool FailureCountSaturated = false)
 {
     internal bool AllResourcesAbsent => ProcessTreeAbsent && RuntimeDirectoryAbsent && DatabaseAbsent;
 
