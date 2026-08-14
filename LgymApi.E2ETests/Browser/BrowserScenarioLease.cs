@@ -2,6 +2,14 @@ using Microsoft.Playwright;
 
 namespace LgymApi.E2ETests.Browser;
 
+internal static class BrowserScenarioLifecycleAdapter
+{
+    internal static Task<BrowserScenarioLease> CreateAsync(
+        BrowserRunLease browserRun,
+        int actionTimeoutMilliseconds) =>
+        BrowserScenarioLease.CreateForLifecycleAsync(browserRun, actionTimeoutMilliseconds);
+}
+
 internal sealed class BrowserScenarioLease : IAsyncDisposable
 {
     internal const string BaseUrl = "http://localhost:8083";
@@ -28,7 +36,18 @@ internal sealed class BrowserScenarioLease : IAsyncDisposable
 
     internal static async Task<BrowserScenarioLease> CreateAsync(
         BrowserRunLease browserRun,
-        int actionTimeoutMilliseconds)
+        int actionTimeoutMilliseconds) =>
+        await CreateAsync(browserRun, actionTimeoutMilliseconds, retainPartialCleanup: false);
+
+    internal static async Task<BrowserScenarioLease> CreateForLifecycleAsync(
+        BrowserRunLease browserRun,
+        int actionTimeoutMilliseconds) =>
+        await CreateAsync(browserRun, actionTimeoutMilliseconds, retainPartialCleanup: true);
+
+    private static async Task<BrowserScenarioLease> CreateAsync(
+        BrowserRunLease browserRun,
+        int actionTimeoutMilliseconds,
+        bool retainPartialCleanup)
     {
         ArgumentNullException.ThrowIfNull(browserRun);
         if (actionTimeoutMilliseconds is < 100 or > 120_000)
@@ -52,7 +71,7 @@ internal sealed class BrowserScenarioLease : IAsyncDisposable
         {
             if (context is not null)
             {
-                await ClosePartialContextAsync(context, actionTimeoutMilliseconds);
+                await ClosePartialContextAsync(context, actionTimeoutMilliseconds, retainPartialCleanup);
             }
 
             throw new InvalidOperationException(SetupMessage);
@@ -70,15 +89,40 @@ internal sealed class BrowserScenarioLease : IAsyncDisposable
 
     public override string ToString() => "<browser-scenario-lease>";
 
-    private static async Task ClosePartialContextAsync(IBrowserContext context, int timeoutMilliseconds)
+    private static async Task ClosePartialContextAsync(
+        IBrowserContext context,
+        int timeoutMilliseconds,
+        bool retainToTerminal)
     {
+        Task rawClose;
         try
         {
-            await context.CloseAsync().WaitAsync(TimeSpan.FromMilliseconds(timeoutMilliseconds));
+            rawClose = context.CloseAsync();
+        }
+        catch (Exception)
+        {
+            return;
+        }
+
+        if (retainToTerminal)
+        {
+            try
+            {
+                await rawClose;
+            }
+            catch (Exception)
+            {
+            }
+
+            return;
+        }
+
+        try
+        {
+            await rawClose.WaitAsync(TimeSpan.FromMilliseconds(timeoutMilliseconds));
         }
         catch (Exception exception) when (exception is PlaywrightException or TimeoutException)
         {
-            return;
         }
     }
 
