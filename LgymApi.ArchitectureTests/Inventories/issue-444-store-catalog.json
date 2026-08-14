@@ -1,0 +1,253 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "lgym-direct-store-v1",
+  "approval": {
+    "approver": "@withelm",
+    "url": "https://github.com/withelm/LGYM-APP-APIv3/issues/444#issuecomment-5296486807",
+    "approvedAtUtc": "2026-08-14T17:52:55Z"
+  },
+  "state": "approved-precreation",
+  "revisions": [
+    {
+      "id": "v0-restricted-test",
+      "previousId": null,
+      "approvedAtUtc": "2026-08-14T17:52:55Z",
+      "productionEnabled": false
+    }
+  ],
+  "profiles": [
+    {
+      "id": "tier_1",
+      "rank": 1,
+      "localizations": [
+        { "locale": "en", "name": "Basic" },
+        { "locale": "pl", "name": "Podstawowy" }
+      ]
+    },
+    {
+      "id": "tier_2",
+      "rank": 2,
+      "localizations": [
+        { "locale": "en", "name": "Plus" },
+        { "locale": "pl", "name": "Plus" }
+      ]
+    },
+    {
+      "id": "tier_3",
+      "rank": 3,
+      "localizations": [
+        { "locale": "en", "name": "Pro" },
+        { "locale": "pl", "name": "Pro" }
+      ]
+    }
+  ],
+  "benefitStatus": {
+    "id": "pending_paid_benefits",
+    "localizations": [
+      {
+        "locale": "en",
+        "text": "Paid benefits pending approval; unavailable for production sale."
+      },
+      {
+        "locale": "pl",
+        "text": "Płatne korzyści oczekują na zatwierdzenie; sprzedaż produkcyjna jest niedostępna."
+      }
+    ]
+  },
+  "periods": [
+    { "id": "monthly", "applePeriod": "one-month", "googlePeriod": "P1M" }
+  ],
+  "territoryPrices": [
+    {
+      "revisionId": "v0-restricted-test",
+      "profileId": "tier_1",
+      "territory": "POL",
+      "currency": "PLN",
+      "grossAmount": "4.99",
+      "vatDisplay": "vat-inclusive"
+    },
+    {
+      "revisionId": "v0-restricted-test",
+      "profileId": "tier_2",
+      "territory": "POL",
+      "currency": "PLN",
+      "grossAmount": "9.99",
+      "vatDisplay": "vat-inclusive"
+    },
+    {
+      "revisionId": "v0-restricted-test",
+      "profileId": "tier_3",
+      "territory": "POL",
+      "currency": "PLN",
+      "grossAmount": "19.99",
+      "vatDisplay": "vat-inclusive"
+    }
+  ],
+  "applications": {
+    "apple": {
+      "appId": "6753204527",
+      "identity": "com.lesiuuu.lgymappmobile",
+      "environments": [
+        { "id": "sandbox", "usable": true, "productionEnabled": false },
+        { "id": "testflight", "usable": true, "productionEnabled": false },
+        { "id": "production", "usable": false, "productionEnabled": false }
+      ]
+    },
+    "google": {
+      "packageId": "com.lesiuuu.lgymappmobile",
+      "identity": "com.lesiuuu.lgymappmobile",
+      "environments": [
+        { "id": "license-test", "usable": true, "productionEnabled": false },
+        { "id": "internal", "usable": true, "productionEnabled": false },
+        { "id": "production", "usable": false, "productionEnabled": false }
+      ]
+    }
+  },
+  "apple": {
+    "group": {
+      "reference": "LGYM Paid Profiles V1",
+      "localizations": [
+        { "locale": "en", "name": "LGYM Subscriptions" },
+        { "locale": "pl", "name": "Subskrypcje LGYM" }
+      ],
+      "generatedId": null,
+      "sandboxTestable": false,
+      "evidence": null
+    },
+    "products": [
+      {
+        "id": "lgym.subscription.tier_1.monthly",
+        "profileId": "tier_1",
+        "periodId": "monthly",
+        "level": 3,
+        "sandboxTestable": false,
+        "evidence": null
+      },
+      {
+        "id": "lgym.subscription.tier_2.monthly",
+        "profileId": "tier_2",
+        "periodId": "monthly",
+        "level": 2,
+        "sandboxTestable": false,
+        "evidence": null
+      },
+      {
+        "id": "lgym.subscription.tier_3.monthly",
+        "profileId": "tier_3",
+        "periodId": "monthly",
+        "level": 1,
+        "sandboxTestable": false,
+        "evidence": null
+      }
+    ]
+  },
+  "google": {
+    "products": [
+      {
+        "id": "lgym.subscription.tier_1.monthly",
+        "profileId": "tier_1",
+        "role": "primary",
+        "evidence": null,
+        "basePlans": [
+          {
+            "id": "primary-monthly",
+            "periodId": "monthly",
+            "autoRenewing": true,
+            "active": false,
+            "evidence": null
+          }
+        ]
+      },
+      {
+        "id": "lgym.subscription.tier_2.monthly",
+        "profileId": "tier_2",
+        "role": "primary",
+        "evidence": null,
+        "basePlans": [
+          {
+            "id": "primary-monthly",
+            "periodId": "monthly",
+            "autoRenewing": true,
+            "active": false,
+            "evidence": null
+          }
+        ]
+      },
+      {
+        "id": "lgym.subscription.tier_3.monthly",
+        "profileId": "tier_3",
+        "role": "primary",
+        "evidence": null,
+        "basePlans": [
+          {
+            "id": "primary-monthly",
+            "periodId": "monthly",
+            "autoRenewing": true,
+            "active": false,
+            "evidence": null
+          }
+        ]
+      }
+    ]
+  },
+  "transitions": [
+    {
+      "fromProfileId": "tier_1",
+      "toProfileId": "tier_2",
+      "timing": "immediate",
+      "googleMode": "CHARGE_PRORATED_PRICE"
+    },
+    {
+      "fromProfileId": "tier_1",
+      "toProfileId": "tier_3",
+      "timing": "immediate",
+      "googleMode": "CHARGE_PRORATED_PRICE"
+    },
+    {
+      "fromProfileId": "tier_2",
+      "toProfileId": "tier_3",
+      "timing": "immediate",
+      "googleMode": "CHARGE_PRORATED_PRICE"
+    },
+    {
+      "fromProfileId": "tier_3",
+      "toProfileId": "tier_2",
+      "timing": "next-renewal",
+      "googleMode": "DEFERRED"
+    },
+    {
+      "fromProfileId": "tier_3",
+      "toProfileId": "tier_1",
+      "timing": "next-renewal",
+      "googleMode": "DEFERRED"
+    },
+    {
+      "fromProfileId": "tier_2",
+      "toProfileId": "tier_1",
+      "timing": "next-renewal",
+      "googleMode": "DEFERRED"
+    }
+  ],
+  "exclusions": {
+    "trials": false,
+    "offers": false,
+    "coupons": false,
+    "familySharing": false,
+    "promotedIap": false,
+    "offerCodes": false,
+    "winBack": false,
+    "playResubscribe": false,
+    "outsideAppAcceptance": false
+  },
+  "governance": {
+    "owner": "@withelm",
+    "testAliases": [
+      "apple-sandbox-v1-primary",
+      "google-license-v1-primary"
+    ],
+    "revisionPolicy": "append-only-git-reviewed",
+    "applePricePreservation": "preserve-existing-subscriber-price-on-increase",
+    "googlePricePreservation": "retain-legacy-cohort-opt-in-migration",
+    "evidenceManifestPath": "docs/subscriptions/evidence/issue-444-store-console-evidence.json"
+  }
+}
