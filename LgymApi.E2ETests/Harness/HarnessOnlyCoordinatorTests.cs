@@ -82,6 +82,40 @@ public sealed class HarnessOnlyCoordinatorTests
         });
     }
 
+    [Test]
+    public void HarnessOnlyCoordinator_does_not_inherit_unapproved_parent_environment()
+    {
+        using var fixture = new CoordinatorFixture("happy");
+        var environment = new Dictionary<string, string>(fixture.Environment, StringComparer.Ordinal)
+        {
+            ["HARNESS_ONLY_PARENT_CANARY"] = "private-parent-canary"
+        };
+
+        var result = InvokeScript(fixture.Root, ["-Mode", "HarnessOnly"], environment);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.Zero, result.StandardError);
+            Assert.That(File.ReadAllText(fixture.InvocationLogPath), Does.Not.Contain("private-parent-canary"));
+            Assert.That(result.StandardOutput + result.StandardError, Does.Not.Contain("private-parent-canary"));
+        });
+    }
+
+    [Test]
+    public async Task HarnessOnlyCoordinator_bounds_a_hung_child_before_evidence_validation()
+    {
+        using var fixture = new CoordinatorFixture("hang");
+
+        var result = await fixture.InvokeAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.TimedOut, Is.False, "The coordinator must bound its own child wait.");
+            Assert.That(result.ExitCode, Is.Not.EqualTo(0));
+            Assert.That(File.Exists(fixture.ManifestPath), Is.False);
+        });
+    }
+
     private static ProcessResult InvokeScript(string workingDirectory, IReadOnlyList<string> arguments, IReadOnlyDictionary<string, string> environment)
     {
         var scriptPath = Path.Combine(workingDirectory, "LgymApi.E2ETests", "scripts", "invoke-e2e-coordinator.ps1");
@@ -108,10 +142,52 @@ public sealed class HarnessOnlyCoordinatorTests
         var standardOutput = process.StandardOutput.ReadToEnd();
         var standardError = process.StandardError.ReadToEnd();
         process.WaitForExit();
-        return new ProcessResult(process.ExitCode, standardOutput, standardError);
+        return new ProcessResult(process.ExitCode, standardOutput, standardError, false);
     }
 
-    private sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError);
+    private static async Task<ProcessResult> InvokeScriptAsync(
+        string workingDirectory,
+        IReadOnlyList<string> arguments,
+        IReadOnlyDictionary<string, string> environment,
+        TimeSpan timeout)
+    {
+        var scriptPath = Path.Combine(workingDirectory, "LgymApi.E2ETests", "scripts", "invoke-e2e-coordinator.ps1");
+        var startInfo = new ProcessStartInfo("pwsh")
+        {
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-File");
+        startInfo.ArgumentList.Add(scriptPath);
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        foreach (var pair in environment)
+        {
+            startInfo.Environment[pair.Key] = pair.Value;
+        }
+
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Coordinator process did not start.");
+        var standardOutput = process.StandardOutput.ReadToEndAsync();
+        var standardError = process.StandardError.ReadToEndAsync();
+        try
+        {
+            await process.WaitForExitAsync().WaitAsync(timeout);
+            return new ProcessResult(process.ExitCode, await standardOutput, await standardError, false);
+        }
+        catch (TimeoutException)
+        {
+            process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync();
+            return new ProcessResult(process.ExitCode, await standardOutput, await standardError, true);
+        }
+    }
+
+    private sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError, bool TimedOut);
 
     private sealed class CoordinatorFixture : IDisposable
     {
@@ -119,6 +195,7 @@ public sealed class HarnessOnlyCoordinatorTests
 
         public CoordinatorFixture(string mode)
         {
+            var testSessionSeconds = mode == "hang" ? 1 : 10;
             Root = Path.Combine(Path.GetTempPath(), $"lgym e2e coordinator {Guid.NewGuid():N}");
             _toolsDirectory = Path.Combine(Root, "tools");
             Directory.CreateDirectory(_toolsDirectory);
@@ -136,22 +213,21 @@ public sealed class HarnessOnlyCoordinatorTests
             File.WriteAllText(Path.Combine(Root, ".e2e-private", "published-api", "LgymApi.Api.runtimeconfig.json"), "{}");
             File.WriteAllText(ChromePath, string.Empty);
             File.WriteAllText(Path.Combine(Root, "LgymApi.E2ETests", "appsettings.E2E.json"), $$"""
-                { "E2E": { "WebSource": { "CommitSha": "{{HeadSha}}" }, "Api": { "PublishedDllPath": ".e2e-private/published-api/LgymApi.Api.dll" }, "Web": { "Port": 8083 } } }
+                { "E2E": { "WebSource": { "CommitSha": "{{HeadSha}}" }, "Api": { "PublishedDllPath": ".e2e-private/published-api/LgymApi.Api.dll" }, "Web": { "Port": 8083 }, "Timeouts": { "TestSessionSeconds": {{testSessionSeconds}} } } }
                 """);
             WriteCommand("git", $"@echo off\r\necho %* | findstr /C:\"rev-parse\" >nul\r\nif not errorlevel 1 echo {HeadSha}\r\n");
             WriteCommand("node", "@echo off\r\necho v22.18.0\r\n");
             WriteCommand("npm", "@echo off\r\necho 10.0.0\r\n");
             WriteCommand("docker", "@echo off\r\necho 27.0.0\r\n");
             File.WriteAllText(Path.Combine(_toolsDirectory, "fake-dotnet.ps1"), FakeDotNetScript);
+            File.WriteAllText(Path.Combine(_toolsDirectory, "fixture-mode.txt"), mode);
             WriteCommand("dotnet", "@echo off\r\npwsh -NoProfile -File \"%~dp0fake-dotnet.ps1\" %*\r\n");
-            InvocationLogPath = Path.Combine(Root, "invocations.log");
+            InvocationLogPath = Path.Combine(_toolsDirectory, "invocations.log");
             ManifestPath = Path.Combine(Root, "LgymApi.E2ETests", "TestResults", "issue-435-harness-only", "issue-435-lifecycle-evidence.json");
             Environment = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["PATH"] = _toolsDirectory + Path.PathSeparator + EnvironmentVariable("PATH"),
-                ["LGYM_E2E__WebSource__SourcePath"] = Path.Combine(Root, "external source"),
-                ["HARNESS_ONLY_FIXTURE_MODE"] = mode,
-                ["HARNESS_ONLY_INVOCATION_LOG"] = InvocationLogPath
+                ["LGYM_E2E__WebSource__SourcePath"] = Path.Combine(Root, "external source")
             };
         }
 
@@ -163,6 +239,9 @@ public sealed class HarnessOnlyCoordinatorTests
         public IReadOnlyDictionary<string, string> Environment { get; }
 
         public ProcessResult Invoke() => InvokeScript(Root, ["-Mode", "HarnessOnly"], Environment);
+
+        public Task<ProcessResult> InvokeAsync(TimeSpan timeout) =>
+            InvokeScriptAsync(Root, ["-Mode", "HarnessOnly"], Environment, timeout);
 
         public void Dispose()
         {
@@ -177,18 +256,21 @@ public sealed class HarnessOnlyCoordinatorTests
         private static string EnvironmentVariable(string name) => System.Environment.GetEnvironmentVariable(name) ?? string.Empty;
 
         private const string FakeDotNetScript = """
+            $fixtureMode = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixture-mode.txt')
+            $invocationLog = Join-Path $PSScriptRoot 'invocations.log'
             $resultsIndex = [array]::IndexOf($args, '--results-directory')
             $filterIndex = [array]::IndexOf($args, '--filter')
             $resultsDirectory = $args[$resultsIndex + 1]
             $filter = $args[$filterIndex + 1]
-            Add-Content -LiteralPath $env:HARNESS_ONLY_INVOCATION_LOG -Value ($filter + '|' + ($args -join '|') + '|' + $env:HARNESS_ONLY_HARNESS_DOCKER_RECEIPT_PATH + '|' + $env:HARNESS_ONLY_LIFECYCLE_RECEIPT_PATH)
+            Add-Content -LiteralPath $invocationLog -Value ($filter + '|' + ($args -join '|') + '|' + $env:HARNESS_ONLY_HARNESS_DOCKER_RECEIPT_PATH + '|' + $env:HARNESS_ONLY_LIFECYCLE_RECEIPT_PATH + '|' + $env:HARNESS_ONLY_PARENT_CANARY)
+            if ($fixtureMode -eq 'hang') { Start-Sleep -Seconds 5; exit 0 }
             New-Item -ItemType Directory -Path $resultsDirectory -Force | Out-Null
             $harnessNames = @('PostgreSQL_container_starts_with_module_readiness_and_is_removed_on_disposal', 'PostgreSQL_container_is_removed_when_a_test_local_failure_occurs_after_start', 'PostgreSQL_post_container_start_callback_failure_proves_private_locator_absence', 'PostgreSQL_sequential_leases_have_distinct_redacted_observations_and_are_absent')
             $lifecycleNames = @('Lifecycle_hooks_are_async_tag_scoped_and_explicitly_ordered', 'Lifecycle_feature_declares_exactly_two_canonical_serial_probes', 'Scenario_failure_after_the_ready_stack_preserves_the_primary_failure_writes_one_safe_artifact_and_starts_fresh', 'Scenario_success_writes_no_failure_artifact_and_removes_the_completed_run', 'Compiled_test_inventory_requires_nonempty_disjoint_serial_categories_without_parallel_markers')
             $isHarness = $filter -eq 'TestCategory=HarnessDocker'
             $names = if ($isHarness) { $harnessNames } else { $lifecycleNames }
-            $outcome = if ($env:HARNESS_ONLY_FIXTURE_MODE -eq 'skipped' -and -not $isHarness) { 'NotExecuted' } else { 'Passed' }
-            $total = if ($env:HARNESS_ONLY_FIXTURE_MODE -eq 'zero' -and $isHarness) { 0 } else { $names.Count }
+            $outcome = if ($fixtureMode -eq 'skipped' -and -not $isHarness) { 'NotExecuted' } else { 'Passed' }
+            $total = if ($fixtureMode -eq 'zero' -and $isHarness) { 0 } else { $names.Count }
             $executed = if ($outcome -eq 'Passed') { $total } else { 0 }
             $passed = if ($outcome -eq 'Passed') { $total } else { 0 }
             $notExecuted = if ($outcome -eq 'Passed') { 0 } else { $total }
@@ -197,11 +279,11 @@ public sealed class HarnessOnlyCoordinatorTests
             Set-Content -LiteralPath (Join-Path $resultsDirectory $fileName) -Value ('<TestRun><ResultSummary><Counters total="' + $total + '" executed="' + $executed + '" passed="' + $passed + '" failed="0" timeout="0" notExecuted="' + $notExecuted + '" /></ResultSummary><Results>' + $results + '</Results></TestRun>')
             if ($isHarness) {
               Set-Content -LiteralPath $env:HARNESS_ONLY_HARNESS_DOCKER_RECEIPT_PATH -Value '{"testCount":1,"passedCount":1,"allContainersAbsent":true,"identitiesDistinct":true,"rawIdentitiesExcluded":true}'
-              if ($env:HARNESS_ONLY_FIXTURE_MODE -eq 'child-failure') { exit 7 }
+              if ($fixtureMode -eq 'child-failure') { exit 7 }
               exit 0
             }
-            if ($env:HARNESS_ONLY_FIXTURE_MODE -eq 'malformed') { Set-Content -LiteralPath $env:HARNESS_ONLY_LIFECYCLE_RECEIPT_PATH -Value '{'; exit 0 }
-            $head = if ($env:HARNESS_ONLY_FIXTURE_MODE -eq 'stale') { 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' } else { 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
+            if ($fixtureMode -eq 'malformed') { Set-Content -LiteralPath $env:HARNESS_ONLY_LIFECYCLE_RECEIPT_PATH -Value '{'; exit 0 }
+            $head = if ($fixtureMode -eq 'stale') { 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' } else { 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
             $scenario = @{ acquiredCategories=@('scenario-paths','postgresql','external-api-host','expo','browser-run','browser-scenario'); cleanupCategories=@('browser-scenario','browser-run','expo','external-api-host','scenario-paths'); cleanupFailureCount=0; freshPostgreSql=$true; freshApiHost=$true; freshExpo=$true; freshBrowserRun=$true; freshBrowserScenario=$true; previousResourcesAbsent=$true; browserStorageEmpty=$true; databaseAbsent=$true; apiAbsent=$true; expoAbsent=$true; scenarioPathsAbsent=$true }
             $receipt = @{ schema='issue-435-lifecycle-run-receipt-v1'; apiHeadSha=$head; apiRepositoryDirty=$false; completedScenarioCount=2; sourceStatePreserved=$true; runtimeRootAbsent=$true; successArtifactsAbsent=$true; scenarios=@(($scenario + @{caseId='lifecycle-probe-a'}),($scenario + @{caseId='lifecycle-probe-b'})) }
             $receipt | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $env:HARNESS_ONLY_LIFECYCLE_RECEIPT_PATH

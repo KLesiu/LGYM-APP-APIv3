@@ -309,12 +309,57 @@ function Invoke-ChildTest {
         [string] $RunSettingsPath,
         [string] $ResultsDirectory,
         [string] $Category,
-        [string] $TrxFileName
+        [string] $TrxFileName,
+        [hashtable] $ChildEnvironment,
+        [timespan] $ExecutionTimeout
     )
 
     $arguments = @('test', $ProjectPath, '--configuration', 'Release', '--no-build', '--settings', $RunSettingsPath, '--filter', "TestCategory=$Category", '--results-directory', $ResultsDirectory, '--logger', "trx;LogFileName=$TrxFileName")
-    & $DotNetPath @arguments *> $null
-    return $LASTEXITCODE
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new($DotNetPath)
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    foreach ($argument in $arguments) {
+        $null = $startInfo.ArgumentList.Add($argument)
+    }
+    $startInfo.Environment.Clear()
+    foreach ($entry in $ChildEnvironment.GetEnumerator()) {
+        $startInfo.Environment[$entry.Key] = $entry.Value
+    }
+
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    Assert-Condition ($null -ne $process)
+    try {
+        $standardOutput = $process.StandardOutput.ReadToEndAsync()
+        $standardError = $process.StandardError.ReadToEndAsync()
+        $deadline = [System.Threading.CancellationTokenSource]::new($ExecutionTimeout)
+        try {
+            $process.WaitForExitAsync($deadline.Token).GetAwaiter().GetResult()
+            [System.Threading.Tasks.Task]::WhenAll($standardOutput, $standardError).WaitAsync($deadline.Token).GetAwaiter().GetResult()
+        }
+        catch [System.OperationCanceledException] {
+            if (-not $process.HasExited) {
+                $process.Kill($true)
+                $shutdown = [System.Threading.CancellationTokenSource]::new([timespan]::FromSeconds(5))
+                try {
+                    $process.WaitForExitAsync($shutdown.Token).GetAwaiter().GetResult()
+                }
+                finally {
+                    $shutdown.Dispose()
+                }
+            }
+
+            Fail
+        }
+        finally {
+            $deadline.Dispose()
+        }
+
+        Assert-Condition ($process.ExitCode -eq 0)
+    }
+    finally {
+        $process.Dispose()
+    }
 }
 
 function Restore-EnvironmentVariable {
@@ -364,6 +409,8 @@ function Invoke-HarnessOnly {
         Assert-Condition ($LASTEXITCODE -eq 0 -and $sourceHead -ceq (Get-JsonString $root.GetProperty('E2E').GetProperty('WebSource') 'CommitSha'))
         $port = Get-JsonNonNegativeInt $root.GetProperty('E2E').GetProperty('Web') 'Port'
         Assert-Condition ($port -eq 8083 -and -not ([System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners() | Where-Object Port -eq $port))
+        $testSessionSeconds = Get-JsonNonNegativeInt $root.GetProperty('E2E').GetProperty('Timeouts') 'TestSessionSeconds'
+        Assert-Condition ($testSessionSeconds -gt 0)
     }
     finally {
         $config.Dispose()
@@ -392,16 +439,25 @@ function Invoke-HarnessOnly {
 
     $originalHarnessReceipt = [Environment]::GetEnvironmentVariable($HarnessDockerReceiptVariable)
     $originalLifecycleReceipt = [Environment]::GetEnvironmentVariable($LifecycleReceiptVariable)
+    $systemRoot = [Environment]::GetEnvironmentVariable('SystemRoot')
+    $windowsDirectory = [Environment]::GetEnvironmentVariable('WINDIR')
+    $path = [Environment]::GetEnvironmentVariable('PATH')
+    Assert-Condition (-not [string]::IsNullOrWhiteSpace($systemRoot) -and -not [string]::IsNullOrWhiteSpace($windowsDirectory) -and -not [string]::IsNullOrWhiteSpace($path))
+    $childEnvironment = @{
+        'SystemRoot' = $systemRoot
+        'WINDIR' = $windowsDirectory
+        'TEMP' = [System.IO.Path]::GetTempPath()
+        'TMP' = [System.IO.Path]::GetTempPath()
+        'PATH' = $path
+        'LGYM_E2E__WebSource__SourcePath' = $sourcePath
+        $HarnessDockerReceiptVariable = $outputs.HarnessDockerReceipt
+        $LifecycleReceiptVariable = $outputs.LifecycleReceipt
+    }
+    $childExecutionTimeout = [timespan]::FromSeconds($testSessionSeconds)
     $startedAtUtc = [datetime]::UtcNow.AddSeconds(-1)
-    $harnessExitCode = $null
-    $lifecycleExitCode = $null
     try {
-        Set-Item -LiteralPath "Env:$HarnessDockerReceiptVariable" -Value $outputs.HarnessDockerReceipt
-        Set-Item -LiteralPath "Env:$LifecycleReceiptVariable" -Value $outputs.LifecycleReceipt
-        $harnessExitCode = Invoke-ChildTest $dotNetPath $projectPath $runSettingsPath $resultsDirectory 'HarnessDocker' 'issue-435-harness-docker.trx'
-        if ($harnessExitCode -eq 0) {
-            $lifecycleExitCode = Invoke-ChildTest $dotNetPath $projectPath $runSettingsPath $resultsDirectory 'Lifecycle' 'issue-435-lifecycle.trx'
-        }
+        Invoke-ChildTest $dotNetPath $projectPath $runSettingsPath $resultsDirectory 'HarnessDocker' 'issue-435-harness-docker.trx' $childEnvironment $childExecutionTimeout
+        Invoke-ChildTest $dotNetPath $projectPath $runSettingsPath $resultsDirectory 'Lifecycle' 'issue-435-lifecycle.trx' $childEnvironment $childExecutionTimeout
     }
     finally {
         Restore-EnvironmentVariable $HarnessDockerReceiptVariable $originalHarnessReceipt
@@ -423,7 +479,6 @@ function Invoke-HarnessOnly {
         lifecycle = [ordered]@{ counters = $lifecycle; contractNames = @($LifecycleContracts | Sort-Object); run = $lifecycleReceipt }
     }
     [System.IO.File]::WriteAllText($outputs.Manifest, ($manifest | ConvertTo-Json -Depth 12))
-    Assert-Condition ($harnessExitCode -eq 0 -and $lifecycleExitCode -eq 0)
 }
 
 try {
