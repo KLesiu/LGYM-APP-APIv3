@@ -15,33 +15,12 @@ public sealed class BrowserScenarioHooks
     private BrowserScenarioLease? _scenario;
 
     [BeforeTestRun(Order = RunBeforeOrder)]
-    public static async Task BeforeBrowserRunAsync()
-    {
-        var repositoryRoot = RepositoryRoot.Find();
-        var options = E2EConfiguration.Load(TestContext.CurrentContext.TestDirectory, repositoryRoot);
-        var privatePaths = PrivateRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
-            repositoryRoot,
-            options.Runtime.PrivateRunRoot,
-            TimeSpan.FromSeconds(options.Timeouts.ProcessShutdownSeconds)));
-        try
-        {
-            var run = new BrowserRunState(
-                privatePaths,
-                options.Timeouts.BrowserActionMilliseconds);
-            BrowserRunStateHolder.Set(run);
-            await Task.CompletedTask;
-        }
-        catch
-        {
-            await privatePaths.DisposeAsync();
-            throw;
-        }
-    }
+    public static Task BeforeBrowserRunAsync() => Task.CompletedTask;
 
     [BeforeScenario("@browser", Order = ScenarioBeforeOrder)]
     public async Task BeforeBrowserScenarioAsync()
     {
-        var run = BrowserRunStateHolder.Get();
+        var run = await BrowserRunStateHolder.GetOrCreateAsync(CreateBrowserRunAsync);
         var browser = await run.GetBrowserAsync();
         _scenario = await BrowserScenarioLease.CreateAsync(browser, run.ActionTimeoutMilliseconds);
     }
@@ -71,6 +50,27 @@ public sealed class BrowserScenarioHooks
         if (run is not null)
         {
             await run.DisposeAsync();
+        }
+    }
+
+    private static async Task<BrowserRunState> CreateBrowserRunAsync()
+    {
+        var repositoryRoot = RepositoryRoot.Find();
+        var options = E2EConfiguration.Load(TestContext.CurrentContext.TestDirectory, repositoryRoot);
+        var privatePaths = PrivateRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
+            repositoryRoot,
+            options.Runtime.PrivateRunRoot,
+            TimeSpan.FromSeconds(options.Timeouts.ProcessShutdownSeconds)));
+        try
+        {
+            return new BrowserRunState(
+                privatePaths,
+                options.Timeouts.BrowserActionMilliseconds);
+        }
+        catch
+        {
+            await privatePaths.DisposeAsync();
+            throw;
         }
     }
 }
@@ -120,26 +120,32 @@ internal sealed class BrowserRunState(
 internal static class BrowserRunStateHolder
 {
     private static readonly object Sync = new();
+    private static readonly SemaphoreSlim InitializationGate = new(1, 1);
     private static BrowserRunState? _state;
 
-    internal static void Set(BrowserRunState state)
+    internal static async Task<BrowserRunState> GetOrCreateAsync(Func<Task<BrowserRunState>> create)
     {
-        lock (Sync)
+        await InitializationGate.WaitAsync();
+        try
         {
-            if (_state is not null)
+            lock (Sync)
             {
-                throw new InvalidOperationException("E2E browser run state is already initialized.");
+                if (_state is not null)
+                {
+                    return _state;
+                }
             }
 
-            _state = state;
+            var state = await create();
+            lock (Sync)
+            {
+                _state = state;
+                return state;
+            }
         }
-    }
-
-    internal static BrowserRunState Get()
-    {
-        lock (Sync)
+        finally
         {
-            return _state ?? throw new InvalidOperationException("E2E browser run state is unavailable.");
+            InitializationGate.Release();
         }
     }
 
