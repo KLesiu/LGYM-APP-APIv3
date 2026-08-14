@@ -13,6 +13,7 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
     internal const string CallerCancellationMessage = "External API host startup was canceled by the caller.";
     internal const string CleanupFailureMessage = "External API host cleanup failed.";
     private const string CanonicalPrivateRunRoot = ".e2e-private/runs";
+    private const string TestingEnvironmentName = "Testing";
     private const int MaximumDynamicPortAttempts = 3;
     private const int MaximumStartupCleanupAttempts = 2;
     private static readonly TimeSpan ReadinessPollInterval = TimeSpan.FromMilliseconds(100);
@@ -266,6 +267,12 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
                 startupToken);
             if (outcome == ApiHostReadinessOutcome.Ready)
             {
+                if (string.Equals(request.EnvironmentName, TestingEnvironmentName, StringComparison.Ordinal))
+                {
+                    BaseAddress = baseAddress;
+                    return;
+                }
+
                 var databaseOutcome = await (_infrastructure.DatabaseReadinessProbe ?? new DatabaseBackedApiReadinessProbe())
                     .WaitUntilReadyAsync(
                     baseAddress,

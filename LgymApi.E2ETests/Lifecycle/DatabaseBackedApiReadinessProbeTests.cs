@@ -66,6 +66,35 @@ public sealed class DatabaseBackedApiReadinessProbeTests
     }
 
     [Test]
+    public async Task Testing_host_preserves_health_only_readiness_without_a_migrated_database()
+    {
+        using var fixture = new ExternalApiHostTestFixture();
+        var cleanupOrder = new List<string>();
+        var databaseProbe = new ScriptedDatabaseBackedApiReadinessProbe(
+            DatabaseBackedApiReadinessOutcome.UnexpectedStatus);
+        var host = await ExternalApiHostLease.StartAsync(
+            fixture.CreateRequest(new FakeApiHostDatabaseLease(cleanupOrder)) with
+            {
+                EnvironmentName = "Testing"
+            },
+            new ExternalApiHostInfrastructure(
+                new FakeApiHostRuntimeFactory(fixture.RepositoryRoot, cleanupOrder),
+                new FakeExternalApiProcessStarter([null], cleanupOrder),
+                new ScriptedApiHostReadinessMonitor([ApiHostReadinessOutcome.Ready]),
+                new FakeLoopbackPortAllocator([47111]),
+                databaseProbe));
+
+        await host.DisposeAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(databaseProbe.CallCount, Is.Zero);
+            Assert.That(cleanupOrder, Is.EqualTo(["api-process", "runtime-configuration", "postgresql"]));
+            Assert.That(host.CleanupReceipt.AllResourcesAbsent, Is.True);
+        });
+    }
+
+    [Test]
     public async Task ApiHostObservation_exposes_only_safe_cleanup_facts_after_disposal()
     {
         using var fixture = new ExternalApiHostTestFixture();

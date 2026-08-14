@@ -4,6 +4,7 @@ namespace LgymApi.E2ETests.Harness;
 
 internal sealed class ApiPublisher
 {
+    private const int MaximumPublishShutdownSeconds = 15;
     internal const string PublicationFailureMessage = "API publication command failed.";
     private readonly ExternalProcessRunner _processRunner;
     private readonly Func<ExternalProcessRequest, CancellationToken, Task<ExternalProcessResult>> _runPublication;
@@ -98,7 +99,9 @@ internal sealed class ApiPublisher
                 layout.DllPath
             ],
             ExecutionTimeout = TimeSpan.FromSeconds(options.Timeouts.ApiPublishSeconds),
-            ShutdownTimeout = TimeSpan.FromSeconds(options.Timeouts.ProcessShutdownSeconds)
+            ShutdownTimeout = TimeSpan.FromSeconds(Math.Min(
+                options.Timeouts.ProcessShutdownSeconds,
+                MaximumPublishShutdownSeconds))
         };
     }
 
