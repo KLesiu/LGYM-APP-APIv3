@@ -295,6 +295,106 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
         Assert.That(ScanFixturePublicSurface(source), Is.Empty);
     }
 
+    [TestCase("public Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2 Value;")]
+    [TestCase("protected Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2 Value;")]
+    [TestCase("public event Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2 Value;")]
+    [TestCase("protected event Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2 Value;")]
+    public void Unresolved_Provider_Fields_And_Field_Like_Events_Should_Be_Rejected(string member)
+    {
+        var source = $$"""
+            namespace LgymApi.Identity.Contracts.Subscriptions;
+            public class Exposure { {{member}} }
+            """;
+
+        Assert.That(
+            ScanFixturePublicSurface(source),
+            Has.Some.Matches<PublicSurfaceViolation>(violation =>
+                violation.Category == "provider SDK"
+                && violation.Dependency == "Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2"));
+    }
+
+    [TestCase(
+        "using Google.Apis.AndroidPublisher.v3.Data;",
+        "SubscriptionPurchaseV2")]
+    [TestCase(
+        "using Purchase = Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2;",
+        "Purchase")]
+    [TestCase(
+        "using Provider = Google.Apis.AndroidPublisher.v3.Data;",
+        "Provider.SubscriptionPurchaseV2")]
+    [TestCase(
+        "global using Purchase = Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2;",
+        "Purchase")]
+    public void Unresolved_Imported_Or_Aliased_Provider_Types_Should_Be_Rejected(
+        string usingDirective,
+        string exposedType)
+    {
+        var source = $$"""
+            {{usingDirective}}
+            namespace LgymApi.Identity.Contracts.Subscriptions;
+            public class Exposure { public {{exposedType}} Get() => null!; }
+            """;
+
+        Assert.That(
+            ScanFixturePublicSurface(source),
+            Has.Some.Matches<PublicSurfaceViolation>(violation =>
+                violation.Category == "provider SDK"
+                && violation.Dependency == "Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2"));
+    }
+
+    [Test]
+    public void Unresolved_Delegate_Generic_Constraint_Should_Be_Rejected()
+    {
+        const string source = """
+            namespace LgymApi.Identity.Contracts.Subscriptions;
+            public delegate void Exposure<T>()
+                where T : Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2;
+            """;
+
+        Assert.That(
+            ScanFixturePublicSurface(source),
+            Has.Some.Matches<PublicSurfaceViolation>(violation =>
+                violation.Category == "provider SDK"
+                && violation.Dependency == "Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2"));
+    }
+
+    [Test]
+    public void Unresolved_Imported_And_Aliased_Near_Misses_Should_Remain_Allowed()
+    {
+        const string source = """
+            using Google.Apis.AndroidPublisherFake;
+            using AppleReference = Apple.AppStoreServerFake.NeutralReference;
+            using NeutralGoogle = Neutral.Google.Apis.AndroidPublisher;
+            namespace LgymApi.Identity.Contracts.Subscriptions;
+            public sealed record Exposure(
+                NeutralReference Imported,
+                AppleReference Aliased,
+                NeutralGoogle.Reference NamespaceAliased);
+            """;
+
+        Assert.That(ScanFixturePublicSurface(source), Is.Empty);
+    }
+
+    [TestCase(
+        "provider-private sensitive handling and storage",
+        "public-contract/log/analytics/response/evidence exclusion")]
+    [TestCase(
+        "metadata-only observability and evidence",
+        "sensitive values in observability")]
+    [TestCase(
+        "CancellationToken is the only Hangfire batch argument",
+        "Hangfire sensitive arguments")]
+    public void Canonical_Security_And_Worker_Rules_Should_Be_Parser_Backed(
+        string requiredRule,
+        string replacement)
+    {
+        var markdown = CreateValidMarkdown().Replace(requiredRule, replacement, StringComparison.Ordinal);
+
+        Assert.That(
+            () => ParseAndValidateDocument(markdown),
+            Throws.InvalidOperationException);
+    }
+
     [Test]
     public void Synthetic_Document_Should_Reject_A_Removed_Mermaid_Edge()
     {
@@ -894,8 +994,13 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
         CSharpCompilation compilation,
         IEnumerable<SyntaxTree> syntaxTrees)
     {
+        var trees = syntaxTrees.ToList();
+        var globalUsings = trees
+            .SelectMany(candidateTree => candidateTree.GetRoot().DescendantNodes().OfType<UsingDirectiveSyntax>())
+            .Where(usingDirective => usingDirective.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword))
+            .ToList();
         var violations = new Dictionary<string, PublicSurfaceViolation>(StringComparer.Ordinal);
-        foreach (var tree in syntaxTrees.Where(tree => IsPublicSurfaceRoot(tree.FilePath)))
+        foreach (var tree in trees.Where(tree => IsPublicSurfaceRoot(tree.FilePath)))
         {
             var model = compilation.GetSemanticModel(tree, ignoreAccessibility: true);
             foreach (var declaration in tree.GetRoot().DescendantNodes().OfType<MemberDeclarationSyntax>()
@@ -931,9 +1036,13 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
                 foreach (var exposedSyntax in GetExposedTypeSyntax(type))
                 {
                     foreach (var unresolvedSyntax in exposedSyntax.DescendantNodesAndSelf().OfType<TypeSyntax>()
-                                 .Where(candidate => model.GetTypeInfo(candidate).Type is IErrorTypeSymbol))
+                                 .Where(candidate => model.GetTypeInfo(candidate).Type is null or IErrorTypeSymbol))
                     {
-                        if (TryClassifyForbiddenUnresolvedType(unresolvedSyntax, out var category, out var dependency))
+                        if (TryClassifyForbiddenUnresolvedType(
+                                unresolvedSyntax,
+                                GetApplicableUsings(unresolvedSyntax, globalUsings),
+                                out var category,
+                                out var dependency))
                         {
                             AddViolation(violations, tree, type, category, dependency);
                         }
@@ -991,33 +1100,84 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
 
     private static bool TryClassifyForbiddenUnresolvedType(
         TypeSyntax type,
+        IEnumerable<UsingDirectiveSyntax> usingDirectives,
         out string category,
         out string dependency)
     {
-        var qualifiedType = type.ToString().Replace("global::", string.Empty, StringComparison.Ordinal);
+        var typeName = type.ToString().Replace("global::", string.Empty, StringComparison.Ordinal);
+        var candidates = new List<string> { typeName };
+        foreach (var usingDirective in usingDirectives)
+        {
+            var importedName = usingDirective.Name?.ToString().Replace("global::", string.Empty, StringComparison.Ordinal);
+            if (string.IsNullOrEmpty(importedName))
+            {
+                continue;
+            }
+
+            if (usingDirective.Alias == null)
+            {
+                candidates.Add($"{importedName}.{typeName}");
+                continue;
+            }
+
+            var alias = usingDirective.Alias.Name.Identifier.ValueText;
+            if (typeName.Equals(alias, StringComparison.Ordinal))
+            {
+                candidates.Add(importedName);
+            }
+            else if (typeName.StartsWith($"{alias}.", StringComparison.Ordinal))
+            {
+                candidates.Add(importedName + typeName[alias.Length..]);
+            }
+        }
+
         (string Namespace, string Category)[] forbiddenNamespaces =
         [
             ("Google.Apis.Auth.OAuth2", "credential family"),
             ("Google.Apis.AndroidPublisher", "provider SDK"),
             ("Apple.AppStoreServer", "provider SDK")
         ];
-        foreach (var forbidden in forbiddenNamespaces)
+        foreach (var qualifiedType in candidates)
         {
-            var start = qualifiedType.IndexOf($"{forbidden.Namespace}.", StringComparison.Ordinal);
-            if (start < 0 || start > 0 && qualifiedType[start - 1] is not ('<' or '(' or '[' or ',' or ' '))
+            foreach (var forbidden in forbiddenNamespaces)
             {
-                continue;
-            }
+                var start = qualifiedType.IndexOf($"{forbidden.Namespace}.", StringComparison.Ordinal);
+                if (start < 0 || start > 0 && qualifiedType[start - 1] is not ('<' or '(' or '[' or ',' or ' '))
+                {
+                    continue;
+                }
 
-            var end = qualifiedType.IndexOfAny(['<', '>', '[', ']', ',', '?'], start);
-            category = forbidden.Category;
-            dependency = end < 0 ? qualifiedType[start..] : qualifiedType[start..end];
-            return true;
+                var end = qualifiedType.IndexOfAny(['<', '>', '[', ']', ',', '?'], start);
+                category = forbidden.Category;
+                dependency = end < 0 ? qualifiedType[start..] : qualifiedType[start..end];
+                return true;
+            }
         }
 
         category = string.Empty;
         dependency = string.Empty;
         return false;
+    }
+
+    private static IEnumerable<UsingDirectiveSyntax> GetApplicableUsings(
+        TypeSyntax type,
+        IEnumerable<UsingDirectiveSyntax> globalUsings)
+    {
+        foreach (var globalUsing in globalUsings)
+        {
+            yield return globalUsing;
+        }
+
+        foreach (var usingDirective in type.SyntaxTree.GetRoot().DescendantNodes().OfType<UsingDirectiveSyntax>()
+                     .Where(usingDirective => !usingDirective.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword)))
+        {
+            if (usingDirective.Parent is CompilationUnitSyntax
+                || usingDirective.Parent is BaseNamespaceDeclarationSyntax namespaceDeclaration
+                && namespaceDeclaration.Span.Contains(type.Span))
+            {
+                yield return usingDirective;
+            }
+        }
     }
 
     private static bool IsNamespace(string actual, string expected)
@@ -1118,7 +1278,14 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
         {
             foreach (var syntaxReference in member.DeclaringSyntaxReferences)
             {
-                foreach (var syntax in GetSignatureTypeSyntax(syntaxReference.GetSyntax()))
+                var declaration = syntaxReference.GetSyntax();
+                if (declaration is VariableDeclaratorSyntax variable
+                    && variable.FirstAncestorOrSelf<BaseFieldDeclarationSyntax>() is { } field)
+                {
+                    declaration = field;
+                }
+
+                foreach (var syntax in GetSignatureTypeSyntax(declaration))
                 {
                     yield return syntax;
                 }
@@ -1158,6 +1325,11 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
                 foreach (var parameterType in @delegate.ParameterList.Parameters.Select(parameter => parameter.Type).OfType<TypeSyntax>())
                 {
                     yield return parameterType;
+                }
+
+                foreach (var constraint in @delegate.ConstraintClauses.SelectMany(clause => clause.Constraints).OfType<TypeConstraintSyntax>())
+                {
+                    yield return constraint.Type;
                 }
 
                 break;
@@ -1519,8 +1691,8 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
             | `subscriptions.contract.current-access` | future | Identity & Accounts | effective current paid-access projection contract | owner-local projection persistence with one service-owned UoW boundary | provider SDK/response/credential/raw payload, foreign entity/repository, direct repository save, Common/Hangfire type |
             | `subscriptions.contract.provider-verification` | future | Identity & Accounts | internal provider-verification port returning normalized results | internal Identity adapter boundary; no provider payload persistence in the contract | provider SDK/response/credential/raw payload, foreign entity/repository, direct repository save, Common/Hangfire type |
             | `subscriptions.contract.provider-notification` | future | Identity & Accounts | internal provider-notification port returning normalized results | internal Identity adapter boundary; durable inbox state remains owner-local | provider SDK/response/credential/raw payload, foreign entity/repository, direct repository save, Common/Hangfire type |
-            | `subscriptions.contract.processing` | future | Identity & Accounts | public Worker-facing inbox processing use case | recurring batch accepts only CancellationToken; record selection and cursors stay in owner persistence | provider SDK/response/credential/raw payload, foreign entity/repository, direct repository save, Common/Hangfire type |
-            | `subscriptions.contract.reconciliation` | future | Identity & Accounts | public Worker-facing provider reconciliation use case | recurring batch accepts only CancellationToken; record selection and cursors stay in owner persistence | provider SDK/response/credential/raw payload, foreign entity/repository, direct repository save, Common/Hangfire type |
+            | `subscriptions.contract.processing` | future | Identity & Accounts | public Worker-facing inbox processing use case | CancellationToken is the only Hangfire batch argument; owner persistence selects records and keeps record IDs/cursors | Hangfire receives no record IDs/cursors, credentials, raw/provider payloads, receipts/JWS, purchase tokens, or account-binding tokens; no Common/Hangfire type |
+            | `subscriptions.contract.reconciliation` | future | Identity & Accounts | public Worker-facing provider reconciliation use case | CancellationToken is the only Hangfire batch argument; owner persistence selects records and keeps record IDs/cursors | Hangfire receives no record IDs/cursors, credentials, raw/provider payloads, receipts/JWS, purchase tokens, or account-binding tokens; no Common/Hangfire type |
             | `subscriptions.contract.api-ingress` | future | API | thin provider-ingress transport adapter | inject focused Identity contracts and use authenticated account context where applicable | provider SDK/response/credential/raw payload, foreign entity/repository, direct repository save, Common/Hangfire type |
             | `subscriptions.contract.api-query` | future | API | thin current-access query transport adapter | inject focused Identity query contract and use authenticated account context | provider SDK/response/credential/raw payload, foreign entity/repository, direct repository save, Common/Hangfire type |
             | `subscriptions.contract.mapping` | future | API | registered custom IMapper profiles | cross-layer model conversion remains in API mapping profiles | provider SDK/response/credential/raw payload, foreign entity/repository, direct repository save, Common/Hangfire type |
@@ -1531,10 +1703,10 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
             | --- | --- | --- | --- | --- | --- | --- |
             | `subscriptions.provider.apple-production` | future | Identity & Accounts | Apple production authority https://api.storekit.apple.com; verified JWS/certificate/app/environment/account binding before normalization | fixed authority; bounded, cancellation-aware, idempotent retry policy is deferred | no provider SDK/response/credential/raw payload | metadata-only |
             | `subscriptions.provider.apple-sandbox` | future | Identity & Accounts | Apple sandbox authority https://api.storekit-sandbox.apple.com; verified JWS/certificate/app/environment/account binding before normalization | fixed authority; bounded, cancellation-aware, idempotent retry policy is deferred | no provider SDK/response/credential/raw payload | metadata-only |
-            | `subscriptions.provider.apple-signed-data` | future | Identity & Accounts | verified JWS/certificate/app/environment/account binding before normalization | bounded, cancellation-aware, idempotent retry policy; never surface full bodies or exceptions | no signed payload, provider SDK/response, credential, or raw provider body | signed-payload |
-            | `subscriptions.provider.google-play` | future | Identity & Accounts | Google Android Publisher authority https://androidpublisher.googleapis.com; authoritative purchases.subscriptionsv2.get current-state re-query | bounded, cancellation-aware, idempotent retry policy; honor transient guidance and Retry-After | no provider SDK/response, purchase token, credential, or raw provider body | purchase-token;provider-body;credential |
-            | `subscriptions.provider.google-rtdn` | future | Identity & Accounts | verified Pub/Sub OIDC identity/envelope bounds then provider re-query via purchases.subscriptionsv2.get; OIDC checks include signature, issuer, audience, expiry, expected service-account email, and email_verified | bounded, cancellation-aware, idempotent retry policy; never trust notification order or body alone | no Pub/Sub/provider SDK/response, purchase token, credential, or raw provider body | provider-body;credential |
-            | `subscriptions.provider.sanitized-errors` | future | Identity & Accounts | provider-neutral authentication, validation, throttled, transient, and unavailable outcomes | bounded and cancellation-aware; sanitize provider bodies and exceptions | no provider body, exception, credential, SDK response, or raw payload | metadata-only |
+            | `subscriptions.provider.apple-signed-data` | future | Identity & Accounts | verified JWS/certificate/app/environment/account binding before normalization | provider-private sensitive handling and storage for receipts/JWS and account-binding tokens; bounded, cancellation-aware, idempotent retry | receipts/JWS, account-binding tokens, credentials, provider bodies, and SDK responses are forbidden from public contracts, logs, analytics, responses, and evidence | signed-payload;account-binding-token |
+            | `subscriptions.provider.google-play` | future | Identity & Accounts | Google Android Publisher authority https://androidpublisher.googleapis.com; authoritative purchases.subscriptionsv2.get current-state re-query | provider-private sensitive handling and storage for purchase tokens, account-binding tokens, credentials, and provider bodies; honor bounded transient retry guidance | purchase tokens, account-binding tokens, credentials, provider bodies, and SDK responses are forbidden from public contracts, logs, analytics, responses, and evidence | purchase-token;account-binding-token;provider-body;credential |
+            | `subscriptions.provider.google-rtdn` | future | Identity & Accounts | verified Pub/Sub OIDC identity/envelope bounds then provider re-query via purchases.subscriptionsv2.get; OIDC checks include signature, issuer, audience, expiry, expected service-account email, and email_verified | provider-private sensitive handling and storage for credentials and provider bodies; never trust notification order or body alone | credentials, provider bodies, raw payloads, purchase tokens, and SDK responses are forbidden from public contracts, logs, analytics, responses, and evidence | provider-body;credential |
+            | `subscriptions.provider.sanitized-errors` | future | Identity & Accounts | provider-neutral authentication, validation, throttled, transient, and unavailable outcomes | metadata-only observability and evidence; sanitize provider bodies and exceptions | sensitive values in observability are forbidden; no receipt/JWS, purchase token, account-binding token, credential, provider body, personal data, exception, SDK response, or raw payload | metadata-only |
 
             | Configuration ID | State | Key/root | Default | Requires | Enables | Forbidden effect |
             | --- | --- | --- | --- | --- | --- | --- |
