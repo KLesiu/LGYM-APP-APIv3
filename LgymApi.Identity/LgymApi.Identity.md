@@ -12,7 +12,3 @@
 - Session validation for authenticated account resolution is pair-aware: a session must be active, unexpired, undeleted, unrevoked, and owned by the claimed account. This keeps mismatched JWT `userId`/`sid` pairs from becoming active non-HTTP contexts.
 - Every tutorial-progress operation begins the Platform actor row-security scope with the Identity user ID rebound to `ActorReference` before persistence access. Tutorial reads and no-op checks are no-tracking and dispose the scope without commit or rollback; actual tutorial mutations save once and then commit the actor scope once.
 - The tutorial RLS pilot protects only the tutorial parent and child tables and remains staging-only. Its operational gate and rollback procedure are in [`tutorial-rls-pilot.md`](../docs/security/tutorial-rls-pilot.md); Application authorization remains required.
-
-## Future Direct-Store Subscription Boundary
-
-Future direct Apple and Google subscription ownership belongs to Identity: durable grants, inbox state, account/store binding, effective paid-access projection, provider-neutral internal ports, separate internal Apple and Google adapters, `ICurrentPaidAccessQuery`, and Worker-facing processing and reconciliation use cases. These artifacts are proposed and not implemented by #443; #446 and child work add their entities and configurations later. The shared `IIdentityPersistenceContext` and Infrastructure physical-persistence seam remain intact, including the current nine-set seam. Paid access is current server state, not a JWT role or permission.
