@@ -130,7 +130,7 @@ Start with the canonical owner and follow the conditional layouts in the [Module
 - **Architecture tests** validate Roslyn-based dependency, boundary, mapping, DI, and persistence guards.
 - **Integration tests** validate real HTTP behavior with middleware, auth, serialization, and data persistence through in-memory and prepared PostgreSQL coverage.
    - Reuse `IntegrationTestBase` helpers for seeding users, setting auth headers, and creating dependent data.
-- **Standalone E2E host proofs** run only from the package-only `LgymApi.E2ETests` solution. They publish and launch the API as an external process, use fresh disposable PostgreSQL through public HTTP, and never use product references, in-process hosting, direct persistence access, raw SQL, or browser scenarios.
+- **Standalone E2E host proofs** run only from the package-only `LgymApi.E2ETests` solution. They publish and launch the API as an external process, use fresh disposable PostgreSQL through public HTTP, and may run the approved external Expo and browser lifecycle probes. They never use product references, in-process hosting, direct persistence access, raw SQL, or product business scenarios.
 
 ### External Host Environment Matrix
 
@@ -144,6 +144,8 @@ Start with the canonical owner and follow the conditional layouts in the [Module
 E2E is the only non-Development automatic-migration exception. It remains test-only: it receives the test-safe worker selection and no Hangfire runtime, but it still migrates a fresh PostgreSQL lease, runs schema guards after migration, and retains rate limiting. Testing alone skips migration, guards, and rate limiting. Production and unknown environments fail closed on pending migrations.
 
 The external host reads generated private configuration through `LGYM_APP_CONFIG_PATH`, launches the published DLL through absolute `dotnet.exe`, binds loopback only, and treats `/health/live` as process readiness. Public invalid login then proves database-backed readiness. Runtime secrets, connection details, private paths, PIDs, and container IDs stay out of committed docs, TRX, and receipts. Cleanup is bounded and reverse ordered: API process tree, generated runtime configuration, then PostgreSQL.
+
+The approved browser lifecycle is infrastructure-only: each Lifecycle scenario receives a fresh PostgreSQL lease, external API, Expo process, Chromium process, context, and page after the public readiness gates. Product authentication, onboarding, and other business scenarios remain deferred to `#436`. `HarnessOnly` is the current E2E coordinator boundary; `Full` and `ArtifactDrill` remain deferred to `#437`. Failure-only sanitized artifacts stay under ignored private runtime paths and are never committed.
 
 Recommended validation path for new modules:
 

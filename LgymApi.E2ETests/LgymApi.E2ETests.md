@@ -2,9 +2,9 @@
 
 ## Purpose and Boundary
 
-`LgymApi.E2ETests` is the standalone .NET 10 E2E harness for external published API process, public HTTP, and pinned Expo Web browser proofs. It is a package-only NUnit project in `LgymApi.E2ETests.sln`, has zero direct or evaluated `ProjectReference` items, and is not a member of `LgymApi.sln`. The main solution remains exactly 18 projects with 90 direct project-reference edges.
+`LgymApi.E2ETests` is the standalone .NET 10 E2E harness for external published API processes, public HTTP, and pinned Expo Web browser lifecycle proofs. It is a package-only NUnit project in `LgymApi.E2ETests.sln`, has zero direct or evaluated `ProjectReference` items, and is not a member of `LgymApi.sln`. The main solution remains exactly 18 projects with 90 direct project-reference edges.
 
-The harness owns configuration validation, runner policy, standalone-boundary checks, fresh PostgreSQL Testcontainers leases, publication identity, external process lifetime, public HTTP host proofs, and the pinned Expo Web harness. It launches the published API only as an absolute `dotnet.exe` command with the canonical absolute DLL as its one application argument and the publication directory as its working directory. For Web proof it reads a validated external checkout, stages the configured pin into a private run, installs with Node, starts Expo, and launches private Playwright Chromium. Its base stack is Microsoft Playwright, Reqnroll with NUnit, and Testcontainers PostgreSQL. It does not use product types, query a database directly, or run business scenarios beyond the documented unauthenticated browser checks.
+The harness owns configuration validation, runner policy, standalone-boundary checks, fresh PostgreSQL Testcontainers leases, publication identity, external process lifetime, public HTTP host proofs, and the pinned Expo Web lifecycle. It launches the published API only as an absolute `dotnet.exe` command with the canonical absolute DLL as its one application argument and the publication directory as its working directory. Its base stack is Microsoft Playwright, Reqnroll with NUnit, and Testcontainers PostgreSQL. It does not use product types, query a database directly, or run product business scenarios.
 
 Every proof crosses the product boundary through an external process and public HTTP only. It must not introduce in-process hosting, product references, direct persistence access, test-only API behavior, raw SQL, or an unapproved business browser scenario.
 
@@ -21,10 +21,10 @@ From the repository root, run:
 dotnet restore LgymApi.E2ETests.sln
 dotnet build LgymApi.E2ETests.sln --configuration Release --no-restore
 dotnet publish LgymApi.Api/LgymApi.Api.csproj --configuration Release --output .e2e-private/published-api
-dotnet test LgymApi.E2ETests/LgymApi.E2ETests.csproj --configuration Release --no-build --settings LgymApi.E2ETests/LgymApi.E2ETests.runsettings --filter "TestCategory=ApiHostProof" --logger "trx;LogFileName=issue-433-api-host.trx"
 pwsh -NoProfile -File LgymApi.E2ETests/scripts/install-playwright-chromium.ps1 -Configuration Release
-dotnet test LgymApi.E2ETests/LgymApi.E2ETests.csproj --configuration Release --no-build --settings LgymApi.E2ETests/LgymApi.E2ETests.runsettings --filter "TestCategory=WebHarness" --logger "trx;LogFileName=issue-434-web-harness.trx"
-dotnet test LgymApi.E2ETests/LgymApi.E2ETests.csproj --configuration Release --no-build --settings LgymApi.E2ETests/LgymApi.E2ETests.runsettings --filter "TestCategory=LocatorContract" --logger "trx;LogFileName=issue-434-locator-contract.trx"
+dotnet test LgymApi.E2ETests/LgymApi.E2ETests.csproj --configuration Release --no-build --settings LgymApi.E2ETests/LgymApi.E2ETests.runsettings --filter "TestCategory=HarnessDocker" --logger "trx;LogFileName=issue-435-harness-docker-direct.trx"
+dotnet test LgymApi.E2ETests/LgymApi.E2ETests.csproj --configuration Release --no-build --settings LgymApi.E2ETests/LgymApi.E2ETests.runsettings --filter "TestCategory=Lifecycle" --logger "trx;LogFileName=issue-435-lifecycle-direct.trx"
+pwsh -NoProfile -File LgymApi.E2ETests/scripts/invoke-e2e-coordinator.ps1 -Mode HarnessOnly
 ```
 
 The committed configuration is copied to the test output. Testcontainers uses the configured PostgreSQL image with dynamic container naming and host port allocation. The API port is dynamic (`0`), while the web port is fixed at `8083` for the exact E2E CORS singleton `http://localhost:8083`.
@@ -57,17 +57,23 @@ Committed defaults are:
 | `Database.NamePrefix` | `lgym_e2e` |
 | Timeouts | `120`, `300`, `120`, `120`, `90`, `30`, `15000`, `180`, `900` in schema order |
 
-Configuration loads JSON first, then environment variables with the `LGYM_` prefix. Set `LGYM_E2E__WebSource__SourcePath` only when a later operational stage needs an external checkout. The committed configuration intentionally omits that machine-specific path. Source-checkout and published-DLL existence are deferred to those later stages.
+Configuration loads JSON first, then environment variables with the `LGYM_` prefix. Set `LGYM_E2E__WebSource__SourcePath` only when the lifecycle run needs the external checkout. The committed configuration intentionally omits that machine-specific path. The immutable mobile source pin is `8f59d96ec368f509b1565e3296cd89d2a082a952`.
 
 Keep private runs, browser output, traces, screenshots, reports, caches, binaries, and synthetic runtime data under ignored private-artifact locations. Do not commit credentials, connection strings, source checkouts, browser storage, or runtime state.
 
-## Pinned Expo Web Contract
+## Per-Scenario Lifecycle Contract
 
-The Web harness owns one serial run of the configured external source pin. Ownership is source fingerprint and export, private Node/npm install, Expo, private headless Chromium, and fresh browser scenarios. The Expo child receives `REACT_APP_BACKEND` only as the scenario API base and `BROWSER=none`, preventing Expo from opening a system browser. Port `8083` is a fixed CORS singleton. A foreign listener is never inspected or terminated, and two Web harness runs must not overlap.
+One serial Lifecycle test process owns one private run root, one staged export of the configured immutable source pin, and one `npm ci` installation. Each `@Lifecycle` scenario gets a fresh scenario stack in this order: randomized PostgreSQL Testcontainers lease, external published API process and runtime configuration, public `GET /health/live`, public `POST /api/login` invalid-login gate returning exactly `401 Unauthorized`, Expo Web process, Playwright Chromium process, browser context, and page. The linked `Timeouts.ScenarioSeconds` token bounds every scenario acquisition and probe.
 
-The six locator surfaces are preload, registration, login, wrong-password toast, active tutorial, and profile logout. The smoke proves the unauthenticated preload, login, and registration surfaces, plus fresh-context cookie and local-storage isolation. The authenticated toast, tutorial, and logout surfaces remain deferred to `#435`. Public-HTTP Given helpers cross the API boundary only through HTTP. They do not use product assemblies, direct persistence, raw SQL, test-only routes, or business-flow shortcuts.
+The Expo child receives the exact scenario API URI as `REACT_APP_BACKEND` and `BROWSER=none`, preventing Expo from opening a system browser. Port `8083` is a fixed CORS singleton. A foreign listener is never inspected or terminated, and lifecycle runs must not overlap. Public-HTTP helpers cross the API boundary only through HTTP. They do not use product assemblies, direct persistence, raw SQL, test-only routes, or business-flow shortcuts.
 
-Cleanup runs in reverse ownership order for scenario, browser, Expo, staged source, and private cache. Git reads run in a per-operation private child environment with private HOME/USERPROFILE/TEMP/TMP, a controlled Git/System32 PATH, and no inherited credentials or `LGYM_` values. Receipts retain only source-pin and boolean facts. They never retain source paths, process IDs, cookies, tokens, browser storage, raw output, or private runtime state. The issue `#434` manifest accepts only the canonical WebHarness and LocatorContract TRXs with nonzero, passed, non-skipped results, the six-surface inventory, rendered readiness, `BROWSER=none`, free-port startup, public-HTTP navigation, and successful process-tree/staged-source/cache/browser cleanup facts.
+Cleanup is acquired-only and reverse ordered: page/context, Chromium/Playwright, Expo process, API process/runtime configuration/PostgreSQL, then scenario runtime children. Cleanup uses independent `Timeouts.ProcessShutdownSeconds` bounds. Git reads run in a private child environment with private HOME/USERPROFILE/TEMP/TMP, a controlled Git/System32 PATH, and no inherited credentials or `LGYM_` values. Receipts retain only source-pin, category, counter, and boolean facts. They never retain source paths, process IDs, cookies, tokens, browser storage, raw output, or private runtime state.
+
+`HarnessDocker` and `Lifecycle` are nonempty, disjoint categories. `HarnessDocker` covers Docker and PostgreSQL ownership proofs. `Lifecycle` covers orchestration, Reqnroll lifecycle probes, failure containment, artifacts, evidence, and runner contracts. `HarnessOnly` is the only coordinator mode. It runs the standalone E2E project with `HarnessDocker` followed by `Lifecycle`, validates fresh nonzero TRXs and sanitized receipts, and writes the issue manifest.
+
+Failure-only artifacts are bounded sanitized receipts at `.e2e-private/runs/<run-id>/artifacts/<safe-scenario-id>/`. Successful scenarios leave no artifact directory, successful runs remove the complete run root, and failed runs retain only these artifacts. Never commit private artifacts, browser storage, traces, screenshots, runtime configuration, output, credentials, connection strings, or paths.
+
+Issue `#436` owns product business scenarios, including onboarding and authentication flows, and remains deferred. Issue `#437` owns the `Full` coordinator mode and `ArtifactDrill`, including its diagnostics and final acceptance, and remains deferred.
 
 ## External Host Contract
 
