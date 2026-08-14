@@ -47,7 +47,7 @@ Committed defaults are:
 | Setting | Value |
 | --- | --- |
 | `WebSource.RepositoryUrl` | `https://github.com/KLesiu/LGYM-APP-MOBILE.git` |
-| `WebSource.CommitSha` | `cd930cce76c030b0ffe631f0bdd79712f97d171f` |
+| `WebSource.CommitSha` | `8f59d96ec368f509b1565e3296cd89d2a082a952` |
 | `WebSource.SourcePath` | omitted |
 | `Api.PublishedDllPath` | `.e2e-private/published-api/LgymApi.Api.dll` |
 | `Api.Port` | `0` |
