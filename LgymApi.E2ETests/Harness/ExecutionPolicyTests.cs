@@ -135,6 +135,68 @@ public sealed class ExecutionPolicyTests
         Assert.That(exception!.Message, Does.Contain("serial"));
     }
 
+    [Test]
+    [Category("Lifecycle")]
+    public void Compiled_test_inventory_requires_nonempty_disjoint_serial_categories_without_parallel_markers()
+    {
+        var inventory = DiscoverTestInventory(typeof(ExecutionPolicyTests).Assembly);
+
+        AssertCategoryPolicy(inventory);
+        Assert.That(inventory.Count(entry => entry.Categories.Contains("HarnessDocker")), Is.GreaterThan(0));
+        Assert.That(inventory.Count(entry => entry.Categories.Contains("Lifecycle")), Is.GreaterThan(0));
+    }
+
+    [Test]
+    [Category("Lifecycle")]
+    public void Category_policy_rejects_empty_overlap_and_parallel_fixtures()
+    {
+        var fixtures = new[]
+        {
+            Array.Empty<CategoryInventoryEntry>(),
+            new[] { new CategoryInventoryEntry("overlap", ["HarnessDocker", "Lifecycle"], false) },
+            new[] { new CategoryInventoryEntry("parallel", ["HarnessDocker"], true) }
+        };
+
+        foreach (var fixture in fixtures)
+        {
+            Assert.Throws<AssertionException>(() => AssertCategoryPolicy(fixture));
+        }
+    }
+
+    private static CategoryInventoryEntry[] DiscoverTestInventory(Assembly assembly) => assembly
+        .GetTypes()
+        .SelectMany(type => type.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+            .Select(method => (type, method)))
+        .Where(candidate => candidate.method.GetCustomAttributes(inherit: true).Any(attribute =>
+            attribute is TestAttribute or TestCaseAttribute or TestCaseSourceAttribute))
+        .Select(candidate => new CategoryInventoryEntry(
+            candidate.type.FullName + "." + candidate.method.Name,
+            candidate.method.GetCustomAttributes<CategoryAttribute>(inherit: true)
+                .Select(category => category.Name)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            candidate.method.GetCustomAttributes<ParallelizableAttribute>(inherit: true).Any(),
+            candidate.type.Namespace?.Contains(".Features", StringComparison.Ordinal) == true))
+        .ToArray();
+
+    private static void AssertCategoryPolicy(IReadOnlyList<CategoryInventoryEntry> inventory)
+    {
+        var harnessDocker = inventory.Where(entry => entry.Categories.Contains("HarnessDocker")).ToArray();
+        var lifecycle = inventory.Where(entry => entry.Categories.Contains("Lifecycle")).ToArray();
+
+        Assert.That(harnessDocker, Is.Not.Empty, "HarnessDocker inventory must be nonempty.");
+        Assert.That(lifecycle, Is.Not.Empty, "Lifecycle inventory must be nonempty.");
+        Assert.That(
+            harnessDocker.Select(entry => entry.Name).Intersect(lifecycle.Select(entry => entry.Name), StringComparer.Ordinal),
+            Is.Empty,
+            "HarnessDocker and Lifecycle inventories must be disjoint.");
+        Assert.That(inventory.Where(entry => entry.Parallelizable && !entry.GeneratedReqnroll), Is.Empty,
+            "No hand-written test may carry a Parallelizable marker.");
+        Assert.That(harnessDocker.Where(entry => entry.Parallelizable), Is.Empty,
+            "HarnessDocker tests may not carry a Parallelizable marker.");
+    }
+
     private static RunSettingsPolicy ParseRunSettings(string path)
     {
         var document = XDocument.Load(path);
@@ -277,6 +339,11 @@ public sealed class ExecutionPolicyTests
     private sealed record ProjectPolicy(string? RunSettingsFilePath, bool UseIntermediateOutputPathForCodeBehind);
     private sealed record AssemblyPolicy(int? LevelOfParallelism, bool IsNonParallelizable);
     private sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError);
+    public sealed record CategoryInventoryEntry(
+        string Name,
+        IReadOnlyCollection<string> Categories,
+        bool Parallelizable,
+        bool GeneratedReqnroll = false);
 
     private sealed class TemporaryFixture : IDisposable
     {

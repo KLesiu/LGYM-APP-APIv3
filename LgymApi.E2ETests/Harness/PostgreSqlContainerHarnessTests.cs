@@ -1,5 +1,6 @@
 using LgymApi.E2ETests.Lifecycle;
 using System.Reflection;
+using System.Text.Json;
 
 namespace LgymApi.E2ETests.Harness;
 
@@ -95,12 +96,25 @@ public sealed class PostgreSqlContainerHarnessTests
 
     [Test]
     [Category("HarnessDocker")]
-    public void PostgreSQL_post_container_start_callback_failure_proves_private_locator_absence()
+    public async Task PostgreSQL_post_container_start_callback_failure_proves_private_locator_absence()
     {
+        string? containerId = null;
         var exception = Assert.ThrowsAsync<InjectedStartupCallbackFailure>(() => PostgreSqlContainerLease.StartAsync(
-            (_, _) => Task.FromException(new InjectedStartupCallbackFailure())));
+            (container, _) =>
+            {
+                containerId = container.Id;
+                return Task.FromException(new InjectedStartupCallbackFailure());
+            }));
 
-        Assert.That(exception!.Message, Is.EqualTo("Injected post-container startup failure."));
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception!.Message, Is.EqualTo("Injected post-container startup failure."));
+            Assert.That(containerId, Is.Not.Null.And.Not.Empty);
+        });
+
+        Assert.That(
+            await DockerContainerProbe.WaitUntilAbsentAsync(containerId!, TimeSpan.FromSeconds(30)),
+            Is.True);
     }
 
     [Test]
@@ -125,12 +139,25 @@ public sealed class PostgreSqlContainerHarnessTests
             Assert.That(firstAbsent, Is.True);
             Assert.That(secondAbsent, Is.True);
         });
+
+        WriteEvidenceReceipt(new HarnessDockerEvidenceReceipt(
+            TestCount: 1,
+            PassedCount: 1,
+            AllContainersAbsent: firstAbsent && secondAbsent,
+            IdentitiesDistinct: !firstObservation.Identity.Equals(secondObservation.Identity),
+            RawIdentitiesExcluded: true));
     }
 
     private static void WriteCleanupReceipt(PostgreSqlContainerLease lease)
     {
         TestContext.Out.WriteLine(
             $"Task 4 PostgreSQL cleanup: category={lease.CleanupReceipt.Category}; absent={lease.CleanupReceipt.ContainerAbsent}; durationMilliseconds={(long)lease.CleanupReceipt.Duration.TotalMilliseconds}.");
+    }
+
+    private static void WriteEvidenceReceipt(HarnessDockerEvidenceReceipt receipt)
+    {
+        var serialized = HarnessDockerEvidenceReceiptWriter.Serialize(receipt);
+        TestContext.Out.WriteLine(serialized);
     }
 
     private sealed class InjectedPostStartFailureException : Exception
@@ -146,6 +173,52 @@ public sealed class PostgreSqlContainerHarnessTests
         public InjectedStartupCallbackFailure()
             : base("Injected post-container startup failure.")
         {
+        }
+    }
+}
+
+internal sealed record HarnessDockerEvidenceReceipt(
+    int TestCount,
+    int PassedCount,
+    bool AllContainersAbsent,
+    bool IdentitiesDistinct,
+    bool RawIdentitiesExcluded);
+
+internal static class HarnessDockerEvidenceReceiptWriter
+{
+    internal static string Serialize(HarnessDockerEvidenceReceipt receipt)
+    {
+        if (receipt.TestCount <= 0 || receipt.PassedCount != receipt.TestCount ||
+            !receipt.AllContainersAbsent || !receipt.IdentitiesDistinct || !receipt.RawIdentitiesExcluded)
+        {
+            throw new InvalidOperationException("HarnessDocker evidence receipt is incomplete.");
+        }
+
+        var serialized = JsonSerializer.Serialize(receipt, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+        ValidateSerializedReceipt(serialized);
+        return serialized;
+    }
+
+    internal static void ValidateSerializedReceipt(string serialized)
+    {
+        using var document = JsonDocument.Parse(serialized);
+        var expectedNames = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "testCount", "passedCount", "allContainersAbsent", "identitiesDistinct", "rawIdentitiesExcluded"
+        };
+        if (document.RootElement.ValueKind != JsonValueKind.Object ||
+            document.RootElement.EnumerateObject().Count() != expectedNames.Count ||
+            document.RootElement.EnumerateObject().Any(property => !expectedNames.Contains(property.Name)) ||
+            expectedNames.Any(name => !document.RootElement.TryGetProperty(name, out _)) ||
+            document.RootElement.GetProperty("testCount").ValueKind != JsonValueKind.Number ||
+            document.RootElement.GetProperty("passedCount").ValueKind != JsonValueKind.Number ||
+            expectedNames.Where(name => name is not "testCount" and not "passedCount")
+                .Any(name => document.RootElement.GetProperty(name).ValueKind is not (JsonValueKind.True or JsonValueKind.False)))
+        {
+            throw new InvalidOperationException("HarnessDocker evidence receipt contains unsafe fields.");
         }
     }
 }
