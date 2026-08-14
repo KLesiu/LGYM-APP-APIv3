@@ -285,14 +285,75 @@ function Parse-LifecycleReceipt {
     }
 }
 
-function Get-RepositoryState {
-    param([string] $GitPath)
+function Invoke-BoundedProcess {
+    param(
+        [string] $FileName,
+        [string[]] $Arguments,
+        [timespan] $ExecutionTimeout,
+        [hashtable] $Environment = @{}
+    )
 
-    $head = (& $GitPath -C $RepositoryRoot --no-optional-locks rev-parse HEAD 2>$null).Trim()
-    Assert-Condition ($LASTEXITCODE -eq 0 -and $head -match '^[0-9a-f]{40}$')
-    $status = & $GitPath -C $RepositoryRoot --no-optional-locks status --porcelain=v1 --untracked-files=all 2>$null
-    Assert-Condition ($LASTEXITCODE -eq 0)
-    return [pscustomobject]@{ HeadSha = $head; RepositoryDirty = -not [string]::IsNullOrWhiteSpace(($status -join "`n")) }
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new($FileName)
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    foreach ($argument in $Arguments) {
+        $null = $startInfo.ArgumentList.Add($argument)
+    }
+    if ($Environment.Count -gt 0) {
+        $startInfo.Environment.Clear()
+        foreach ($entry in $Environment.GetEnumerator()) {
+            $startInfo.Environment[$entry.Key] = $entry.Value
+        }
+    }
+
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    Assert-Condition ($null -ne $process)
+    try {
+        $standardOutput = $process.StandardOutput.ReadToEndAsync()
+        $standardError = $process.StandardError.ReadToEndAsync()
+        $deadline = [System.Threading.CancellationTokenSource]::new($ExecutionTimeout)
+        try {
+            $null = $process.WaitForExitAsync($deadline.Token).GetAwaiter().GetResult()
+            $null = [System.Threading.Tasks.Task]::WhenAll($standardOutput, $standardError).WaitAsync($deadline.Token).GetAwaiter().GetResult()
+        }
+        catch [System.OperationCanceledException] {
+            if (-not $process.HasExited) {
+                $process.Kill($true)
+                $shutdown = [System.Threading.CancellationTokenSource]::new([timespan]::FromSeconds(5))
+                try {
+                    $null = $process.WaitForExitAsync($shutdown.Token).GetAwaiter().GetResult()
+                }
+                catch [System.OperationCanceledException] {
+                }
+                finally {
+                    $shutdown.Dispose()
+                }
+            }
+
+            Fail
+        }
+        finally {
+            $deadline.Dispose()
+        }
+
+        $output = $standardOutput.GetAwaiter().GetResult()
+        Assert-Condition ($output.Length -le 4096)
+        Assert-Condition ($process.ExitCode -eq 0)
+        return $output
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
+function Get-RepositoryState {
+    param([string] $GitPath, [timespan] $ExecutionTimeout)
+
+    $head = (Invoke-BoundedProcess $GitPath @('-C', $RepositoryRoot, '--no-optional-locks', 'rev-parse', 'HEAD') $ExecutionTimeout).Trim()
+    Assert-Condition ($head -match '^[0-9a-f]{40}$')
+    $status = Invoke-BoundedProcess $GitPath @('-C', $RepositoryRoot, '--no-optional-locks', 'status', '--porcelain=v1', '--untracked-files=all') $ExecutionTimeout
+    return [pscustomobject]@{ HeadSha = $head; RepositoryDirty = -not [string]::IsNullOrWhiteSpace($status) }
 }
 
 function Assert-FreshFile {
@@ -315,51 +376,7 @@ function Invoke-ChildTest {
     )
 
     $arguments = @('test', $ProjectPath, '--configuration', 'Release', '--no-build', '--settings', $RunSettingsPath, '--filter', "TestCategory=$Category", '--results-directory', $ResultsDirectory, '--logger', "trx;LogFileName=$TrxFileName")
-    $startInfo = [System.Diagnostics.ProcessStartInfo]::new($DotNetPath)
-    $startInfo.UseShellExecute = $false
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
-    foreach ($argument in $arguments) {
-        $null = $startInfo.ArgumentList.Add($argument)
-    }
-    $startInfo.Environment.Clear()
-    foreach ($entry in $ChildEnvironment.GetEnumerator()) {
-        $startInfo.Environment[$entry.Key] = $entry.Value
-    }
-
-    $process = [System.Diagnostics.Process]::Start($startInfo)
-    Assert-Condition ($null -ne $process)
-    try {
-        $standardOutput = $process.StandardOutput.ReadToEndAsync()
-        $standardError = $process.StandardError.ReadToEndAsync()
-        $deadline = [System.Threading.CancellationTokenSource]::new($ExecutionTimeout)
-        try {
-            $process.WaitForExitAsync($deadline.Token).GetAwaiter().GetResult()
-            [System.Threading.Tasks.Task]::WhenAll($standardOutput, $standardError).WaitAsync($deadline.Token).GetAwaiter().GetResult()
-        }
-        catch [System.OperationCanceledException] {
-            if (-not $process.HasExited) {
-                $process.Kill($true)
-                $shutdown = [System.Threading.CancellationTokenSource]::new([timespan]::FromSeconds(5))
-                try {
-                    $process.WaitForExitAsync($shutdown.Token).GetAwaiter().GetResult()
-                }
-                finally {
-                    $shutdown.Dispose()
-                }
-            }
-
-            Fail
-        }
-        finally {
-            $deadline.Dispose()
-        }
-
-        Assert-Condition ($process.ExitCode -eq 0)
-    }
-    finally {
-        $process.Dispose()
-    }
+    $null = Invoke-BoundedProcess $DotNetPath $arguments $ExecutionTimeout $ChildEnvironment
 }
 
 function Restore-EnvironmentVariable {
@@ -385,12 +402,6 @@ function Invoke-HarnessOnly {
     $nodePath = Get-AbsoluteApplication 'node'
     $npmPath = Get-AbsoluteApplication 'npm'
     $dockerPath = Get-AbsoluteApplication 'docker'
-    Assert-Condition ((& $nodePath --version 2>$null) -match '^v?(2[2-9]|[3-9][0-9])\.')
-    $null = & $npmPath --version 2>$null
-    Assert-Condition ($LASTEXITCODE -eq 0)
-    $null = & $dockerPath info --format '{{.ServerVersion}}' 2>$null
-    Assert-Condition ($LASTEXITCODE -eq 0)
-
     $config = Get-JsonDocument $configPath
     try {
         $root = $config.RootElement
@@ -403,18 +414,23 @@ function Invoke-HarnessOnly {
         }
         $hash = (Get-FileHash -LiteralPath $publishedDllPath -Algorithm SHA256).Hash.ToLowerInvariant()
         Assert-Condition ($hash -match '^[0-9a-f]{64}$')
-        $sourcePath = [Environment]::GetEnvironmentVariable('LGYM_E2E__WebSource__SourcePath')
-        Assert-Condition (-not [string]::IsNullOrWhiteSpace($sourcePath) -and [System.IO.Path]::IsPathFullyQualified($sourcePath) -and [System.IO.Directory]::Exists($sourcePath))
-        $sourceHead = (& $gitPath -C $sourcePath --no-optional-locks rev-parse HEAD 2>$null).Trim()
-        Assert-Condition ($LASTEXITCODE -eq 0 -and $sourceHead -ceq (Get-JsonString $root.GetProperty('E2E').GetProperty('WebSource') 'CommitSha'))
-        $port = Get-JsonNonNegativeInt $root.GetProperty('E2E').GetProperty('Web') 'Port'
-        Assert-Condition ($port -eq 8083 -and -not ([System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners() | Where-Object Port -eq $port))
         $testSessionSeconds = Get-JsonNonNegativeInt $root.GetProperty('E2E').GetProperty('Timeouts') 'TestSessionSeconds'
         Assert-Condition ($testSessionSeconds -gt 0)
+        $sourcePath = [Environment]::GetEnvironmentVariable('LGYM_E2E__WebSource__SourcePath')
+        Assert-Condition (-not [string]::IsNullOrWhiteSpace($sourcePath) -and [System.IO.Path]::IsPathFullyQualified($sourcePath) -and [System.IO.Directory]::Exists($sourcePath))
+        $preflightTimeout = [timespan]::FromSeconds($testSessionSeconds)
+        $sourceHead = (Invoke-BoundedProcess $gitPath @('-C', $sourcePath, '--no-optional-locks', 'rev-parse', 'HEAD') $preflightTimeout).Trim()
+        Assert-Condition ($sourceHead -ceq (Get-JsonString $root.GetProperty('E2E').GetProperty('WebSource') 'CommitSha'))
+        $port = Get-JsonNonNegativeInt $root.GetProperty('E2E').GetProperty('Web') 'Port'
+        Assert-Condition ($port -eq 8083 -and -not ([System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners() | Where-Object Port -eq $port))
     }
     finally {
         $config.Dispose()
     }
+    $nodeVersion = Invoke-BoundedProcess $nodePath @('--version') $preflightTimeout
+    Assert-Condition ($nodeVersion -match '^v?(2[2-9]|[3-9][0-9])\.')
+    $null = Invoke-BoundedProcess $npmPath @('--version') $preflightTimeout
+    $null = Invoke-BoundedProcess $dockerPath @('info', '--format', '{{.ServerVersion}}') $preflightTimeout
     $browserRoot = Join-Path $RepositoryRoot '.e2e-private/browsers'
     Assert-NoReparsePoints -Root $RepositoryRoot -Target $browserRoot
     Assert-Condition ([System.IO.Directory]::Exists($browserRoot) -and $null -ne (Get-ChildItem -LiteralPath $browserRoot -Filter 'chrome.exe' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1))
@@ -453,6 +469,15 @@ function Invoke-HarnessOnly {
         $HarnessDockerReceiptVariable = $outputs.HarnessDockerReceipt
         $LifecycleReceiptVariable = $outputs.LifecycleReceipt
     }
+    foreach ($name in @('DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH', 'TESTCONTAINERS_HOST_OVERRIDE', 'TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE')) {
+        $value = [Environment]::GetEnvironmentVariable($name)
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            $childEnvironment[$name] = $value
+        }
+    }
+    foreach ($name in @('TESTCONTAINERS_RYUK_DISABLED', 'TESTCONTAINERS_REUSE_ENABLE')) {
+        Assert-Condition ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name)))
+    }
     $childExecutionTimeout = [timespan]::FromSeconds($testSessionSeconds)
     $startedAtUtc = [datetime]::UtcNow.AddSeconds(-1)
     try {
@@ -467,7 +492,7 @@ function Invoke-HarnessOnly {
     foreach ($path in @($outputs.HarnessDockerTrx, $outputs.LifecycleTrx, $outputs.HarnessDockerReceipt, $outputs.LifecycleReceipt)) {
         Assert-FreshFile $path $startedAtUtc
     }
-    $repositoryState = Get-RepositoryState $gitPath
+    $repositoryState = Get-RepositoryState $gitPath $preflightTimeout
     $harnessDocker = Parse-Trx $outputs.HarnessDockerTrx $HarnessDockerContracts
     $lifecycle = Parse-Trx $outputs.LifecycleTrx $LifecycleContracts
     $dockerReceipt = Parse-DockerReceipt $outputs.HarnessDockerReceipt
