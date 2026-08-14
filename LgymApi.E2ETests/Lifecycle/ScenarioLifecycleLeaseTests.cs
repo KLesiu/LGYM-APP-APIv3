@@ -204,10 +204,74 @@ public sealed class ScenarioLifecycleLeaseTests
     }
 
     [Test]
+    public async Task Scenario_proof_provisions_once_under_the_run_lifetime_before_the_scenario_lifetime_starts()
+    {
+        await using var fixture = await Task3WebSourceRunFixture.CreateAsync();
+        var request = fixture.CreateRequest();
+        request.Options.Timeouts.TestSessionSeconds = 5;
+        request.Options.Timeouts.ScenarioSeconds = 30;
+        using var lifetime = ScenarioLifecycleProofLifetime.Create(request.Options);
+        await using var run = LifecycleRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
+            fixture.OwnerRoot,
+            ".e2e-private/runs",
+            TimeSpan.FromSeconds(2)));
+        var stager = new RecordingProvisioningStager();
+        var npm = new BlockingProvisioningCommandRunner();
+        await using var source = await WebSourceRunLease.CreateAsync(
+            request,
+            new WebSourceRunDependencies
+            {
+                Stager = stager,
+                ToolResolver = fixture.CreateToolResolver(),
+                CommandRunner = npm
+            },
+            run,
+            lifetime.ProvisioningToken);
+        var installation = source.EnsureInstalledAsync(lifetime.ProvisioningToken);
+        var repeated = source.EnsureInstalledAsync(lifetime.ProvisioningToken);
+
+        try
+        {
+            await npm.NpmStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+            using var scenario = lifetime.StartScenario();
+            scenario.Cancel();
+            var completed = await Task.WhenAny(installation, Task.Delay(200));
+            var installToken = npm.ObservedInstallToken!.Value;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(repeated, Is.SameAs(installation));
+                Assert.That(completed, Is.Not.SameAs(installation));
+                Assert.That(lifetime.ProvisioningToken.IsCancellationRequested, Is.False);
+                Assert.That(stager.ObservedToken, Is.EqualTo(lifetime.ProvisioningToken));
+                Assert.That(installToken.IsCancellationRequested, Is.False);
+                Assert.That(installToken, Is.Not.EqualTo(scenario.Token));
+                Assert.That(scenario.Token, Is.Not.EqualTo(lifetime.ProvisioningToken));
+                Assert.That(npm.NpmInvocationCount, Is.EqualTo(1));
+            });
+        }
+        finally
+        {
+            npm.Release();
+            try
+            {
+                await installation;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        Assert.That(source.IsInstalled, Is.True);
+    }
+
+    [Test]
     public async Task ScenarioLifecycleLease_real_stack_returns_an_accessible_Expo_page_after_both_API_gates()
     {
-        using var scenario = new CancellationTokenSource(TimeSpan.FromMinutes(3));
-        var api = await RealApiHostProofContext.CreateAsync(scenario.Token);
+        var repositoryRoot = RepositoryRoot.Find();
+        var options = E2EConfiguration.Load(TestContext.CurrentContext.TestDirectory, repositoryRoot);
+        using var lifetime = ScenarioLifecycleProofLifetime.Create(options);
+        var api = await RealApiHostProofContext.CreateAsync(lifetime.ProvisioningToken);
         var git = ApiRepositoryStateReader.ResolveGitExecutable();
         await using var run = LifecycleRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
             api.RepositoryRoot,
@@ -222,8 +286,9 @@ public sealed class ScenarioLifecycleLeaseTests
                 CommandRunner = new NodeNpmCommandRunner()
             },
             run,
-            scenario.Token);
-        await source.EnsureInstalledAsync(scenario.Token);
+            lifetime.ProvisioningToken);
+        await source.EnsureInstalledAsync(lifetime.ProvisioningToken);
+        using var scenario = lifetime.StartScenario();
         await using var lease = await ScenarioLifecycleLease.CreateAsync(
             new ScenarioLifecycleRequest(
                 run,
@@ -234,11 +299,12 @@ public sealed class ScenarioLifecycleLeaseTests
                 "scenario-lifecycle-real"),
             cancellationToken: scenario.Token);
 
-        var response = await lease.Page.GotoAsync("/", new PageGotoOptions
+        var navigation = lease.Page.GotoAsync("/", new PageGotoOptions
         {
             WaitUntil = WaitUntilState.Commit,
             Timeout = api.Options.Timeouts.BrowserActionMilliseconds
         });
+        var response = await navigation.WaitAsync(scenario.Token);
 
         Assert.Multiple(() =>
         {
@@ -557,6 +623,84 @@ public sealed class ScenarioLifecycleLeaseTests
     {
         var order = new[] { "browser-scenario", "browser-run", "expo", "external-api-host" };
         return order.Take(Array.IndexOf(order, category) + 1).ToArray();
+    }
+
+    private sealed class ScenarioLifecycleProofLifetime : IDisposable
+    {
+        private readonly CancellationTokenSource _provisioning;
+        private readonly TimeSpan _scenarioTimeout;
+
+        private ScenarioLifecycleProofLifetime(E2EOptions options)
+        {
+            _provisioning = new CancellationTokenSource(
+                TimeSpan.FromSeconds(options.Timeouts.TestSessionSeconds));
+            _scenarioTimeout = TimeSpan.FromSeconds(options.Timeouts.ScenarioSeconds);
+        }
+
+        internal CancellationToken ProvisioningToken => _provisioning.Token;
+
+        internal static ScenarioLifecycleProofLifetime Create(E2EOptions options) => new(options);
+
+        internal CancellationTokenSource StartScenario() => new(_scenarioTimeout);
+
+        public void Dispose() => _provisioning.Dispose();
+    }
+
+    private sealed class RecordingProvisioningStager : IWebSourceStager
+    {
+        private readonly Task3WebSourceStager _inner = new();
+
+        internal CancellationToken? ObservedToken { get; private set; }
+
+        public Task<PinnedWebSourceStage> StageAsync(
+            E2EOptions options,
+            PrivateRunDirectoryLease runLease,
+            CancellationToken cancellationToken)
+        {
+            ObservedToken = cancellationToken;
+            return _inner.StageAsync(options, runLease, cancellationToken);
+        }
+
+        public Task<PinnedWebSourceStage> StageForLifecycleAsync(
+            E2EOptions options,
+            PrivateRunDirectoryLease runLease,
+            CancellationToken cancellationToken) =>
+            StageAsync(options, runLease, cancellationToken);
+    }
+
+    private sealed class BlockingProvisioningCommandRunner : INodeNpmCommandRunner
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource NpmStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal CancellationToken? ObservedInstallToken { get; private set; }
+
+        internal int NpmInvocationCount { get; private set; }
+
+        public async Task<ExternalProcessResult> RunAsync(
+            ExternalProcessRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (request.Arguments.SequenceEqual(["--version"]))
+            {
+                return Result();
+            }
+
+            ObservedInstallToken = cancellationToken;
+            NpmInvocationCount++;
+            NpmStarted.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            return Result();
+        }
+
+        internal void Release() => _release.TrySetResult();
+
+        private static ExternalProcessResult Result() => new(
+            0,
+            new ExternalProcessOutput("v22.18.0\n", false),
+            new ExternalProcessOutput(string.Empty, false));
     }
 
     private sealed class BlockingCleanupResource : IAsyncDisposable
