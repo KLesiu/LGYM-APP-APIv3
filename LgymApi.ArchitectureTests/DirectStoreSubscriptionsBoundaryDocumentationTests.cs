@@ -11,6 +11,8 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
     private const string DocumentPath = "docs/subscriptions/direct-store-subscriptions.md";
     private const string MissingDocumentDiagnostic =
         "Missing canonical direct-store subscription boundary document 'docs/subscriptions/direct-store-subscriptions.md'.";
+    private const string ProviderCallPolicy =
+        "Provider calls use a bounded, implementation-owned timeout and a bounded, implementation-owned retry policy.";
 
     private static readonly TableContract[] TableContracts =
     [
@@ -129,6 +131,36 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
         "LgymApi.Api/Features/Webhooks/Subscriptions/"
     ];
 
+    private static readonly string[] PublicSurfaceOwnerProjects =
+    [
+        "LgymApi.Identity",
+        "LgymApi.Api"
+    ];
+
+    private static readonly string[] ProviderCallPolicyRowIds =
+    [
+        "subscriptions.provider.apple-production",
+        "subscriptions.provider.apple-sandbox",
+        "subscriptions.provider.google-play",
+        "subscriptions.provider.google-rtdn"
+    ];
+
+    private static readonly string[] FutureFocusedContractIdentities =
+    [
+        "IAccountSubscriptionGrantRepository",
+        "ISubscriptionInboxEventRepository",
+        "IAccountPaidAccessProjectionRepository",
+        "IAppleSubscriptionProvider",
+        "IGooglePlaySubscriptionProvider",
+        "IVerifyAppleSubscriptionPurchaseUseCase.VerifyAsync",
+        "IVerifyGooglePlaySubscriptionPurchaseUseCase.VerifyAsync",
+        "IIngestAppleSubscriptionNotificationUseCase.IngestAsync",
+        "IIngestGooglePlayNotificationUseCase.IngestAsync",
+        "ICurrentPaidAccessQuery.GetAsync",
+        "ISubscriptionInboxProcessingUseCase.ProcessBatchAsync",
+        "ISubscriptionProviderReconciliationUseCase.ReconcileBatchAsync"
+    ];
+
     private static readonly HashSet<string> ExplicitRawProviderWrapperNames = new(StringComparer.Ordinal)
     {
         "RawProviderPayload",
@@ -152,7 +184,7 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
 
         AssertCurrentExecutableAuthorities(repositoryRoot, document.Rows);
         AssertSourceLocators(repositoryRoot, document.Rows);
-        Assert.That(ScanRepositoryPublicSurfaces(repositoryRoot), Is.Empty);
+        Assert.That(ScanRepositoryPublicSurfaces(), Is.Empty);
     }
 
     [Test]
@@ -373,6 +405,87 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
             """;
 
         Assert.That(ScanFixturePublicSurface(source), Is.Empty);
+    }
+
+    [Test]
+    public void Canonical_Document_Should_Require_Bounded_Implementation_Owned_Provider_Timeout_And_Retry()
+    {
+        Assert.That(
+            () => AssertProviderCallPolicy(ReadCanonicalDocument()),
+            Throws.Nothing);
+    }
+
+    [Test]
+    public void Canonical_Document_Should_Require_The_Complete_Future_Focused_Contract_Catalog()
+    {
+        Assert.That(
+            () => AssertFutureFocusedContractCatalog(ReadCanonicalDocument()),
+            Throws.Nothing);
+    }
+
+    [Test]
+    public void Out_Of_Root_Global_Provider_Alias_Should_Be_Rejected_In_The_Owning_Project()
+    {
+        var violations = ScanFixtureProjectPublicSurfaces(
+            ("LgymApi.Identity/GlobalUsings.cs", "global using ProviderPurchase = Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2;"),
+            ("LgymApi.Identity/Contracts/Subscriptions/Exposure.cs", """
+                namespace LgymApi.Identity.Contracts.Subscriptions;
+                public sealed class Exposure { public ProviderPurchase Get() => null!; }
+                """));
+
+        Assert.That(
+            violations,
+            Has.Some.Matches<PublicSurfaceViolation>(violation =>
+                violation.Category == "provider SDK"
+                && violation.Dependency == "Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2"));
+    }
+
+    [Test]
+    public void Out_Of_Root_Global_Neutral_Alias_Should_Remain_Allowed()
+    {
+        var violations = ScanFixtureProjectPublicSurfaces(
+            ("LgymApi.Identity/GlobalUsings.cs", "global using NeutralPurchase = Neutral.Contracts.SubscriptionReference;"),
+            ("LgymApi.Identity/Contracts/Subscriptions/Exposure.cs", """
+                namespace LgymApi.Identity.Contracts.Subscriptions;
+                public sealed record Exposure(NeutralPurchase Purchase);
+                """));
+
+        Assert.That(violations, Is.Empty);
+    }
+
+    [Test]
+    public void Out_Of_Root_Global_Provider_Alias_Should_Not_Leak_Between_Owning_Projects()
+    {
+        var identityViolations = ScanFixtureProjectPublicSurfaces(
+            ("LgymApi.Identity/GlobalUsings.cs", "global using ProviderPurchase = Google.Apis.AndroidPublisher.v3.Data.SubscriptionPurchaseV2;"));
+        var apiViolations = ScanFixtureProjectPublicSurfaces(
+            ("LgymApi.Api/Features/Account/Subscriptions/Exposure.cs", """
+                namespace LgymApi.Api.Features.Account.Subscriptions;
+                public sealed class Exposure { public ProviderPurchase Get() => null!; }
+                """));
+
+        Assert.That(identityViolations, Is.Empty);
+        Assert.That(apiViolations, Is.Empty);
+    }
+
+    [Test]
+    public void Synthetic_Document_Should_Reject_A_Missing_Provider_Call_Policy()
+    {
+        var markdown = CreateValidMarkdown().Replace(ProviderCallPolicy, "Provider policy is deferred.", StringComparison.Ordinal);
+
+        Assert.That(
+            () => ParseAndValidateDocument(markdown),
+            Throws.InvalidOperationException.With.Message.Contains("provider-call timeout/retry policy"));
+    }
+
+    [TestCaseSource(nameof(FutureFocusedContractIdentities))]
+    public void Synthetic_Document_Should_Reject_Each_Missing_Future_Focused_Identity(string identity)
+    {
+        var markdown = CreateValidMarkdown().Replace($"`{identity}`", "`RemovedFutureIdentity`", StringComparison.Ordinal);
+
+        Assert.That(
+            () => ParseAndValidateDocument(markdown),
+            Throws.InvalidOperationException.With.Message.Contains(identity));
     }
 
     [TestCase(
@@ -748,8 +861,42 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
         var rowsById = rows.ToDictionary(row => row.Id, StringComparer.Ordinal);
         AssertExactApprovedRows(rowsById);
         AssertProviderAuthorities(rowsById);
+        AssertProviderCallPolicy(markdown);
+        AssertFutureFocusedContractCatalog(markdown);
         AssertMermaidContract(markdown);
         return new SubscriptionDocument(rowsById);
+    }
+
+    private static string ReadCanonicalDocument()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        return File.ReadAllText(Path.Combine(repositoryRoot, DocumentPath.Replace('/', Path.DirectorySeparatorChar)));
+    }
+
+    private static void AssertProviderCallPolicy(string markdown)
+    {
+        var rows = ParseTables(markdown)
+            .SelectMany(table => table.Rows)
+            .ToDictionary(row => row.Id, StringComparer.Ordinal);
+        foreach (var id in ProviderCallPolicyRowIds)
+        {
+            RequireContains(
+                rows,
+                id,
+                "Verification/retry rule",
+                "bounded, implementation-owned timeout",
+                "bounded, implementation-owned retry policy");
+        }
+
+        RequireExactOccurrence(markdown, ProviderCallPolicy, "provider-call timeout/retry policy");
+    }
+
+    private static void AssertFutureFocusedContractCatalog(string markdown)
+    {
+        foreach (var identity in FutureFocusedContractIdentities)
+        {
+            RequireExactOccurrence(markdown, $"`{identity}`", $"future focused identity '{identity}'");
+        }
     }
 
     private static IReadOnlyList<DocumentationTable> ParseTables(string markdown)
@@ -965,29 +1112,33 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
         }
     }
 
-    private static IReadOnlyList<PublicSurfaceViolation> ScanRepositoryPublicSurfaces(string repositoryRoot)
+    private static IReadOnlyList<PublicSurfaceViolation> ScanRepositoryPublicSurfaces()
     {
-        var sourcePaths = PublicSurfaceRoots
-            .Select(root => Path.Combine(repositoryRoot, root.Replace('/', Path.DirectorySeparatorChar)))
-            .Where(Directory.Exists)
-            .SelectMany(root => Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
-            .Where(path => !ArchitectureTestHelpers.IsInBuildArtifacts(path))
+        return PublicSurfaceOwnerProjects
+            .SelectMany(project => ScanOwningProjectPublicSurfaces(ArchitectureTestHelpers.ParseProjectSources(project)))
+            .OrderBy(violation => violation.Identity, StringComparer.Ordinal)
             .ToList();
-        if (sourcePaths.Count == 0)
-        {
-            return [];
-        }
-
-        var trees = sourcePaths
-            .Select(path => CSharpSyntaxTree.ParseText(File.ReadAllText(path), path: path))
-            .ToList();
-        return ScanPublicSurfaces(ArchitectureTestHelpers.CreateCompilation(trees), trees);
     }
 
     private static IReadOnlyList<PublicSurfaceViolation> ScanFixturePublicSurface(string source)
     {
         var tree = CSharpSyntaxTree.ParseText(source, path: "LgymApi.Identity/Contracts/Subscriptions/Fixture.cs");
         return ScanPublicSurfaces(ArchitectureTestHelpers.CreateCompilation([tree]), [tree]);
+    }
+
+    private static IReadOnlyList<PublicSurfaceViolation> ScanFixtureProjectPublicSurfaces(
+        params (string Path, string Source)[] sources)
+    {
+        var trees = sources
+            .Select(source => (SyntaxTree)CSharpSyntaxTree.ParseText(source.Source, path: source.Path))
+            .ToList();
+        return ScanOwningProjectPublicSurfaces(trees);
+    }
+
+    private static IReadOnlyList<PublicSurfaceViolation> ScanOwningProjectPublicSurfaces(IEnumerable<SyntaxTree> syntaxTrees)
+    {
+        var trees = syntaxTrees.ToList();
+        return ScanPublicSurfaces(ArchitectureTestHelpers.CreateCompilation(trees), trees);
     }
 
     private static IReadOnlyList<PublicSurfaceViolation> ScanPublicSurfaces(
@@ -1537,6 +1688,21 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
         }
     }
 
+    private static void RequireExactOccurrence(string value, string expected, string name)
+    {
+        var count = 0;
+        for (var index = 0; (index = value.IndexOf(expected, index, StringComparison.Ordinal)) >= 0; index += expected.Length)
+        {
+            count++;
+        }
+
+        if (count != 1)
+        {
+            throw new InvalidOperationException(
+                $"Canonical subscription document must contain {name} exactly once; found {count}.");
+        }
+    }
+
     private static IEnumerable<string> ExtractFencedBlocks(string markdown, string language)
     {
         var marker = $"```{language}";
@@ -1701,11 +1867,11 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
 
             | Provider ID | State | Owner | Fixed authority/trust input | Verification/retry rule | Public-contract exclusion | Redaction class |
             | --- | --- | --- | --- | --- | --- | --- |
-            | `subscriptions.provider.apple-production` | future | Identity & Accounts | Apple production authority https://api.storekit.apple.com; verified JWS/certificate/app/environment/account binding before normalization | fixed authority; bounded, cancellation-aware, idempotent retry policy is deferred | no provider SDK/response/credential/raw payload | metadata-only |
-            | `subscriptions.provider.apple-sandbox` | future | Identity & Accounts | Apple sandbox authority https://api.storekit-sandbox.apple.com; verified JWS/certificate/app/environment/account binding before normalization | fixed authority; bounded, cancellation-aware, idempotent retry policy is deferred | no provider SDK/response/credential/raw payload | metadata-only |
+            | `subscriptions.provider.apple-production` | future | Identity & Accounts | Apple production authority https://api.storekit.apple.com; verified JWS/certificate/app/environment/account binding before normalization | fixed authority; bounded, implementation-owned timeout and bounded, implementation-owned retry policy; cancellation-aware and idempotent; leaves are deferred | no provider SDK/response/credential/raw payload | metadata-only |
+            | `subscriptions.provider.apple-sandbox` | future | Identity & Accounts | Apple sandbox authority https://api.storekit-sandbox.apple.com; verified JWS/certificate/app/environment/account binding before normalization | fixed authority; bounded, implementation-owned timeout and bounded, implementation-owned retry policy; cancellation-aware and idempotent; leaves are deferred | no provider SDK/response/credential/raw payload | metadata-only |
             | `subscriptions.provider.apple-signed-data` | future | Identity & Accounts | verified JWS/certificate/app/environment/account binding before normalization | provider-private sensitive handling and storage for receipts/JWS and account-binding tokens; bounded, cancellation-aware, idempotent retry | receipts/JWS, account-binding tokens, credentials, provider bodies, and SDK responses are forbidden from public contracts, logs, analytics, responses, and evidence | signed-payload;account-binding-token |
-            | `subscriptions.provider.google-play` | future | Identity & Accounts | Google Android Publisher authority https://androidpublisher.googleapis.com; authoritative purchases.subscriptionsv2.get current-state re-query | provider-private sensitive handling and storage for purchase tokens, account-binding tokens, credentials, and provider bodies; honor bounded transient retry guidance | purchase tokens, account-binding tokens, credentials, provider bodies, and SDK responses are forbidden from public contracts, logs, analytics, responses, and evidence | purchase-token;account-binding-token;provider-body;credential |
-            | `subscriptions.provider.google-rtdn` | future | Identity & Accounts | verified Pub/Sub OIDC identity/envelope bounds then provider re-query via purchases.subscriptionsv2.get; OIDC checks include signature, issuer, audience, expiry, expected service-account email, and email_verified | provider-private sensitive handling and storage for credentials and provider bodies; never trust notification order or body alone | credentials, provider bodies, raw payloads, purchase tokens, and SDK responses are forbidden from public contracts, logs, analytics, responses, and evidence | provider-body;credential |
+            | `subscriptions.provider.google-play` | future | Identity & Accounts | Google Android Publisher authority https://androidpublisher.googleapis.com; authoritative purchases.subscriptionsv2.get current-state re-query | provider-private sensitive handling and storage for purchase tokens, account-binding tokens, credentials, and provider bodies; bounded, implementation-owned timeout and bounded, implementation-owned retry policy; cancellation-aware and idempotent; honor Retry-After and transient guidance | purchase tokens, account-binding tokens, credentials, provider bodies, and SDK responses are forbidden from public contracts, logs, analytics, responses, and evidence | purchase-token;account-binding-token;provider-body;credential |
+            | `subscriptions.provider.google-rtdn` | future | Identity & Accounts | verified Pub/Sub OIDC identity/envelope bounds then provider re-query via purchases.subscriptionsv2.get; OIDC checks include signature, issuer, audience, expiry, expected service-account email, and email_verified | provider-private sensitive handling and storage for credentials and provider bodies; bounded, implementation-owned timeout and bounded, implementation-owned retry policy for provider re-query; cancellation-aware and idempotent; never trust notification order or body alone | credentials, provider bodies, raw payloads, purchase tokens, and SDK responses are forbidden from public contracts, logs, analytics, responses, and evidence | provider-body;credential |
             | `subscriptions.provider.sanitized-errors` | future | Identity & Accounts | provider-neutral authentication, validation, throttled, transient, and unavailable outcomes | metadata-only observability and evidence; sanitize provider bodies and exceptions | sensitive values in observability are forbidden; no receipt/JWS, purchase token, account-binding token, credential, provider body, personal data, exception, SDK response, or raw payload | metadata-only |
 
             | Configuration ID | State | Key/root | Default | Requires | Enables | Forbidden effect |
@@ -1732,6 +1898,10 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
             | `subscriptions.policy.tests` | future | parser, provider-surface, topology/Common/persistence parity, fixtures, and targeted/full Release evidence | Todo 2 focused guard and later Release evidence | no provider call or cryptography proof in Todo 1 |
             | `subscriptions.policy.rollout` | future | docs and guards first; all controls false; no sale or module lock | focused rollout/control-state assertion | no production activation or paid benefit release |
             | `subscriptions.policy.rollback` | future | remove contract only before dependent child implementation; otherwise supersede without deleting commerce state | focused rollback rule assertion | no durable commerce-state deletion as rollback |
+
+            Provider calls use a bounded, implementation-owned timeout and a bounded, implementation-owned retry policy.
+
+            Future focused identities are internal `IAccountSubscriptionGrantRepository`, `ISubscriptionInboxEventRepository`, `IAccountPaidAccessProjectionRepository`, `IAppleSubscriptionProvider`, and `IGooglePlaySubscriptionProvider`; public `IVerifyAppleSubscriptionPurchaseUseCase.VerifyAsync`, `IVerifyGooglePlaySubscriptionPurchaseUseCase.VerifyAsync`, `IIngestAppleSubscriptionNotificationUseCase.IngestAsync`, `IIngestGooglePlayNotificationUseCase.IngestAsync`, `ICurrentPaidAccessQuery.GetAsync`, `ISubscriptionInboxProcessingUseCase.ProcessBatchAsync`, and `ISubscriptionProviderReconciliationUseCase.ReconcileBatchAsync`.
 
             ```mermaid
             %% subscriptions-graph: future-state logical flow; project-graph: existing %%
