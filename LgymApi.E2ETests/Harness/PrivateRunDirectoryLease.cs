@@ -87,6 +87,28 @@ internal sealed class PrivateRunDirectoryLease : IAsyncDisposable
         return CreateOwnedDirectory(componentDirectory);
     }
 
+    internal void EnsureSafeLifecycleComponentArtifact(
+        string caseId,
+        string componentName,
+        string artifactPath)
+    {
+        EnsureCanonicalLifecycleId(caseId);
+        if (componentName is not ("api" or "web-runtime" or "browser-runtime"))
+        {
+            throw new InvalidOperationException(PathValidationMessage);
+        }
+
+        var componentDirectory = Path.Combine(RunDirectory, "scenarios", caseId, componentName);
+        if (!PrivateRunDirectoryLayout.IsDescendantOrSame(componentDirectory, artifactPath))
+        {
+            throw new InvalidOperationException(PathValidationMessage);
+        }
+
+        _layout.EnsureOwnedRunDirectory(RunDirectory);
+        _layout.EnsureSafePath(componentDirectory);
+        _layout.EnsureSafePath(artifactPath);
+    }
+
     internal Task DeleteLifecycleScenarioAsync(string caseId, CancellationToken cancellationToken = default) =>
         DeleteLifecycleDirectoryAsync("scenarios", caseId, cancellationToken);
 

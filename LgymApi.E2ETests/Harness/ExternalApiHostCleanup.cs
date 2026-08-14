@@ -7,13 +7,13 @@ internal sealed record ExternalApiHostCleanupResult(
 internal static class ExternalApiHostCleanup
 {
     internal const string ProcessCategory = "api-process";
-    private const string RuntimeCategory = "runtime-configuration";
-    private const string DatabaseCategory = "postgresql";
+    internal const string RuntimeCategory = "runtime-configuration";
+    internal const string DatabaseCategory = "postgresql";
 
     internal static async Task<ExternalApiHostCleanupResult> DisposeAsync(
         IExternalApiProcess? process,
         IApiHostRuntimeLease? runtime,
-        IApiHostDatabaseLease database)
+        IApiHostDatabaseLease? database)
     {
         var categories = new List<string>(3);
         var failureCount = 0;
@@ -50,15 +50,20 @@ internal static class ExternalApiHostCleanup
             processExit.HangfireServerStartObserved);
     }
 
-    internal static ExternalApiHostCleanupException Merge(
-        ExternalApiHostCleanupException first,
-        ExternalApiHostCleanupReceipt second) =>
-        new(new ExternalApiHostCleanupReceipt(
-            first.Receipt.ProcessTreeAbsent && second.ProcessTreeAbsent,
-            first.Receipt.RuntimeDirectoryAbsent && second.RuntimeDirectoryAbsent,
-            first.Receipt.DatabaseAbsent && second.DatabaseAbsent,
-            first.Receipt.AttemptedCategories.Concat(second.AttemptedCategories).ToArray(),
-            first.Receipt.FailureCount + second.FailureCount));
+    internal static ExternalApiHostCleanupReceipt Merge(
+        ExternalApiHostCleanupReceipt first,
+        ExternalApiHostCleanupReceipt second)
+    {
+        var attemptedProcess = second.AttemptedCategories.Contains(ProcessCategory, StringComparer.Ordinal);
+        var attemptedRuntime = second.AttemptedCategories.Contains(RuntimeCategory, StringComparer.Ordinal);
+        var attemptedDatabase = second.AttemptedCategories.Contains(DatabaseCategory, StringComparer.Ordinal);
+        return new ExternalApiHostCleanupReceipt(
+            attemptedProcess ? second.ProcessTreeAbsent : first.ProcessTreeAbsent,
+            attemptedRuntime ? second.RuntimeDirectoryAbsent : first.RuntimeDirectoryAbsent,
+            attemptedDatabase ? second.DatabaseAbsent : first.DatabaseAbsent,
+            first.AttemptedCategories.Concat(second.AttemptedCategories).ToArray(),
+            first.FailureCount + second.FailureCount);
+    }
 
     private static async Task<int> DisposeResourceAsync(
         IAsyncDisposable? resource,
@@ -101,8 +106,13 @@ internal static class ExternalApiHostCleanup
         }
     }
 
-    private static async Task<bool> ConfirmDatabaseAbsentAsync(IApiHostDatabaseLease database)
+    private static async Task<bool> ConfirmDatabaseAbsentAsync(IApiHostDatabaseLease? database)
     {
+        if (database is null)
+        {
+            return true;
+        }
+
         try
         {
             return await database.ConfirmAbsentAsync();

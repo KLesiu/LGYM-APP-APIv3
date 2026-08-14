@@ -1,5 +1,6 @@
-using LgymApi.E2ETests.Harness;
 using System.Net;
+using System.Text.RegularExpressions;
+using LgymApi.E2ETests.Harness;
 
 namespace LgymApi.E2ETests.Lifecycle;
 
@@ -7,6 +8,18 @@ namespace LgymApi.E2ETests.Lifecycle;
 [Category("Lifecycle")]
 public sealed class DatabaseBackedApiReadinessProbeTests
 {
+    private static readonly BoundaryRule[] ForbiddenRules =
+    [
+        new("product namespace", @"(?:using\s+|global::)LgymApi\.(Api|Application|Domain|Infrastructure|Identity|Platform|TrainingPlanning|Notifications|BackgroundWorker)"),
+        new("Entity Framework", @"(?:using\s+|global::)?Microsoft\.EntityFrameworkCore|\bDbContext\b"),
+        new("Npgsql", @"(?:using\s+|global::)?Npgsql|\bNpgsqlConnection\b"),
+        new("repository", @"\b\w*Repository\b"),
+        new("in-process host", @"\bWebApplicationFactory\b"),
+        new("container persistence", @"\bTestcontainers\b"),
+        new("SQL", @"\b(SELECT|INSERT|UPDATE|DELETE|ALTER|DROP|CREATE)\s+", RegexOptions.IgnoreCase),
+        new("test endpoint", @"(?:api/(?:internal|test)|proof/|test-only)", RegexOptions.IgnoreCase)
+    ];
+
     [Test]
     public async Task DatabaseBacked_readiness_runs_after_health_and_rejects_a_non_401_response_before_later_acquisition()
     {
@@ -135,11 +148,17 @@ public sealed class DatabaseBackedApiReadinessProbeTests
         var runtime = await RuntimeConfigurationLease.CreateAsync(request, api);
         var tempDirectory = runtime.CreatePrivateTempDirectory();
         await runtime.DisposeAsync();
+        var configurationOwnedByApi =
+            string.Equals(Path.GetDirectoryName(runtime.ConfigurationPath), api.ComponentDirectory, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(Path.GetFileName(runtime.ConfigurationPath), "appsettings.e2e.json", StringComparison.Ordinal);
+        var tempOwnedByApi =
+            string.Equals(Path.GetDirectoryName(tempDirectory), api.ComponentDirectory, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(Path.GetFileName(tempDirectory), "temp", StringComparison.Ordinal);
 
         Assert.Multiple(() =>
         {
-            Assert.That(runtime.ConfigurationPath, Is.EqualTo(Path.Combine(api.ComponentDirectory, "appsettings.e2e.json")));
-            Assert.That(tempDirectory, Is.EqualTo(Path.Combine(api.ComponentDirectory, "temp")));
+            Assert.That(configurationOwnedByApi, Is.True);
+            Assert.That(tempOwnedByApi, Is.True);
             Assert.That(Directory.Exists(api.ComponentDirectory), Is.False);
             Assert.That(Directory.Exists(sibling.ComponentDirectory), Is.True);
             Assert.That(Directory.Exists(run.RunDirectory), Is.True);
@@ -149,30 +168,144 @@ public sealed class DatabaseBackedApiReadinessProbeTests
     }
 
     [Test]
+    public async Task DatabaseBacked_api_runtime_rejects_an_ancestor_reparse_before_any_foreign_write()
+    {
+        var repositoryRoot = RepositoryRoot.Find();
+        var foreignDirectory = Path.Combine(repositoryRoot, ".e2e-private", "task-3-api-ancestor-foreign");
+        var foreignMarker = Path.Combine(foreignDirectory, "foreign.marker");
+        Directory.CreateDirectory(foreignDirectory);
+        File.WriteAllText(foreignMarker, "foreign");
+        await using var run = LifecycleRunDirectoryLease.Create(
+            new PrivateRunDirectoryRequest(repositoryRoot, ".e2e-private/runs", TimeSpan.FromSeconds(1)));
+        var scenario = run.CreateScenario("api-ancestor");
+        var api = scenario.CreateApiComponent();
+        var scenariosDirectory = Path.Combine(run.RunDirectory, "scenarios");
+        Directory.Delete(scenariosDirectory, recursive: true);
+        Directory.CreateSymbolicLink(scenariosDirectory, foreignDirectory);
+        var request = new RuntimeConfigurationRequest(
+            new PrivateRunDirectoryRequest(repositoryRoot, ".e2e-private/runs", TimeSpan.FromSeconds(1)),
+            new ApiRuntimeDatabase("synthetic-connection"),
+            ApiRuntimeConfigurationProfile.E2E);
+
+        try
+        {
+            var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await RuntimeConfigurationLease.CreateAsync(request, api));
+            var foreignMarkerPresent = File.Exists(foreignMarker);
+            var foreignConfigurationPresent = File.Exists(Path.Combine(
+                foreignDirectory,
+                "api-ancestor",
+                "api",
+                "appsettings.e2e.json"));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(exception!.Message, Is.EqualTo(PrivateRunDirectoryLease.PathValidationMessage));
+                Assert.That(foreignMarkerPresent, Is.True);
+                Assert.That(foreignConfigurationPresent, Is.False);
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(scenariosDirectory))
+            {
+                Directory.Delete(scenariosDirectory);
+            }
+
+            if (Directory.Exists(foreignDirectory))
+            {
+                Directory.Delete(foreignDirectory, recursive: true);
+            }
+
+            await scenario.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public async Task DatabaseBacked_api_runtime_revalidates_ancestors_during_the_atomic_write()
+    {
+        var repositoryRoot = RepositoryRoot.Find();
+        var foreignDirectory = Path.Combine(repositoryRoot, ".e2e-private", "task-3-api-write-race-foreign");
+        var foreignMarker = Path.Combine(foreignDirectory, "foreign.marker");
+        Directory.CreateDirectory(foreignDirectory);
+        File.WriteAllText(foreignMarker, "foreign");
+        await using var run = LifecycleRunDirectoryLease.Create(
+            new PrivateRunDirectoryRequest(repositoryRoot, ".e2e-private/runs", TimeSpan.FromSeconds(1)));
+        var scenario = run.CreateScenario("api-write-race");
+        var api = scenario.CreateApiComponent();
+        var writer = new AncestorReparseFileWriter(foreignDirectory);
+        var request = new RuntimeConfigurationRequest(
+            new PrivateRunDirectoryRequest(repositoryRoot, ".e2e-private/runs", TimeSpan.FromSeconds(1)),
+            new ApiRuntimeDatabase("synthetic-connection"),
+            ApiRuntimeConfigurationProfile.E2E);
+
+        try
+        {
+            var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await RuntimeConfigurationLease.CreateAsync(
+                    request,
+                    api,
+                    new RuntimeConfigurationInfrastructure(writer, new FileSystemRunDirectoryCleaner())));
+            var foreignMarkerPresent = File.Exists(foreignMarker);
+            var foreignConfigurationPresent = File.Exists(writer.ForeignConfigurationPath);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(exception!.Message, Is.EqualTo(PrivateRunDirectoryLease.PathValidationMessage));
+                Assert.That(foreignMarkerPresent, Is.True);
+                Assert.That(foreignConfigurationPresent, Is.False);
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(foreignDirectory))
+            {
+                Directory.Delete(foreignDirectory, recursive: true);
+            }
+
+            await scenario.DisposeAsync();
+        }
+    }
+
+    [Test]
     public void DatabaseBacked_readiness_source_has_only_the_public_HTTP_boundary()
     {
         var lifecycleDirectory = Path.Combine(
             RepositoryRoot.Find(),
             "LgymApi.E2ETests",
             "Lifecycle");
-        var source = string.Join(
-            Environment.NewLine,
-            Directory.GetFiles(lifecycleDirectory, "*.cs")
-                .Where(path => !path.EndsWith("Tests.cs", StringComparison.Ordinal))
-                .Select(File.ReadAllText));
-        var forbidden = new[]
-        {
-            "Microsoft.EntityFrameworkCore",
-            "Npgsql",
-            "ExecuteSql",
-            "Repository",
-            "LgymApi.Api",
-            "WebApplicationFactory",
-            "test-only"
-        };
+        var violations = Directory.GetFiles(lifecycleDirectory, "*.cs")
+            .Where(path => !path.EndsWith("Tests.cs", StringComparison.Ordinal))
+            .SelectMany(path => FindBoundaryViolations(path, File.ReadAllText(path)))
+            .ToArray();
 
-        Assert.That(forbidden.Where(source.Contains), Is.Empty);
+        Assert.That(violations, Is.Empty, string.Join(Environment.NewLine, violations));
     }
+
+    [TestCase("using LgymApi.Domain;")]
+    [TestCase("global::LgymApi.Infrastructure")]
+    [TestCase("using Microsoft.EntityFrameworkCore;")]
+    [TestCase("global::Microsoft.EntityFrameworkCore.DbContext")]
+    [TestCase("using Npgsql;")]
+    [TestCase("AccountRepository")]
+    [TestCase("WebApplicationFactory")]
+    [TestCase("Testcontainers")]
+    [TestCase("SELECT * FROM users")]
+    [TestCase("api/internal/example")]
+    [TestCase("api/test/example")]
+    [TestCase("proof/example")]
+    [TestCase("test-only")]
+    public void DatabaseBacked_readiness_source_policy_rejects_each_forbidden_boundary(string unsafeFixture)
+    {
+        var violations = FindBoundaryViolations("unsafe.cs", unsafeFixture).ToArray();
+
+        Assert.That(violations, Is.Not.Empty);
+    }
+
+    private static IEnumerable<string> FindBoundaryViolations(string path, string source) =>
+        ForbiddenRules
+            .Where(rule => rule.Pattern.IsMatch(source))
+            .Select(rule => $"{Path.GetFileName(path)} violates public-HTTP boundary rule '{rule.Name}'.");
 
     private sealed class ScriptedDatabaseBackedApiReadinessProbe(
         DatabaseBackedApiReadinessOutcome outcome) : IDatabaseBackedApiReadinessProbe
@@ -209,5 +342,54 @@ public sealed class DatabaseBackedApiReadinessProbeTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromException<HttpResponseMessage>(new HttpRequestException("synthetic transport failure"));
+    }
+
+    private sealed class AncestorReparseFileWriter(string foreignDirectory) : IRuntimeConfigurationFileWriter
+    {
+        private readonly AtomicRuntimeConfigurationFileWriter _writer = new();
+
+        internal string ForeignConfigurationPath => Path.Combine(
+            foreignDirectory,
+            "api-write-race",
+            "api",
+            "appsettings.e2e.json");
+
+        public async Task WriteAsync(
+            RuntimeConfigurationFileWriteRequest request,
+            CancellationToken cancellationToken)
+        {
+            var apiDirectory = Path.GetDirectoryName(request.Path)!;
+            var scenarioDirectory = Path.GetDirectoryName(apiDirectory)!;
+            var scenariosDirectory = Path.GetDirectoryName(scenarioDirectory)!;
+            Directory.Delete(scenariosDirectory, recursive: true);
+            Directory.CreateDirectory(Path.GetDirectoryName(ForeignConfigurationPath)!);
+            Directory.CreateSymbolicLink(scenariosDirectory, foreignDirectory);
+            try
+            {
+                await _writer.WriteAsync(request, cancellationToken);
+            }
+            finally
+            {
+                if (Directory.Exists(scenariosDirectory))
+                {
+                    Directory.Delete(scenariosDirectory);
+                }
+
+                Directory.CreateDirectory(scenariosDirectory);
+            }
+        }
+    }
+
+    private sealed record BoundaryRule
+    {
+        internal BoundaryRule(string name, string pattern, RegexOptions options = RegexOptions.None)
+        {
+            Name = name;
+            Pattern = new Regex(pattern, RegexOptions.CultureInvariant | options);
+        }
+
+        internal string Name { get; }
+
+        internal Regex Pattern { get; }
     }
 }

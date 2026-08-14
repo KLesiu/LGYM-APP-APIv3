@@ -90,6 +90,8 @@ internal sealed record ExternalApiHostCleanupReceipt(
     IReadOnlyList<string> AttemptedCategories,
     int FailureCount)
 {
+    internal bool AllResourcesAbsent => ProcessTreeAbsent && RuntimeDirectoryAbsent && DatabaseAbsent;
+
     public override string ToString() => "<external-api-host-cleanup>";
 }
 
@@ -109,7 +111,17 @@ internal sealed class ExternalApiHostObservation(
     public override string ToString() => "<external-api-host-observation>";
 }
 
-internal sealed class ExternalApiHostStartupException(string message) : InvalidOperationException(message);
+internal sealed class ExternalApiHostStartupException : InvalidOperationException
+{
+    internal ExternalApiHostStartupException(
+        string message,
+        ExternalApiHostCleanupReceipt? cleanupReceipt = null) : base(message)
+    {
+        CleanupReceipt = cleanupReceipt ?? new ExternalApiHostCleanupReceipt(false, false, false, [], 0);
+    }
+
+    internal ExternalApiHostCleanupReceipt CleanupReceipt { get; }
+}
 
 internal sealed class ExternalApiHostCleanupException(ExternalApiHostCleanupReceipt receipt)
     : InvalidOperationException(ExternalApiHostLease.CleanupFailureMessage)
@@ -123,7 +135,7 @@ internal sealed class PostgreSqlApiHostDatabaseLease(PostgreSqlContainerLease le
 
     public ValueTask DisposeAsync() => lease.DisposeAsync();
 
-    public Task<bool> ConfirmAbsentAsync() => Task.FromResult(lease.CleanupReceipt.ContainerAbsent);
+    public Task<bool> ConfirmAbsentAsync() => lease.ConfirmAbsentAsync();
 
     public override string ToString() => "<api-host-database-lease>";
 }
@@ -167,8 +179,14 @@ internal sealed class ApiHostRuntimeLease : IApiHostRuntimeLease
 
     public async ValueTask DisposeAsync()
     {
-        await _lease.DisposeAsync();
-        RuntimeDirectoryAbsent = !Directory.Exists(_lease.RunDirectory);
+        try
+        {
+            await _lease.DisposeAsync();
+        }
+        finally
+        {
+            RuntimeDirectoryAbsent = !Directory.Exists(_lease.RunDirectory);
+        }
     }
 
     public override string ToString() => "<api-host-runtime-lease>";

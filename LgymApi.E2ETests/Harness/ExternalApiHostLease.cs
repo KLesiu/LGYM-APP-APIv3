@@ -15,24 +15,29 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
     private const string CanonicalPrivateRunRoot = ".e2e-private/runs";
     private const int MaximumDynamicPortAttempts = 3;
     private static readonly TimeSpan ReadinessPollInterval = TimeSpan.FromMilliseconds(100);
-    private readonly IApiHostDatabaseLease _database;
+    private IApiHostDatabaseLease? _database;
     private readonly ExternalApiHostInfrastructure _infrastructure;
+    private readonly TimeSpan _cleanupTimeout;
+    private readonly SemaphoreSlim _disposeLock = new(1, 1);
+    private Task<ExternalApiHostCleanupResult>? _cleanupAttempt;
     private IApiHostRuntimeLease? _runtime;
     private IExternalApiProcess? _process;
     private int _disposed;
 
     private ExternalApiHostLease(
         IApiHostDatabaseLease database,
-        ExternalApiHostInfrastructure infrastructure)
+        ExternalApiHostInfrastructure infrastructure,
+        TimeSpan cleanupTimeout)
     {
         _database = database;
         _infrastructure = infrastructure;
+        _cleanupTimeout = cleanupTimeout;
     }
 
     internal Uri BaseAddress { get; private set; } = null!;
 
     internal ExternalApiHostCleanupReceipt CleanupReceipt { get; private set; } =
-        new(false, false, false, [], 0);
+        new(true, true, false, [], 0);
 
     internal ScenarioResourceIdentity Identity { get; } = ScenarioResourceIdentity.Create();
 
@@ -67,7 +72,10 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
         ExternalApiHostInfrastructure infrastructure,
         CancellationToken cancellationToken = default)
     {
-        var lease = new ExternalApiHostLease(request.Database, infrastructure);
+        var lease = new ExternalApiHostLease(
+            request.Database,
+            infrastructure,
+            TimeSpan.FromSeconds(request.Options.Timeouts.ProcessShutdownSeconds));
         using var startupTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         startupTimeout.CancelAfter(TimeSpan.FromSeconds(request.Options.Timeouts.ApiStartupSeconds));
 
@@ -87,66 +95,117 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
                     ApiRuntimeDirectory = request.ApiRuntimeDirectory
                 },
                 startupTimeout.Token);
+            lease.CleanupReceipt = lease.CleanupReceipt with { RuntimeDirectoryAbsent = false };
             await lease.StartProcessAsync(request, startupTimeout.Token);
             return lease;
         }
         catch (Exception exception)
         {
-            var attemptCleanupFailure = exception as ExternalApiHostCleanupException;
+            var callerCanceled = exception is OperationCanceledException && cancellationToken.IsCancellationRequested;
+            var startupTimedOut = startupTimeout.IsCancellationRequested;
             try
             {
                 await lease.DisposeAsync();
             }
-            catch (ExternalApiHostCleanupException disposalFailure)
+            catch (ExternalApiHostCleanupException)
             {
-                throw attemptCleanupFailure is null
-                    ? disposalFailure
-                    : ExternalApiHostCleanup.Merge(attemptCleanupFailure, disposalFailure.Receipt);
             }
 
-            if (attemptCleanupFailure is not null)
+            if (exception is ExternalApiHostCleanupException)
             {
-                throw ExternalApiHostCleanup.Merge(attemptCleanupFailure, lease.CleanupReceipt);
+                throw new ExternalApiHostCleanupException(lease.CleanupReceipt);
             }
 
-            if (exception is OperationCanceledException && cancellationToken.IsCancellationRequested)
+            if (callerCanceled)
             {
-                throw new OperationCanceledException(CallerCancellationMessage, null, cancellationToken);
+                var cancellationFailure = new OperationCanceledException(
+                    CallerCancellationMessage,
+                    null,
+                    cancellationToken);
+                cancellationFailure.Data[nameof(ExternalApiHostCleanupReceipt)] = lease.CleanupReceipt;
+                throw cancellationFailure;
             }
 
-            if (startupTimeout.IsCancellationRequested)
+            if (startupTimedOut)
             {
-                throw new ExternalApiHostStartupException(StartupTimeoutMessage);
+                throw new ExternalApiHostStartupException(StartupTimeoutMessage, lease.CleanupReceipt);
             }
 
-            if (exception is ExternalApiHostStartupException or ExternalApiHostCleanupException ||
-                exception is InvalidOperationException invalidOperation &&
+            if (exception is ExternalApiHostStartupException startupFailure)
+            {
+                throw new ExternalApiHostStartupException(startupFailure.Message, lease.CleanupReceipt);
+            }
+
+            if (exception is InvalidOperationException invalidOperation &&
                 IsPublicationValidationMessage(invalidOperation.Message))
             {
+                invalidOperation.Data[nameof(ExternalApiHostCleanupReceipt)] = lease.CleanupReceipt;
                 throw;
             }
 
-            throw new ExternalApiHostStartupException(StartupFailureMessage);
+            throw new ExternalApiHostStartupException(StartupFailureMessage, lease.CleanupReceipt);
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        using var deadline = new CancellationTokenSource(_cleanupTimeout);
+        try
         {
-            return;
+            await _disposeLock.WaitAsync(deadline.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            throw new ExternalApiHostCleanupException(CreatePendingCleanupReceipt());
         }
 
-        var result = await ExternalApiHostCleanup.DisposeAsync(_process, _runtime, _database);
-        _process = null;
-        _runtime = null;
-        CleanupReceipt = result.Receipt;
-        HangfireServerStartObserved = result.HangfireServerStartObserved;
-        if (CleanupReceipt.FailureCount != 0)
+        try
         {
-            throw new ExternalApiHostCleanupException(CleanupReceipt);
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                return;
+            }
+
+            _cleanupAttempt ??= ExternalApiHostCleanup.DisposeAsync(_process, _runtime, _database);
+            ExternalApiHostCleanupResult result;
+            try
+            {
+                result = await _cleanupAttempt.WaitAsync(deadline.Token);
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+            {
+                CleanupReceipt = CreatePendingCleanupReceipt();
+                throw new ExternalApiHostCleanupException(CleanupReceipt);
+            }
+            catch (Exception)
+            {
+                _cleanupAttempt = null;
+                CleanupReceipt = CreatePendingCleanupReceipt();
+                throw new ExternalApiHostCleanupException(CleanupReceipt);
+            }
+
+            _cleanupAttempt = null;
+            ApplyCleanupResult(result);
+            if (CleanupReceipt.AllResourcesAbsent)
+            {
+                Volatile.Write(ref _disposed, 1);
+            }
+
+            if (result.Receipt.FailureCount != 0 || !CleanupReceipt.AllResourcesAbsent)
+            {
+                throw new ExternalApiHostCleanupException(CleanupReceipt);
+            }
+        }
+        finally
+        {
+            _disposeLock.Release();
         }
     }
+
+    private ExternalApiHostCleanupReceipt CreatePendingCleanupReceipt() => CleanupReceipt with
+    {
+        FailureCount = CleanupReceipt.FailureCount + 1
+    };
 
     public override string ToString() => "<external-api-host-lease>";
 
@@ -176,6 +235,7 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
                 });
             request.Publication.ValidateBeforeLaunch(processRequest);
             _process = _infrastructure.ProcessStarter.Start(processRequest);
+            CleanupReceipt = CleanupReceipt with { ProcessTreeAbsent = false };
             var outcome = await _infrastructure.ReadinessMonitor.WaitUntilReadyAsync(
                 new Uri(baseAddress, "health/live"),
                 _process.Exit,
@@ -197,11 +257,13 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
                     BaseAddress = baseAddress;
                     return;
                 }
+
+                throw new ExternalApiHostStartupException(StartupFailureMessage);
             }
 
-            await StopProcessAttemptAsync();
             if (outcome == ApiHostReadinessOutcome.AddressInUse && dynamicPort && attempt < maximumAttempts)
             {
+                await StopProcessAttemptAsync();
                 continue;
             }
 
@@ -219,20 +281,36 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
 
     private async Task StopProcessAttemptAsync()
     {
-        var process = _process;
-        _process = null;
-        if (process is not null)
+        var result = await ExternalApiHostCleanup.DisposeAsync(_process, runtime: null, database: null);
+        ApplyCleanupResult(result);
+        if (result.Receipt.FailureCount != 0 || !result.Receipt.ProcessTreeAbsent)
         {
-            try
-            {
-                await process.DisposeAsync();
-            }
-            catch (Exception)
-            {
-                throw new ExternalApiHostCleanupException(
-                    new ExternalApiHostCleanupReceipt(false, false, false, [ExternalApiHostCleanup.ProcessCategory], 1));
-            }
+            throw new ExternalApiHostCleanupException(CleanupReceipt);
         }
+    }
+
+    private void ApplyCleanupResult(ExternalApiHostCleanupResult result)
+    {
+        if (result.Receipt.ProcessTreeAbsent &&
+            result.Receipt.AttemptedCategories.Contains(ExternalApiHostCleanup.ProcessCategory, StringComparer.Ordinal))
+        {
+            _process = null;
+        }
+
+        if (result.Receipt.RuntimeDirectoryAbsent &&
+            result.Receipt.AttemptedCategories.Contains(ExternalApiHostCleanup.RuntimeCategory, StringComparer.Ordinal))
+        {
+            _runtime = null;
+        }
+
+        if (result.Receipt.DatabaseAbsent &&
+            result.Receipt.AttemptedCategories.Contains(ExternalApiHostCleanup.DatabaseCategory, StringComparer.Ordinal))
+        {
+            _database = null;
+        }
+
+        CleanupReceipt = ExternalApiHostCleanup.Merge(CleanupReceipt, result.Receipt);
+        HangfireServerStartObserved |= result.HangfireServerStartObserved;
     }
 
     private static bool IsPublicationValidationMessage(string message) =>

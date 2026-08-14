@@ -65,7 +65,7 @@ internal sealed class RuntimeConfigurationLease : IAsyncDisposable
         _apiRuntimeDirectory = apiRuntimeDirectory;
         RunDirectory = apiRuntimeDirectory.ComponentDirectory;
         ConfigurationPath = Path.Combine(RunDirectory, ConfigurationFileName);
-        _ensureSafeRuntimeArtifact = path => EnsureSafeApiRuntimeArtifact(apiRuntimeDirectory, path);
+        _ensureSafeRuntimeArtifact = apiRuntimeDirectory.EnsureSafeArtifact;
     }
 
     internal string ConfigurationPath { get; }
@@ -139,6 +139,8 @@ internal sealed class RuntimeConfigurationLease : IAsyncDisposable
         CancellationToken cancellationToken)
     {
 
+        lease._ensureSafeRuntimeArtifact(Path.GetDirectoryName(lease.ConfigurationPath)!);
+        lease._ensureSafeRuntimeArtifact(lease.ConfigurationPath);
         try
         {
             var apiDirectory = Path.GetDirectoryName(lease.ConfigurationPath)!;
@@ -155,7 +157,11 @@ internal sealed class RuntimeConfigurationLease : IAsyncDisposable
         }
         catch
         {
-            await lease.DisposeAsync();
+            if (lease._apiRuntimeDirectory is null)
+            {
+                await lease.DisposeAsync();
+            }
+
             throw;
         }
     }
@@ -166,26 +172,6 @@ internal sealed class RuntimeConfigurationLease : IAsyncDisposable
 
     public override string ToString() => "<runtime-configuration-lease>";
 
-    private static void EnsureSafeApiRuntimeArtifact(
-        LifecycleComponentDirectoryLease apiRuntimeDirectory,
-        string artifactPath)
-    {
-        var componentDirectory = Path.GetFullPath(apiRuntimeDirectory.ComponentDirectory);
-        var fullArtifactPath = Path.GetFullPath(artifactPath);
-        if (!PrivateRunDirectoryLayout.IsDescendantOrSame(componentDirectory, fullArtifactPath))
-        {
-            throw new InvalidOperationException(PrivateRunDirectoryLease.PathValidationMessage);
-        }
-
-        foreach (var path in new[] { componentDirectory, fullArtifactPath })
-        {
-            if ((Directory.Exists(path) || File.Exists(path)) &&
-                (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
-            {
-                throw new InvalidOperationException(PrivateRunDirectoryLease.PathValidationMessage);
-            }
-        }
-    }
 }
 
 internal static class ApiRuntimeConfigurationWriter

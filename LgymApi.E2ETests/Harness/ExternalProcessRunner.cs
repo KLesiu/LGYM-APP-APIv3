@@ -10,7 +10,7 @@ internal sealed class ExternalProcessRunner
     internal const string TimeoutMessage = "The external process exceeded the configured execution timeout.";
     internal const string CallerCancellationMessage = "The external process was canceled by the caller.";
     internal const string CleanupFailureMessage = "The external process could not be proven absent within the configured shutdown timeout.";
-    private const string StartFailureMessage = "The external process could not be started.";
+    internal const string StartFailureMessage = "The external process could not be started.";
     private readonly Func<bool> _isWindows;
     private readonly ExternalProcessTermination _termination;
 

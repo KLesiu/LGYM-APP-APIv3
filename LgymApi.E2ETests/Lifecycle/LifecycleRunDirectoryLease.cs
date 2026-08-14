@@ -170,6 +170,9 @@ internal sealed class LifecycleComponentDirectoryLease : IAsyncDisposable
 
     internal string ComponentDirectory { get; }
 
+    internal void EnsureSafeArtifact(string artifactPath) =>
+        _runLease.EnsureSafeLifecycleComponentArtifact(_caseId, _componentName, artifactPath);
+
     public async ValueTask DisposeAsync()
     {
         await _disposeLock.WaitAsync();

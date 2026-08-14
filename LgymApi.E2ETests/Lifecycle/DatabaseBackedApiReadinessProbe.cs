@@ -6,10 +6,7 @@ namespace LgymApi.E2ETests.Lifecycle;
 
 internal sealed class DatabaseBackedApiReadinessProbe : IDatabaseBackedApiReadinessProbe
 {
-    private static readonly HttpClient Client = new()
-    {
-        Timeout = Timeout.InfiniteTimeSpan
-    };
+    private static readonly HttpClient Client = CreateLocalClient();
     private readonly HttpClient _client;
 
     internal DatabaseBackedApiReadinessProbe() : this(Client)
@@ -26,6 +23,13 @@ internal sealed class DatabaseBackedApiReadinessProbe : IDatabaseBackedApiReadin
         ApiHostReadinessBounds bounds,
         CancellationToken cancellationToken)
     {
+        if (!baseAddress.IsAbsoluteUri || !baseAddress.IsLoopback ||
+            !string.Equals(baseAddress.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+            !string.IsNullOrEmpty(baseAddress.UserInfo))
+        {
+            return DatabaseBackedApiReadinessOutcome.HttpFailure;
+        }
+
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(bounds.HttpRequestTimeout);
         try
@@ -41,7 +45,7 @@ internal sealed class DatabaseBackedApiReadinessProbe : IDatabaseBackedApiReadin
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            throw;
+            throw new OperationCanceledException(null, null, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -54,14 +58,29 @@ internal sealed class DatabaseBackedApiReadinessProbe : IDatabaseBackedApiReadin
         Uri baseAddress,
         CancellationToken cancellationToken)
     {
-        return client.SendAsync(CreateInvalidLoginRequest(new Uri(baseAddress, "api/login"), null), cancellationToken);
+        return client.SendAsync(
+            CreateInvalidLoginRequest(new Uri(baseAddress, "api/login"), null),
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
     }
 
     internal static Task<HttpResponseMessage> PostInvalidLoginAsync(
         HttpClient client,
         string? origin,
         CancellationToken cancellationToken) =>
-        client.SendAsync(CreateInvalidLoginRequest(null, origin), cancellationToken);
+        client.SendAsync(
+            CreateInvalidLoginRequest(null, origin),
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+
+    private static HttpClient CreateLocalClient() => new(new HttpClientHandler
+    {
+        AllowAutoRedirect = false,
+        UseCookies = false
+    })
+    {
+        Timeout = Timeout.InfiniteTimeSpan
+    };
 
     private static HttpRequestMessage CreateInvalidLoginRequest(Uri? requestUri, string? origin)
     {
