@@ -105,6 +105,9 @@ internal sealed class LifecycleScenarioDirectoryLease : IAsyncDisposable
 
     internal string ArtifactDirectory { get; }
 
+    internal void EnsureSafeFailureArtifact(string artifactPath) =>
+        _runLease.EnsureSafeLifecycleArtifact(CaseId, artifactPath);
+
     internal LifecycleComponentDirectoryLease CreateApiComponent() =>
         CreateComponent("api");
 

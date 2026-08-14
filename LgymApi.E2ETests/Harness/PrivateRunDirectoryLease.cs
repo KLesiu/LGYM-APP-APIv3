@@ -109,6 +109,20 @@ internal sealed class PrivateRunDirectoryLease : IAsyncDisposable
         _layout.EnsureSafePath(artifactPath);
     }
 
+    internal void EnsureSafeLifecycleArtifact(string caseId, string artifactPath)
+    {
+        EnsureCanonicalLifecycleId(caseId);
+        var artifactDirectory = Path.Combine(RunDirectory, "artifacts", caseId);
+        if (!PrivateRunDirectoryLayout.IsDescendantOrSame(artifactDirectory, artifactPath))
+        {
+            throw new InvalidOperationException(PathValidationMessage);
+        }
+
+        _layout.EnsureOwnedRunDirectory(RunDirectory);
+        _layout.EnsureSafePath(artifactDirectory);
+        _layout.EnsureSafePath(artifactPath);
+    }
+
     internal Task DeleteLifecycleScenarioAsync(string caseId, CancellationToken cancellationToken = default) =>
         DeleteLifecycleDirectoryAsync("scenarios", caseId, cancellationToken);
 
