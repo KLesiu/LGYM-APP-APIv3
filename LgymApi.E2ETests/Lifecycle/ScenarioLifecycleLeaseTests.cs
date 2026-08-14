@@ -204,6 +204,116 @@ public sealed class ScenarioLifecycleLeaseTests
     }
 
     [Test]
+    public async Task Scenario_failure_after_the_ready_stack_preserves_the_primary_failure_writes_one_safe_artifact_and_starts_fresh()
+    {
+        await using var fixture = await ScenarioLifecycleFixture.CreateAsync();
+        const string failedCaseId = "scenario-failure-artifact";
+        var request = fixture.CreateRequest(failedCaseId);
+        var dependencies = new RecordingScenarioLifecycleDependencies();
+        ScenarioLifecycleObservation? firstObservation = null;
+
+        var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await ScenarioLifecycleLease.ExecuteAsync(
+                request,
+                (lease, _) =>
+                {
+                    firstObservation = lease.Observation;
+                    Assert.That(lease.Receipt.AcquiredCategories, Is.EqualTo([
+                        "scenario-paths", "postgresql", "external-api-host", "expo", "browser-run", "browser-scenario"]));
+                    throw new InvalidOperationException("scenario callback canary");
+                },
+                CreateFailureArtifactWriter(),
+                dependencies));
+        var receipt = (ScenarioLifecycleReceipt)exception!.Data[nameof(ScenarioLifecycleReceipt)]!;
+        var artifactDirectory = Path.Combine(request.Run.RunDirectory, "artifacts", failedCaseId);
+        var artifactPath = Path.Combine(artifactDirectory, ScenarioFailureArtifactWriter.FileName);
+        var artifact = await File.ReadAllTextAsync(artifactPath);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception.Message, Is.EqualTo("scenario callback canary"));
+            Assert.That(receipt.CleanupFailureCount, Is.Zero);
+            Assert.That(receipt.DatabaseAbsent && receipt.ApiAbsent && receipt.ExpoAbsent && receipt.ScenarioPathsAbsent, Is.True);
+            Assert.That(artifact, Does.Contain("\"failureCategory\":\"scenario-callback-failure\""));
+            Assert.That(artifact, Does.Not.Contain("scenario callback canary"));
+            Assert.That(artifact, Does.Not.Contain("safe-test-connection"));
+            Assert.That(artifact, Does.Not.Contain("ProcessId"));
+            Assert.That(artifact, Does.Not.Contain("storageState"));
+        });
+
+        File.Delete(artifactPath);
+        Directory.Delete(artifactDirectory);
+        Assert.That(Directory.Exists(artifactDirectory), Is.False);
+
+        var freshDependencies = new RecordingScenarioLifecycleDependencies();
+        var second = await ScenarioLifecycleLease.CreateAsync(
+            fixture.CreateRequest("scenario-failure-fresh", firstObservation, run: request.Run),
+            freshDependencies);
+        await second.DisposeAsync();
+        await request.Run.FinalizeFailureAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(second.Receipt.PreviousResourcesAbsent, Is.True);
+            Assert.That(second.Receipt.DatabaseIdentityDistinct, Is.True);
+            Assert.That(Directory.Exists(Path.Combine(request.Run.RunDirectory, "scenarios")), Is.False);
+        });
+    }
+
+    [Test]
+    public async Task Scenario_failure_continues_cleanup_when_a_resource_and_diagnostics_write_fail()
+    {
+        await using var fixture = await ScenarioLifecycleFixture.CreateAsync();
+        var request = fixture.CreateRequest("scenario-diagnostics-write-failure");
+        var dependencies = new RecordingScenarioLifecycleDependencies(cleanupFailure: "browser-run");
+        var writer = new ScenarioFailureArtifactWriter(CreatePublicationReceipt(), new FailingArtifactFileSystem());
+
+        var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await ScenarioLifecycleLease.ExecuteAsync(
+                request,
+                (_, _) => throw new InvalidOperationException("primary callback canary"),
+                writer,
+                dependencies));
+        var receipt = (ScenarioLifecycleReceipt)exception!.Data[nameof(ScenarioLifecycleReceipt)]!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception.Message, Is.EqualTo("primary callback canary"));
+            Assert.That(receipt.CleanupFailureCount, Is.EqualTo(2));
+            Assert.That(receipt.AttemptedCleanupCategories, Is.EqualTo([
+                "browser-scenario", "browser-run", "expo", "external-api-host", "scenario-paths"]));
+            Assert.That(dependencies.CleanupEvents, Is.EqualTo([
+                "browser-scenario", "browser-run", "expo", "external-api-host", "postgresql"]));
+            Assert.That(receipt.DatabaseAbsent && receipt.ApiAbsent && receipt.ExpoAbsent && receipt.ScenarioPathsAbsent, Is.True);
+            Assert.That(File.Exists(Path.Combine(request.Run.RunDirectory, "artifacts", "scenario-diagnostics-write-failure", ScenarioFailureArtifactWriter.FileName)), Is.False);
+        });
+
+        await request.Run.FinalizeFailureAsync();
+    }
+
+    [Test]
+    public async Task Scenario_success_writes_no_failure_artifact_and_removes_the_completed_run()
+    {
+        await using var fixture = await ScenarioLifecycleFixture.CreateAsync();
+        const string caseId = "scenario-success-no-artifact";
+        var request = fixture.CreateRequest(caseId);
+
+        var receipt = await ScenarioLifecycleLease.ExecuteAsync(
+            request,
+            (_, _) => Task.CompletedTask,
+            CreateFailureArtifactWriter(),
+            new RecordingScenarioLifecycleDependencies());
+        await request.Run.FinalizeSuccessAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(receipt.CleanupFailureCount, Is.Zero);
+            Assert.That(Directory.Exists(Path.Combine(request.Run.RunDirectory, "artifacts", caseId)), Is.False);
+            Assert.That(Directory.Exists(request.Run.RunDirectory), Is.False);
+        });
+    }
+
+    [Test]
     public async Task Scenario_proof_provisions_once_under_the_run_lifetime_before_the_scenario_lifetime_starts()
     {
         await using var fixture = await Task3WebSourceRunFixture.CreateAsync();
@@ -561,7 +671,8 @@ public sealed class ScenarioLifecycleLeaseTests
             string caseId,
             ScenarioLifecycleObservation? previous = null,
             IRunDirectoryCleaner? cleaner = null,
-            int shutdownSeconds = 2)
+            int shutdownSeconds = 2,
+            LifecycleRunDirectoryLease? run = null)
         {
             var options = new E2EOptions
             {
@@ -573,13 +684,13 @@ public sealed class ScenarioLifecycleLeaseTests
                     BrowserActionMilliseconds = 1_000
                 }
             };
-            var run = LifecycleRunDirectoryLease.Create(
+            var lifecycleRun = run ?? LifecycleRunDirectoryLease.Create(
                 new PrivateRunDirectoryRequest(
                     root,
                     options.Runtime.PrivateRunRoot,
                     TimeSpan.FromSeconds(options.Timeouts.ProcessShutdownSeconds)),
                 cleaner);
-            return new ScenarioLifecycleRequest(run, null, options, null!, root, caseId, previous);
+            return new ScenarioLifecycleRequest(lifecycleRun, null, options, null!, root, caseId, previous);
         }
 
         internal bool ScenarioWasRemoved(string caseId) => !Directory
@@ -602,6 +713,29 @@ public sealed class ScenarioLifecycleLeaseTests
     {
         public Task DeleteAsync(string runDirectory, CancellationToken cancellationToken) =>
             Task.FromException(new IOException("private lifecycle path cleanup canary"));
+    }
+
+    private static ScenarioFailureArtifactWriter CreateFailureArtifactWriter() =>
+        new(CreatePublicationReceipt());
+
+    private static ApiPublicationReceipt CreatePublicationReceipt() => new(
+        "publish",
+        new string('b', 64),
+        DateTimeOffset.UnixEpoch,
+        new string('a', 40),
+        false,
+        new ApiPublicationProcessReceipt(0, false, false));
+
+    private sealed class FailingArtifactFileSystem : IScenarioFailureArtifactFileSystem
+    {
+        public Task WriteAsync(string path, ReadOnlyMemory<byte> content, CancellationToken cancellationToken) =>
+            Task.FromException(new IOException("artifact write canary"));
+
+        public void Move(string sourcePath, string destinationPath) => throw new NotSupportedException();
+
+        public bool FileExists(string path) => false;
+
+        public void DeleteFile(string path) => throw new NotSupportedException();
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)

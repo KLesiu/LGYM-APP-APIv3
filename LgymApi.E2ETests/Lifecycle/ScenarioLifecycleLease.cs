@@ -167,6 +167,33 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
 
     internal ScenarioLifecycleReceipt Receipt { get; private set; }
 
+    internal static async Task<ScenarioLifecycleReceipt> ExecuteAsync(
+        ScenarioLifecycleRequest request,
+        Func<ScenarioLifecycleLease, CancellationToken, Task> callback,
+        ScenarioFailureArtifactWriter artifactWriter,
+        IScenarioLifecycleDependencies? dependencies = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(callback);
+        ArgumentNullException.ThrowIfNull(artifactWriter);
+
+        var lease = await CreateAsync(request, dependencies, cancellationToken);
+        var artifactOwner = lease.GetFailureArtifactOwner();
+        try
+        {
+            await callback(lease, cancellationToken);
+            await lease.DisposeAsync();
+            return lease.Receipt;
+        }
+        catch (Exception exception)
+        {
+            await lease.FinalizeFailureAsync(artifactOwner, artifactWriter);
+            exception.Data[nameof(ScenarioLifecycleReceipt)] = lease.Receipt;
+            ExceptionDispatchInfo.Capture(exception).Throw();
+            throw;
+        }
+    }
+
     internal static async Task<ScenarioLifecycleLease> CreateAsync(
         ScenarioLifecycleRequest request,
         IScenarioLifecycleDependencies? dependencies = null,
@@ -269,6 +296,26 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
     }
 
     public override string ToString() => "<scenario-lifecycle-lease>";
+
+    private LifecycleScenarioDirectoryLease GetFailureArtifactOwner() => _scenarioPaths
+        ?? throw new InvalidOperationException("E2E scenario failure artifact ownership is unavailable.");
+
+    private async Task FinalizeFailureAsync(
+        LifecycleScenarioDirectoryLease artifactOwner,
+        ScenarioFailureArtifactWriter artifactWriter)
+    {
+        await GetCleanupTask();
+        using var diagnosticsTimeout = new CancellationTokenSource(_shutdownTimeout);
+        try
+        {
+            await artifactWriter.WriteAsync(artifactOwner, Receipt, diagnosticsTimeout.Token);
+        }
+        catch (Exception)
+        {
+            _cleanupFailures++;
+            UpdateReceipt();
+        }
+    }
 
     private Task<ScenarioLifecycleReceipt> GetCleanupTask()
     {
