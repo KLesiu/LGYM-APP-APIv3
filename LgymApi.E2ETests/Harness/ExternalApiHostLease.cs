@@ -24,6 +24,7 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
     private readonly TimeSpan _cleanupTimeout;
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private Task<ExternalApiHostCleanupResult>? _cleanupAttempt;
+    private Task? _retainedCleanupObservation;
     private Task<ExternalApiHostCleanupReceipt>? _failedStartupCleanup;
     private IApiHostRuntimeLease? _runtime;
     private IExternalApiProcess? _process;
@@ -132,7 +133,8 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
                 throw new ExternalApiHostStartupException(
                     StartupTimeoutMessage,
                     lease.CleanupReceipt,
-                    cleanupCompletion);
+                    cleanupCompletion,
+                    () => lease.CleanupReceipt);
             }
 
             if (exception is ExternalApiHostStartupException startupFailure)
@@ -140,7 +142,8 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
                 throw new ExternalApiHostStartupException(
                     startupFailure.Message,
                     lease.CleanupReceipt,
-                    cleanupCompletion);
+                    cleanupCompletion,
+                    () => lease.CleanupReceipt);
             }
 
             if (exception is InvalidOperationException invalidOperation &&
@@ -154,7 +157,8 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
             throw new ExternalApiHostStartupException(
                 StartupFailureMessage,
                 lease.CleanupReceipt,
-                cleanupCompletion);
+                cleanupCompletion,
+                () => lease.CleanupReceipt);
         }
     }
 
@@ -164,9 +168,7 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
         await DisposeAsync(deadline.Token);
     }
 
-    private async ValueTask DisposeAsync(
-        CancellationToken cleanupToken,
-        bool retainTimedOutAttempt = true)
+    private async ValueTask DisposeAsync(CancellationToken cleanupToken)
     {
         try
         {
@@ -192,11 +194,7 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
             }
             catch (OperationCanceledException) when (cleanupToken.IsCancellationRequested)
             {
-                if (!retainTimedOutAttempt)
-                {
-                    _cleanupAttempt = null;
-                }
-
+                RetainCleanupObservation(_cleanupAttempt);
                 CleanupReceipt = CreatePendingCleanupReceipt();
                 throw new ExternalApiHostCleanupException(CleanupReceipt);
             }
@@ -249,9 +247,7 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
         {
             try
             {
-                await DisposeAsync(
-                    cleanupDeadline.Token,
-                    retainTimedOutAttempt: false);
+                await DisposeAsync(cleanupDeadline.Token);
             }
             catch (ExternalApiHostCleanupException)
             {
@@ -276,6 +272,55 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
         }
 
         return CleanupReceipt;
+    }
+
+    private void RetainCleanupObservation(Task<ExternalApiHostCleanupResult> cleanupAttempt)
+    {
+        if (_retainedCleanupObservation is null)
+        {
+            _retainedCleanupObservation = ObserveRetainedCleanupAttemptAsync(cleanupAttempt);
+        }
+    }
+
+    private async Task ObserveRetainedCleanupAttemptAsync(
+        Task<ExternalApiHostCleanupResult> cleanupAttempt)
+    {
+        ExternalApiHostCleanupResult? result = null;
+        try
+        {
+            result = await cleanupAttempt;
+        }
+        catch (Exception)
+        {
+            result = null;
+        }
+
+        await _disposeLock.WaitAsync();
+        try
+        {
+            if (!ReferenceEquals(_cleanupAttempt, cleanupAttempt))
+            {
+                return;
+            }
+
+            _cleanupAttempt = null;
+            if (result is null)
+            {
+                CleanupReceipt = CreatePendingCleanupReceipt();
+                return;
+            }
+
+            ApplyCleanupResult(result);
+            if (CleanupReceipt.AllResourcesAbsent)
+            {
+                Volatile.Write(ref _disposed, 1);
+            }
+        }
+        finally
+        {
+            _retainedCleanupObservation = null;
+            _disposeLock.Release();
+        }
     }
 
     private ExternalApiHostCleanupReceipt CreatePendingCleanupReceipt() =>

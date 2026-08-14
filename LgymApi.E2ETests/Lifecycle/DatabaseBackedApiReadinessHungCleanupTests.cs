@@ -7,6 +7,58 @@ namespace LgymApi.E2ETests.Lifecycle;
 [Category("Lifecycle")]
 public sealed class DatabaseBackedApiReadinessHungCleanupTests
 {
+    [TestCase("api-process")]
+    [TestCase("runtime-configuration")]
+    [TestCase("postgresql")]
+    public async Task DatabaseBacked_late_cleanup_completion_is_applied_exactly_once(
+        string hungCategory)
+    {
+        using var fixture = new ExternalApiHostTestFixture();
+        fixture.Options.Timeouts.ProcessShutdownSeconds = 1;
+        var state = new HungCleanupState(hungCategory);
+
+        var exception = Assert.ThrowsAsync<ExternalApiHostStartupException>(() => ExternalApiHostLease.StartAsync(
+            new ExternalApiHostCompositionRequest(
+                fixture.Publication,
+                new HungDatabaseLease(state),
+                fixture.Options,
+                fixture.RepositoryRoot),
+            new ExternalApiHostInfrastructure(
+                new HungRuntimeFactory(fixture.RepositoryRoot, state),
+                new HungProcessStarter(state),
+                new ScriptedApiHostReadinessMonitor([ApiHostReadinessOutcome.Ready]),
+                new FakeLoopbackPortAllocator([47118]),
+                new ScriptedDatabaseBackedApiReadinessProbe(
+                    [DatabaseBackedApiReadinessOutcome.UnexpectedStatus]))));
+
+        var terminalReceipt = await exception!.CleanupCompletion;
+        var attemptsAtDeadline = state.TotalAttempts;
+        state.ReleaseHungCleanup();
+        await state.AllResourcesAbsent.WaitAsync(TimeSpan.FromSeconds(2));
+        var lateReceipt = await WaitForPositiveReceiptAsync(exception);
+        var attemptsAfterRelease = state.TotalAttempts;
+        await Task.Delay(TimeSpan.FromMilliseconds(300));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(terminalReceipt.AllResourcesAbsent, Is.False);
+            Assert.That(state.ProcessAttempts, Is.EqualTo(1));
+            Assert.That(state.RuntimeAttempts, Is.EqualTo(1));
+            Assert.That(state.DatabaseAttempts, Is.EqualTo(1));
+            Assert.That(attemptsAfterRelease, Is.GreaterThanOrEqualTo(attemptsAtDeadline));
+            Assert.That(state.TotalAttempts, Is.EqualTo(attemptsAfterRelease));
+            Assert.That(state.MaximumConcurrency, Is.EqualTo(1));
+            Assert.That(lateReceipt.AllResourcesAbsent, Is.True);
+            Assert.That(lateReceipt.AttemptedCategories, Is.EqualTo(new[]
+            {
+                ExternalApiHostCleanup.ProcessCategory,
+                ExternalApiHostCleanup.RuntimeCategory,
+                ExternalApiHostCleanup.DatabaseCategory
+            }));
+            Assert.That(lateReceipt.FailureCount, Is.EqualTo(1));
+        });
+    }
+
     [TestCase("api-process", 1, 0, 0)]
     [TestCase("runtime-configuration", 1, 1, 0)]
     [TestCase("postgresql", 1, 1, 1)]
@@ -68,9 +120,27 @@ public sealed class DatabaseBackedApiReadinessHungCleanupTests
         });
     }
 
+    private static async Task<ExternalApiHostCleanupReceipt> WaitForPositiveReceiptAsync(
+        ExternalApiHostStartupException exception)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        while (!exception.CleanupReceipt.AllResourcesAbsent)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(10), deadline.Token);
+        }
+
+        return exception.CleanupReceipt;
+    }
+
     private sealed class HungCleanupState(string hungCategory)
     {
         private int _concurrency;
+        private readonly TaskCompletionSource _allResourcesAbsent =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _releaseHungCleanup =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal Task AllResourcesAbsent => _allResourcesAbsent.Task;
 
         internal int DatabaseAttempts { get; private set; }
 
@@ -89,6 +159,8 @@ public sealed class DatabaseBackedApiReadinessHungCleanupTests
         internal bool RuntimeAbsent { get; set; }
 
         internal int TotalAttempts => ProcessAttempts + RuntimeAttempts + DatabaseAttempts;
+
+        internal Task WaitForReleaseAsync() => _releaseHungCleanup.Task;
 
         internal void Begin(string category)
         {
@@ -110,6 +182,29 @@ public sealed class DatabaseBackedApiReadinessHungCleanupTests
         }
 
         internal void Complete() => Interlocked.Decrement(ref _concurrency);
+
+        internal void MarkAbsent(string category)
+        {
+            switch (category)
+            {
+                case ExternalApiHostCleanup.ProcessCategory:
+                    ProcessAbsent = true;
+                    break;
+                case ExternalApiHostCleanup.RuntimeCategory:
+                    RuntimeAbsent = true;
+                    break;
+                case ExternalApiHostCleanup.DatabaseCategory:
+                    DatabaseAbsent = true;
+                    break;
+            }
+
+            if (ProcessAbsent && RuntimeAbsent && DatabaseAbsent)
+            {
+                _allResourcesAbsent.TrySetResult();
+            }
+        }
+
+        internal void ReleaseHungCleanup() => _releaseHungCleanup.TrySetResult();
     }
 
     private sealed class HungProcessStarter(HungCleanupState state) : IExternalApiProcessStarter
@@ -119,8 +214,6 @@ public sealed class DatabaseBackedApiReadinessHungCleanupTests
 
     private sealed class HungProcess(HungCleanupState state) : IExternalApiProcess
     {
-        private readonly TaskCompletionSource _never = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
         public Task<ExternalApiProcessExit> Exit { get; } =
             Task.FromResult(new ExternalApiProcessExit(ExternalApiProcessExitKind.Failed));
 
@@ -128,17 +221,16 @@ public sealed class DatabaseBackedApiReadinessHungCleanupTests
 
         public bool ProcessTreeAbsent => state.ProcessAbsent;
 
-        public ValueTask DisposeAsync()
+        public async ValueTask DisposeAsync()
         {
             state.Begin(ExternalApiHostCleanup.ProcessCategory);
             if (state.HungCategory == ExternalApiHostCleanup.ProcessCategory)
             {
-                return new ValueTask(_never.Task);
+                await state.WaitForReleaseAsync();
             }
 
-            state.ProcessAbsent = true;
+            state.MarkAbsent(ExternalApiHostCleanup.ProcessCategory);
             state.Complete();
-            return ValueTask.CompletedTask;
         }
     }
 
@@ -156,46 +248,40 @@ public sealed class DatabaseBackedApiReadinessHungCleanupTests
         string fixtureRoot,
         HungCleanupState state) : IApiHostRuntimeLease
     {
-        private readonly TaskCompletionSource _never = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
         public string ConfigurationPath { get; } = Path.Combine(fixtureRoot, "api", "appsettings.e2e.json");
 
         public string PrivateTempDirectory { get; } = Path.Combine(fixtureRoot, "api", "temp");
 
         public bool RuntimeDirectoryAbsent => state.RuntimeAbsent;
 
-        public ValueTask DisposeAsync()
+        public async ValueTask DisposeAsync()
         {
             state.Begin(ExternalApiHostCleanup.RuntimeCategory);
             if (state.HungCategory == ExternalApiHostCleanup.RuntimeCategory)
             {
-                return new ValueTask(_never.Task);
+                await state.WaitForReleaseAsync();
             }
 
-            state.RuntimeAbsent = true;
+            state.MarkAbsent(ExternalApiHostCleanup.RuntimeCategory);
             state.Complete();
-            return ValueTask.CompletedTask;
         }
     }
 
     private sealed class HungDatabaseLease(HungCleanupState state)
         : IApiHostDatabaseLease, IApiHostDatabaseAbsenceObservation
     {
-        private readonly TaskCompletionSource _never = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
         public string ConnectionString => "in-memory-hung-cleanup";
 
-        public ValueTask DisposeAsync()
+        public async ValueTask DisposeAsync()
         {
             state.Begin(ExternalApiHostCleanup.DatabaseCategory);
             if (state.HungCategory == ExternalApiHostCleanup.DatabaseCategory)
             {
-                return new ValueTask(_never.Task);
+                await state.WaitForReleaseAsync();
             }
 
-            state.DatabaseAbsent = true;
+            state.MarkAbsent(ExternalApiHostCleanup.DatabaseCategory);
             state.Complete();
-            return ValueTask.CompletedTask;
         }
 
         public Task<bool> ConfirmAbsentAsync() => Task.FromResult(state.DatabaseAbsent);

@@ -118,18 +118,23 @@ internal sealed class ExternalApiHostObservation(
 
 internal sealed class ExternalApiHostStartupException : InvalidOperationException
 {
+    private readonly ExternalApiHostCleanupReceipt _cleanupReceipt;
+    private readonly Func<ExternalApiHostCleanupReceipt>? _cleanupReceiptProvider;
+
     internal ExternalApiHostStartupException(
         string message,
         ExternalApiHostCleanupReceipt? cleanupReceipt = null,
-        Task<ExternalApiHostCleanupReceipt>? cleanupCompletion = null) : base(message)
+        Task<ExternalApiHostCleanupReceipt>? cleanupCompletion = null,
+        Func<ExternalApiHostCleanupReceipt>? cleanupReceiptProvider = null) : base(message)
     {
-        CleanupReceipt = cleanupReceipt ?? new ExternalApiHostCleanupReceipt(false, false, false, [], 0);
-        CleanupCompletion = cleanupCompletion ?? Task.FromResult(CleanupReceipt);
+        _cleanupReceipt = cleanupReceipt ?? new ExternalApiHostCleanupReceipt(false, false, false, [], 0);
+        _cleanupReceiptProvider = cleanupReceiptProvider;
+        CleanupCompletion = cleanupCompletion ?? Task.FromResult(_cleanupReceipt);
     }
 
     internal Task<ExternalApiHostCleanupReceipt> CleanupCompletion { get; }
 
-    internal ExternalApiHostCleanupReceipt CleanupReceipt { get; }
+    internal ExternalApiHostCleanupReceipt CleanupReceipt => _cleanupReceiptProvider?.Invoke() ?? _cleanupReceipt;
 }
 
 internal sealed class ExternalApiHostCleanupException(ExternalApiHostCleanupReceipt receipt)
