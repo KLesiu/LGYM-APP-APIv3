@@ -141,6 +141,7 @@ public sealed class ScenarioLifecycleLeaseTests
             dependencies.BlockingCleanup!.Release();
             await dependencies.BlockingCleanup.Completed.Task.WaitAsync(TimeSpan.FromSeconds(2));
             await WaitUntilAsync(() => dependencies.CleanupEvents.Count == 5);
+            await WaitUntilAsync(() => fixture.ScenarioWasRemoved("scenario-lifecycle-retained-timeout"));
             Assert.ThrowsAsync<ScenarioLifecycleCleanupException>(async () => await lease.DisposeAsync());
             Assert.That(dependencies.BlockingCleanup.DisposeCount, Is.EqualTo(1));
         }

@@ -137,6 +137,7 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
     private readonly List<string> _cleanupCategories = [];
     private Task<ScenarioLifecycleReceipt>? _cleanup;
     private Task? _retainedCleanupObservation;
+    private IScenarioLifecycleAcquisition? _browserAcquisition;
     private ScenarioLifecycleCleanupStage _cleanupStage;
     private int _cleanupFailures;
     private bool _databaseAbsent;
@@ -220,19 +221,21 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
             lease._acquiredCategories.Add(ExpoCategory);
 
             var browserRuntime = lease._scenarioPaths.CreateBrowserRuntimeComponent();
-            lease._browserRun = await dependencies.StartBrowserRunAsync(
-                browserRuntime,
-                request,
+            var browserRun = await lease.AcquireBrowserResourceAsync(
+                ScenarioLifecycleAcquisitionStage.BrowserRun,
+                () => dependencies.StartBrowserRunAsync(browserRuntime, request, scenarioLifetime.Token),
+                resource => lease._browserRun = resource,
+                BrowserRunCategory,
                 scenarioLifetime.Token);
-            lease._acquiredCategories.Add(BrowserRunCategory);
 
-            lease._browserScenario = await dependencies.StartBrowserScenarioAsync(
-                lease._browserRun,
-                request,
+            var browserScenario = await lease.AcquireBrowserResourceAsync(
+                ScenarioLifecycleAcquisitionStage.BrowserScenario,
+                () => dependencies.StartBrowserScenarioAsync(browserRun, request, scenarioLifetime.Token),
+                resource => lease._browserScenario = resource,
+                BrowserScenarioCategory,
                 scenarioLifetime.Token);
-            lease._acquiredCategories.Add(BrowserScenarioCategory);
 
-            var storageIsEmpty = await lease._browserScenario.ConfirmStorageIsEmptyAsync();
+            var storageIsEmpty = await browserScenario.ConfirmStorageIsEmptyAsync();
             lease._observation = new ScenarioLifecycleObservation(
                 lease._databaseObservation,
                 lease._api.Observation,
@@ -292,6 +295,11 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
     {
         while (_cleanupStage != ScenarioLifecycleCleanupStage.Complete)
         {
+            if (_browserAcquisition is { IsTerminal: false })
+            {
+                return UpdateReceipt();
+            }
+
             var resource = CurrentCleanupResource();
             if (resource is null)
             {
@@ -435,6 +443,105 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
         return Receipt;
     }
 
+    private async Task<T> AcquireBrowserResourceAsync<T>(
+        ScenarioLifecycleAcquisitionStage stage,
+        Func<Task<T>> start,
+        Action<T> assign,
+        string category,
+        CancellationToken cancellationToken)
+        where T : class, IAsyncDisposable
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_browserAcquisition is { IsTerminal: false })
+        {
+            throw new InvalidOperationException("E2E browser acquisition is already in progress.");
+        }
+
+        var rawTask = CaptureRawAcquisition(start);
+        var acquisition = new ScenarioLifecycleAcquisition<T>(stage, rawTask);
+        _browserAcquisition = acquisition;
+        acquisition.Observer = ObserveBrowserAcquisitionAsync(acquisition, assign, category);
+
+        try
+        {
+            var resource = await rawTask.WaitAsync(cancellationToken);
+            await acquisition.Observer;
+            return resource;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            acquisition.Abandon();
+            throw;
+        }
+        catch
+        {
+            await acquisition.Observer;
+            throw;
+        }
+    }
+
+    private async Task ObserveBrowserAcquisitionAsync<T>(
+        ScenarioLifecycleAcquisition<T> acquisition,
+        Action<T> assign,
+        string category)
+        where T : class, IAsyncDisposable
+    {
+        T? resource = null;
+        Exception? terminalFault = null;
+        try
+        {
+            resource = await acquisition.RawTask;
+        }
+        catch (Exception exception)
+        {
+            terminalFault = exception;
+        }
+
+        await _cleanupGate.WaitAsync();
+        try
+        {
+            if (terminalFault is null)
+            {
+                acquisition.Complete(resource!);
+                assign(resource!);
+                _acquiredCategories.Add(category);
+            }
+            else
+            {
+                acquisition.Fail(terminalFault);
+            }
+
+            if (CleanupWasRequested())
+            {
+                await ContinueCleanupAsync();
+            }
+        }
+        finally
+        {
+            _cleanupGate.Release();
+        }
+    }
+
+    private bool CleanupWasRequested()
+    {
+        lock (_cleanupLock)
+        {
+            return _cleanup is not null;
+        }
+    }
+
+    private static Task<T> CaptureRawAcquisition<T>(Func<Task<T>> start)
+    {
+        try
+        {
+            return start();
+        }
+        catch (Exception exception)
+        {
+            return Task.FromException<T>(exception);
+        }
+    }
+
     private static async Task<bool> ConfirmAbsentAsync(ScenarioResourceObservation? database)
     {
         try
@@ -483,6 +590,93 @@ internal enum ScenarioLifecycleCleanupStage
     PostgreSql,
     ScenarioPaths,
     Complete
+}
+
+internal enum ScenarioLifecycleAcquisitionStage
+{
+    BrowserRun,
+    BrowserScenario
+}
+
+internal enum ScenarioLifecycleAcquisitionOwnership
+{
+    Active,
+    Abandoned,
+    Lifecycle,
+    CleanupOnly,
+    Faulted
+}
+
+internal interface IScenarioLifecycleAcquisition
+{
+    ScenarioLifecycleAcquisitionStage Stage { get; }
+
+    bool IsTerminal { get; }
+}
+
+internal sealed class ScenarioLifecycleAcquisition<T>(
+    ScenarioLifecycleAcquisitionStage stage,
+    Task<T> rawTask) : IScenarioLifecycleAcquisition
+    where T : class, IAsyncDisposable
+{
+    private readonly object _sync = new();
+    private ScenarioLifecycleAcquisitionOwnership _ownership = ScenarioLifecycleAcquisitionOwnership.Active;
+
+    public ScenarioLifecycleAcquisitionStage Stage { get; } = stage;
+
+    public bool IsTerminal
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _ownership is ScenarioLifecycleAcquisitionOwnership.Lifecycle or
+                    ScenarioLifecycleAcquisitionOwnership.CleanupOnly or
+                    ScenarioLifecycleAcquisitionOwnership.Faulted;
+            }
+        }
+    }
+
+    internal Task<T> RawTask { get; } = rawTask;
+
+    internal Task Observer { get; set; } = Task.CompletedTask;
+
+    internal T? Resource { get; private set; }
+
+    internal Exception? TerminalFault { get; private set; }
+
+    internal void Abandon()
+    {
+        lock (_sync)
+        {
+            _ownership = _ownership switch
+            {
+                ScenarioLifecycleAcquisitionOwnership.Active => ScenarioLifecycleAcquisitionOwnership.Abandoned,
+                ScenarioLifecycleAcquisitionOwnership.Lifecycle => ScenarioLifecycleAcquisitionOwnership.CleanupOnly,
+                _ => _ownership
+            };
+        }
+    }
+
+    internal void Complete(T resource)
+    {
+        lock (_sync)
+        {
+            Resource = resource;
+            _ownership = _ownership == ScenarioLifecycleAcquisitionOwnership.Abandoned
+                ? ScenarioLifecycleAcquisitionOwnership.CleanupOnly
+                : ScenarioLifecycleAcquisitionOwnership.Lifecycle;
+        }
+    }
+
+    internal void Fail(Exception exception)
+    {
+        lock (_sync)
+        {
+            TerminalFault = exception;
+            _ownership = ScenarioLifecycleAcquisitionOwnership.Faulted;
+        }
+    }
 }
 
 internal sealed class DefaultScenarioLifecycleDependencies : IScenarioLifecycleDependencies
@@ -553,7 +747,7 @@ internal sealed class DefaultScenarioLifecycleDependencies : IScenarioLifecycleD
             throw new InvalidOperationException("E2E scenario browser run is invalid.");
         }
 
-        return new BrowserScenarioResource(await BrowserScenarioLease.CreateAsync(
+        return new BrowserScenarioResource(await BrowserScenarioLifecycleAdapter.CreateAsync(
             browser.Lease,
             request.Options.Timeouts.BrowserActionMilliseconds));
     }
