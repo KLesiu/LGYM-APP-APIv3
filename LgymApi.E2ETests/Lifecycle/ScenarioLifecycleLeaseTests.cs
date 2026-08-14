@@ -112,6 +112,73 @@ public sealed class ScenarioLifecycleLeaseTests
         });
     }
 
+    [TestCase("browser-scenario")]
+    [TestCase("browser-run")]
+    [TestCase("expo")]
+    [TestCase("external-api-host")]
+    public async Task ScenarioLifecycleLease_timeout_retains_the_child_before_any_parent_cleanup(string blockedCategory)
+    {
+        await using var fixture = await ScenarioLifecycleFixture.CreateAsync();
+        var dependencies = new RecordingScenarioLifecycleDependencies(blockedCleanup: blockedCategory);
+        var lease = await ScenarioLifecycleLease.CreateAsync(
+            fixture.CreateRequest("scenario-lifecycle-retained-timeout", shutdownSeconds: 1),
+            dependencies);
+
+        try
+        {
+            var exception = Assert.ThrowsAsync<ScenarioLifecycleCleanupException>(async () => await lease.DisposeAsync());
+            await dependencies.BlockingCleanup!.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(exception!.Receipt.CleanupFailureCount, Is.EqualTo(1));
+                Assert.That(dependencies.BlockingCleanup.DisposeCount, Is.EqualTo(1));
+                Assert.That(dependencies.CleanupEvents, Is.EqualTo(CleanupThrough(blockedCategory)));
+            });
+        }
+        finally
+        {
+            dependencies.BlockingCleanup!.Release();
+            await dependencies.BlockingCleanup.Completed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            await WaitUntilAsync(() => dependencies.CleanupEvents.Count == 5);
+            Assert.ThrowsAsync<ScenarioLifecycleCleanupException>(async () => await lease.DisposeAsync());
+            Assert.That(dependencies.BlockingCleanup.DisposeCount, Is.EqualTo(1));
+        }
+    }
+
+    [Test]
+    public async Task ScenarioLifecycleLease_preserves_the_primary_startup_failure_while_browser_cleanup_is_retained()
+    {
+        await using var fixture = await ScenarioLifecycleFixture.CreateAsync();
+        var dependencies = new RecordingScenarioLifecycleDependencies(
+            ScenarioLifecycleFailureStage.BrowserPage,
+            blockedCleanup: "browser-run");
+
+        try
+        {
+            var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await ScenarioLifecycleLease.CreateAsync(
+                    fixture.CreateRequest("scenario-lifecycle-primary-retained", shutdownSeconds: 1),
+                    dependencies));
+            var receipt = (ScenarioLifecycleReceipt)exception!.Data[nameof(ScenarioLifecycleReceipt)]!;
+            await dependencies.BlockingCleanup!.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(exception.Message, Is.EqualTo("private lifecycle canary"));
+                Assert.That(receipt.CleanupFailureCount, Is.EqualTo(1));
+                Assert.That(dependencies.CleanupEvents, Is.EqualTo(["browser-run"]));
+            });
+        }
+        finally
+        {
+            dependencies.BlockingCleanup!.Release();
+            await dependencies.BlockingCleanup.Completed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            await WaitUntilAsync(() => dependencies.CleanupEvents.Count == 4);
+            await WaitUntilAsync(() => fixture.ScenarioWasRemoved("scenario-lifecycle-primary-retained"));
+        }
+    }
+
     [Test]
     public async Task ScenarioLifecycleLease_requires_prior_absence_and_records_distinct_safe_identities()
     {
@@ -197,11 +264,13 @@ public sealed class ScenarioLifecycleLeaseTests
 
     private sealed class RecordingScenarioLifecycleDependencies(
         ScenarioLifecycleFailureStage failureStage = ScenarioLifecycleFailureStage.None,
-        string? cleanupFailure = null) : IScenarioLifecycleDependencies
+        string? cleanupFailure = null,
+        string? blockedCleanup = null) : IScenarioLifecycleDependencies
     {
         internal List<string> AcquisitionEvents { get; } = [];
         internal List<string> CleanupEvents { get; } = [];
         internal RecordingDatabase Database { get; } = new();
+        internal BlockingCleanupResource? BlockingCleanup { get; } = blockedCleanup is null ? null : new();
 
         public Task<ScenarioDatabaseOwnership> StartDatabaseAsync(CancellationToken cancellationToken)
         {
@@ -236,7 +305,11 @@ public sealed class ScenarioLifecycleLeaseTests
                 throw new InvalidOperationException("private lifecycle canary");
             }
 
-            return new RecordingApiHost(database, CleanupEvents, cleanupFailure == "external-api-host");
+            return new RecordingApiHost(
+                database,
+                CleanupEvents,
+                cleanupFailure == "external-api-host",
+                blockedCleanup == "external-api-host" ? BlockingCleanup : null);
         }
 
         public Task<IScenarioLifecycleExpo> StartExpoAsync(
@@ -251,7 +324,10 @@ public sealed class ScenarioLifecycleLeaseTests
                 throw new InvalidOperationException("private lifecycle canary");
             }
 
-            return Task.FromResult<IScenarioLifecycleExpo>(new RecordingExpo(CleanupEvents, cleanupFailure == "expo"));
+            return Task.FromResult<IScenarioLifecycleExpo>(new RecordingExpo(
+                CleanupEvents,
+                cleanupFailure == "expo",
+                blockedCleanup == "expo" ? BlockingCleanup : null));
         }
 
         public Task<IScenarioLifecycleBrowserRun> StartBrowserRunAsync(
@@ -267,7 +343,8 @@ public sealed class ScenarioLifecycleLeaseTests
 
             return Task.FromResult<IScenarioLifecycleBrowserRun>(new RecordingBrowserRun(
                 CleanupEvents,
-                cleanupFailure == "browser-run"));
+                cleanupFailure == "browser-run",
+                blockedCleanup == "browser-run" ? BlockingCleanup : null));
         }
 
         public Task<IScenarioLifecycleBrowserScenario> StartBrowserScenarioAsync(
@@ -289,7 +366,8 @@ public sealed class ScenarioLifecycleLeaseTests
 
             return Task.FromResult<IScenarioLifecycleBrowserScenario>(new RecordingBrowserScenario(
                 CleanupEvents,
-                cleanupFailure == "browser-scenario"));
+                cleanupFailure == "browser-scenario",
+                blockedCleanup == "browser-scenario" ? BlockingCleanup : null));
         }
     }
 
@@ -313,7 +391,8 @@ public sealed class ScenarioLifecycleLeaseTests
     private sealed class RecordingApiHost(
         IApiHostDatabaseLease database,
         ICollection<string> cleanupEvents,
-        bool fails) : IScenarioLifecycleApiHost
+        bool fails,
+        BlockingCleanupResource? blocker) : IScenarioLifecycleApiHost
     {
         public Uri BaseAddress { get; } = new("http://127.0.0.1:40123/");
 
@@ -324,6 +403,11 @@ public sealed class ScenarioLifecycleLeaseTests
         public async ValueTask DisposeAsync()
         {
             cleanupEvents.Add("external-api-host");
+            if (blocker is not null)
+            {
+                await blocker.DisposeAsync();
+            }
+
             await database.DisposeAsync();
             cleanupEvents.Add("postgresql");
             if (fails)
@@ -333,7 +417,10 @@ public sealed class ScenarioLifecycleLeaseTests
         }
     }
 
-    private sealed class RecordingExpo(ICollection<string> cleanupEvents, bool fails) : IScenarioLifecycleExpo
+    private sealed class RecordingExpo(
+        ICollection<string> cleanupEvents,
+        bool fails,
+        BlockingCleanupResource? blocker) : IScenarioLifecycleExpo
     {
         private bool _absent;
 
@@ -343,6 +430,11 @@ public sealed class ScenarioLifecycleLeaseTests
         {
             cleanupEvents.Add("expo");
             _absent = true;
+            if (blocker is not null)
+            {
+                return blocker.DisposeAsync();
+            }
+
             return fails
                 ? ValueTask.FromException(new IOException("private lifecycle canary"))
                 : ValueTask.CompletedTask;
@@ -351,24 +443,40 @@ public sealed class ScenarioLifecycleLeaseTests
         public Task<bool> ConfirmAbsentAsync() => Task.FromResult(_absent);
     }
 
-    private sealed class RecordingBrowserRun(ICollection<string> cleanupEvents, bool fails) : IScenarioLifecycleBrowserRun
+    private sealed class RecordingBrowserRun(
+        ICollection<string> cleanupEvents,
+        bool fails,
+        BlockingCleanupResource? blocker) : IScenarioLifecycleBrowserRun
     {
         public ValueTask DisposeAsync()
         {
             cleanupEvents.Add("browser-run");
+            if (blocker is not null)
+            {
+                return blocker.DisposeAsync();
+            }
+
             return fails
                 ? ValueTask.FromException(new IOException("private lifecycle canary"))
                 : ValueTask.CompletedTask;
         }
     }
 
-    private sealed class RecordingBrowserScenario(ICollection<string> cleanupEvents, bool fails) : IScenarioLifecycleBrowserScenario
+    private sealed class RecordingBrowserScenario(
+        ICollection<string> cleanupEvents,
+        bool fails,
+        BlockingCleanupResource? blocker) : IScenarioLifecycleBrowserScenario
     {
         public IPage Page => null!;
 
         public ValueTask DisposeAsync()
         {
             cleanupEvents.Add("browser-scenario");
+            if (blocker is not null)
+            {
+                return blocker.DisposeAsync();
+            }
+
             return fails
                 ? ValueTask.FromException(new IOException("private lifecycle canary"))
                 : ValueTask.CompletedTask;
@@ -385,14 +493,15 @@ public sealed class ScenarioLifecycleLeaseTests
         internal ScenarioLifecycleRequest CreateRequest(
             string caseId,
             ScenarioLifecycleObservation? previous = null,
-            IRunDirectoryCleaner? cleaner = null)
+            IRunDirectoryCleaner? cleaner = null,
+            int shutdownSeconds = 2)
         {
             var options = new E2EOptions
             {
                 Runtime = new E2ERuntimeOptions { PrivateRunRoot = ".e2e-private/runs" },
                 Timeouts = new E2ETimeoutsOptions
                 {
-                    ProcessShutdownSeconds = 2,
+                    ProcessShutdownSeconds = shutdownSeconds,
                     ScenarioSeconds = 5,
                     BrowserActionMilliseconds = 1_000
                 }
@@ -405,6 +514,11 @@ public sealed class ScenarioLifecycleLeaseTests
                 cleaner);
             return new ScenarioLifecycleRequest(run, null, options, null!, root, caseId, previous);
         }
+
+        internal bool ScenarioWasRemoved(string caseId) => !Directory
+            .EnumerateDirectories(root, "scenarios", SearchOption.AllDirectories)
+            .SelectMany(directory => Directory.EnumerateDirectories(directory, caseId))
+            .Any();
 
         public ValueTask DisposeAsync()
         {
@@ -421,5 +535,50 @@ public sealed class ScenarioLifecycleLeaseTests
     {
         public Task DeleteAsync(string runDirectory, CancellationToken cancellationToken) =>
             Task.FromException(new IOException("private lifecycle path cleanup canary"));
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        for (var attempt = 0; attempt < 40; attempt++)
+        {
+            if (condition())
+            {
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+
+        Assert.Fail("The retained lifecycle cleanup did not drain.");
+    }
+
+    private static IReadOnlyList<string> CleanupThrough(string category)
+    {
+        var order = new[] { "browser-scenario", "browser-run", "expo", "external-api-host" };
+        return order.Take(Array.IndexOf(order, category) + 1).ToArray();
+    }
+
+    private sealed class BlockingCleanupResource : IAsyncDisposable
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Completed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal int DisposeCount { get; private set; }
+
+        public async ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            Started.TrySetResult();
+            try
+            {
+                await _release.Task;
+            }
+            finally
+            {
+                Completed.TrySetResult();
+            }
+        }
+
+        internal void Release() => _release.TrySetResult();
     }
 }

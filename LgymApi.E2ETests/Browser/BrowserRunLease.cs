@@ -1,11 +1,15 @@
 using LgymApi.E2ETests.Harness;
+using LgymApi.E2ETests.Lifecycle;
 using Microsoft.Playwright;
 
 namespace LgymApi.E2ETests.Browser;
 
 internal sealed record BrowserRunRequest(
     PrivateRunDirectoryLease PrivatePaths,
-    int ActionTimeoutMilliseconds);
+    int ActionTimeoutMilliseconds)
+{
+    internal LifecycleComponentDirectoryLease? RuntimeDirectory { get; init; }
+}
 
 internal interface IBrowserHandle
 {
@@ -70,7 +74,10 @@ internal sealed class BrowserRunLease : IAsyncDisposable
             var browser = await runtime.LaunchChromiumAsync(new BrowserTypeLaunchOptions
             {
                 Headless = true,
-                Timeout = request.ActionTimeoutMilliseconds
+                Timeout = request.ActionTimeoutMilliseconds,
+                ArtifactsDir = CreateRuntimeDirectory(request.RuntimeDirectory, "artifacts"),
+                DownloadsPath = CreateRuntimeDirectory(request.RuntimeDirectory, "downloads"),
+                TracesDir = CreateRuntimeDirectory(request.RuntimeDirectory, "traces")
             });
             return new BrowserRunLease(runtime, browser, TimeSpan.FromMilliseconds(request.ActionTimeoutMilliseconds));
         }
@@ -99,6 +106,21 @@ internal sealed class BrowserRunLease : IAsyncDisposable
 
     internal Task<IBrowserContext> NewContextAsync(BrowserNewContextOptions options) =>
         _browser.NewContextAsync(options);
+
+    private static string? CreateRuntimeDirectory(
+        LifecycleComponentDirectoryLease? runtimeDirectory,
+        string name)
+    {
+        if (runtimeDirectory is null)
+        {
+            return null;
+        }
+
+        var path = Path.Combine(runtimeDirectory.ComponentDirectory, name);
+        runtimeDirectory.EnsureSafeArtifact(path);
+        Directory.CreateDirectory(path);
+        return path;
+    }
 
     private async Task CleanupAsync()
     {

@@ -1,4 +1,5 @@
 using LgymApi.E2ETests.Harness;
+using LgymApi.E2ETests.Lifecycle;
 using Microsoft.Playwright;
 
 namespace LgymApi.E2ETests.Browser;
@@ -112,11 +113,57 @@ public sealed class BrowserRunLeaseTests
         Assert.That(factory.Runtime.Events, Is.EqualTo(new[] { "browser-close", "playwright-dispose" }));
     }
 
+    [Test]
+    public async Task Lifecycle_browser_runs_use_distinct_canonical_runtime_children_while_binaries_stay_run_scoped()
+    {
+        await using var run = LifecycleRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
+            RepositoryRoot.Find(),
+            ".e2e-private/runs",
+            TimeSpan.FromSeconds(2)));
+        var firstScenario = run.CreateScenario("browser-runtime-first");
+        var secondScenario = run.CreateScenario("browser-runtime-second");
+        var firstRuntime = firstScenario.CreateBrowserRuntimeComponent();
+        var secondRuntime = secondScenario.CreateBrowserRuntimeComponent();
+        var firstFactory = new RecordingBrowserRuntimeFactory();
+        var secondFactory = new RecordingBrowserRuntimeFactory();
+
+        await using var first = await BrowserRunLease.CreateAsync(new BrowserRunRequest(run.RunLease, 500)
+        {
+            RuntimeDirectory = firstRuntime
+        }, firstFactory);
+        await using var second = await BrowserRunLease.CreateAsync(new BrowserRunRequest(run.RunLease, 500)
+        {
+            RuntimeDirectory = secondRuntime
+        }, secondFactory);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(RuntimeDirectoriesAreOwnedBy(firstFactory.Runtime.Options!, firstRuntime), Is.True);
+            Assert.That(RuntimeDirectoriesAreOwnedBy(secondFactory.Runtime.Options!, secondRuntime), Is.True);
+            Assert.That(RuntimeDirectoriesDiffer(firstFactory.Runtime.Options!, secondFactory.Runtime.Options!), Is.True);
+            Assert.That(firstFactory.EnvironmentAtCreate, Is.EqualTo(secondFactory.EnvironmentAtCreate));
+        });
+    }
+
     private static PrivateRunDirectoryLease CreatePaths(string repositoryRoot) =>
         PrivateRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
             repositoryRoot,
             ".e2e-private/runs",
             TimeSpan.FromSeconds(2)));
+
+    private static bool RuntimeDirectoriesAreOwnedBy(
+        BrowserTypeLaunchOptions options,
+        LifecycleComponentDirectoryLease runtime) =>
+        new[] { options.ArtifactsDir, options.DownloadsPath, options.TracesDir }
+            .All(path => path is not null &&
+                         PrivateRunDirectoryLayout.IsDescendantOrSame(runtime.ComponentDirectory, path));
+
+    private static bool RuntimeDirectoriesDiffer(
+        BrowserTypeLaunchOptions first,
+        BrowserTypeLaunchOptions second) =>
+        !string.Equals(first.ArtifactsDir, second.ArtifactsDir, StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(first.DownloadsPath, second.DownloadsPath, StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(first.TracesDir, second.TracesDir, StringComparison.OrdinalIgnoreCase);
 }
 
 internal sealed class RecordingBrowserRuntimeFactory : IBrowserRuntimeFactory

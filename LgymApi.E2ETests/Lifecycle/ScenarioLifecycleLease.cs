@@ -133,7 +133,16 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
     private readonly TimeSpan _shutdownTimeout;
     private readonly List<string> _acquiredCategories = [];
     private readonly object _cleanupLock = new();
+    private readonly SemaphoreSlim _cleanupGate = new(1, 1);
+    private readonly List<string> _cleanupCategories = [];
     private Task<ScenarioLifecycleReceipt>? _cleanup;
+    private Task? _retainedCleanupObservation;
+    private ScenarioLifecycleCleanupStage _cleanupStage;
+    private int _cleanupFailures;
+    private bool _databaseAbsent;
+    private bool _apiAbsent;
+    private bool _expoAbsent;
+    private bool _scenarioPathsAbsent;
     private LifecycleScenarioDirectoryLease? _scenarioPaths;
     private ScenarioDatabaseOwnership? _scenarioDatabase;
     private ScenarioResourceObservation? _databaseObservation;
@@ -240,7 +249,7 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
         }
         catch (Exception exception)
         {
-            await lease.CleanupAsync();
+            await lease.GetCleanupTask();
             exception.Data[nameof(ScenarioLifecycleReceipt)] = lease.Receipt;
             ExceptionDispatchInfo.Capture(exception).Throw();
             throw;
@@ -268,56 +277,162 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
 
     private async Task<ScenarioLifecycleReceipt> CleanupAsync()
     {
-        var categories = new List<string>();
-        var failures = 0;
-        failures += await DisposeOwnedAsync(BrowserScenarioCategory, _browserScenario, categories);
-        _browserScenario = null;
-        failures += await DisposeOwnedAsync(BrowserRunCategory, _browserRun, categories);
-        _browserRun = null;
-        failures += await DisposeOwnedAsync(ExpoCategory, _expo, categories);
-        var expoAbsent = _expo is null || await ConfirmAbsentAsync(_expo);
-        _expo = null;
-        failures += await DisposeOwnedAsync(ApiCategory, _api, categories);
-        var apiAbsent = _api is null || await ConfirmAbsentAsync(_api.Observation);
-        _api = null;
-        failures += await DisposeOwnedAsync(PostgreSqlCategory, _scenarioDatabase, categories);
-        _scenarioDatabase = null;
-        failures += await DisposeOwnedAsync(ScenarioPathsCategory, _scenarioPaths, categories);
-        var pathsAbsent = _scenarioPaths is null || !Directory.Exists(_scenarioPaths.ScenarioDirectory);
-        _scenarioPaths = null;
-        var databaseAbsent = await ConfirmAbsentAsync(_databaseObservation);
-
-        Receipt = Receipt with
-        {
-            AcquiredCategories = _acquiredCategories.ToArray(),
-            AttemptedCleanupCategories = categories,
-            CleanupFailureCount = failures,
-            DatabaseAbsent = databaseAbsent,
-            ApiAbsent = apiAbsent,
-            ExpoAbsent = expoAbsent,
-            ScenarioPathsAbsent = pathsAbsent
-        };
-        return Receipt;
-    }
-
-    private async Task<int> DisposeOwnedAsync(string category, IAsyncDisposable? resource, ICollection<string> categories)
-    {
-        if (resource is null)
-        {
-            return 0;
-        }
-
-        categories.Add(category);
+        await _cleanupGate.WaitAsync();
         try
         {
+            return await ContinueCleanupAsync();
+        }
+        finally
+        {
+            _cleanupGate.Release();
+        }
+    }
+
+    private async Task<ScenarioLifecycleReceipt> ContinueCleanupAsync()
+    {
+        while (_cleanupStage != ScenarioLifecycleCleanupStage.Complete)
+        {
+            var resource = CurrentCleanupResource();
+            if (resource is null)
+            {
+                await CompleteCurrentCleanupStageAsync();
+                continue;
+            }
+
+            _cleanupCategories.Add(CurrentCleanupCategory());
+            var rawDisposal = CaptureRawDisposal(resource);
             using var shutdown = new CancellationTokenSource(_shutdownTimeout);
-            await resource.DisposeAsync().AsTask().WaitAsync(shutdown.Token);
-            return 0;
+            try
+            {
+                await rawDisposal.WaitAsync(shutdown.Token);
+            }
+            catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
+            {
+                _cleanupFailures++;
+                _retainedCleanupObservation ??= ObserveRetainedCleanupAsync(_cleanupStage, rawDisposal);
+                return UpdateReceipt();
+            }
+            catch (Exception)
+            {
+                _cleanupFailures++;
+            }
+
+            await CompleteCurrentCleanupStageAsync();
+        }
+
+        _databaseAbsent = await ConfirmAbsentAsync(_databaseObservation);
+        return UpdateReceipt();
+    }
+
+    private async Task ObserveRetainedCleanupAsync(
+        ScenarioLifecycleCleanupStage retainedStage,
+        Task rawDisposal)
+    {
+        try
+        {
+            await rawDisposal;
         }
         catch (Exception)
         {
-            return 1;
         }
+
+        await _cleanupGate.WaitAsync();
+        try
+        {
+            if (_cleanupStage != retainedStage)
+            {
+                return;
+            }
+
+            _retainedCleanupObservation = null;
+            await CompleteCurrentCleanupStageAsync();
+            await ContinueCleanupAsync();
+        }
+        finally
+        {
+            _cleanupGate.Release();
+        }
+    }
+
+    private async Task CompleteCurrentCleanupStageAsync()
+    {
+        switch (_cleanupStage)
+        {
+            case ScenarioLifecycleCleanupStage.BrowserScenario:
+                _browserScenario = null;
+                break;
+            case ScenarioLifecycleCleanupStage.BrowserRun:
+                _browserRun = null;
+                break;
+            case ScenarioLifecycleCleanupStage.Expo:
+                _expoAbsent = _expo is not null && await ConfirmAbsentAsync(_expo);
+                _expo = null;
+                break;
+            case ScenarioLifecycleCleanupStage.Api:
+                _apiAbsent = _api is not null && await ConfirmAbsentAsync(_api.Observation);
+                _api = null;
+                break;
+            case ScenarioLifecycleCleanupStage.PostgreSql:
+                _scenarioDatabase = null;
+                break;
+            case ScenarioLifecycleCleanupStage.ScenarioPaths:
+                _scenarioPathsAbsent = _scenarioPaths is null || !Directory.Exists(_scenarioPaths.ScenarioDirectory);
+                _scenarioPaths = null;
+                break;
+            case ScenarioLifecycleCleanupStage.Complete:
+                return;
+        }
+
+        _cleanupStage++;
+    }
+
+    private IAsyncDisposable? CurrentCleanupResource() => _cleanupStage switch
+    {
+        ScenarioLifecycleCleanupStage.BrowserScenario => _browserScenario,
+        ScenarioLifecycleCleanupStage.BrowserRun => _browserRun,
+        ScenarioLifecycleCleanupStage.Expo => _expo,
+        ScenarioLifecycleCleanupStage.Api => _api,
+        ScenarioLifecycleCleanupStage.PostgreSql => _scenarioDatabase,
+        ScenarioLifecycleCleanupStage.ScenarioPaths => _scenarioPaths,
+        _ => null
+    };
+
+    private string CurrentCleanupCategory() => _cleanupStage switch
+    {
+        ScenarioLifecycleCleanupStage.BrowserScenario => BrowserScenarioCategory,
+        ScenarioLifecycleCleanupStage.BrowserRun => BrowserRunCategory,
+        ScenarioLifecycleCleanupStage.Expo => ExpoCategory,
+        ScenarioLifecycleCleanupStage.Api => ApiCategory,
+        ScenarioLifecycleCleanupStage.PostgreSql => PostgreSqlCategory,
+        ScenarioLifecycleCleanupStage.ScenarioPaths => ScenarioPathsCategory,
+        _ => throw new InvalidOperationException("E2E scenario cleanup has no active category.")
+    };
+
+    private static Task CaptureRawDisposal(IAsyncDisposable resource)
+    {
+        try
+        {
+            return resource.DisposeAsync().AsTask();
+        }
+        catch (Exception exception)
+        {
+            return Task.FromException(exception);
+        }
+    }
+
+    private ScenarioLifecycleReceipt UpdateReceipt()
+    {
+        Receipt = Receipt with
+        {
+            AcquiredCategories = _acquiredCategories.ToArray(),
+            AttemptedCleanupCategories = _cleanupCategories.ToArray(),
+            CleanupFailureCount = _cleanupFailures,
+            DatabaseAbsent = _databaseAbsent,
+            ApiAbsent = _apiAbsent,
+            ExpoAbsent = _expoAbsent,
+            ScenarioPathsAbsent = _scenarioPathsAbsent
+        };
+        return Receipt;
     }
 
     private static async Task<bool> ConfirmAbsentAsync(ScenarioResourceObservation? database)
@@ -357,6 +472,17 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
     }
 
     private static ScenarioLifecycleReceipt EmptyReceipt() => new([], [], 0, false, false, false, false, false, false, false);
+}
+
+internal enum ScenarioLifecycleCleanupStage
+{
+    BrowserScenario,
+    BrowserRun,
+    Expo,
+    Api,
+    PostgreSql,
+    ScenarioPaths,
+    Complete
 }
 
 internal sealed class DefaultScenarioLifecycleDependencies : IScenarioLifecycleDependencies
@@ -410,7 +536,10 @@ internal sealed class DefaultScenarioLifecycleDependencies : IScenarioLifecycleD
         cancellationToken.ThrowIfCancellationRequested();
         return new BrowserRunScenarioResource(await BrowserRunLease.CreateAsync(new BrowserRunRequest(
             request.Run.RunLease,
-            request.Options.Timeouts.BrowserActionMilliseconds)));
+            request.Options.Timeouts.BrowserActionMilliseconds)
+        {
+            RuntimeDirectory = browserRuntime
+        }));
     }
 
     public async Task<IScenarioLifecycleBrowserScenario> StartBrowserScenarioAsync(
