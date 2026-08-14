@@ -51,7 +51,7 @@ public sealed class LifecycleScenarioHooks
         try
         {
             await lease.DisposeAsync();
-            run?.RecordSuccessfulScenario(lease);
+            run?.RecordSuccessfulScenario(CaseIdFor(_scenarioContext), lease);
         }
         catch
         {
@@ -118,6 +118,7 @@ internal sealed class LifecycleRunState : IAsyncDisposable
     private readonly RealApiHostProofContext _api;
     private readonly CancellationTokenSource _provisioning;
     private readonly object _sync = new();
+    private readonly List<FinalLifecycleScenarioReceipt> _completedScenarios = [];
     private ScenarioLifecycleObservation? _previous;
     private bool _hasFailure;
 
@@ -218,11 +219,30 @@ internal sealed class LifecycleRunState : IAsyncDisposable
             cancellationToken: scenario.Token);
     }
 
-    internal void RecordSuccessfulScenario(ScenarioLifecycleLease lease)
+    internal void RecordSuccessfulScenario(string caseId, ScenarioLifecycleLease lease)
     {
+        var receipt = lease.Receipt;
+        var readyStack = receipt.AcquiredCategories.SequenceEqual([
+            "scenario-paths", "postgresql", "external-api-host", "expo", "browser-run", "browser-scenario"], StringComparer.Ordinal);
         lock (_sync)
         {
             _previous = lease.Observation;
+            _completedScenarios.Add(new FinalLifecycleScenarioReceipt(
+                caseId,
+                receipt.AcquiredCategories,
+                receipt.AttemptedCleanupCategories,
+                receipt.CleanupFailureCount,
+                receipt.DatabaseIdentityDistinct,
+                readyStack,
+                readyStack,
+                readyStack,
+                readyStack,
+                receipt.PreviousResourcesAbsent,
+                receipt.BrowserStorageEmpty,
+                receipt.DatabaseAbsent,
+                receipt.ApiAbsent,
+                receipt.ExpoAbsent,
+                receipt.ScenarioPathsAbsent));
         }
     }
 
@@ -257,6 +277,7 @@ internal sealed class LifecycleRunState : IAsyncDisposable
             else
             {
                 await _run.FinalizeSuccessAsync();
+                WriteSuccessReceipt();
             }
         }
         catch (Exception exception)
@@ -286,6 +307,56 @@ internal sealed class LifecycleRunState : IAsyncDisposable
         {
             return _hasFailure;
         }
+    }
+
+    private void WriteSuccessReceipt()
+    {
+        FinalLifecycleScenarioReceipt[] scenarios;
+        lock (_sync)
+        {
+            scenarios = _completedScenarios.ToArray();
+        }
+
+        LifecycleEvidenceReceiptWriter.Write(new FinalLifecycleRunReceipt(
+            FinalLifecycleEvidenceManifest.LifecycleReceiptSchema,
+            _api.Publication.Receipt.ApiRepositoryHeadSha,
+            _api.Publication.Receipt.RepositoryIsDirty,
+            scenarios.Length,
+            true,
+            !Directory.Exists(_run.RunDirectory),
+            !Directory.Exists(_run.RunDirectory),
+            scenarios));
+    }
+}
+
+internal static class LifecycleEvidenceReceiptWriter
+{
+    internal const string ReceiptPathEnvironmentVariable = "HARNESS_ONLY_LIFECYCLE_RECEIPT_PATH";
+
+    internal static void Write(FinalLifecycleRunReceipt receipt)
+    {
+        var configuredPath = Environment.GetEnvironmentVariable(ReceiptPathEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(configuredPath))
+        {
+            return;
+        }
+
+        var repositoryRoot = RepositoryRoot.Find();
+        var testResultsRoot = Path.GetFullPath(Path.Combine(repositoryRoot, "LgymApi.E2ETests", "TestResults"));
+        var receiptPath = Path.GetFullPath(configuredPath);
+        var relativePath = Path.GetRelativePath(testResultsRoot, receiptPath);
+        if (Path.IsPathRooted(relativePath) || relativePath == ".." ||
+            relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Lifecycle evidence receipt path is invalid.");
+        }
+
+        var serialized = System.Text.Json.JsonSerializer.Serialize(receipt, new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+        });
+        Directory.CreateDirectory(Path.GetDirectoryName(receiptPath)!);
+        File.WriteAllText(receiptPath, serialized);
     }
 }
 

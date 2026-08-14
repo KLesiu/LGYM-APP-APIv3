@@ -156,7 +156,7 @@ public sealed class PostgreSqlContainerHarnessTests
 
     private static void WriteEvidenceReceipt(HarnessDockerEvidenceReceipt receipt)
     {
-        var serialized = HarnessDockerEvidenceReceiptWriter.Serialize(receipt);
+        var serialized = HarnessDockerEvidenceReceiptWriter.Write(receipt);
         TestContext.Out.WriteLine(serialized);
     }
 
@@ -186,6 +186,32 @@ internal sealed record HarnessDockerEvidenceReceipt(
 
 internal static class HarnessDockerEvidenceReceiptWriter
 {
+    internal const string ReceiptPathEnvironmentVariable = "HARNESS_ONLY_HARNESS_DOCKER_RECEIPT_PATH";
+
+    internal static string Write(HarnessDockerEvidenceReceipt receipt)
+    {
+        var serialized = Serialize(receipt);
+        var configuredPath = Environment.GetEnvironmentVariable(ReceiptPathEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(configuredPath))
+        {
+            return serialized;
+        }
+
+        var repositoryRoot = RepositoryRoot.Find();
+        var testResultsRoot = Path.GetFullPath(Path.Combine(repositoryRoot, "LgymApi.E2ETests", "TestResults"));
+        var receiptPath = Path.GetFullPath(configuredPath);
+        var relativePath = Path.GetRelativePath(testResultsRoot, receiptPath);
+        if (Path.IsPathRooted(relativePath) || relativePath == ".." ||
+            relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("HarnessDocker evidence receipt path is invalid.");
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(receiptPath)!);
+        File.WriteAllText(receiptPath, serialized);
+        return serialized;
+    }
+
     internal static string Serialize(HarnessDockerEvidenceReceipt receipt)
     {
         if (receipt.TestCount <= 0 || receipt.PassedCount != receipt.TestCount ||
