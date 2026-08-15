@@ -161,8 +161,13 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
         Receipt = EmptyReceipt();
     }
 
-    internal IPage Page => _browserScenario?.Page
-        ?? throw new InvalidOperationException("E2E scenario browser page is unavailable.");
+    internal IPage Page => _observation is not null && _browserScenario is { } browserScenario
+        ? browserScenario.Page
+        : throw new InvalidOperationException("E2E scenario browser page is unavailable.");
+
+    internal Uri ApiBaseAddress => _observation is not null && _api is not null
+        ? _api.BaseAddress
+        : throw new InvalidOperationException("E2E scenario API base address is unavailable.");
 
     internal ScenarioLifecycleObservation Observation => _observation
         ?? throw new InvalidOperationException("E2E scenario lifecycle observation is unavailable.");

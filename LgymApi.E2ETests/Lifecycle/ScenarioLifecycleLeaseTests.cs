@@ -1,3 +1,5 @@
+using System.Reflection;
+using LgymApi.E2ETests.Browser;
 using LgymApi.E2ETests.Configuration;
 using LgymApi.E2ETests.Harness;
 using Microsoft.Playwright;
@@ -36,6 +38,47 @@ public sealed class ScenarioLifecycleLeaseTests
             Assert.That(lease.Receipt.ApiAbsent, Is.True);
             Assert.That(lease.Receipt.ExpoAbsent, Is.True);
             Assert.That(lease.Receipt.ScenarioPathsAbsent, Is.True);
+        });
+    }
+
+    [Test]
+    public async Task ScenarioLifecycleLease_exposes_page_and_api_base_address_only_after_successful_acquisition()
+    {
+        var apiBaseAddress = typeof(ScenarioLifecycleLease).GetProperty(
+            "ApiBaseAddress",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        Assert.That(apiBaseAddress, Is.Not.Null);
+        if (apiBaseAddress is null)
+        {
+            return;
+        }
+
+        var incomplete = (ScenarioLifecycleLease)Activator.CreateInstance(
+            typeof(ScenarioLifecycleLease),
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+            binder: null,
+            args: [TimeSpan.FromSeconds(1)],
+            culture: null)!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(() => _ = incomplete.Page, Throws.TypeOf<InvalidOperationException>());
+            Assert.That(() => _ = apiBaseAddress.GetValue(incomplete), Throws.TypeOf<TargetInvocationException>());
+        });
+
+        await using var fixture = await ScenarioLifecycleFixture.CreateAsync();
+        var dependencies = new RecordingScenarioLifecycleDependencies();
+        await using var lease = await ScenarioLifecycleLease.CreateAsync(
+            fixture.CreateRequest("scenario-lifecycle-resource-access"),
+            dependencies);
+        var state = new CapturingLifecycleScenarioState();
+        LifecycleScenarioResourceHooks.AttachResources(state, lease);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(lease.Page, Is.SameAs(dependencies.Page));
+            Assert.That(apiBaseAddress.GetValue(lease), Is.EqualTo(dependencies.ApiBaseAddress));
+            Assert.That(state.Page, Is.SameAs(dependencies.Page));
+            Assert.That(state.ApiBaseAddress, Is.EqualTo(dependencies.ApiBaseAddress));
         });
     }
 
@@ -409,57 +452,6 @@ public sealed class ScenarioLifecycleLeaseTests
         Assert.That(source.IsInstalled, Is.True);
     }
 
-    [Test]
-    public async Task ScenarioLifecycleLease_real_stack_returns_an_accessible_Expo_page_after_both_API_gates()
-    {
-        var repositoryRoot = RepositoryRoot.Find();
-        var options = E2EConfiguration.Load(TestContext.CurrentContext.TestDirectory, repositoryRoot);
-        using var lifetime = ScenarioLifecycleProofLifetime.Create(options);
-        var api = await RealApiHostProofContext.CreateAsync(lifetime.ProvisioningToken);
-        var git = ApiRepositoryStateReader.ResolveGitExecutable();
-        await using var run = LifecycleRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
-            api.RepositoryRoot,
-            api.Options.Runtime.PrivateRunRoot,
-            TimeSpan.FromSeconds(api.Options.Timeouts.ProcessShutdownSeconds)));
-        await using var source = await WebSourceRunLease.CreateAsync(
-            new WebSourceRunRequest(api.RepositoryRoot, api.Options, git, []),
-            new WebSourceRunDependencies
-            {
-                Stager = new WebSourceStager(git),
-                ToolResolver = new NodeNpmToolResolver(),
-                CommandRunner = new NodeNpmCommandRunner()
-            },
-            run,
-            lifetime.ProvisioningToken);
-        await source.EnsureInstalledAsync(lifetime.ProvisioningToken);
-        using var scenario = lifetime.StartScenario();
-        await using var lease = await ScenarioLifecycleLease.CreateAsync(
-            new ScenarioLifecycleRequest(
-                run,
-                source,
-                api.Options,
-                api.Publication,
-                api.RepositoryRoot,
-                "scenario-lifecycle-real"),
-            cancellationToken: scenario.Token);
-
-        var navigation = lease.Page.GotoAsync("/", new PageGotoOptions
-        {
-            WaitUntil = WaitUntilState.Commit,
-            Timeout = api.Options.Timeouts.BrowserActionMilliseconds
-        });
-        var response = await navigation.WaitAsync(scenario.Token);
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(response, Is.Not.Null);
-            Assert.That(response!.Status, Is.LessThan(400));
-            Assert.That(lease.Receipt.BrowserStorageEmpty, Is.True);
-            Assert.That(lease.Receipt.AcquiredCategories, Is.EqualTo([
-                "scenario-paths", "postgresql", "external-api-host", "expo", "browser-run", "browser-scenario"]));
-        });
-    }
-
     public enum ScenarioLifecycleFailureStage
     {
         None,
@@ -482,6 +474,9 @@ public sealed class ScenarioLifecycleLeaseTests
         internal List<string> CleanupEvents { get; } = [];
         internal RecordingDatabase Database { get; } = new();
         internal BlockingCleanupResource? BlockingCleanup { get; } = blockedCleanup is null ? null : new();
+        internal Uri ApiBaseAddress { get; } = new("http://127.0.0.1:40123/");
+        internal IPage Page { get; } = PlaywrightInterfaceProxy.Create<IPage>(
+            static (method, _) => PlaywrightInterfaceProxy.Default(method.ReturnType));
 
         public Task<ScenarioDatabaseOwnership> StartDatabaseAsync(CancellationToken cancellationToken)
         {
@@ -520,7 +515,8 @@ public sealed class ScenarioLifecycleLeaseTests
                 database,
                 CleanupEvents,
                 cleanupFailure == "external-api-host",
-                blockedCleanup == "external-api-host" ? BlockingCleanup : null);
+                blockedCleanup == "external-api-host" ? BlockingCleanup : null,
+                ApiBaseAddress);
         }
 
         public Task<IScenarioLifecycleExpo> StartExpoAsync(
@@ -578,7 +574,21 @@ public sealed class ScenarioLifecycleLeaseTests
             return Task.FromResult<IScenarioLifecycleBrowserScenario>(new RecordingBrowserScenario(
                 CleanupEvents,
                 cleanupFailure == "browser-scenario",
-                blockedCleanup == "browser-scenario" ? BlockingCleanup : null));
+                blockedCleanup == "browser-scenario" ? BlockingCleanup : null,
+                Page));
+        }
+    }
+
+    private sealed class CapturingLifecycleScenarioState : IWebLifecycleScenarioState
+    {
+        internal IPage? Page { get; private set; }
+
+        internal Uri? ApiBaseAddress { get; private set; }
+
+        public void Attach(IPage page, Uri apiBaseAddress)
+        {
+            Page = page;
+            ApiBaseAddress = apiBaseAddress;
         }
     }
 
@@ -603,9 +613,10 @@ public sealed class ScenarioLifecycleLeaseTests
         IApiHostDatabaseLease database,
         ICollection<string> cleanupEvents,
         bool fails,
-        BlockingCleanupResource? blocker) : IScenarioLifecycleApiHost
+        BlockingCleanupResource? blocker,
+        Uri baseAddress) : IScenarioLifecycleApiHost
     {
-        public Uri BaseAddress { get; } = new("http://127.0.0.1:40123/");
+        public Uri BaseAddress { get; } = baseAddress;
 
         public ExternalApiHostObservation Observation { get; } = new(
             ScenarioResourceIdentity.Create(),
@@ -676,9 +687,10 @@ public sealed class ScenarioLifecycleLeaseTests
     private sealed class RecordingBrowserScenario(
         ICollection<string> cleanupEvents,
         bool fails,
-        BlockingCleanupResource? blocker) : IScenarioLifecycleBrowserScenario
+        BlockingCleanupResource? blocker,
+        IPage page) : IScenarioLifecycleBrowserScenario
     {
-        public IPage Page => null!;
+        public IPage Page => page;
 
         public ValueTask DisposeAsync()
         {
@@ -696,7 +708,7 @@ public sealed class ScenarioLifecycleLeaseTests
         public Task<bool> ConfirmStorageIsEmptyAsync() => Task.FromResult(true);
     }
 
-    private sealed class ScenarioLifecycleFixture(string root) : IAsyncDisposable
+    internal sealed class ScenarioLifecycleFixture(string root) : IAsyncDisposable
     {
         internal static Task<ScenarioLifecycleFixture> CreateAsync() => Task.FromResult(
             new ScenarioLifecycleFixture(Directory.CreateTempSubdirectory("lgym-e2e-scenario-lifecycle-").FullName));
@@ -793,7 +805,7 @@ public sealed class ScenarioLifecycleLeaseTests
         return order.Take(Array.IndexOf(order, category) + 1).ToArray();
     }
 
-    private sealed class ScenarioLifecycleProofLifetime : IDisposable
+    internal sealed class ScenarioLifecycleProofLifetime : IDisposable
     {
         private readonly CancellationTokenSource _provisioning;
         private readonly TimeSpan _scenarioTimeout;
@@ -893,5 +905,61 @@ public sealed class ScenarioLifecycleLeaseTests
         }
 
         internal void Release() => _release.TrySetResult();
+    }
+}
+
+[TestFixture]
+[Category("WebLifecycleReal")]
+public sealed class RealWebLifecycleStackTests
+{
+    [Test]
+    public async Task Real_stack_returns_an_accessible_Expo_page_after_both_API_gates()
+    {
+        var repositoryRoot = RepositoryRoot.Find();
+        var options = E2EConfiguration.Load(TestContext.CurrentContext.TestDirectory, repositoryRoot);
+        using var lifetime = ScenarioLifecycleLeaseTests.ScenarioLifecycleProofLifetime.Create(options);
+        var api = await RealApiHostProofContext.CreateAsync(lifetime.ProvisioningToken);
+        var git = ApiRepositoryStateReader.ResolveGitExecutable();
+        await using var run = LifecycleRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
+            api.RepositoryRoot,
+            api.Options.Runtime.PrivateRunRoot,
+            TimeSpan.FromSeconds(api.Options.Timeouts.ProcessShutdownSeconds)));
+        await using var source = await WebSourceRunLease.CreateAsync(
+            new WebSourceRunRequest(api.RepositoryRoot, api.Options, git, []),
+            new WebSourceRunDependencies
+            {
+                Stager = new WebSourceStager(git),
+                ToolResolver = new NodeNpmToolResolver(),
+                CommandRunner = new NodeNpmCommandRunner()
+            },
+            run,
+            lifetime.ProvisioningToken);
+        await source.EnsureInstalledAsync(lifetime.ProvisioningToken);
+        using var scenario = lifetime.StartScenario();
+        await using var lease = await ScenarioLifecycleLease.CreateAsync(
+            new ScenarioLifecycleRequest(
+                run,
+                source,
+                api.Options,
+                api.Publication,
+                api.RepositoryRoot,
+                "scenario-lifecycle-real"),
+            cancellationToken: scenario.Token);
+
+        var navigation = lease.Page.GotoAsync("/", new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.Commit,
+            Timeout = api.Options.Timeouts.BrowserActionMilliseconds
+        });
+        var response = await navigation.WaitAsync(scenario.Token);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response, Is.Not.Null);
+            Assert.That(response!.Status, Is.LessThan(400));
+            Assert.That(lease.Receipt.BrowserStorageEmpty, Is.True);
+            Assert.That(lease.Receipt.AcquiredCategories, Is.EqualTo([
+                "scenario-paths", "postgresql", "external-api-host", "expo", "browser-run", "browser-scenario"]));
+        });
     }
 }
