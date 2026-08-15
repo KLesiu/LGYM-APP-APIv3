@@ -24,6 +24,10 @@ internal static class PushNotificationOptionsFactory
         options.Fcm.BaseUrl = NormalizeOptional(options.Fcm.BaseUrl)?.TrimEnd('/') ?? string.Empty;
         options.StaleTokenInactivityDays = options.StaleTokenInactivityDays <= 0 ? 45 : options.StaleTokenInactivityDays;
         options.StaleTokenCleanupBatchSize = options.StaleTokenCleanupBatchSize <= 0 ? 500 : options.StaleTokenCleanupBatchSize;
+        options.MessageHistoryDays = options.MessageHistoryDays <= 0 ? 30 : options.MessageHistoryDays;
+        options.DisabledInstallationDays = options.DisabledInstallationDays <= 0 ? 30 : options.DisabledInstallationDays;
+        options.InAppNotificationDays = options.InAppNotificationDays <= 0 ? 90 : options.InAppNotificationDays;
+        options.RetentionPurgeBatchSize = options.RetentionPurgeBatchSize <= 0 ? 500 : options.RetentionPurgeBatchSize;
         return options;
     }
 

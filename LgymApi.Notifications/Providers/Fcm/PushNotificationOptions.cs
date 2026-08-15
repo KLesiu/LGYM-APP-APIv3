@@ -8,6 +8,10 @@ internal sealed class PushNotificationOptions
     public bool StaleTokenCleanupEnabled { get; set; } = true;
     public int StaleTokenInactivityDays { get; set; } = 45;
     public int StaleTokenCleanupBatchSize { get; set; } = 500;
+    public int MessageHistoryDays { get; set; } = 30;
+    public int DisabledInstallationDays { get; set; } = 30;
+    public int InAppNotificationDays { get; set; } = 90;
+    public int RetentionPurgeBatchSize { get; set; } = 500;
     public FcmOptions Fcm { get; set; } = new();
 
     public bool IsSendEnabled => SendEnabled ?? Enabled;

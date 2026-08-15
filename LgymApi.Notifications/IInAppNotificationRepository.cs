@@ -15,4 +15,19 @@ internal interface IInAppNotificationRepository
     Task MarkAsReadAsync(Id<InAppNotification> id, CancellationToken cancellationToken = default);
     Task MarkAllAsReadAsync(Id<User> userId, DateTimeOffset? before, CancellationToken cancellationToken = default);
     Task<int> GetUnreadCountAsync(Id<User> userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns no more than the positive candidate limit of notifications, including soft-deleted rows, created strictly before the caller-computed UTC cutoff, ordered oldest first.
+    /// </summary>
+    Task<IReadOnlyList<InAppNotification>> GetRetentionCandidatesCreatedBeforeAsync(
+        DateTimeOffset cutoff,
+        int candidateLimit,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException();
+
+    /// <summary>
+    /// Stages deletion of the selected notifications; the caller owns the unit-of-work commit.
+    /// </summary>
+    void RemoveRange(IEnumerable<InAppNotification> notifications)
+        => throw new NotSupportedException();
 }
