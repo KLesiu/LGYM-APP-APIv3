@@ -88,12 +88,18 @@ internal sealed class BrowserRunLease : IAsyncDisposable
                 var initialized = await initialization.WaitAsync(deadline.Token);
                 return new BrowserRunLease(initialized.Runtime, initialized.Browser, timeout);
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
                 releaseEnvironment = false;
+                var terminalObservation = ObserveLateInitializationAsync(initialization, timeout, originalBrowserPath);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw new BrowserRetainedCancellationException(terminalObservation, cancellationToken);
+                }
+
                 throw new BrowserRetainedOperationException(
                     PrerequisiteMessage,
-                    ObserveLateInitializationAsync(initialization, timeout, originalBrowserPath));
+                    terminalObservation);
             }
         }
         catch (Exception exception)
@@ -145,6 +151,12 @@ internal sealed class BrowserRunLease : IAsyncDisposable
             throw new BrowserRetainedOperationException(
                 BrowserScenarioLease.SetupMessage,
                 ObserveLateContextAsync(creation, _cleanupTimeout));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw new BrowserRetainedCancellationException(
+                ObserveLateContextAsync(creation, _cleanupTimeout),
+                cancellationToken);
         }
     }
 
@@ -263,6 +275,12 @@ internal sealed class BrowserRunLease : IAsyncDisposable
 
 internal sealed class BrowserRetainedOperationException(string message, Task terminalObservation)
     : InvalidOperationException(message), IRetainedAsyncFailure
+{
+    public Task TerminalObservation { get; } = terminalObservation;
+}
+
+internal sealed class BrowserRetainedCancellationException(Task terminalObservation, CancellationToken cancellationToken)
+    : OperationCanceledException(null, null, cancellationToken), IRetainedAsyncFailure
 {
     public Task TerminalObservation { get; } = terminalObservation;
 }

@@ -1,4 +1,5 @@
 using Microsoft.Playwright;
+using LgymApi.E2ETests.Lifecycle;
 
 namespace LgymApi.E2ETests.Browser;
 
@@ -82,13 +83,21 @@ internal sealed class BrowserScenarioLease : IAsyncDisposable
                     Task.WhenAll(ObserveLatePageAsync(pageCreation, actionTimeoutMilliseconds), partialClose));
             }
 
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                var partialClose = await ClosePartialContextAsync(context, actionTimeoutMilliseconds, retainPartialCleanup);
+                throw new BrowserRetainedCancellationException(
+                    Task.WhenAll(ObserveLatePageAsync(pageCreation, actionTimeoutMilliseconds), partialClose),
+                    cancellationToken);
+            }
+
             return new BrowserScenarioLease(page, context, actionTimeoutMilliseconds);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested && exception is not IRetainedAsyncFailure)
         {
             throw;
         }
-        catch (Exception exception) when (exception is PlaywrightException or BrowserRetainedOperationException)
+        catch (Exception exception) when (exception is PlaywrightException or IRetainedAsyncFailure)
         {
             Task partialClose = Task.CompletedTask;
             if (context is not null)
@@ -99,6 +108,13 @@ internal sealed class BrowserScenarioLease : IAsyncDisposable
             if (exception is BrowserRetainedOperationException retained)
             {
                 throw new BrowserRetainedOperationException(SetupMessage, Task.WhenAll(retained.TerminalObservation, partialClose));
+            }
+
+            if (exception is BrowserRetainedCancellationException canceled)
+            {
+                throw new BrowserRetainedCancellationException(
+                    Task.WhenAll(canceled.TerminalObservation, partialClose),
+                    canceled.CancellationToken);
             }
 
             throw new InvalidOperationException(SetupMessage);

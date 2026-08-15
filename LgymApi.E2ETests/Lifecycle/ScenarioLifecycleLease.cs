@@ -134,6 +134,8 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
     private readonly List<string> _acquiredCategories = [];
     private readonly object _cleanupLock = new();
     private readonly SemaphoreSlim _cleanupGate = new(1, 1);
+    private readonly TaskCompletionSource<ScenarioLifecycleReceipt> _terminalCleanup =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly List<string> _cleanupCategories = [];
     private Task<ScenarioLifecycleReceipt>? _cleanup;
     private Task? _retainedCleanupObservation;
@@ -344,34 +346,10 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
     internal async Task WaitForTerminalCleanupAsync(CancellationToken cancellationToken)
     {
         _ = GetCleanupTask();
-        while (true)
+        var receipt = await _terminalCleanup.Task.WaitAsync(cancellationToken);
+        if (!receipt.DatabaseAbsent || !receipt.ApiAbsent || !receipt.ExpoAbsent || !receipt.ScenarioPathsAbsent)
         {
-            Task? pending;
-            lock (_cleanupLock)
-            {
-                pending = _browserAcquisition is { IsTerminal: false }
-                    ? _browserAcquisition.Observer
-                    : _retainedCleanupObservation;
-            }
-
-            if (pending is not null)
-            {
-                await pending.WaitAsync(cancellationToken);
-                continue;
-            }
-
-            if (_cleanupStage != ScenarioLifecycleCleanupStage.Complete)
-            {
-                await GetCleanupTask().WaitAsync(cancellationToken);
-                continue;
-            }
-
-            if (!Receipt.DatabaseAbsent || !Receipt.ApiAbsent || !Receipt.ExpoAbsent || !Receipt.ScenarioPathsAbsent)
-            {
-                throw new InvalidOperationException("A prior E2E scenario resource is still present.");
-            }
-
-            return;
+            throw new InvalidOperationException("A prior E2E scenario resource is still present.");
         }
     }
 
@@ -429,7 +407,9 @@ internal sealed class ScenarioLifecycleLease : IAsyncDisposable
         }
 
         _databaseAbsent = await ConfirmAbsentAsync(_databaseObservation);
-        return UpdateReceipt();
+        var receipt = UpdateReceipt();
+        _terminalCleanup.TrySetResult(receipt);
+        return receipt;
     }
 
     private async Task ObserveRetainedCleanupAsync(

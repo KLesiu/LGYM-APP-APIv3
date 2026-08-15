@@ -164,6 +164,27 @@ public sealed class BrowserRunLeaseTests
     }
 
     [Test]
+    public async Task Caller_cancellation_retains_late_factory_work_before_a_successor_browser_run()
+    {
+        await using var paths = CreatePaths(RepositoryRoot.Find());
+        using var cancellation = new CancellationTokenSource();
+        var firstFactory = new BlockingBrowserRuntimeFactory();
+        var creation = BrowserRunLease.CreateAsync(new BrowserRunRequest(paths, 1_000), firstFactory, cancellation.Token);
+
+        await firstFactory.Started.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        cancellation.Cancel();
+        var cancellationException = Assert.CatchAsync<OperationCanceledException>(async () => await creation);
+        Assert.That(cancellationException!.CancellationToken, Is.EqualTo(cancellation.Token));
+
+        var successor = BrowserRunLease.CreateAsync(new BrowserRunRequest(paths, 1_000), new RecordingBrowserRuntimeFactory());
+        Assert.That(successor.IsCompleted, Is.False);
+
+        firstFactory.Completion.TrySetResult(firstFactory.Runtime);
+        await firstFactory.Runtime.Disposed.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        await using var successorLease = await successor.WaitAsync(TimeSpan.FromSeconds(1));
+    }
+
+    [Test]
     public async Task Lifecycle_browser_runs_use_distinct_canonical_runtime_children_while_binaries_stay_run_scoped()
     {
         await using var run = LifecycleRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
