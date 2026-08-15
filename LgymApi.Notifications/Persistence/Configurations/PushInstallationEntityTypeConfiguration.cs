@@ -21,6 +21,7 @@ internal sealed class PushInstallationEntityTypeConfiguration : IEntityTypeConfi
         builder.HasIndex(e => e.InstallationId)
             .IsUnique()
             .HasFilter(NotificationsConfigurationFilters.ActiveRowsFilter);
+        builder.HasIndex(e => e.DisabledAt);
 
         builder.HasOne<User>()
             .WithMany()

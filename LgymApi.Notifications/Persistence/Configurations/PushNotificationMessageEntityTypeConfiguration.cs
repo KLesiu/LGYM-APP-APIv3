@@ -29,6 +29,7 @@ internal sealed class PushNotificationMessageEntityTypeConfiguration : IEntityTy
             .HasFilter(NotificationsConfigurationFilters.ActiveRowsFilter);
         builder.HasIndex(e => new { e.Status, e.NextAttemptAt, e.CreatedAt })
             .HasFilter(NotificationsConfigurationFilters.ActiveRowsFilter);
+        builder.HasIndex(e => e.CreatedAt);
 
         builder.HasOne<User>()
             .WithMany()
