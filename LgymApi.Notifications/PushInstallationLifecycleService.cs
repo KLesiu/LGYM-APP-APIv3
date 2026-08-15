@@ -129,6 +129,13 @@ internal sealed class PushInstallationLifecycleService : IPushInstallationLifecy
         return _pushInstallationRepository.DisassociateForSessionAsync(sessionId, DateTimeOffset.UtcNow, cancellationToken);
     }
 
+    public Task StageRemoveForAccountAsync(
+        Id<AccountReference> accountId,
+        CancellationToken cancellationToken = default)
+    {
+        return _pushInstallationRepository.RemoveForAccountAsync(accountId.Rebind<User>(), cancellationToken);
+    }
+
     private static string? NormalizeRequiredValue(string? value)
     {
         var normalized = NormalizeOptionalValue(value);

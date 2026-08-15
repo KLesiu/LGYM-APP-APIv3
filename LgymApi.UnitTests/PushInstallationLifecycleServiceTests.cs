@@ -311,6 +311,26 @@ public sealed class PushInstallationLifecycleServiceTests
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
+    [Test]
+    public async Task StageRemoveForAccountAsync_StagesAllInstallationRemovalWithoutCommitting()
+    {
+        var accountId = Id<AccountReference>.New();
+        using var cancellationSource = new CancellationTokenSource();
+        var cancellationToken = cancellationSource.Token;
+
+        await _service.StageRemoveForAccountAsync(accountId, cancellationToken);
+
+        _pushInstallationRepository.Calls
+            .Where(call =>
+                call.Method == nameof(IPushInstallationRepository.RemoveForAccountAsync)
+                && call.Argument is Id<User> userId
+                && userId == accountId.Rebind<User>()
+                && call.CancellationToken == cancellationToken)
+            .Should()
+            .ContainSingle();
+        await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
+    }
+
     private static Id<User> CreateUserId()
     {
         return Id<User>.New();

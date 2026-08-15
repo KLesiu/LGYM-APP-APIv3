@@ -12,6 +12,7 @@ using LgymApi.Application.Identity.Authentication;
 using LgymApi.Application.Identity.Profile;
 using LgymApi.Application.Identity.Registration;
 using LgymApi.Application.Identity.Contracts.Access;
+using LgymApi.Application.Identity.Contracts.Accounts;
 using LgymApi.Application.Coaching.Contracts;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Notifications;
@@ -296,6 +297,7 @@ public sealed class ServiceCommitBehaviorTests
             roleRepository,
             new RankService(),
             unitOfWork,
+            Substitute.For<IAccountPushInstallationCleanupPort>(),
             new AppDefaultsOptions(),
             new NoOpTutorialService(),
             Substitute.For<IMapper>());
@@ -350,6 +352,7 @@ public sealed class ServiceCommitBehaviorTests
             roleRepository,
             new RankService(),
             unitOfWork,
+            Substitute.For<IAccountPushInstallationCleanupPort>(),
             new AppDefaultsOptions(),
             new NoOpTutorialService(),
             Substitute.For<IMapper>());
