@@ -137,6 +137,7 @@ internal sealed class ExpoWebLease : IAsyncDisposable
         WorkingDirectory = request.Source.SourceDirectory,
         EnvironmentVariables = CreateEnvironment(request),
         ClearEnvironment = true,
+        SecretCanaries = request.SecretCanaries,
         ExecutionTimeout = startupTimeout,
         ShutdownTimeout = shutdownTimeout
         };

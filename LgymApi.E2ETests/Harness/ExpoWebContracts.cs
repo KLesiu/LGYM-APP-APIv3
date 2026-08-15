@@ -15,6 +15,8 @@ internal sealed record ExpoWebStartRequest(WebSourceRunLease Source, Uri Scenari
     internal E2EOptions Options { get; init; } = new();
 
     internal LifecycleComponentDirectoryLease? RuntimeDirectory { get; init; }
+
+    internal IReadOnlyList<string> SecretCanaries { get; init; } = [];
 }
 
 internal sealed class ExpoWebIdentity

@@ -32,6 +32,7 @@ public sealed class ExpoWebLeaseTests
                 Assert.That(request.EnvironmentVariables["BROWSER"], Is.EqualTo("none"));
                 Assert.That(request.EnvironmentVariables, Does.Not.ContainKey("EXPO_ROUTER_APP_ROOT"));
                 Assert.That(request.EnvironmentVariables, Does.Not.ContainKey("EXPO_WEB_PARENT_CANARY"));
+                Assert.That(request.SecretCanaries, Is.Empty);
                 Assert.That(request.ExecutionTimeout, Is.EqualTo(TimeSpan.FromSeconds(9)));
                 Assert.That(lease.BaseUri, Is.EqualTo(new Uri("http://localhost:8083/")));
             });
@@ -39,6 +40,40 @@ public sealed class ExpoWebLeaseTests
         finally
         {
             await lease.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public async Task ExpoWeb_forwards_scenario_secret_canaries_to_owned_output_capture()
+    {
+        await using var fixture = await Task3WebSourceRunFixture.CreateAsync();
+        var source = await CreateInstalledSourceAsync(fixture);
+        var processStarter = new FakeExpoWebProcessStarter();
+        var canaries = new[] { "scenario-secret-canary-a", "scenario-secret-canary-b" };
+        var request = CreateStartRequest(source) with { SecretCanaries = canaries };
+
+        try
+        {
+            await using var lease = await ExpoWebLease.StartAsync(
+                request,
+                new ExpoWebDependencies(processStarter, new ScriptedExpoWebPortProbe(false),
+                    new ScriptedExpoWebReadinessMonitor([ExpoWebReadinessOutcome.Ready])));
+
+            var processRequest = processStarter.Request!;
+            var capture = new BoundedSanitizedStreamCapture(processRequest.SecretCanaries);
+            await capture.DrainAsync(new StringReader($"prefix-{canaries[0]}-{canaries[1]}-suffix"), CancellationToken.None);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(processRequest.SecretCanaries, Is.EqualTo(canaries));
+                Assert.That(capture.Snapshot().Tail, Is.EqualTo("prefix-[REDACTED]-[REDACTED]-suffix"));
+                Assert.That(capture.Snapshot().Tail, Does.Not.Contain(canaries[0]));
+                Assert.That(capture.Snapshot().Tail, Does.Not.Contain(canaries[1]));
+            });
+        }
+        finally
+        {
+            await source.DisposeAsync();
         }
     }
 
