@@ -21,7 +21,7 @@ public sealed class E2EConfigurationTests
         Assert.Multiple(() =>
         {
             Assert.That(options.WebSource.RepositoryUrl, Is.EqualTo("https://github.com/KLesiu/LGYM-APP-MOBILE.git"));
-            Assert.That(options.WebSource.CommitSha, Is.EqualTo("8f59d96ec368f509b1565e3296cd89d2a082a952"));
+            Assert.That(options.WebSource.CommitSha, Is.EqualTo("d818505945db6d986efa92f2f5b03fc12a1ee658"));
             Assert.That(options.WebSource.SourcePath, Is.Null);
             Assert.That(options.Api.PublishedDllPath, Is.EqualTo(".e2e-private/published-api/LgymApi.Api.dll"));
             Assert.That(options.Api.Port, Is.Zero);
@@ -38,6 +38,38 @@ public sealed class E2EConfigurationTests
             Assert.That(options.Timeouts.BrowserActionMilliseconds, Is.EqualTo(15000));
             Assert.That(options.Timeouts.ScenarioSeconds, Is.EqualTo(180));
             Assert.That(options.Timeouts.TestSessionSeconds, Is.EqualTo(900));
+        });
+    }
+
+    [Test]
+    public async Task Committed_configuration_stages_the_exact_pinned_external_source_without_mutating_it()
+    {
+        var options = LoadOutputConfiguration();
+        var sourcePath = Path.GetFullPath(Path.Combine(
+            RepositoryRoot.Find(),
+            "..",
+            "LGYM-APP-OFFICIAL",
+            "LGYM-APP-MOBILE"));
+        await using var lease = PrivateRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
+            RepositoryRoot.Find(),
+            options.Runtime.PrivateRunRoot,
+            TimeSpan.FromSeconds(options.Timeouts.ProcessShutdownSeconds)));
+        var stager = new PinnedWebSourceStager(ApiRepositoryStateReader.ResolveGitExecutable());
+
+        var stage = await stager.StageAsync(new PinnedWebSourceRequest(
+            sourcePath,
+            options.WebSource.CommitSha,
+            lease,
+            TimeSpan.FromSeconds(options.Timeouts.WebStartupSeconds),
+            TimeSpan.FromSeconds(options.Timeouts.ProcessShutdownSeconds)));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(stage.Receipt.PinnedCommitSha, Is.EqualTo(E2EOptionsValidator.PinnedCommitSha));
+            Assert.That(stage.Receipt.SourceStatePreserved, Is.True);
+            Assert.That(stage.Receipt.ManifestMatched, Is.True);
+            Assert.That(stage.Receipt.TemporaryArchiveRemoved, Is.True);
+            Assert.That(File.Exists(Path.Combine(stage.SourceDirectory, "app", "i18n.ts")), Is.True);
         });
     }
 
@@ -110,7 +142,7 @@ public sealed class E2EConfigurationTests
 
     [TestCase("invalid repository URL", "WebSource.RepositoryUrl must be the canonical credential-free HTTPS repository URL.")]
     [TestCase("invalid commit", "WebSource.CommitSha must be a lowercase 40-character hexadecimal SHA.")]
-    [TestCase("obsolete commit", "WebSource.CommitSha must match the configured immutable mobile source SHA.")]
+    [TestCase("nonremote commit", "WebSource.CommitSha must match the configured immutable mobile source SHA.")]
     [TestCase("repository source path", "WebSource.SourcePath must be absent or an absolute path outside this repository.")]
     [TestCase("published DLL traversal", "Api.PublishedDllPath must be a safe relative path under .e2e-private.")]
     [TestCase("API port", "Api.Port must be 0 or between 1024 and 65535.")]
@@ -193,7 +225,7 @@ public sealed class E2EConfigurationTests
             case "invalid commit":
                 options.WebSource.CommitSha = new string('A', 40);
                 break;
-            case "obsolete commit":
+            case "nonremote commit":
                 options.WebSource.CommitSha = string.Concat(
                     "cd930cce", "76c030b0", "ffe631f0", "bdd79712", "f97d171f");
                 break;

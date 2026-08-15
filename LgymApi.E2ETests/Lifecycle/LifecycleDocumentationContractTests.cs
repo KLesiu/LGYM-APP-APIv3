@@ -6,7 +6,7 @@ namespace LgymApi.E2ETests.Lifecycle;
 [Category("Lifecycle")]
 public sealed class LifecycleDocumentationContractTests
 {
-    private const string SourcePin = "8f59d96ec368f509b1565e3296cd89d2a082a952";
+    private const string SourcePin = "d818505945db6d986efa92f2f5b03fc12a1ee658";
     private const string HarnessOnlyCommand = "pwsh -NoProfile -File LgymApi.E2ETests/scripts/invoke-e2e-coordinator.ps1 -Mode HarnessOnly";
 
     [Test]

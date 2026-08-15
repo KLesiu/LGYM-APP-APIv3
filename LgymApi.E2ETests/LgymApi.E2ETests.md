@@ -47,7 +47,7 @@ Committed defaults are:
 | Setting | Value |
 | --- | --- |
 | `WebSource.RepositoryUrl` | `https://github.com/KLesiu/LGYM-APP-MOBILE.git` |
-| `WebSource.CommitSha` | `8f59d96ec368f509b1565e3296cd89d2a082a952` |
+| `WebSource.CommitSha` | `d818505945db6d986efa92f2f5b03fc12a1ee658` |
 | `WebSource.SourcePath` | omitted |
 | `Api.PublishedDllPath` | `.e2e-private/published-api/LgymApi.Api.dll` |
 | `Api.Port` | `0` |
@@ -57,7 +57,7 @@ Committed defaults are:
 | `Database.NamePrefix` | `lgym_e2e` |
 | Timeouts | `120`, `300`, `120`, `120`, `90`, `30`, `15000`, `180`, `900` in schema order |
 
-Configuration loads JSON first, then environment variables with the `LGYM_` prefix. Set `LGYM_E2E__WebSource__SourcePath` only when the lifecycle run needs the external checkout. The committed configuration intentionally omits that machine-specific path. The immutable mobile source pin is `8f59d96ec368f509b1565e3296cd89d2a082a952`.
+Configuration loads JSON first, then environment variables with the `LGYM_` prefix. Set `LGYM_E2E__WebSource__SourcePath` only when the lifecycle run needs the external checkout. The committed configuration intentionally omits that machine-specific path. The immutable mobile source pin is `d818505945db6d986efa92f2f5b03fc12a1ee658`.
 
 Keep private runs, browser output, traces, screenshots, reports, caches, binaries, and synthetic runtime data under ignored private-artifact locations. Do not commit credentials, connection strings, source checkouts, browser storage, or runtime state.
 

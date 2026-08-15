@@ -6,7 +6,7 @@ namespace LgymApi.E2ETests.Configuration;
 public static class E2EOptionsValidator
 {
     private const string RepositoryUrl = "https://github.com/KLesiu/LGYM-APP-MOBILE.git";
-    internal const string PinnedCommitSha = "8f59d96ec368f509b1565e3296cd89d2a082a952";
+    internal const string PinnedCommitSha = "d818505945db6d986efa92f2f5b03fc12a1ee658";
     private const string DatabaseImage = "postgres:17.10-alpine3.24";
     private const string DatabaseNamePrefix = "lgym_e2e";
     private static readonly Regex CommitShaPattern = new(@"\A[0-9a-f]{40}\z", RegexOptions.CultureInvariant);
