@@ -40,7 +40,10 @@ public sealed class PostgreSqlHangfireDurabilityTests
         "reliability-committed-intent-dispatch",
         "reporting-expired-photo-upload-cleanup",
         "reporting-recurring-report-assignments",
-        "push-stale-installation-cleanup"
+        "push-stale-installation-cleanup",
+        "push-notification-message-retention-cleanup",
+        "push-disabled-installation-retention-cleanup",
+        "in-app-notification-retention-cleanup"
     ];
 
     [Test]
@@ -111,7 +114,10 @@ public sealed class PostgreSqlHangfireDurabilityTests
             "reliability-committed-intent-dispatch",
             "reporting-expired-photo-upload-cleanup",
             "reporting-recurring-report-assignments",
-            "push-stale-installation-cleanup");
+            "push-stale-installation-cleanup",
+            "push-notification-message-retention-cleanup",
+            "push-disabled-installation-retention-cleanup",
+            "in-app-notification-retention-cleanup");
 
         TestContext.Progress.WriteLine(
             "Hangfire durability evidence: storage=Hangfire.PostgreSql.PostgreSqlStorage; " +

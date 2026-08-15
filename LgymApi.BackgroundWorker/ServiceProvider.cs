@@ -104,10 +104,16 @@ public static class ServiceProvider
         services.AddScoped<IExpiredPhotoUploadCleanupJob, ExpiredPhotoUploadCleanupJob>();
         services.AddScoped<IRecurringReportAssignmentProcessingJob, RecurringReportAssignmentProcessingJob>();
         services.AddScoped<IStalePushInstallationCleanupJob, StalePushInstallationCleanupJob>();
+        services.AddScoped<IPushNotificationMessageRetentionCleanupJob, PushNotificationMessageRetentionCleanupJob>();
+        services.AddScoped<IDisabledPushInstallationRetentionCleanupJob, DisabledPushInstallationRetentionCleanupJob>();
+        services.AddScoped<IInAppNotificationRetentionCleanupJob, InAppNotificationRetentionCleanupJob>();
 
         services.AddScoped<BackgroundActionOrchestratorService>();
         services.AddScoped<PushNotificationJobHandlerService>();
         services.AddScoped<StalePushInstallationCleanupJob>();
+        services.AddScoped<PushNotificationMessageRetentionCleanupJob>();
+        services.AddScoped<DisabledPushInstallationRetentionCleanupJob>();
+        services.AddScoped<InAppNotificationRetentionCleanupJob>();
 
         // Register typed background action handlers
         services.AddBackgroundAction<UserRegisteredCommand, SendRegistrationEmailHandler>();
