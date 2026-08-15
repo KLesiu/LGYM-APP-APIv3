@@ -102,6 +102,40 @@ public sealed class HarnessOnlyCoordinatorTests
     }
 
     [Test]
+    public void HarnessOnlyCoordinator_propagates_only_the_Docker_allowlist()
+    {
+        using var fixture = new CoordinatorFixture("happy");
+        var environment = new Dictionary<string, string>(fixture.Environment, StringComparer.Ordinal)
+        {
+            ["DOCKER_HOST"] = "docker-host-canary",
+            ["DOCKER_CONTEXT"] = "docker-context-canary"
+        };
+
+        var result = InvokeScript(fixture.Root, ["-Mode", "HarnessOnly"], environment);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.Zero, result.StandardError);
+            Assert.That(File.ReadAllText(fixture.InvocationLogPath), Does.Contain("docker-host-canary").And.Contain("docker-context-canary"));
+        });
+    }
+
+    [Test]
+    public void HarnessOnlyCoordinator_uses_capped_exact_Chromium_discovery()
+    {
+        using var fixture = new CoordinatorFixture("happy");
+        fixture.CreateAdditionalChromiumInstallation();
+
+        var result = fixture.Invoke();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.Not.EqualTo(0));
+            Assert.That(File.Exists(fixture.InvocationLogPath), Is.False);
+        });
+    }
+
+    [Test]
     public async Task HarnessOnlyCoordinator_bounds_a_hung_child_before_evidence_validation()
     {
         using var fixture = new CoordinatorFixture("hang");
@@ -200,7 +234,7 @@ public sealed class HarnessOnlyCoordinatorTests
             _toolsDirectory = Path.Combine(Root, "tools");
             Directory.CreateDirectory(_toolsDirectory);
             Directory.CreateDirectory(Path.Combine(Root, "external source"));
-            Directory.CreateDirectory(Path.Combine(Root, ".e2e-private", "browsers", "chromium"));
+            Directory.CreateDirectory(Path.Combine(Root, ".e2e-private", "browsers", "chromium-1234", "chrome-win"));
             Directory.CreateDirectory(Path.Combine(Root, ".e2e-private", "published-api"));
             Directory.CreateDirectory(Path.Combine(Root, "LgymApi.E2ETests", "scripts"));
             Directory.CreateDirectory(Path.Combine(Root, "LgymApi.E2ETests", "bin", "Release", "net10.0"));
@@ -233,7 +267,7 @@ public sealed class HarnessOnlyCoordinatorTests
 
         public string Root { get; }
         public string ScriptPath => Path.Combine(Root, "LgymApi.E2ETests", "scripts", "invoke-e2e-coordinator.ps1");
-        public string ChromePath => Path.Combine(Root, ".e2e-private", "browsers", "chromium", "chrome.exe");
+        public string ChromePath => Path.Combine(Root, ".e2e-private", "browsers", "chromium-1234", "chrome-win", "chrome.exe");
         public string InvocationLogPath { get; }
         public string ManifestPath { get; }
         public IReadOnlyDictionary<string, string> Environment { get; }
@@ -242,6 +276,13 @@ public sealed class HarnessOnlyCoordinatorTests
 
         public Task<ProcessResult> InvokeAsync(TimeSpan timeout) =>
             InvokeScriptAsync(Root, ["-Mode", "HarnessOnly"], Environment, timeout);
+
+        public void CreateAdditionalChromiumInstallation()
+        {
+            var executable = Path.Combine(Root, ".e2e-private", "browsers", "chromium-5678", "chrome-win", "chrome.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+            File.WriteAllText(executable, string.Empty);
+        }
 
         public void Dispose()
         {
@@ -262,7 +303,7 @@ public sealed class HarnessOnlyCoordinatorTests
             $filterIndex = [array]::IndexOf($args, '--filter')
             $resultsDirectory = $args[$resultsIndex + 1]
             $filter = $args[$filterIndex + 1]
-            Add-Content -LiteralPath $invocationLog -Value ($filter + '|' + ($args -join '|') + '|' + $env:HARNESS_ONLY_HARNESS_DOCKER_RECEIPT_PATH + '|' + $env:HARNESS_ONLY_LIFECYCLE_RECEIPT_PATH + '|' + $env:HARNESS_ONLY_PARENT_CANARY)
+            Add-Content -LiteralPath $invocationLog -Value ($filter + '|' + ($args -join '|') + '|' + $env:HARNESS_ONLY_HARNESS_DOCKER_RECEIPT_PATH + '|' + $env:HARNESS_ONLY_LIFECYCLE_RECEIPT_PATH + '|' + $env:HARNESS_ONLY_PARENT_CANARY + '|' + $env:DOCKER_HOST + '|' + $env:DOCKER_CONTEXT)
             if ($fixtureMode -eq 'hang') { Start-Sleep -Seconds 5; exit 0 }
             New-Item -ItemType Directory -Path $resultsDirectory -Force | Out-Null
             $harnessNames = @('PostgreSQL_container_starts_with_module_readiness_and_is_removed_on_disposal', 'PostgreSQL_container_is_removed_when_a_test_local_failure_occurs_after_start', 'PostgreSQL_post_container_start_callback_failure_proves_private_locator_absence', 'PostgreSQL_sequential_leases_have_distinct_redacted_observations_and_are_absent')

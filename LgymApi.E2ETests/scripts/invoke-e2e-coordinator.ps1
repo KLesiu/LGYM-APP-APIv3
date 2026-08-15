@@ -26,6 +26,32 @@ $CaseIds = @('lifecycle-probe-a', 'lifecycle-probe-b')
 $AcquisitionCategories = @('scenario-paths', 'postgresql', 'external-api-host', 'expo', 'browser-run', 'browser-scenario')
 $CleanupCategories = @('browser-scenario', 'browser-run', 'expo', 'external-api-host', 'scenario-paths')
 
+if ($null -eq ('BoundedCoordinatorStreamDrain' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Text;
+using System.Threading.Tasks;
+public static class BoundedCoordinatorStreamDrain
+{
+    public static async Task<string> DrainAsync(StreamReader reader, int maximumCharacters)
+    {
+        var buffer = new char[1024];
+        var output = new StringBuilder();
+        var overflow = false;
+        int count;
+        while ((count = await reader.ReadAsync(buffer, 0, buffer.Length)) != 0)
+        {
+            if (output.Length + count <= maximumCharacters) output.Append(buffer, 0, count);
+            else overflow = true;
+        }
+        if (overflow) throw new InvalidOperationException();
+        return output.ToString();
+    }
+}
+'@
+}
+
 function Fail {
     throw [System.InvalidOperationException]::new('HarnessOnly coordinator validation failed.')
 }
@@ -310,8 +336,8 @@ function Invoke-BoundedProcess {
     $process = [System.Diagnostics.Process]::Start($startInfo)
     Assert-Condition ($null -ne $process)
     try {
-        $standardOutput = $process.StandardOutput.ReadToEndAsync()
-        $standardError = $process.StandardError.ReadToEndAsync()
+        $standardOutput = [BoundedCoordinatorStreamDrain]::DrainAsync($process.StandardOutput, 4096)
+        $standardError = [BoundedCoordinatorStreamDrain]::DrainAsync($process.StandardError, 4096)
         $deadline = [System.Threading.CancellationTokenSource]::new($ExecutionTimeout)
         try {
             $null = $process.WaitForExitAsync($deadline.Token).GetAwaiter().GetResult()
@@ -433,7 +459,12 @@ function Invoke-HarnessOnly {
     $null = Invoke-BoundedProcess $dockerPath @('info', '--format', '{{.ServerVersion}}') $preflightTimeout
     $browserRoot = Join-Path $RepositoryRoot '.e2e-private/browsers'
     Assert-NoReparsePoints -Root $RepositoryRoot -Target $browserRoot
-    Assert-Condition ([System.IO.Directory]::Exists($browserRoot) -and $null -ne (Get-ChildItem -LiteralPath $browserRoot -Filter 'chrome.exe' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1))
+    $chromiumRoots = @(Get-ChildItem -LiteralPath $browserRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object Name -match '^chromium-[0-9]+$' | Sort-Object Name | Select-Object -First 2)
+    Assert-Condition ($chromiumRoots.Count -eq 1)
+    $chromiumExecutable = Join-Path $chromiumRoots[0].FullName 'chrome-win/chrome.exe'
+    Assert-NoReparsePoints -Root $browserRoot -Target $chromiumExecutable
+    Assert-Condition ([System.IO.File]::Exists($chromiumExecutable))
 
     $resultsDirectory = Join-Path $RepositoryRoot 'LgymApi.E2ETests/TestResults/issue-435-harness-only'
     Assert-NoReparsePoints -Root $RepositoryRoot -Target $resultsDirectory
