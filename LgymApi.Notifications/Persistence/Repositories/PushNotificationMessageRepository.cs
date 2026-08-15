@@ -109,4 +109,23 @@ internal sealed class PushNotificationMessageRepository : IPushNotificationMessa
             .OrderBy(x => x.CreatedAt)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<PushNotificationMessage>> GetRetentionCandidatesCreatedBeforeAsync(
+        DateTimeOffset cutoff,
+        int candidateLimit,
+        CancellationToken cancellationToken = default)
+    {
+        return await _persistenceContext.PushNotificationMessages
+            .IgnoreQueryFilters()
+            .Where(message => message.CreatedAt < cutoff)
+            .OrderBy(message => message.CreatedAt)
+            .ThenBy(message => message.Id)
+            .Take(candidateLimit)
+            .ToListAsync(cancellationToken);
+    }
+
+    public void RemoveRange(IEnumerable<PushNotificationMessage> messages)
+    {
+        _persistenceContext.PushNotificationMessages.RemoveRange(messages);
+    }
 }

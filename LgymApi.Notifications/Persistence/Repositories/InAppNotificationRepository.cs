@@ -101,4 +101,23 @@ internal sealed class InAppNotificationRepository : IInAppNotificationRepository
             .AsNoTracking()
             .CountAsync(x => x.RecipientId == userId && !x.IsRead && !x.IsDeleted, cancellationToken);
     }
+
+    public async Task<IReadOnlyList<InAppNotification>> GetRetentionCandidatesCreatedBeforeAsync(
+        DateTimeOffset cutoff,
+        int candidateLimit,
+        CancellationToken cancellationToken = default)
+    {
+        return await _persistenceContext.InAppNotifications
+            .IgnoreQueryFilters()
+            .Where(notification => notification.CreatedAt < cutoff)
+            .OrderBy(notification => notification.CreatedAt)
+            .ThenBy(notification => notification.Id)
+            .Take(candidateLimit)
+            .ToListAsync(cancellationToken);
+    }
+
+    public void RemoveRange(IEnumerable<InAppNotification> notifications)
+    {
+        _persistenceContext.InAppNotifications.RemoveRange(notifications);
+    }
 }
