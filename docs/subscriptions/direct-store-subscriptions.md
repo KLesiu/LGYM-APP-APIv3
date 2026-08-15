@@ -7,12 +7,13 @@ This is the canonical future-state logical contract for issue #443. `current`, `
 ## Source Precedence
 
 1. Executable architecture authorities and guards are authoritative for current state.
-2. `docs/ARCHITECTURE.md` and the modular-monolith boundary documents define the current layered and topology rules.
-3. This document fixes the future direct-store subscription boundary without changing current topology or ownership.
+2. The [approved V0 store catalog](store-catalog.md) is the commercial catalog authority. The approved catalog is `approved-precreation`, not runtime implementation or production enablement.
+3. `docs/ARCHITECTURE.md` and the modular-monolith boundary documents define the current layered and topology rules.
+4. This document fixes the future direct-store subscription boundary without changing current topology or ownership.
 
 ## Scope and Non-Goals
 
-Identity owns future direct Apple and Google subscription business rules, logical writes, provider adapters, and normalized outcomes. API remains transport only, Worker remains scheduling only, Infrastructure retains shared technical roots, and Common remains closed. This contract doesn't add runtime code, entities, persistence objects, provider calls, endpoints, options binding, config values, packages, migrations, or paid capability enforcement.
+Identity owns future direct Apple and Google subscription business rules, logical writes, provider adapters, and normalized outcomes. API remains transport only, Worker remains scheduling only, Infrastructure retains shared technical roots, and Common remains closed. The approved catalog supplies commercial intent only. This contract doesn't add runtime code, entities, persistence objects, provider calls, endpoints, options binding, config values, packages, migrations, or paid capability enforcement.
 
 ## Stable Boundary Table
 
@@ -75,7 +76,7 @@ Identity owns future direct Apple and Google subscription business rules, logica
 
 | Policy ID | State | Rule | Evidence/guard | Explicit non-goal |
 | --- | --- | --- | --- | --- |
-| `subscriptions.policy.tiers` | future | exactly tier_1 rank 1, tier_2 rank 2, and tier_3 rank 3 | stable policy row parser and focused architecture guard | no catalog, pricing, or billing-period implementation |
+| `subscriptions.policy.tiers` | future | exactly tier_1 rank 1, tier_2 rank 2, and tier_3 rank 3 | stable policy row parser and focused architecture guard | no runtime catalog implementation, pricing, or billing-period implementation |
 | `subscriptions.policy.free-baseline` | future | unchanged free baseline and not a fourth profile | focused policy assertion | no paid capability enforcement in #443 |
 | `subscriptions.policy.cross-store` | future | independent grants; highest currently valid tier wins; no automatic cross-store cancel or refund | focused cross-store policy assertion | no automatic Apple/Google coupling |
 | `subscriptions.policy.server-authority` | future | durable inbox is processing authority; verified provider re-query plus durable grant/projection is access authority | focused authority and source-of-truth assertion | no unverified notification or client success flag as authority |
@@ -145,7 +146,7 @@ The `Subscriptions:*` roots and their six controls name future semantics only. #
 
 ## Tests and Evidence
 
-The parser-backed `DirectStoreSubscriptionsBoundaryDocumentationTests` validates all five stable tables, fixed source locators and provider authorities, the closed Mermaid graph, provider-neutral public surfaces, one persistence topology, and Common closure. Focused Release evidence must produce a nonempty all-pass TRX. This is architecture and documentation coverage, not a claim that provider cryptography or provider calls were tested.
+The parser-backed `DirectStoreSubscriptionsBoundaryDocumentationTests` validates all five stable tables, the approved-precreation catalog link and non-enablement status, fixed source locators and provider authorities, the closed Mermaid graph, provider-neutral public surfaces, one persistence topology, and Common closure. Focused Release evidence must produce a nonempty all-pass TRX. This is architecture and documentation coverage, not a claim that provider cryptography or provider calls were tested.
 
 ## Rollout and Rollback
 

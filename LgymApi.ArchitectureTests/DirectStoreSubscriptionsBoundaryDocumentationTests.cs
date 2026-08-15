@@ -13,6 +13,9 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
         "Missing canonical direct-store subscription boundary document 'docs/subscriptions/direct-store-subscriptions.md'.";
     private const string ProviderCallPolicy =
         "Provider calls use a bounded, implementation-owned timeout and a bounded, implementation-owned retry policy.";
+    private const string ApprovedCatalogLink = "[approved V0 store catalog](store-catalog.md)";
+    private const string ApprovedCatalogStatus =
+        "The approved catalog is `approved-precreation`, not runtime implementation or production enablement.";
 
     private static readonly TableContract[] TableContracts =
     [
@@ -421,6 +424,27 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
         Assert.That(
             () => AssertFutureFocusedContractCatalog(ReadCanonicalDocument()),
             Throws.Nothing);
+    }
+
+    [Test]
+    public void Canonical_Document_Should_Link_The_Approved_Precreation_Catalog_Without_Runtime_Enablement()
+    {
+        Assert.That(
+            () => AssertApprovedCatalogBoundary(ReadCanonicalDocument()),
+            Throws.Nothing);
+    }
+
+    [Test]
+    public void Synthetic_Catalog_Boundary_Should_Reject_Runtime_Or_Production_Enablement_Claims()
+    {
+        var markdown = CreateValidMarkdown().Replace(
+            ApprovedCatalogStatus,
+            "The approved catalog is runtime implementation and production enablement.",
+            StringComparison.Ordinal);
+
+        Assert.That(
+            () => AssertApprovedCatalogBoundary(markdown),
+            Throws.InvalidOperationException.With.Message.Contains("approved-precreation catalog status"));
     }
 
     [Test]
@@ -897,6 +921,12 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
         {
             RequireExactOccurrence(markdown, $"`{identity}`", $"future focused identity '{identity}'");
         }
+    }
+
+    private static void AssertApprovedCatalogBoundary(string markdown)
+    {
+        RequireExactOccurrence(markdown, ApprovedCatalogLink, "approved V0 catalog link");
+        RequireExactOccurrence(markdown, ApprovedCatalogStatus, "approved-precreation catalog status");
     }
 
     private static IReadOnlyList<DocumentationTable> ParseTables(string markdown)
@@ -1890,7 +1920,7 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
 
             | Policy ID | State | Rule | Evidence/guard | Explicit non-goal |
             | --- | --- | --- | --- | --- |
-            | `subscriptions.policy.tiers` | future | exactly tier_1 rank 1, tier_2 rank 2, and tier_3 rank 3 | stable policy row parser and focused architecture guard | no catalog, pricing, or billing-period implementation |
+            | `subscriptions.policy.tiers` | future | exactly tier_1 rank 1, tier_2 rank 2, and tier_3 rank 3 | stable policy row parser and focused architecture guard | no runtime catalog implementation, pricing, or billing-period implementation |
             | `subscriptions.policy.free-baseline` | future | unchanged free baseline and not a fourth profile | focused policy assertion | no paid capability enforcement in #443 |
             | `subscriptions.policy.cross-store` | future | independent grants; highest currently valid tier wins; no automatic cross-store cancel or refund | focused cross-store policy assertion | no automatic Apple/Google coupling |
             | `subscriptions.policy.server-authority` | future | durable inbox is processing authority; verified provider re-query plus durable grant/projection is access authority | focused authority and source-of-truth assertion | no unverified notification or client success flag as authority |
@@ -1902,6 +1932,8 @@ public sealed class DirectStoreSubscriptionsBoundaryDocumentationTests
             Provider calls use a bounded, implementation-owned timeout and a bounded, implementation-owned retry policy.
 
             Future focused identities are internal `IAccountSubscriptionGrantRepository`, `ISubscriptionInboxEventRepository`, `IAccountPaidAccessProjectionRepository`, `IAppleSubscriptionProvider`, and `IGooglePlaySubscriptionProvider`; public `IVerifyAppleSubscriptionPurchaseUseCase.VerifyAsync`, `IVerifyGooglePlaySubscriptionPurchaseUseCase.VerifyAsync`, `IIngestAppleSubscriptionNotificationUseCase.IngestAsync`, `IIngestGooglePlayNotificationUseCase.IngestAsync`, `ICurrentPaidAccessQuery.GetAsync`, `ISubscriptionInboxProcessingUseCase.ProcessBatchAsync`, and `ISubscriptionProviderReconciliationUseCase.ReconcileBatchAsync`.
+
+            The [approved V0 store catalog](store-catalog.md) is the commercial catalog authority. The approved catalog is `approved-precreation`, not runtime implementation or production enablement.
 
             ```mermaid
             %% subscriptions-graph: future-state logical flow; project-graph: existing %%
