@@ -75,7 +75,7 @@ Failure-only artifacts are bounded sanitized receipts at `.e2e-private/runs/<run
 
 The HarnessOnly coordinator bounds each preflight, postflight, and test child process, kills timed-out child trees, and emits no manifest until both child test exits are zero. Its child environment permits only the required Docker/Testcontainers connectivity settings (`DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`, and approved Testcontainers host/socket overrides); Ryuk-disable and reuse-enable flags are rejected.
 
-Issue `#436` owns product business scenarios, including onboarding and authentication flows, and remains deferred. Issue `#437` owns the `Full` coordinator mode and `ArtifactDrill`, including its diagnostics and final acceptance, and remains deferred.
+Issue #436 owns six live source-pinned locator surfaces for preload, registration, login/dashboard, wrong-password toast, active tutorial, and profile/logout. They use the mobile `data-testid` vocabulary; the toast body is runtime text and profile logout returns to `/`. Product business scenarios, including onboarding and authentication flows, remain deferred. Issue `#437` owns the `Full` coordinator mode and `ArtifactDrill`, including its diagnostics and final acceptance, and remains deferred.
 
 ## External Host Contract
 

@@ -72,7 +72,8 @@ public sealed class WebHarnessSmokeTests
             publicHttpBoundaryUsed = true;
             await WaitForBootstrapRootAsync(
                 firstScenario.Page,
-                TimeSpan.FromSeconds(fixture.Options.Timeouts.WebStartupSeconds));
+                TimeSpan.FromSeconds(fixture.Options.Timeouts.WebStartupSeconds),
+                observation);
             await AssertPreloadAsync(firstScenario.Page, observation);
             renderedReady = true;
             await NavigateToLoginAndBackAsync(firstScenario.Page);
@@ -175,6 +176,7 @@ public sealed class WebHarnessSmokeTests
         var preload = (PreloadPage)LgymWebLocatorCatalog.CreatePage(page, LgymWebSurface.Preload);
         try
         {
+            await AssertStrictVisibleAsync(preload.Screen);
             await AssertStrictVisibleAsync(preload.Login);
             await AssertStrictVisibleAsync(preload.Register);
         }
@@ -188,13 +190,24 @@ public sealed class WebHarnessSmokeTests
 
     private static async Task WaitForBootstrapRootAsync(
         IPage page,
-        TimeSpan timeout)
+        TimeSpan timeout,
+        BrowserReadinessObservation observation)
     {
-        await page.Locator("#root > :not(style):not(.__expo_fast_refresh)").First.WaitForAsync(new LocatorWaitForOptions
+        var preload = (PreloadPage)LgymWebLocatorCatalog.CreatePage(page, LgymWebSurface.Preload);
+        try
         {
-            State = WaitForSelectorState.Attached,
-            Timeout = (float)timeout.TotalMilliseconds
-        });
+            await preload.Screen.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Attached,
+                Timeout = (float)timeout.TotalMilliseconds
+            });
+        }
+        catch (TimeoutException)
+        {
+            observation.CaptureRendererState(await BrowserRendererState.CaptureAsync(page));
+            throw new InvalidOperationException(
+                $"E2E browser page initialization failed: {observation.FailureReport}.");
+        }
     }
 
 
@@ -207,8 +220,8 @@ public sealed class WebHarnessSmokeTests
         await preload.Login.ClickAsync();
         await page.WaitForURLAsync("**/Login");
         var login = (LoginPage)LgymWebLocatorCatalog.CreatePage(page, LgymWebSurface.Login);
-        await AssertStrictVisibleAsync(login.Input(0));
-        await AssertStrictVisibleAsync(login.Input(1));
+        await AssertStrictVisibleAsync(login.Username);
+        await AssertStrictVisibleAsync(login.Password);
         await AssertStrictVisibleAsync(login.Submit);
         await NavigateAsync(page, "/", 120);
         await AssertPreloadAsync(page);
@@ -220,9 +233,9 @@ public sealed class WebHarnessSmokeTests
         await preload.Register.ClickAsync();
         await page.WaitForURLAsync("**/Register");
         var registration = (RegistrationPage)LgymWebLocatorCatalog.CreatePage(page, LgymWebSurface.Registration);
-        for (var input = 0; input < 4; input++)
+        foreach (var input in registration.Inputs)
         {
-            await AssertStrictVisibleAsync(registration.Input(input));
+            await AssertStrictVisibleAsync(input);
         }
 
         await AssertStrictVisibleAsync(registration.Submit);
@@ -299,8 +312,8 @@ internal sealed record BrowserRendererState(
             documentState.FontStatus,
             ToBucket(documentState.BodyChildCount),
             ToBucket(documentState.RootChildCount),
-            ToBucket(await page.GetByText("Login", new PageGetByTextOptions { Exact = true }).CountAsync()),
-            ToBucket(await page.GetByText("Register", new PageGetByTextOptions { Exact = true }).CountAsync()));
+            ToBucket(await page.GetByTestId(LgymWebTestIds.PreloadLogin).CountAsync()),
+            ToBucket(await page.GetByTestId(LgymWebTestIds.PreloadRegister).CountAsync()));
     }
 
     public override string ToString() =>

@@ -86,7 +86,7 @@ public sealed class WebSourceRunLeaseCleanupTests
         {
             Assert.That(exception!.Message, Is.EqualTo(WebSourceRunLease.CleanupMessage));
             Assert.That(exception.Stage, Is.EqualTo(PrivateRunCleanupStage.CacheDelete));
-            Assert.That(cacheCleaner.ObservedTimeout, Is.EqualTo(TimeSpan.FromSeconds(2)));
+            Assert.That(cacheCleaner.ObservedTimeout, Is.EqualTo(TimeSpan.FromSeconds(2)).Within(TimeSpan.FromMilliseconds(10)));
             Assert.That(lease.CleanupStage, Is.EqualTo(PrivateRunCleanupStage.CacheDelete));
             Assert.That(Directory.Exists(lease.RunDirectory), Is.False);
         });

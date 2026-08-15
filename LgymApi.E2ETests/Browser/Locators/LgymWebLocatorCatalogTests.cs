@@ -22,9 +22,20 @@ public sealed class LgymWebLocatorCatalogTests
             Assert.That(validation, Is.Empty);
             Assert.That(catalog.Select(surface => surface.Surface), Is.Unique);
             Assert.That(catalog, Has.Count.EqualTo(6));
-            Assert.That(catalog.Count(surface => surface.LiveResolvable), Is.EqualTo(3));
-            Assert.That(catalog.Where(surface => !surface.LiveResolvable)
-                .Select(surface => surface.DeferredTo), Is.All.EqualTo("#435"));
+            Assert.That(catalog, Is.All.Matches<LgymWebSurfaceContract>(surface =>
+                surface.LiveResolvable && surface.DeferredTo is null));
+            Assert.That(catalog.Single(surface => surface.Surface == LgymWebSurface.ProfileLogout)
+                .ResultRoute, Is.EqualTo("/"));
+            Assert.That(catalog.SelectMany(surface => surface.TestIds), Is.EquivalentTo(
+            [
+                LgymWebTestIds.PreloadScreen, LgymWebTestIds.PreloadLogin, LgymWebTestIds.PreloadRegister,
+                LgymWebTestIds.LoginUsername, LgymWebTestIds.LoginPassword, LgymWebTestIds.LoginSubmit,
+                LgymWebTestIds.RegisterUsername, LgymWebTestIds.RegisterEmail, LgymWebTestIds.RegisterPassword,
+                LgymWebTestIds.RegisterConfirmPassword, LgymWebTestIds.RegisterSubmit, LgymWebTestIds.HomeDashboard,
+                LgymWebTestIds.TutorialModal, LgymWebTestIds.TutorialTitle, LgymWebTestIds.TutorialPrimaryAction,
+                LgymWebTestIds.HomeMenuToggle, LgymWebTestIds.HomeMenuProfile, LgymWebTestIds.ProfileLogout,
+                LgymWebTestIds.ToastErrorTitle, LgymWebTestIds.ToastErrorBody
+            ]));
             Assert.That(catalog.Single(surface => surface.Surface == LgymWebSurface.WrongPasswordToast)
                 .Toast!.Title, Is.EqualTo("Login failed"));
             Assert.That(catalog.Single(surface => surface.Surface == LgymWebSurface.WrongPasswordToast)
@@ -54,11 +65,13 @@ public sealed class LgymWebLocatorCatalogTests
             TimeSpan.FromSeconds(options.Timeouts.WebStartupSeconds),
             TimeSpan.FromSeconds(options.Timeouts.ProcessShutdownSeconds)));
         var routeFixture = Path.Combine(lease.RunDirectory, "locator-contract-route");
-        var textFixture = Path.Combine(lease.RunDirectory, "locator-contract-text");
-        var inputFixture = Path.Combine(lease.RunDirectory, "locator-contract-input");
+        var forwardedIdFixture = Path.Combine(lease.RunDirectory, "locator-contract-forwarded-id");
+        var textInputIdFixture = Path.Combine(lease.RunDirectory, "locator-contract-text-input-id");
+        var toastIdFixture = Path.Combine(lease.RunDirectory, "locator-contract-toast-id");
         CopyDirectory(stage.SourceDirectory, routeFixture);
-        CopyDirectory(stage.SourceDirectory, textFixture);
-        CopyDirectory(stage.SourceDirectory, inputFixture);
+        CopyDirectory(stage.SourceDirectory, forwardedIdFixture);
+        CopyDirectory(stage.SourceDirectory, textInputIdFixture);
+        CopyDirectory(stage.SourceDirectory, toastIdFixture);
 
         // When
         var baseline = LgymWebLocatorCatalog.ValidateArchivedSource(stage.SourceDirectory);
@@ -66,26 +79,37 @@ public sealed class LgymWebLocatorCatalogTests
         await File.WriteAllTextAsync(
             registerRoute,
             (await File.ReadAllTextAsync(registerRoute))
-                .Replace("router.push(\"Login\");", "router.push(\"/changed\");", StringComparison.Ordinal));
+                .Replace("router.push(\"/Login\");", "router.push(\"/changed\");", StringComparison.Ordinal));
         var routeDrift = LgymWebLocatorCatalog.ValidateArchivedSource(routeFixture);
         await File.WriteAllTextAsync(
-            Path.Combine(textFixture, "app", "locales", "en.json"),
-            (await File.ReadAllTextAsync(Path.Combine(textFixture, "app", "locales", "en.json")))
-                .Replace("\"Login failed\"", "\"Changed title\"", StringComparison.Ordinal));
-        var textDrift = LgymWebLocatorCatalog.ValidateArchivedSource(textFixture);
+            Path.Combine(forwardedIdFixture, "app", "components", "elements", "CustomButton.tsx"),
+            (await File.ReadAllTextAsync(Path.Combine(
+                forwardedIdFixture,
+                "app",
+                "components",
+                "elements",
+                "CustomButton.tsx")))
+                .Replace("testID={props.testID}", "testID={undefined}", StringComparison.Ordinal));
+        var forwardedIdDrift = LgymWebLocatorCatalog.ValidateArchivedSource(forwardedIdFixture);
         await File.WriteAllTextAsync(
-            Path.Combine(inputFixture, "app", "Register.tsx"),
-            (await File.ReadAllTextAsync(Path.Combine(inputFixture, "app", "Register.tsx")))
-                .Replace("<TextInput", "<RemovedInput", StringComparison.Ordinal));
-        var inputOrderDrift = LgymWebLocatorCatalog.ValidateArchivedSource(inputFixture);
+            Path.Combine(textInputIdFixture, "app", "Login.tsx"),
+            (await File.ReadAllTextAsync(Path.Combine(textInputIdFixture, "app", "Login.tsx")))
+                .Replace("testID=\"auth.login.username\"", "testID=\"removed\"", StringComparison.Ordinal));
+        var textInputIdDrift = LgymWebLocatorCatalog.ValidateArchivedSource(textInputIdFixture);
+        await File.WriteAllTextAsync(
+            Path.Combine(toastIdFixture, "helpers", "toastConfig.tsx"),
+            (await File.ReadAllTextAsync(Path.Combine(toastIdFixture, "helpers", "toastConfig.tsx")))
+                .Replace("text2Props={{ testID: \"toast.error.body\" }}", "text2Props={{}}", StringComparison.Ordinal));
+        var toastIdDrift = LgymWebLocatorCatalog.ValidateArchivedSource(toastIdFixture);
 
         // Then
         Assert.Multiple(() =>
         {
             Assert.That(baseline, Is.Empty);
             Assert.That(routeDrift, Is.Not.Empty);
-            Assert.That(textDrift, Is.Not.Empty);
-            Assert.That(inputOrderDrift, Is.Not.Empty);
+            Assert.That(forwardedIdDrift, Is.EqualTo(["Pinned source test ID evidence is missing."]));
+            Assert.That(textInputIdDrift, Is.EqualTo(["Pinned source test ID evidence is missing."]));
+            Assert.That(toastIdDrift, Is.EqualTo(["Pinned source test ID evidence is missing."]));
         });
     }
 

@@ -5,7 +5,7 @@ namespace LgymApi.E2ETests.Harness;
 public sealed class WebHarnessDocumentationContractTests
 {
     [Test]
-    public void Documentation_describes_the_current_issue_434_browser_harness()
+    public void Documentation_describes_the_current_issue_436_browser_harness()
     {
         AssertDocumentationContract(ReadDocumentation());
     }
@@ -29,8 +29,8 @@ public sealed class WebHarnessDocumentationContractTests
             Assert.That(document, Does.Contain("private HOME/USERPROFILE/TEMP/TMP"));
             Assert.That(document, Does.Contain("REACT_APP_BACKEND"));
             Assert.That(document, Does.Contain("8083"));
-            Assert.That(document, Does.Contain("six locator surfaces"));
-            Assert.That(document, Does.Contain("#435"));
+            Assert.That(document, Does.Contain("six live source-pinned locator surfaces"));
+            Assert.That(document, Does.Contain("#436"));
             Assert.That(document, Does.Not.Contain("does not launch a browser"));
             Assert.That(document, Does.Not.Contain("does not access a source checkout"));
         });
