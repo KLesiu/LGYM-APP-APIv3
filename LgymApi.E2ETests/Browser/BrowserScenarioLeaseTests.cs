@@ -96,6 +96,66 @@ public sealed class BrowserScenarioLeaseTests
         });
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task Lifecycle_page_failure_bounds_partial_context_close_while_retaining_its_late_completion(bool closeFaults)
+    {
+        await using var paths = CreatePaths();
+        var closeCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factory = new RecordingScenarioBrowserRuntimeFactory
+        {
+            PageCreationFailure = new PlaywrightException("page canary"),
+            ContextCloseCompletion = closeCompletion.Task
+        };
+        var browserRun = await BrowserRunLease.CreateAsync(new BrowserRunRequest(paths, 100), factory);
+        var creation = BrowserScenarioLifecycleAdapter.CreateAsync(browserRun, 100);
+
+        try
+        {
+            await factory.ContextCloseStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+            await Task.Delay(250);
+            Assert.That(creation.IsCompleted, Is.True);
+
+            if (closeFaults)
+            {
+                closeCompletion.SetException(new PlaywrightException("close canary"));
+            }
+            else
+            {
+                closeCompletion.SetResult();
+            }
+
+            var exception = Assert.ThrowsAsync<InvalidOperationException>(async () => await creation);
+            Assert.Multiple(() =>
+            {
+                Assert.That(exception!.Message, Is.EqualTo(BrowserScenarioLease.SetupMessage));
+                Assert.That(exception.ToString(), Does.Not.Contain("page canary").And.Not.Contain("close canary"));
+                Assert.That(factory.Contexts.Single().ContextCloseCount, Is.EqualTo(1));
+            });
+        }
+        finally
+        {
+            closeCompletion.TrySetResult();
+            try
+            {
+                await creation;
+            }
+            catch (InvalidOperationException)
+            {
+            }
+
+            try
+            {
+                await closeCompletion.Task;
+            }
+            catch (PlaywrightException)
+            {
+            }
+
+            await browserRun.DisposeAsync();
+        }
+    }
+
     private static PrivateRunDirectoryLease CreatePaths() =>
         PrivateRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
             RepositoryRoot.Find(),
@@ -110,6 +170,9 @@ internal sealed class RecordingScenarioBrowserRuntimeFactory : IBrowserRuntimeFa
     internal List<RecordingScenarioContext> Contexts { get; } = [];
     internal Exception? ContextCreationFailure { get; init; }
     internal Exception? PageCreationFailure { get; init; }
+    internal Task? ContextCloseCompletion { get; init; }
+    internal TaskCompletionSource ContextCloseStarted { get; } =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public Task<IBrowserRuntime> CreateAsync() =>
         Task.FromResult<IBrowserRuntime>(new RecordingScenarioBrowserRuntime(this));
@@ -132,7 +195,10 @@ internal sealed class RecordingScenarioBrowserRuntimeFactory : IBrowserRuntimeFa
             }
 
             owner.ContextOptions.Add(options);
-            var context = new RecordingScenarioContext(owner.PageCreationFailure);
+            var context = new RecordingScenarioContext(
+                owner.PageCreationFailure,
+                owner.ContextCloseCompletion,
+                owner.ContextCloseStarted);
             owner.Contexts.Add(context);
             return Task.FromResult(context.Context);
         }
@@ -148,10 +214,17 @@ internal sealed class RecordingScenarioBrowserRuntimeFactory : IBrowserRuntimeFa
 internal sealed class RecordingScenarioContext
 {
     private readonly Exception? _pageCreationFailure;
+    private readonly Task? _contextCloseCompletion;
+    private readonly TaskCompletionSource? _contextCloseStarted;
 
-    internal RecordingScenarioContext(Exception? pageCreationFailure)
+    internal RecordingScenarioContext(
+        Exception? pageCreationFailure,
+        Task? contextCloseCompletion = null,
+        TaskCompletionSource? contextCloseStarted = null)
     {
         _pageCreationFailure = pageCreationFailure;
+        _contextCloseCompletion = contextCloseCompletion;
+        _contextCloseStarted = contextCloseStarted;
         Page = PlaywrightInterfaceProxy.Create<IPage>(InvokePage);
         Context = PlaywrightInterfaceProxy.Create<IBrowserContext>(InvokeContext);
     }
@@ -162,6 +235,7 @@ internal sealed class RecordingScenarioContext
     internal Dictionary<string, string> Cookies { get; } = [];
     internal Dictionary<string, string> LocalStorage { get; } = [];
     internal float? DefaultTimeout { get; private set; }
+    internal int ContextCloseCount { get; private set; }
 
     private object? InvokeContext(MethodInfo method, object?[]? arguments)
     {
@@ -169,7 +243,7 @@ internal sealed class RecordingScenarioContext
         {
             nameof(IBrowserContext.SetDefaultTimeout) => SetDefaultTimeout(arguments),
             nameof(IBrowserContext.NewPageAsync) => CreatePage(),
-            nameof(IBrowserContext.CloseAsync) => Record("context-close"),
+            nameof(IBrowserContext.CloseAsync) => CloseContext(),
             _ => PlaywrightInterfaceProxy.Default(method.ReturnType)
         };
     }
@@ -193,6 +267,14 @@ internal sealed class RecordingScenarioContext
         }
 
         return Task.FromResult(Page);
+    }
+
+    private Task CloseContext()
+    {
+        Events.Add("context-close");
+        ContextCloseCount++;
+        _contextCloseStarted?.TrySetResult();
+        return _contextCloseCompletion ?? Task.CompletedTask;
     }
 
     private Task Record(string value)

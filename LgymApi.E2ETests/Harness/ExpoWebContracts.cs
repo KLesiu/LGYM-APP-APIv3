@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using LgymApi.E2ETests.Configuration;
+using LgymApi.E2ETests.Lifecycle;
 
 namespace LgymApi.E2ETests.Harness;
 
@@ -11,6 +13,23 @@ internal enum ExpoWebStartupFailureCategory { Transport, ProcessExit, Timeout, C
 internal sealed record ExpoWebStartRequest(WebSourceRunLease Source, Uri ScenarioApiBaseUri)
 {
     internal E2EOptions Options { get; init; } = new();
+
+    internal LifecycleComponentDirectoryLease? RuntimeDirectory { get; init; }
+}
+
+internal sealed class ExpoWebIdentity
+{
+    private ExpoWebIdentity(string value) => _value = value;
+
+    private readonly string _value;
+
+    internal static ExpoWebIdentity Create() => new(RandomNumberGenerator.GetHexString(32, lowercase: true));
+
+    public override bool Equals(object? obj) => obj is ExpoWebIdentity other && _value == other._value;
+
+    public override int GetHashCode() => _value.GetHashCode(StringComparison.Ordinal);
+
+    public override string ToString() => "<expo-web-identity>";
 }
 
 internal sealed record ExpoWebReadinessBounds(TimeSpan HttpRequestTimeout, TimeSpan PollInterval);

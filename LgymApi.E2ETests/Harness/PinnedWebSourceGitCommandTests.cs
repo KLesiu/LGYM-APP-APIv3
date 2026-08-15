@@ -119,4 +119,15 @@ public sealed class PinnedWebSourceGitCommandTests
         }
     }
 
+    [Test]
+    public async Task Bounded_Git_output_reader_rejects_overflow_after_draining_the_stream()
+    {
+        await using var input = new MemoryStream(new byte[1025]);
+
+        var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await ExternalGitCommandRunner.ReadBoundedBytesAsync(input, 1024, CancellationToken.None));
+
+        Assert.That(exception!.Message, Is.EqualTo(ExternalGitCommandRunner.CommandFailureMessage));
+    }
+
 }

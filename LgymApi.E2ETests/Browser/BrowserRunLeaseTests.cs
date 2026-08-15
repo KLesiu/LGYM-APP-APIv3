@@ -1,4 +1,5 @@
 using LgymApi.E2ETests.Harness;
+using LgymApi.E2ETests.Lifecycle;
 using Microsoft.Playwright;
 
 namespace LgymApi.E2ETests.Browser;
@@ -66,6 +67,7 @@ public sealed class BrowserRunLeaseTests
         {
             LaunchException = new PlaywrightException("browser executable missing at private absolute path")
         };
+        factory.Runtime.DisposeException = new InvalidOperationException("cleanup canary");
 
         try
         {
@@ -85,6 +87,33 @@ public sealed class BrowserRunLeaseTests
         {
             Environment.SetEnvironmentVariable(BrowserRunLease.BrowsersPathVariable, original);
         }
+    }
+
+    [Test]
+    public async Task Runtime_child_failure_disposes_Playwright_once_without_masking_the_original_error()
+    {
+        await using var run = LifecycleRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
+            RepositoryRoot.Find(),
+            ".e2e-private/runs",
+            TimeSpan.FromSeconds(2)));
+        var scenario = run.CreateScenario("browser-runtime-partial-init");
+        var browserRuntime = scenario.CreateBrowserRuntimeComponent();
+        await File.WriteAllTextAsync(Path.Combine(browserRuntime.ComponentDirectory, "artifacts"), "blocking file");
+        var factory = new RecordingBrowserRuntimeFactory();
+        factory.Runtime.DisposeException = new InvalidOperationException("cleanup canary");
+
+        var exception = Assert.ThrowsAsync<IOException>(async () =>
+            await BrowserRunLease.CreateAsync(new BrowserRunRequest(run.RunLease, 500)
+            {
+                RuntimeDirectory = browserRuntime
+            }, factory));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception!.Message, Does.Not.Contain("cleanup canary"));
+            Assert.That(factory.CreateCount, Is.EqualTo(1));
+            Assert.That(factory.Runtime.Events, Is.EqualTo(new[] { "playwright-dispose" }));
+        });
     }
 
     [Test]
@@ -112,11 +141,100 @@ public sealed class BrowserRunLeaseTests
         Assert.That(factory.Runtime.Events, Is.EqualTo(new[] { "browser-close", "playwright-dispose" }));
     }
 
+    [Test]
+    public async Task Create_bounds_a_hung_Playwright_factory_and_releases_the_environment_lock_after_late_completion()
+    {
+        await using var paths = CreatePaths(RepositoryRoot.Find());
+        var factory = new BlockingBrowserRuntimeFactory();
+        var creation = BrowserRunLease.CreateAsync(new BrowserRunRequest(paths, 100), factory);
+
+        await factory.Started.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        var exception = Assert.CatchAsync<InvalidOperationException>(async () => await creation);
+        try
+        {
+            Assert.That(exception!.Message, Is.EqualTo(BrowserRunLease.PrerequisiteMessage));
+        }
+        finally
+        {
+            factory.Completion.TrySetResult(factory.Runtime);
+        }
+
+        await factory.Runtime.Disposed.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.That(factory.Runtime.Events, Is.EqualTo(new[] { "browser-close", "playwright-dispose" }));
+    }
+
+    [Test]
+    public async Task Caller_cancellation_retains_late_factory_work_before_a_successor_browser_run()
+    {
+        await using var paths = CreatePaths(RepositoryRoot.Find());
+        using var cancellation = new CancellationTokenSource();
+        var firstFactory = new BlockingBrowserRuntimeFactory();
+        var creation = BrowserRunLease.CreateAsync(new BrowserRunRequest(paths, 1_000), firstFactory, cancellation.Token);
+
+        await firstFactory.Started.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        cancellation.Cancel();
+        var cancellationException = Assert.CatchAsync<OperationCanceledException>(async () => await creation);
+        Assert.That(cancellationException!.CancellationToken, Is.EqualTo(cancellation.Token));
+
+        var successor = BrowserRunLease.CreateAsync(new BrowserRunRequest(paths, 1_000), new RecordingBrowserRuntimeFactory());
+        Assert.That(successor.IsCompleted, Is.False);
+
+        firstFactory.Completion.TrySetResult(firstFactory.Runtime);
+        await firstFactory.Runtime.Disposed.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        await using var successorLease = await successor.WaitAsync(TimeSpan.FromSeconds(1));
+    }
+
+    [Test]
+    public async Task Lifecycle_browser_runs_use_distinct_canonical_runtime_children_while_binaries_stay_run_scoped()
+    {
+        await using var run = LifecycleRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
+            RepositoryRoot.Find(),
+            ".e2e-private/runs",
+            TimeSpan.FromSeconds(2)));
+        var firstScenario = run.CreateScenario("browser-runtime-first");
+        var secondScenario = run.CreateScenario("browser-runtime-second");
+        var firstRuntime = firstScenario.CreateBrowserRuntimeComponent();
+        var secondRuntime = secondScenario.CreateBrowserRuntimeComponent();
+        var firstFactory = new RecordingBrowserRuntimeFactory();
+        var secondFactory = new RecordingBrowserRuntimeFactory();
+
+        await using var first = await BrowserRunLease.CreateAsync(new BrowserRunRequest(run.RunLease, 500)
+        {
+            RuntimeDirectory = firstRuntime
+        }, firstFactory);
+        await using var second = await BrowserRunLease.CreateAsync(new BrowserRunRequest(run.RunLease, 500)
+        {
+            RuntimeDirectory = secondRuntime
+        }, secondFactory);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(RuntimeDirectoriesAreOwnedBy(firstFactory.Runtime.Options!, firstRuntime), Is.True);
+            Assert.That(RuntimeDirectoriesAreOwnedBy(secondFactory.Runtime.Options!, secondRuntime), Is.True);
+            Assert.That(RuntimeDirectoriesDiffer(firstFactory.Runtime.Options!, secondFactory.Runtime.Options!), Is.True);
+            Assert.That(firstFactory.EnvironmentAtCreate, Is.EqualTo(secondFactory.EnvironmentAtCreate));
+        });
+    }
+
     private static PrivateRunDirectoryLease CreatePaths(string repositoryRoot) =>
         PrivateRunDirectoryLease.Create(new PrivateRunDirectoryRequest(
             repositoryRoot,
             ".e2e-private/runs",
             TimeSpan.FromSeconds(2)));
+
+    private static bool RuntimeDirectoriesAreOwnedBy(
+        BrowserTypeLaunchOptions options,
+        LifecycleComponentDirectoryLease runtime) =>
+        new[] { options.ArtifactsDir, options.DownloadsPath, options.TracesDir }
+            .All(path => path is not null &&
+                         PrivateRunDirectoryLayout.IsDescendantOrSame(runtime.ComponentDirectory, path));
+
+    private static bool RuntimeDirectoriesDiffer(
+        BrowserTypeLaunchOptions first,
+        BrowserTypeLaunchOptions second) =>
+        !string.Equals(first.ArtifactsDir, second.ArtifactsDir, StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(first.DownloadsPath, second.DownloadsPath, StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(first.TracesDir, second.TracesDir, StringComparison.OrdinalIgnoreCase);
 }
 
 internal sealed class RecordingBrowserRuntimeFactory : IBrowserRuntimeFactory
@@ -141,6 +259,7 @@ internal sealed class RecordingBrowserRuntime : IBrowserRuntime
     internal string? EnvironmentAtLaunch { get; private set; }
     internal BrowserTypeLaunchOptions? Options { get; private set; }
     internal Exception? LaunchException { get; set; }
+    internal Exception? DisposeException { get; set; }
 
     public Task<IBrowserHandle> LaunchChromiumAsync(BrowserTypeLaunchOptions options)
     {
@@ -154,7 +273,14 @@ internal sealed class RecordingBrowserRuntime : IBrowserRuntime
         return Task.FromResult<IBrowserHandle>(new RecordingBrowserHandle(Events));
     }
 
-    public void Dispose() => Events.Add("playwright-dispose");
+    public void Dispose()
+    {
+        Events.Add("playwright-dispose");
+        if (DisposeException is not null)
+        {
+            throw DisposeException;
+        }
+    }
 }
 
 internal sealed class RecordingBrowserHandle(List<string> events) : IBrowserHandle
@@ -166,5 +292,33 @@ internal sealed class RecordingBrowserHandle(List<string> events) : IBrowserHand
     {
         events.Add("browser-close");
         return Task.CompletedTask;
+    }
+}
+
+internal sealed class BlockingBrowserRuntimeFactory : IBrowserRuntimeFactory
+{
+    internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    internal TaskCompletionSource<IBrowserRuntime> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    internal BlockingBrowserRuntime Runtime { get; } = new();
+
+    public Task<IBrowserRuntime> CreateAsync()
+    {
+        Started.TrySetResult();
+        return Completion.Task;
+    }
+}
+
+internal sealed class BlockingBrowserRuntime : IBrowserRuntime
+{
+    internal List<string> Events { get; } = [];
+    internal TaskCompletionSource Disposed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task<IBrowserHandle> LaunchChromiumAsync(BrowserTypeLaunchOptions options) =>
+        Task.FromResult<IBrowserHandle>(new RecordingBrowserHandle(Events));
+
+    public void Dispose()
+    {
+        Events.Add("playwright-dispose");
+        Disposed.TrySetResult();
     }
 }

@@ -10,7 +10,8 @@ internal sealed class ExternalProcessRunner
     internal const string TimeoutMessage = "The external process exceeded the configured execution timeout.";
     internal const string CallerCancellationMessage = "The external process was canceled by the caller.";
     internal const string CleanupFailureMessage = "The external process could not be proven absent within the configured shutdown timeout.";
-    private const string StartFailureMessage = "The external process could not be started.";
+    internal const string StartFailureMessage = "The external process could not be started.";
+    internal const string PostLaunchFailureMessage = "The external process failed after launch.";
     private readonly Func<bool> _isWindows;
     private readonly ExternalProcessTermination _termination;
 
@@ -84,45 +85,61 @@ internal sealed class ExternalProcessRunner
 
         try
         {
-            await process.WaitForExitAsync(executionCancellation.Token);
+            try
+            {
+                await process.WaitForExitAsync(executionCancellation.Token);
+            }
+            catch (OperationCanceledException) when (executionCancellation.IsCancellationRequested)
+            {
+                var callerCanceled = cancellationToken.IsCancellationRequested;
+                using var shutdownCancellation = new CancellationTokenSource(request.ShutdownTimeout);
+                var retainedIdentities = WindowsProcessTree.CaptureFromKnownRoots(
+                    [rootIdentity],
+                    shutdownCancellation.Token,
+                    ParentProcessIdReader);
+                await InvokeBeforeCancellationCleanupAsync(process, request.ShutdownTimeout);
+                var receipt = await _termination.TerminateAsync(
+                    process,
+                    rootIdentity,
+                    retainedIdentities,
+                    standardOutput,
+                    standardError,
+                    standardOutputTask,
+                    standardErrorTask,
+                    drainCancellation,
+                    request.ShutdownTimeout);
+
+                if (callerCanceled)
+                {
+                    throw new ExternalProcessCanceledException(receipt, cancellationToken);
+                }
+
+                throw new ExternalProcessTimeoutException(receipt);
+            }
+
+            await CompleteDrainsAsync(
+                standardOutputTask,
+                standardErrorTask,
+                drainCancellation,
+                request.ShutdownTimeout);
+            return new ExternalProcessResult(
+                process.ExitCode,
+                standardOutput.Snapshot(),
+                standardError.Snapshot());
         }
-        catch (OperationCanceledException) when (executionCancellation.IsCancellationRequested)
+        catch (Exception exception) when (RequiresPostLaunchCleanup(exception))
         {
-            var callerCanceled = cancellationToken.IsCancellationRequested;
-            using var shutdownCancellation = new CancellationTokenSource(request.ShutdownTimeout);
-            var retainedIdentities = WindowsProcessTree.CaptureFromKnownRoots(
-                [rootIdentity],
-                shutdownCancellation.Token,
-                ParentProcessIdReader);
-            await InvokeBeforeCancellationCleanupAsync(process, request.ShutdownTimeout);
-            var receipt = await _termination.TerminateAsync(
+            var receipt = await CleanupPostLaunchFailureAsync(
                 process,
                 rootIdentity,
-                retainedIdentities,
                 standardOutput,
                 standardError,
                 standardOutputTask,
                 standardErrorTask,
                 drainCancellation,
                 request.ShutdownTimeout);
-
-            if (callerCanceled)
-            {
-                throw new ExternalProcessCanceledException(receipt, cancellationToken);
-            }
-
-            throw new ExternalProcessTimeoutException(receipt);
+            throw new ExternalProcessPostLaunchException(receipt);
         }
-
-        await CompleteDrainsAsync(
-            standardOutputTask,
-            standardErrorTask,
-            drainCancellation,
-            request.ShutdownTimeout);
-        return new ExternalProcessResult(
-            process.ExitCode,
-            standardOutput.Snapshot(),
-            standardError.Snapshot());
     }
 
     private void EnsureSupported()
@@ -217,4 +234,45 @@ internal sealed class ExternalProcessRunner
         using var hookCancellation = new CancellationTokenSource(shutdownTimeout);
         await BeforeCancellationCleanup(process, shutdownTimeout).WaitAsync(hookCancellation.Token);
     }
+
+    private async Task<ExternalProcessFailureReceipt> CleanupPostLaunchFailureAsync(
+        Process process,
+        ProcessIdentity rootIdentity,
+        BoundedSanitizedStreamCapture standardOutput,
+        BoundedSanitizedStreamCapture standardError,
+        Task standardOutputTask,
+        Task standardErrorTask,
+        CancellationTokenSource drainCancellation,
+        TimeSpan shutdownTimeout)
+    {
+        IReadOnlyList<ProcessIdentity> retainedIdentities = [rootIdentity];
+        using var captureDeadline = new CancellationTokenSource(shutdownTimeout);
+        try
+        {
+            retainedIdentities = WindowsProcessTree.CaptureFromKnownRoots(
+                retainedIdentities,
+                captureDeadline.Token,
+                ParentProcessIdReader);
+        }
+        catch (Exception exception) when (exception is ProcessTreeInspectionException or OperationCanceledException or InvalidOperationException)
+        {
+        }
+
+        return await _termination.TerminateAsync(
+            process,
+            rootIdentity,
+            retainedIdentities,
+            standardOutput,
+            standardError,
+            standardOutputTask,
+            standardErrorTask,
+            drainCancellation,
+            shutdownTimeout);
+    }
+
+    private static bool RequiresPostLaunchCleanup(Exception exception) =>
+        exception is not ExternalProcessCanceledException and
+        not ExternalProcessTimeoutException and
+        not ExternalProcessPostLaunchException &&
+        exception is not ExternalProcessCleanupException { Receipt: not null };
 }

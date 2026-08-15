@@ -2,9 +2,13 @@ namespace LgymApi.E2ETests.Harness;
 
 internal sealed class FakeApiHostDatabaseLease(
     ICollection<string> cleanupOrder,
-    bool cleanupFails = false) : IApiHostDatabaseLease
+    bool cleanupFails = false) : IApiHostDatabaseLease, IApiHostDatabaseAbsenceObservation
 {
+    private int _cleanupFailuresRemaining = cleanupFails ? 1 : 0;
+
     internal int DisposeCount { get; private set; }
+
+    internal bool IsAbsent { get; private set; }
 
     public string ConnectionString => "in-memory-task-5-connection";
 
@@ -12,10 +16,17 @@ internal sealed class FakeApiHostDatabaseLease(
     {
         DisposeCount++;
         cleanupOrder.Add("postgresql");
-        return cleanupFails
-            ? ValueTask.FromException(new IOException("Injected private database cleanup failure."))
-            : ValueTask.CompletedTask;
+        if (Interlocked.Exchange(ref _cleanupFailuresRemaining, 0) != 0)
+        {
+            IsAbsent = false;
+            return ValueTask.FromException(new IOException("Injected private database cleanup failure."));
+        }
+
+        IsAbsent = true;
+        return ValueTask.CompletedTask;
     }
+
+    public Task<bool> ConfirmAbsentAsync() => Task.FromResult(IsAbsent);
 }
 
 internal sealed class FakeApiHostRuntimeFactory(
@@ -43,18 +54,27 @@ internal sealed class FakeApiHostRuntimeLease(
     ICollection<string> cleanupOrder,
     bool cleanupFails) : IApiHostRuntimeLease
 {
+    private int _cleanupFailuresRemaining = cleanupFails ? 1 : 0;
+
     internal int DisposeCount { get; private set; }
 
     public string ConfigurationPath { get; } = Path.Combine(fixtureRoot, "api", "appsettings.e2e.json");
 
     public string PrivateTempDirectory { get; } = Path.Combine(fixtureRoot, "api", "temp");
 
+    public bool RuntimeDirectoryAbsent { get; private set; }
+
     public ValueTask DisposeAsync()
     {
         DisposeCount++;
         cleanupOrder.Add("runtime-configuration");
-        return cleanupFails
-            ? ValueTask.FromException(new IOException("Injected private runtime cleanup failure."))
-            : ValueTask.CompletedTask;
+        if (Interlocked.Exchange(ref _cleanupFailuresRemaining, 0) != 0)
+        {
+            RuntimeDirectoryAbsent = false;
+            return ValueTask.FromException(new IOException("Injected private runtime cleanup failure."));
+        }
+
+        RuntimeDirectoryAbsent = true;
+        return ValueTask.CompletedTask;
     }
 }

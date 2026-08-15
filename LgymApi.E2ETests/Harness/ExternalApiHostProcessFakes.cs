@@ -35,7 +35,7 @@ internal sealed class FakeExternalApiProcess : IExternalApiProcess
     private readonly TaskCompletionSource<ExternalApiProcessExit> _exit =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ICollection<string> _cleanupOrder;
-    private readonly bool _cleanupFails;
+    private int _cleanupFailuresRemaining;
     private int _disposed;
 
     internal FakeExternalApiProcess(
@@ -45,7 +45,7 @@ internal sealed class FakeExternalApiProcess : IExternalApiProcess
         TimeSpan exitObservationTimeout)
     {
         _cleanupOrder = cleanupOrder;
-        _cleanupFails = cleanupFails;
+        _cleanupFailuresRemaining = cleanupFails ? 1 : 0;
         ExitObservationTimeout = exitObservationTimeout;
         if (exit is not null)
         {
@@ -59,9 +59,11 @@ internal sealed class FakeExternalApiProcess : IExternalApiProcess
 
     internal int DisposeCount { get; private set; }
 
+    public bool ProcessTreeAbsent { get; private set; }
+
     public ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        if (Volatile.Read(ref _disposed) != 0)
         {
             return ValueTask.CompletedTask;
         }
@@ -69,8 +71,14 @@ internal sealed class FakeExternalApiProcess : IExternalApiProcess
         DisposeCount++;
         _cleanupOrder.Add("api-process");
         _exit.TrySetResult(new ExternalApiProcessExit(ExternalApiProcessExitKind.Failed));
-        return _cleanupFails
-            ? ValueTask.FromException(new IOException("Injected private process cleanup failure."))
-            : ValueTask.CompletedTask;
+        if (Interlocked.Exchange(ref _cleanupFailuresRemaining, 0) != 0)
+        {
+            ProcessTreeAbsent = false;
+            return ValueTask.FromException(new IOException("Injected private process cleanup failure."));
+        }
+
+        ProcessTreeAbsent = true;
+        Interlocked.Exchange(ref _disposed, 1);
+        return ValueTask.CompletedTask;
     }
 }

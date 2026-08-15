@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using LgymApi.E2ETests.Configuration;
+using LgymApi.E2ETests.Lifecycle;
 
 namespace LgymApi.E2ETests.Harness;
 
@@ -17,6 +19,7 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
     private readonly TimeSpan _sessionTimeout;
     private readonly TimeSpan _shutdownTimeout;
     private readonly DateTime _sessionDeadlineUtc;
+    private readonly bool _ownsRunLease;
     private readonly object _sync = new();
     private Task? _installation;
     private Task? _cleanup;
@@ -29,10 +32,13 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
         IReadOnlyList<string> secretCanaries,
         string gitExecutable,
         TimeSpan sessionTimeout,
-        TimeSpan shutdownTimeout)
+        TimeSpan shutdownTimeout,
+        bool ownsRunLease,
+        string npmCacheDirectory)
     {
         _runLease = runLease;
         SourceDirectory = stage.SourceDirectory;
+        SourceReceipt = stage.Receipt;
         _tools = tools;
         _dependencies = dependencies;
         _secretCanaries = secretCanaries;
@@ -40,12 +46,15 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
         _sessionTimeout = sessionTimeout;
         _shutdownTimeout = shutdownTimeout;
         _sessionDeadlineUtc = DateTime.UtcNow.Add(sessionTimeout);
-        NpmCacheDirectory = runLease.ResolveCacheOwnedPath(".e2e-private/npm-cache");
+        _ownsRunLease = ownsRunLease;
+        NpmCacheDirectory = npmCacheDirectory;
     }
 
     internal string RunDirectory => _runLease.RunDirectory;
 
     internal string SourceDirectory { get; }
+
+    internal PinnedWebSourceReceipt SourceReceipt { get; }
 
     internal string NpmCacheDirectory { get; }
 
@@ -60,6 +69,17 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
     internal Dictionary<string, string?> CreateExpoEnvironment(Uri scenarioApiBaseUri)
     {
         var environment = _environment.Create(RunDirectory, NpmCacheDirectory);
+        environment["EXPO_NO_TELEMETRY"] = "1";
+        environment["BROWSER"] = "none";
+        environment["REACT_APP_BACKEND"] = scenarioApiBaseUri.AbsoluteUri;
+        return environment;
+    }
+
+    internal Dictionary<string, string?> CreateExpoEnvironment(
+        Uri scenarioApiBaseUri,
+        LifecycleComponentDirectoryLease runtimeDirectory)
+    {
+        var environment = _environment.CreateScenarioRuntime(runtimeDirectory.ComponentDirectory, NpmCacheDirectory);
         environment["EXPO_NO_TELEMETRY"] = "1";
         environment["BROWSER"] = "none";
         environment["REACT_APP_BACKEND"] = scenarioApiBaseUri.AbsoluteUri;
@@ -93,11 +113,47 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
                 request.SecretCanaries,
                 request.GitExecutable,
                 sessionTimeout,
-                shutdownTimeout);
+                shutdownTimeout,
+                ownsRunLease: true,
+                runLease.ResolveCacheOwnedPath(".e2e-private/npm-cache"));
         }
         catch
         {
             await runLease.DisposeAsync();
+            throw;
+        }
+    }
+
+    internal static async Task<WebSourceRunLease> CreateAsync(
+        WebSourceRunRequest request,
+        WebSourceRunDependencies dependencies,
+        LifecycleRunDirectoryLease runOwner,
+        CancellationToken cancellationToken = default)
+    {
+        var sessionTimeout = TimeSpan.FromSeconds(request.Options.Timeouts.TestSessionSeconds);
+        var shutdownTimeout = TimeSpan.FromSeconds(request.Options.Timeouts.ProcessShutdownSeconds);
+        if (sessionTimeout <= TimeSpan.Zero || shutdownTimeout <= TimeSpan.Zero)
+        {
+            throw new InvalidOperationException(InstallationMessage);
+        }
+
+        try
+        {
+            var stage = await dependencies.Stager.StageForLifecycleAsync(request.Options, runOwner.RunLease, cancellationToken);
+            return new WebSourceRunLease(
+                runOwner.RunLease,
+                stage,
+                dependencies.ToolResolver.Resolve(),
+                dependencies,
+                request.SecretCanaries,
+                request.GitExecutable,
+                sessionTimeout,
+                shutdownTimeout,
+                ownsRunLease: false,
+                Path.Combine(stage.SourceDirectory, "npm-cache"));
+        }
+        catch
+        {
             throw;
         }
     }
@@ -114,8 +170,25 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
     {
         lock (_sync)
         {
-            _cleanup ??= CleanupAsync();
+            _cleanup ??= CleanupWithRetryAsync();
             return new ValueTask(_cleanup);
+        }
+    }
+
+    private async Task CleanupWithRetryAsync()
+    {
+        try
+        {
+            await CleanupAsync();
+        }
+        catch
+        {
+            lock (_sync)
+            {
+                _cleanup = null;
+            }
+
+            throw;
         }
     }
 
@@ -182,9 +255,14 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
     private async Task CleanupAsync()
     {
         Exception? failure = null;
+        using var cleanupDeadline = new CancellationTokenSource(_shutdownTimeout);
+        var startedAt = Stopwatch.GetTimestamp();
         try
         {
-            await _dependencies.CacheCleaner.DeleteAsync(_runLease, _shutdownTimeout);
+            await _dependencies.CacheCleaner.DeleteAsync(
+                _runLease,
+                NpmCacheDirectory,
+                RemainingCleanupTime(startedAt));
         }
         catch (PrivateRunCleanupException exception)
         {
@@ -195,6 +273,32 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
         {
             CleanupStage = PrivateRunCleanupStage.CacheDelete;
             failure = exception;
+        }
+
+        if (!_ownsRunLease)
+        {
+            try
+            {
+                using var cleanup = new CancellationTokenSource(_shutdownTimeout);
+                using var linkedCleanup = CancellationTokenSource.CreateLinkedTokenSource(cleanupDeadline.Token, cleanup.Token);
+                await _dependencies.SourceCleaner.DeleteAsync(SourceDirectory, linkedCleanup.Token);
+            }
+            catch (Exception exception) when (exception is PrivateRunCleanupException or OperationCanceledException)
+            {
+                CleanupStage = CleanupStage == PrivateRunCleanupStage.Unknown
+                    ? exception is PrivateRunCleanupException cleanupException
+                        ? cleanupException.Stage
+                        : PrivateRunCleanupStage.EntryDelete
+                    : CleanupStage;
+                failure ??= new IOException();
+            }
+
+            if (failure is not null)
+            {
+                throw new WebSourceRunCleanupException(CleanupStage);
+            }
+
+            return;
         }
 
         try
@@ -218,6 +322,12 @@ internal sealed class WebSourceRunLease : IAsyncDisposable
         {
             throw new WebSourceRunCleanupException(CleanupStage);
         }
+    }
+
+    private TimeSpan RemainingCleanupTime(long startedAt)
+    {
+        var remaining = _shutdownTimeout - Stopwatch.GetElapsedTime(startedAt);
+        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }
 
     private static bool IsSupported(string output)

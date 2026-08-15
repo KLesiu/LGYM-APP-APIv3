@@ -21,7 +21,7 @@ public sealed class E2EConfigurationTests
         Assert.Multiple(() =>
         {
             Assert.That(options.WebSource.RepositoryUrl, Is.EqualTo("https://github.com/KLesiu/LGYM-APP-MOBILE.git"));
-        Assert.That(options.WebSource.CommitSha, Is.EqualTo("cd930cce76c030b0ffe631f0bdd79712f97d171f"));
+            Assert.That(options.WebSource.CommitSha, Is.EqualTo("8f59d96ec368f509b1565e3296cd89d2a082a952"));
             Assert.That(options.WebSource.SourcePath, Is.Null);
             Assert.That(options.Api.PublishedDllPath, Is.EqualTo(".e2e-private/published-api/LgymApi.Api.dll"));
             Assert.That(options.Api.Port, Is.Zero);
@@ -110,6 +110,7 @@ public sealed class E2EConfigurationTests
 
     [TestCase("invalid repository URL", "WebSource.RepositoryUrl must be the canonical credential-free HTTPS repository URL.")]
     [TestCase("invalid commit", "WebSource.CommitSha must be a lowercase 40-character hexadecimal SHA.")]
+    [TestCase("obsolete commit", "WebSource.CommitSha must match the configured immutable mobile source SHA.")]
     [TestCase("repository source path", "WebSource.SourcePath must be absent or an absolute path outside this repository.")]
     [TestCase("published DLL traversal", "Api.PublishedDllPath must be a safe relative path under .e2e-private.")]
     [TestCase("API port", "Api.Port must be 0 or between 1024 and 65535.")]
@@ -162,7 +163,7 @@ public sealed class E2EConfigurationTests
         WebSource = new E2EWebSourceOptions
         {
             RepositoryUrl = "https://github.com/KLesiu/LGYM-APP-MOBILE.git",
-            CommitSha = "cd930cce76c030b0ffe631f0bdd79712f97d171f"
+            CommitSha = E2EOptionsValidator.PinnedCommitSha
         },
         Api = new E2EApiOptions { PublishedDllPath = ".e2e-private/published-api/LgymApi.Api.dll", Port = 0 },
         Web = new E2EWebOptions { Port = 8083 },
@@ -191,6 +192,10 @@ public sealed class E2EConfigurationTests
                 break;
             case "invalid commit":
                 options.WebSource.CommitSha = new string('A', 40);
+                break;
+            case "obsolete commit":
+                options.WebSource.CommitSha = string.Concat(
+                    "cd930cce", "76c030b0", "ffe631f0", "bdd79712", "f97d171f");
                 break;
             case "repository source path":
                 options.WebSource.SourcePath = Path.Combine(RepositoryRoot.Find(), "external-source");

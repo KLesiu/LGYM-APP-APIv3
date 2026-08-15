@@ -68,6 +68,110 @@ internal sealed class PrivateRunDirectoryLease : IAsyncDisposable
     internal string ResolveCacheOwnedPath(string relativeRoot) =>
         _layout.ResolveCacheOwnedPath(relativeRoot);
 
+    internal string CreateLifecycleScenarioDirectory(string caseId) =>
+        CreateLifecycleDirectory("scenarios", caseId);
+
+    internal string CreateLifecycleArtifactDirectory(string caseId) =>
+        CreateLifecycleDirectory("artifacts", caseId);
+
+    internal string CreateLifecycleComponentDirectory(string caseId, string componentName)
+    {
+        EnsureCanonicalLifecycleId(caseId);
+        if (componentName is not ("api" or "web-runtime" or "browser-runtime"))
+        {
+            throw new InvalidOperationException(PathValidationMessage);
+        }
+
+        var scenarioDirectory = CreateLifecycleScenarioDirectory(caseId);
+        var componentDirectory = Path.Combine(scenarioDirectory, componentName);
+        return CreateOwnedDirectory(componentDirectory);
+    }
+
+    internal void EnsureSafeLifecycleComponentArtifact(
+        string caseId,
+        string componentName,
+        string artifactPath)
+    {
+        EnsureCanonicalLifecycleId(caseId);
+        if (componentName is not ("api" or "web-runtime" or "browser-runtime"))
+        {
+            throw new InvalidOperationException(PathValidationMessage);
+        }
+
+        var componentDirectory = Path.Combine(RunDirectory, "scenarios", caseId, componentName);
+        if (!PrivateRunDirectoryLayout.IsDescendantOrSame(componentDirectory, artifactPath))
+        {
+            throw new InvalidOperationException(PathValidationMessage);
+        }
+
+        _layout.EnsureOwnedRunDirectory(RunDirectory);
+        _layout.EnsureSafePath(componentDirectory);
+        _layout.EnsureSafePath(artifactPath);
+    }
+
+    internal void EnsureSafeLifecycleArtifact(string caseId, string artifactPath)
+    {
+        EnsureCanonicalLifecycleId(caseId);
+        var artifactDirectory = Path.Combine(RunDirectory, "artifacts", caseId);
+        if (!PrivateRunDirectoryLayout.IsDescendantOrSame(artifactDirectory, artifactPath))
+        {
+            throw new InvalidOperationException(PathValidationMessage);
+        }
+
+        _layout.EnsureOwnedRunDirectory(RunDirectory);
+        _layout.EnsureSafePath(artifactDirectory);
+        _layout.EnsureSafePath(artifactPath);
+    }
+
+    internal Task DeleteLifecycleScenarioAsync(string caseId, CancellationToken cancellationToken = default) =>
+        DeleteLifecycleDirectoryAsync("scenarios", caseId, cancellationToken);
+
+    internal Task DeleteLifecycleComponentAsync(
+        string caseId,
+        string componentName,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureCanonicalLifecycleId(caseId);
+        if (componentName is not ("api" or "web-runtime" or "browser-runtime"))
+        {
+            throw new InvalidOperationException(PathValidationMessage);
+        }
+
+        return DeleteOwnedDirectoryAsync(
+            Path.Combine(RunDirectory, "scenarios", caseId, componentName),
+            cancellationToken);
+    }
+
+    internal async Task FinalizeLifecycleFailureAsync(CancellationToken cancellationToken = default)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(CleanupTimeout);
+        try
+        {
+            ValidateOwnedRunDirectory();
+            var artifactDirectory = Path.Combine(RunDirectory, "artifacts");
+            _layout.EnsureSafePath(artifactDirectory);
+
+            foreach (var entry in Directory.GetFileSystemEntries(RunDirectory))
+            {
+                _layout.EnsureSafePath(entry);
+                if (string.Equals(Path.GetFileName(entry), "artifacts", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                await _cleaner.DeleteAsync(entry, timeout.Token);
+            }
+
+            ValidateOwnedRunDirectory();
+            _layout.EnsureSafePath(artifactDirectory);
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            throw new InvalidOperationException(CleanupMessage);
+        }
+    }
+
     internal static PrivateRunDirectoryLease Create(
         PrivateRunDirectoryRequest request,
         IRunDirectoryCleaner? cleaner = null)
@@ -138,6 +242,45 @@ internal sealed class PrivateRunDirectoryLease : IAsyncDisposable
     }
 
     private TimeSpan CleanupTimeout => _layout.CleanupTimeout;
+
+    internal static void EnsureCanonicalLifecycleId(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 64 ||
+            !System.Text.RegularExpressions.Regex.IsMatch(value, "^[a-z0-9][a-z0-9-]{0,63}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant))
+        {
+            throw new InvalidOperationException(PathValidationMessage);
+        }
+    }
+
+    private string CreateLifecycleDirectory(string rootDirectory, string caseId)
+    {
+        EnsureCanonicalLifecycleId(caseId);
+        return CreateOwnedDirectory(Path.Combine(RunDirectory, rootDirectory, caseId));
+    }
+
+    private string CreateOwnedDirectory(string directory)
+    {
+        _layout.EnsureOwnedRunDirectory(RunDirectory);
+        _layout.EnsureSafePath(directory);
+        Directory.CreateDirectory(directory);
+        _layout.EnsureSafePath(directory);
+        return directory;
+    }
+
+    private Task DeleteLifecycleDirectoryAsync(string rootDirectory, string caseId, CancellationToken cancellationToken)
+    {
+        EnsureCanonicalLifecycleId(caseId);
+        return DeleteOwnedDirectoryAsync(Path.Combine(RunDirectory, rootDirectory, caseId), cancellationToken);
+    }
+
+    private async Task DeleteOwnedDirectoryAsync(string directory, CancellationToken cancellationToken)
+    {
+        _layout.EnsureOwnedRunDirectory(RunDirectory);
+        _layout.EnsureSafePath(directory);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(CleanupTimeout);
+        await _cleaner.DeleteAsync(directory, timeout.Token);
+    }
 
     private void ValidateOwnedRunDirectory()
     {

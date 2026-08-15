@@ -60,29 +60,22 @@ internal static class DockerContainerProbe
 
     public static async Task<bool> WaitUntilAbsentAsync(string containerId, TimeSpan timeout)
     {
-        var deadline = DateTimeOffset.UtcNow.Add(timeout);
+        using var cancellation = new CancellationTokenSource(timeout);
+        return await WaitUntilAbsentAsync(containerId, cancellation.Token);
+    }
+
+    internal static async Task<bool> WaitUntilAbsentAsync(string containerId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
 
         while (true)
         {
-            var remaining = deadline - DateTimeOffset.UtcNow;
-            if (remaining <= TimeSpan.Zero)
-            {
-                return false;
-            }
-
-            using var inspectionTimeout = new CancellationTokenSource(remaining);
-            if (await IsAbsentAsync(containerId, inspectionTimeout.Token))
+            if (await IsAbsentAsync(containerId, cancellationToken))
             {
                 return true;
             }
 
-            remaining = deadline - DateTimeOffset.UtcNow;
-            if (remaining <= TimeSpan.Zero)
-            {
-                return false;
-            }
-
-            await Task.Delay(remaining < PollInterval ? remaining : PollInterval);
+            await Task.Delay(PollInterval, cancellationToken);
         }
     }
 

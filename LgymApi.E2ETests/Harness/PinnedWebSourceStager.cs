@@ -100,7 +100,8 @@ internal sealed class PinnedWebSourceStager
             {
                 if (worktree is not null)
                 {
-                    await _inspector.EnsureUnchangedAsync(worktree, timeouts, CancellationToken.None);
+                    using var stateValidation = new CancellationTokenSource(request.ShutdownTimeout);
+                    await _inspector.EnsureUnchangedAsync(worktree, timeouts, stateValidation.Token);
                 }
             }
             catch (Exception exception)
@@ -108,13 +109,16 @@ internal sealed class PinnedWebSourceStager
                 stateValidationFailure = exception;
             }
 
-            try
+            if (request.DisposeRunLeaseOnFailure)
             {
-                await request.RunLease.DisposeAsync();
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
-            {
-                artifactCleanupFailed = true;
+                try
+                {
+                    await request.RunLease.DisposeAsync();
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+                {
+                    artifactCleanupFailed = true;
+                }
             }
 
             if (artifactCleanupFailed)

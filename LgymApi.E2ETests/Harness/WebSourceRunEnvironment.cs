@@ -41,4 +41,9 @@ internal sealed class WebSourceRunEnvironment(NodeNpmTools tools, string gitExec
             ["npm_config_loglevel"] = "warn"
         };
     }
+
+    internal Dictionary<string, string?> CreateScenarioRuntime(
+        string runtimeDirectory,
+        string npmCacheDirectory) =>
+        Create(runtimeDirectory, npmCacheDirectory);
 }

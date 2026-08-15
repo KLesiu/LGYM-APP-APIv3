@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Xml.Linq;
+using LgymApi.E2ETests.Configuration;
 
 namespace LgymApi.E2ETests.Harness;
 
@@ -126,7 +127,7 @@ internal static class FinalWebHarnessEvidenceManifest
 
     internal static void ValidateReceipt(FinalWebHarnessEvidenceReceipt receipt)
     {
-        if (receipt.CommitSha != "cd930cce76c030b0ffe631f0bdd79712f97d171f" ||
+        if (receipt.CommitSha != E2EOptionsValidator.PinnedCommitSha ||
             !receipt.SourceStateMatched || !receipt.SourceExported || !receipt.NodeInstalled ||
             !receipt.ExpoReady || !receipt.RenderedReady || !receipt.BrowserSuppressed ||
             !receipt.PortWasAvailableBeforeStart || !receipt.PublicHttpBoundaryUsed || !receipt.BrowserClosed ||

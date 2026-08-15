@@ -1,4 +1,5 @@
 using System.Net;
+using LgymApi.E2ETests.Lifecycle;
 
 namespace LgymApi.E2ETests.Harness;
 
@@ -18,12 +19,12 @@ public sealed class RealApiHostCorsProofTests
         await using var host = await context.StartAsync("E2E", deadline.Token);
 
         using var allowedPreflight = await SendPreflightAsync(host.Client, AllowedOrigin, deadline.Token);
-        using var allowedActual = await RealApiHostProofTests.PostInvalidLoginAsync(
+        using var allowedActual = await DatabaseBackedApiReadinessProbe.PostInvalidLoginAsync(
             host.Client,
             AllowedOrigin,
             deadline.Token);
         using var rejectedPreflight = await SendPreflightAsync(host.Client, RejectedOrigin, deadline.Token);
-        using var rejectedActual = await RealApiHostProofTests.PostInvalidLoginAsync(
+        using var rejectedActual = await DatabaseBackedApiReadinessProbe.PostInvalidLoginAsync(
             host.Client,
             RejectedOrigin,
             deadline.Token);

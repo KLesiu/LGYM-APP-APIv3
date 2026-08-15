@@ -49,7 +49,12 @@ internal sealed class ExternalApiHostTestFixture : IDisposable
         FakeExternalApiProcessStarter processStarter,
         IApiHostReadinessMonitor readinessMonitor,
         FakeLoopbackPortAllocator portAllocator) =>
-        new(runtimeFactory, processStarter, readinessMonitor, portAllocator);
+        new(
+            runtimeFactory,
+            processStarter,
+            readinessMonitor,
+            portAllocator,
+            new ScriptedDatabaseBackedApiReadinessProbe());
 
     public void Dispose()
     {

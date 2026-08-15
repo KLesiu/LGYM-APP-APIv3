@@ -21,6 +21,8 @@ internal interface IExternalApiProcess : IAsyncDisposable
     Task<ExternalApiProcessExit> Exit { get; }
 
     TimeSpan ExitObservationTimeout { get; }
+
+    bool ProcessTreeAbsent { get; }
 }
 
 internal interface IExternalApiProcessStarter
@@ -40,6 +42,9 @@ internal sealed class ExternalApiProcessLease : IExternalApiProcess
 {
     private readonly CancellationTokenSource _lifetime = new();
     private readonly Task<ExternalProcessResult> _execution;
+    private readonly SemaphoreSlim _disposeLock = new(1, 1);
+    private IReadOnlyList<ProcessIdentity> _retainedIdentities = [];
+    private int _cancellationRequested;
     private int _disposed;
 
     internal ExternalApiProcessLease(ExternalProcessRunner runner, ExternalProcessRequest request)
@@ -55,43 +60,110 @@ internal sealed class ExternalApiProcessLease : IExternalApiProcess
 
     internal bool ExactProcessTreeAbsent { get; private set; }
 
+    public bool ProcessTreeAbsent => ExactProcessTreeAbsent;
+
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        await _disposeLock.WaitAsync();
+        try
+        {
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                return;
+            }
+
+            if (_retainedIdentities.Count != 0)
+            {
+                if (!await RetryProcessTreeCleanupAsync())
+                {
+                    throw new ExternalProcessCleanupException(CreateRetryFailureReceipt());
+                }
+
+                CompleteDisposal();
+                return;
+            }
+
+            if (Interlocked.Exchange(ref _cancellationRequested, 1) == 0)
+            {
+                _lifetime.Cancel();
+            }
+
+            try
+            {
+                await _execution;
+                ExactProcessTreeAbsent = true;
+            }
+            catch (ExternalProcessCanceledException exception) when (_lifetime.IsCancellationRequested)
+            {
+                CaptureCleanupReceipt(exception.Receipt);
+            }
+            catch (ExternalProcessTimeoutException exception)
+            {
+                CaptureCleanupReceipt(exception.Receipt);
+            }
+            catch (ExternalProcessCleanupException exception) when (exception.Receipt is not null)
+            {
+                CaptureCleanupReceipt(exception.Receipt);
+            }
+            catch (ExternalProcessPostLaunchException exception)
+            {
+                CaptureCleanupReceipt(exception.Receipt);
+                CompleteDisposal();
+                throw;
+            }
+            catch (InvalidOperationException exception) when (
+                string.Equals(exception.Message, ExternalProcessRunner.StartFailureMessage, StringComparison.Ordinal))
+            {
+                ExactProcessTreeAbsent = true;
+            }
+
+            CompleteDisposal();
+        }
+        finally
+        {
+            _disposeLock.Release();
+        }
+    }
+
+    private void CaptureCleanupReceipt(ExternalProcessFailureReceipt receipt)
+    {
+        ExactProcessTreeAbsent = receipt.Cleanup.AllAbsentOrReused;
+        if (ExactProcessTreeAbsent)
         {
             return;
         }
 
-        _lifetime.Cancel();
+        _retainedIdentities = receipt.Cleanup.CapturedIdentities.ToArray();
+        throw new ExternalProcessCleanupException(receipt);
+    }
+
+    private async Task<bool> RetryProcessTreeCleanupAsync()
+    {
+        using var deadline = new CancellationTokenSource(ExitObservationTimeout);
         try
         {
-            await _execution;
-            ExactProcessTreeAbsent = true;
+            WindowsProcessTree.TerminateKnownIdentities(_retainedIdentities);
+            await WindowsProcessTree.WaitUntilAllAbsentOrReusedAsync(_retainedIdentities, deadline.Token);
+            ExactProcessTreeAbsent = WindowsProcessTree.AllAbsentOrReused(_retainedIdentities);
+            return ExactProcessTreeAbsent;
         }
-        catch (ExternalProcessCanceledException exception) when (_lifetime.IsCancellationRequested)
+        catch (Exception exception) when (
+            exception is OperationCanceledException or InvalidOperationException or ProcessTreeInspectionException)
         {
-            ExactProcessTreeAbsent = exception.Receipt.Cleanup.AllAbsentOrReused;
-            if (!exception.Receipt.Cleanup.AllAbsentOrReused)
-            {
-                throw new ExternalProcessCleanupException(exception.Receipt);
-            }
+            ExactProcessTreeAbsent = WindowsProcessTree.AllAbsentOrReused(_retainedIdentities);
+            return ExactProcessTreeAbsent;
         }
-        catch (ExternalProcessTimeoutException exception)
-        {
-            ExactProcessTreeAbsent = exception.Receipt.Cleanup.AllAbsentOrReused;
-            if (!exception.Receipt.Cleanup.AllAbsentOrReused)
-            {
-                throw new ExternalProcessCleanupException(exception.Receipt);
-            }
-        }
-        catch (InvalidOperationException exception) when (exception is not ExternalProcessCleanupException)
-        {
-            ExactProcessTreeAbsent = true;
-        }
-        finally
-        {
-            _lifetime.Dispose();
-        }
+    }
+
+    private ExternalProcessFailureReceipt CreateRetryFailureReceipt() => new(
+        new ExternalProcessOutput(string.Empty, WasTruncated: false),
+        new ExternalProcessOutput(string.Empty, WasTruncated: false),
+        new ProcessCleanupReceipt(_retainedIdentities, AllAbsentOrReused: false));
+
+    private void CompleteDisposal()
+    {
+        Interlocked.Exchange(ref _disposed, 1);
+        _lifetime.Dispose();
     }
 
     private static async Task<ExternalApiProcessExit> ObserveExitAsync(Task<ExternalProcessResult> execution)
@@ -122,6 +194,10 @@ internal sealed class ExternalApiProcessLease : IExternalApiProcess
             return exception.Receipt is null
                 ? new ExternalApiProcessExit(ExternalApiProcessExitKind.Failed)
                 : FromFailureReceipt(exception.Receipt);
+        }
+        catch (ExternalProcessPostLaunchException exception)
+        {
+            return FromFailureReceipt(exception.Receipt);
         }
         catch (InvalidOperationException)
         {

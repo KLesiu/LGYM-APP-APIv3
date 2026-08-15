@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using LgymApi.E2ETests.Configuration;
 
 namespace LgymApi.E2ETests.Harness;
 
@@ -130,7 +131,7 @@ public sealed class FinalWebHarnessEvidenceManifestTests
     }
 
     private static FinalWebHarnessEvidenceReceipt ValidReceipt() => new(
-        CommitSha: "cd930cce76c030b0ffe631f0bdd79712f97d171f",
+        CommitSha: E2EOptionsValidator.PinnedCommitSha,
         SourceStateMatched: true,
         SourceExported: true,
         NodeInstalled: true,

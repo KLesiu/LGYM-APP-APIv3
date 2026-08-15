@@ -5,16 +5,28 @@ namespace LgymApi.E2ETests.Harness;
 internal interface IWebSourceCacheCleaner
 {
     Task DeleteAsync(PrivateRunDirectoryLease runLease, TimeSpan timeout);
+
+    Task DeleteAsync(PrivateRunDirectoryLease runLease, string cacheDirectory, TimeSpan timeout) =>
+        DeleteAsync(runLease, timeout);
 }
 
 internal sealed class WebSourceCacheCleaner : IWebSourceCacheCleaner
 {
     public async Task DeleteAsync(PrivateRunDirectoryLease runLease, TimeSpan timeout)
     {
-        string cacheDirectory;
+        var cacheDirectory = runLease.ResolveCacheOwnedPath(".e2e-private/npm-cache");
+        await DeleteAsync(runLease, cacheDirectory, timeout);
+    }
+
+    public async Task DeleteAsync(PrivateRunDirectoryLease runLease, string cacheDirectory, TimeSpan timeout)
+    {
         try
         {
-            cacheDirectory = runLease.ResolveCacheOwnedPath(".e2e-private/npm-cache");
+            if (!PrivateRunDirectoryLayout.IsDescendantOrSame(runLease.RunDirectory, cacheDirectory) &&
+                !string.Equals(cacheDirectory, runLease.ResolveCacheOwnedPath(".e2e-private/npm-cache"), StringComparison.Ordinal))
+            {
+                throw new IOException();
+            }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -77,6 +89,8 @@ internal sealed class WebSourceRunDependencies
     public required INodeNpmCommandRunner CommandRunner { get; init; }
 
     public IWebSourceCacheCleaner CacheCleaner { get; init; } = new WebSourceCacheCleaner();
+
+    public IRunDirectoryCleaner SourceCleaner { get; init; } = new FileSystemRunDirectoryCleaner();
 
     public IRunDirectoryCleaner RunDirectoryCleaner { get; init; } = new FileSystemRunDirectoryCleaner();
 }

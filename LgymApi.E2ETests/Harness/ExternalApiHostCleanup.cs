@@ -6,14 +6,16 @@ internal sealed record ExternalApiHostCleanupResult(
 
 internal static class ExternalApiHostCleanup
 {
+    internal const int MaximumRetainedAttemptedCategories = 12;
+    internal const int MaximumRetainedFailureCount = 1024;
     internal const string ProcessCategory = "api-process";
-    private const string RuntimeCategory = "runtime-configuration";
-    private const string DatabaseCategory = "postgresql";
+    internal const string RuntimeCategory = "runtime-configuration";
+    internal const string DatabaseCategory = "postgresql";
 
     internal static async Task<ExternalApiHostCleanupResult> DisposeAsync(
         IExternalApiProcess? process,
-        IAsyncDisposable? runtime,
-        IAsyncDisposable database)
+        IApiHostRuntimeLease? runtime,
+        IApiHostDatabaseLease? database)
     {
         var categories = new List<string>(3);
         var failureCount = 0;
@@ -21,18 +23,68 @@ internal static class ExternalApiHostCleanup
         var processExit = await ObserveProcessExitAsync(process);
         failureCount += processExit.FailureCount;
         failureCount += await DisposeResourceAsync(runtime, RuntimeCategory, categories);
-        failureCount += await DisposeResourceAsync(database, DatabaseCategory, categories);
+        var databaseDisposed = await DisposeDatabaseAsync(database, categories);
+        if (!databaseDisposed)
+        {
+            failureCount++;
+        }
+
+        var databaseAbsent = await ConfirmDatabaseAbsentAsync(database, databaseDisposed);
+        if (!databaseAbsent)
+        {
+            failureCount++;
+        }
+
+        var processTreeAbsent = process is null || process.ProcessTreeAbsent;
+        var runtimeDirectoryAbsent = runtime is null || runtime.RuntimeDirectoryAbsent;
+        if (!processTreeAbsent)
+        {
+            failureCount++;
+        }
+
+        if (!runtimeDirectoryAbsent)
+        {
+            failureCount++;
+        }
+
         return new ExternalApiHostCleanupResult(
-            new ExternalApiHostCleanupReceipt(categories, failureCount),
+            new ExternalApiHostCleanupReceipt(
+                processTreeAbsent,
+                runtimeDirectoryAbsent,
+                databaseAbsent,
+                categories,
+                failureCount),
             processExit.HangfireServerStartObserved);
     }
 
-    internal static ExternalApiHostCleanupException Merge(
-        ExternalApiHostCleanupException first,
-        ExternalApiHostCleanupReceipt second) =>
-        new(new ExternalApiHostCleanupReceipt(
-            first.Receipt.AttemptedCategories.Concat(second.AttemptedCategories).ToArray(),
-            first.Receipt.FailureCount + second.FailureCount));
+    internal static ExternalApiHostCleanupReceipt Merge(
+        ExternalApiHostCleanupReceipt first,
+        ExternalApiHostCleanupReceipt second)
+    {
+        var attemptedProcess = second.AttemptedCategories.Contains(ProcessCategory, StringComparer.Ordinal);
+        var attemptedRuntime = second.AttemptedCategories.Contains(RuntimeCategory, StringComparer.Ordinal);
+        var attemptedDatabase = second.AttemptedCategories.Contains(DatabaseCategory, StringComparer.Ordinal);
+        var categoryCount = (long)first.AttemptedCategories.Count + second.AttemptedCategories.Count;
+        var failureCount = (long)first.FailureCount + second.FailureCount;
+        return new ExternalApiHostCleanupReceipt(
+            attemptedProcess ? second.ProcessTreeAbsent : first.ProcessTreeAbsent,
+            attemptedRuntime ? second.RuntimeDirectoryAbsent : first.RuntimeDirectoryAbsent,
+            attemptedDatabase ? second.DatabaseAbsent : first.DatabaseAbsent,
+            first.AttemptedCategories
+                .Concat(second.AttemptedCategories)
+                .Take(MaximumRetainedAttemptedCategories)
+                .ToArray(),
+            (int)Math.Min(failureCount, MaximumRetainedFailureCount),
+            first.AttemptHistoryTruncated || second.AttemptHistoryTruncated ||
+                categoryCount > MaximumRetainedAttemptedCategories,
+            first.FailureCountSaturated || second.FailureCountSaturated ||
+                failureCount > MaximumRetainedFailureCount);
+    }
+
+    internal static ExternalApiHostCleanupReceipt RecordFailure(ExternalApiHostCleanupReceipt receipt) =>
+        receipt.FailureCount >= MaximumRetainedFailureCount
+            ? receipt with { FailureCountSaturated = true }
+            : receipt with { FailureCount = receipt.FailureCount + 1 };
 
     private static async Task<int> DisposeResourceAsync(
         IAsyncDisposable? resource,
@@ -56,6 +108,27 @@ internal static class ExternalApiHostCleanup
         }
     }
 
+    private static async Task<bool> DisposeDatabaseAsync(
+        IApiHostDatabaseLease? database,
+        ICollection<string> categories)
+    {
+        if (database is null)
+        {
+            return true;
+        }
+
+        categories.Add(DatabaseCategory);
+        try
+        {
+            await database.DisposeAsync();
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     private static async Task<(int FailureCount, bool HangfireServerStartObserved)> ObserveProcessExitAsync(
         IExternalApiProcess? process)
     {
@@ -72,6 +145,30 @@ internal static class ExternalApiHostCleanup
         catch (Exception)
         {
             return (1, false);
+        }
+    }
+
+    private static async Task<bool> ConfirmDatabaseAbsentAsync(
+        IApiHostDatabaseLease? database,
+        bool databaseDisposed)
+    {
+        if (database is null)
+        {
+            return true;
+        }
+
+        if (database is not IApiHostDatabaseAbsenceObservation observation)
+        {
+            return databaseDisposed;
+        }
+
+        try
+        {
+            return await observation.ConfirmAbsentAsync();
+        }
+        catch (Exception)
+        {
+            return false;
         }
     }
 }
