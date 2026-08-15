@@ -138,6 +138,32 @@ public sealed class Task7ApiHostProofTests
     }
 
     [Test]
+    public void API_launch_forwards_scenario_secret_canaries_without_widening_the_child_environment()
+    {
+        using var fixture = new ExternalApiHostTestFixture();
+        var cleanupOrder = new List<string>();
+        var runtime = new FakeApiHostRuntimeLease(fixture.RepositoryRoot, cleanupOrder, false);
+        var canaries = new[] { "api-scenario-secret-canary-a", "api-scenario-secret-canary-b" };
+
+        var request = ExternalApiHostLaunchRequestFactory.Create(new ExternalApiHostLaunchRequest(
+            fixture.Publication,
+            fixture.Options,
+            Path.Combine(Environment.SystemDirectory, "dotnet.exe"),
+            runtime,
+            new Uri("http://127.0.0.1:43127"))
+        {
+            SecretCanaries = canaries
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(request.SecretCanaries, Is.EqualTo(canaries));
+            Assert.That(request.EnvironmentVariables.Values, Does.Not.Contain(canaries[0]));
+            Assert.That(request.EnvironmentVariables.Values, Does.Not.Contain(canaries[1]));
+        });
+    }
+
+    [Test]
     public void ApiHostProof_remains_package_only_and_outside_main_solution()
     {
         var repositoryRoot = RepositoryRoot.Find();

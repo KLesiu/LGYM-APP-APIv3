@@ -10,6 +10,8 @@ internal sealed record ExternalApiHostLaunchRequest(
     Uri BaseAddress)
 {
     internal string EnvironmentName { get; init; } = "E2E";
+
+    internal IReadOnlyList<string> SecretCanaries { get; init; } = [];
 }
 
 internal static class ExternalApiHostLaunchRequestFactory
@@ -21,6 +23,7 @@ internal static class ExternalApiHostLaunchRequestFactory
         WorkingDirectory = request.Publication.PublicationDirectory,
         EnvironmentVariables = CreateIsolatedEnvironment(request),
         ClearEnvironment = true,
+        SecretCanaries = request.SecretCanaries,
         ExecutionTimeout = TimeSpan.FromSeconds(request.Options.Timeouts.TestSessionSeconds),
         ShutdownTimeout = TimeSpan.FromSeconds(request.Options.Timeouts.ProcessShutdownSeconds)
     };

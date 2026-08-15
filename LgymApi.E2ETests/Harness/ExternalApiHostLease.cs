@@ -350,7 +350,8 @@ internal sealed class ExternalApiHostLease : IAsyncDisposable
                     _runtime!,
                     baseAddress)
                 {
-                    EnvironmentName = request.EnvironmentName
+                    EnvironmentName = request.EnvironmentName,
+                    SecretCanaries = request.SecretCanaries
                 });
             request.Publication.ValidateBeforeLaunch(processRequest);
             _process = _infrastructure.ProcessStarter.Start(processRequest);

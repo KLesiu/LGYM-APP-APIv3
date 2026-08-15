@@ -27,6 +27,8 @@ internal sealed record ExternalApiHostCompositionRequest(
     internal ApiRuntimeConfigurationProfile RuntimeProfile { get; init; } = ApiRuntimeConfigurationProfile.E2E;
 
     internal LifecycleComponentDirectoryLease? ApiRuntimeDirectory { get; init; }
+
+    internal IReadOnlyList<string> SecretCanaries { get; init; } = [];
 }
 
 internal interface IApiHostDatabaseLease : IAsyncDisposable
