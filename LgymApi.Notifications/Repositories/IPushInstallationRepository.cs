@@ -18,6 +18,23 @@ internal interface IPushInstallationRepository
     Task<bool> DisableBoundForUserOrSessionAsync(string installationId, Id<User> userId, Id<UserSession> sessionId, DateTimeOffset disabledAt, string disabledReason, CancellationToken cancellationToken = default);
     Task<bool> DisassociateBoundForUserOrSessionAsync(string installationId, Id<User> userId, Id<UserSession> sessionId, DateTimeOffset lastSeenAt, CancellationToken cancellationToken = default);
     Task DisassociateForSessionAsync(Id<AccountSessionReference> sessionId, DateTimeOffset lastSeenAt, CancellationToken cancellationToken = default);
+    Task RemoveForAccountAsync(Id<User> userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns no more than the positive candidate limit of installations, including soft-deleted rows, with a non-null DisabledAt strictly before the caller-computed UTC cutoff, ordered oldest first.
+    /// Active and session-disassociated-only installations are excluded.
+    /// </summary>
+    Task<IReadOnlyList<PushInstallation>> GetRetentionCandidatesDisabledBeforeAsync(
+        DateTimeOffset cutoff,
+        int candidateLimit,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException();
+
+    /// <summary>
+    /// Stages deletion of the selected disabled installations; the caller owns the unit-of-work commit.
+    /// </summary>
+    void RemoveRange(IEnumerable<PushInstallation> installations)
+        => throw new NotSupportedException();
 }
 
 internal sealed record PushInstallationRegistration(

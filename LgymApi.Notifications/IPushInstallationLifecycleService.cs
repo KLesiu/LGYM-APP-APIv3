@@ -30,4 +30,8 @@ public interface IPushInstallationLifecycleService
     Task StageDisassociateForSessionAsync(
         Id<AccountSessionReference> sessionId,
         CancellationToken cancellationToken = default);
+
+    Task StageRemoveForAccountAsync(
+        Id<AccountReference> accountId,
+        CancellationToken cancellationToken = default);
 }

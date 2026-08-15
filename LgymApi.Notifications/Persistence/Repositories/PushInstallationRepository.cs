@@ -159,6 +159,41 @@ internal sealed class PushInstallationRepository : IPushInstallationRepository
         }
     }
 
+    public async Task RemoveForAccountAsync(Id<User> userId, CancellationToken cancellationToken = default)
+    {
+        var installations = await _persistenceContext.PushInstallations
+            .IgnoreQueryFilters()
+            .Where(installation => installation.UserId == userId)
+            .ToListAsync(cancellationToken);
+        var installationIds = installations.Select(installation => installation.Id).ToHashSet();
+        var messages = await _persistenceContext.PushNotificationMessages
+            .IgnoreQueryFilters()
+            .Where(message => installationIds.Contains(message.PushInstallationId))
+            .ToListAsync(cancellationToken);
+
+        _persistenceContext.PushNotificationMessages.RemoveRange(messages);
+        _persistenceContext.PushInstallations.RemoveRange(installations);
+    }
+
+    public async Task<IReadOnlyList<PushInstallation>> GetRetentionCandidatesDisabledBeforeAsync(
+        DateTimeOffset cutoff,
+        int candidateLimit,
+        CancellationToken cancellationToken = default)
+    {
+        return await _persistenceContext.PushInstallations
+            .IgnoreQueryFilters()
+            .Where(installation => installation.DisabledAt != null && installation.DisabledAt < cutoff)
+            .OrderBy(installation => installation.DisabledAt)
+            .ThenBy(installation => installation.Id)
+            .Take(candidateLimit)
+            .ToListAsync(cancellationToken);
+    }
+
+    public void RemoveRange(IEnumerable<PushInstallation> installations)
+    {
+        _persistenceContext.PushInstallations.RemoveRange(installations);
+    }
+
     private static void Disassociate(PushInstallation installation, DateTimeOffset lastSeenAt)
     {
         installation.UserId = null;

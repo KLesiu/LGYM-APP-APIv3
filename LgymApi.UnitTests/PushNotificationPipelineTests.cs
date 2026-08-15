@@ -273,6 +273,7 @@ public sealed class PushNotificationPipelineTests
     {
         var installation = CreateInstallation(Id<User>.New(), permissionStatus: "authorized");
         var message = CreateMessage(installation.Id);
+        message.UserId = installation.UserId!.Value;
         var repository = new FakePushNotificationMessageRepository(message);
         var installationRepository = new FakePushInstallationRepository(installation);
         var scheduler = new FakePushBackgroundScheduler();
@@ -327,6 +328,7 @@ public sealed class PushNotificationPipelineTests
     {
         var installation = CreateInstallation(Id<User>.New(), permissionStatus: "authorized");
         var message = CreateMessage(installation.Id);
+        message.UserId = installation.UserId!.Value;
         message.LastError = "previous failure";
         message.NextAttemptAt = DateTimeOffset.UtcNow.AddMinutes(1);
         var scheduler = new FakePushBackgroundScheduler();
@@ -355,6 +357,7 @@ public sealed class PushNotificationPipelineTests
     {
         var installation = CreateInstallation(Id<User>.New(), permissionStatus: "authorized");
         var message = CreateMessage(installation.Id);
+        message.UserId = installation.UserId!.Value;
         var scheduler = new FakePushBackgroundScheduler();
         var handler = CreateHandler(
             new FakePushNotificationMessageRepository(message),
@@ -386,6 +389,7 @@ public sealed class PushNotificationPipelineTests
     {
         var installation = CreateInstallation(Id<User>.New(), permissionStatus: "authorized");
         var message = CreateMessage(installation.Id);
+        message.UserId = installation.UserId!.Value;
         var httpClientFactory = new FakeHttpClientFactory();
         var scheduler = new FakePushBackgroundScheduler();
         var handler = CreateHandler(
@@ -429,6 +433,7 @@ public sealed class PushNotificationPipelineTests
     {
         var installation = CreateInstallation(Id<User>.New(), permissionStatus: "authorized");
         var message = CreateMessage(installation.Id);
+        message.UserId = installation.UserId!.Value;
         var httpClientFactory = new FakeHttpClientFactory();
         var scheduler = new FakePushBackgroundScheduler();
         var handler = CreateHandler(
@@ -466,6 +471,7 @@ public sealed class PushNotificationPipelineTests
     {
         var installation = CreateInstallation(Id<User>.New(), permissionStatus: "authorized");
         var message = CreateMessage(installation.Id);
+        message.UserId = installation.UserId!.Value;
         using var cancellationTokenSource = new CancellationTokenSource();
         var repository = new FakePushNotificationMessageRepository(message)
         {
@@ -509,6 +515,7 @@ public sealed class PushNotificationPipelineTests
     {
         var installation = CreateInstallation(Id<User>.New(), permissionStatus: "authorized");
         var message = CreateMessage(installation.Id);
+        message.UserId = installation.UserId!.Value;
         var repository = new FakePushNotificationMessageRepository(message);
         var scheduler = new FakePushBackgroundScheduler();
         var handler = CreateHandler(
@@ -534,6 +541,7 @@ public sealed class PushNotificationPipelineTests
     {
         var installation = CreateInstallation(Id<User>.New(), permissionStatus: "authorized");
         var message = CreateMessage(installation.Id);
+        message.UserId = installation.UserId!.Value;
         message.SchedulerJobId = "completed-retry-job";
         var scheduler = new ThrowingRetryPushBackgroundScheduler();
         var handler = CreateHandler(
@@ -565,6 +573,7 @@ public sealed class PushNotificationPipelineTests
     {
         var installation = CreateInstallation(Id<User>.New(), permissionStatus: "authorized");
         var message = CreateMessage(installation.Id);
+        message.UserId = installation.UserId!.Value;
         var repository = new FakePushNotificationMessageRepository(message)
         {
             FindByIdFailure = call => call == 1 ? new InvalidOperationException("transient read failure") : null
@@ -590,6 +599,7 @@ public sealed class PushNotificationPipelineTests
     {
         var installation = CreateInstallation(Id<User>.New(), permissionStatus: "authorized");
         var message = CreateMessage(installation.Id);
+        message.UserId = installation.UserId!.Value;
         var repository = new FakePushNotificationMessageRepository(message) { TryClaimResult = false };
         var sender = new FakePushProviderSender(new PushSendAttemptResult(PushSendOutcome.Sent, "OK", "message-1", null, "ok"));
         var handler = CreateHandler(
@@ -840,6 +850,7 @@ public sealed class PushNotificationPipelineTests
     {
         var installation = CreateInstallation(Id<User>.New(), permissionStatus: "authorized");
         var message = CreateMessage(installation.Id);
+        message.UserId = installation.UserId!.Value;
         var scheduler = new FakePushBackgroundScheduler();
         var handler = CreateHandler(
             new FakePushNotificationMessageRepository(message),
@@ -1277,6 +1288,12 @@ public sealed class PushNotificationPipelineTests
             installation.SessionId = null;
             installation.LastSeenAt = lastSeenAt;
             return Task.FromResult(true);
+        }
+
+        public Task RemoveForAccountAsync(Id<User> userId, CancellationToken cancellationToken = default)
+        {
+            _installations.RemoveAll(installation => installation.UserId == userId);
+            return Task.CompletedTask;
         }
 
         public Task DisassociateForSessionAsync(Id<AccountSessionReference> sessionId, DateTimeOffset lastSeenAt, CancellationToken cancellationToken = default)

@@ -711,6 +711,8 @@ namespace LgymApi.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedAt");
+
                     b.HasIndex("RecipientId", "CreatedAt", "Id");
 
                     b.HasIndex("RecipientId", "Type", "DeliveryKey")
@@ -1209,6 +1211,8 @@ namespace LgymApi.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DisabledAt");
+
                     b.HasIndex("InstallationId")
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = FALSE");
@@ -1313,6 +1317,8 @@ namespace LgymApi.Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
 
                     b.HasIndex("InAppNotificationId");
 

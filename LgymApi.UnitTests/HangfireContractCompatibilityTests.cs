@@ -46,7 +46,10 @@ public sealed class HangfireContractCompatibilityTests
         new("CommittedIntentDispatch", typeof(ICommittedIntentDispatchJob), typeof(CommittedIntentDispatchJob), "LgymApi.BackgroundWorker.Jobs", [typeof(CancellationToken)], [0]),
         new("ExpiredPhotoUploadCleanup", typeof(IExpiredPhotoUploadCleanupJob), typeof(ExpiredPhotoUploadCleanupJob), "LgymApi.BackgroundWorker.Jobs", [typeof(CancellationToken)], [0]),
         new("RecurringReportAssignmentProcessing", typeof(IRecurringReportAssignmentProcessingJob), typeof(RecurringReportAssignmentProcessingJob), "LgymApi.BackgroundWorker.Jobs", [typeof(CancellationToken)], [0]),
-        new("StalePushInstallationCleanup", typeof(IStalePushInstallationCleanupJob), typeof(StalePushInstallationCleanupJob), "LgymApi.BackgroundWorker.Jobs", [typeof(CancellationToken)], [0])
+        new("StalePushInstallationCleanup", typeof(IStalePushInstallationCleanupJob), typeof(StalePushInstallationCleanupJob), "LgymApi.BackgroundWorker.Jobs", [typeof(CancellationToken)], [0]),
+        new("PushNotificationMessageRetentionCleanup", typeof(IPushNotificationMessageRetentionCleanupJob), typeof(PushNotificationMessageRetentionCleanupJob), "LgymApi.BackgroundWorker.Jobs", [typeof(CancellationToken)], [0]),
+        new("DisabledPushInstallationRetentionCleanup", typeof(IDisabledPushInstallationRetentionCleanupJob), typeof(DisabledPushInstallationRetentionCleanupJob), "LgymApi.BackgroundWorker.Jobs", [typeof(CancellationToken)], [0]),
+        new("InAppNotificationRetentionCleanup", typeof(IInAppNotificationRetentionCleanupJob), typeof(InAppNotificationRetentionCleanupJob), "LgymApi.BackgroundWorker.Jobs", [typeof(CancellationToken)], [0])
     ];
 
     private ILogProvider _originalLogProvider = null!;
@@ -141,7 +144,15 @@ public sealed class HangfireContractCompatibilityTests
     public void RecurringJobs_PersistFrozenIdsCronsAndInterfaceTargets()
     {
         var storage = new CapturingJobStorage();
-        var previousStorage = JobStorage.Current;
+        JobStorage? previousStorage = null;
+        try
+        {
+            previousStorage = JobStorage.Current;
+        }
+        catch (InvalidOperationException)
+        {
+        }
+
         JobStorage.Current = storage;
 
         try
@@ -154,7 +165,10 @@ public sealed class HangfireContractCompatibilityTests
         }
         finally
         {
-            JobStorage.Current = previousStorage;
+            if (previousStorage is not null)
+            {
+                JobStorage.Current = previousStorage;
+            }
         }
 
         var expectedJobs = new[]
@@ -162,10 +176,13 @@ public sealed class HangfireContractCompatibilityTests
             new RecurringJobContract("reliability-committed-intent-dispatch", "* * * * *", typeof(ICommittedIntentDispatchJob)),
             new RecurringJobContract("reporting-expired-photo-upload-cleanup", "* * * * *", typeof(IExpiredPhotoUploadCleanupJob)),
             new RecurringJobContract("reporting-recurring-report-assignments", "* * * * *", typeof(IRecurringReportAssignmentProcessingJob)),
-            new RecurringJobContract("push-stale-installation-cleanup", Cron.Daily(3), typeof(IStalePushInstallationCleanupJob))
+            new RecurringJobContract("push-stale-installation-cleanup", Cron.Daily(3), typeof(IStalePushInstallationCleanupJob)),
+            new RecurringJobContract("push-notification-message-retention-cleanup", Cron.Daily(), typeof(IPushNotificationMessageRetentionCleanupJob)),
+            new RecurringJobContract("push-disabled-installation-retention-cleanup", Cron.Daily(), typeof(IDisabledPushInstallationRetentionCleanupJob)),
+            new RecurringJobContract("in-app-notification-retention-cleanup", Cron.Daily(), typeof(IInAppNotificationRetentionCleanupJob))
         };
 
-        storage.RecurringJobHashes.Should().HaveCount(4);
+        storage.RecurringJobHashes.Should().HaveCount(7);
         foreach (var expectedJob in expectedJobs)
         {
             var hash = storage.RecurringJobHashes[$"recurring-job:{expectedJob.Id}"];

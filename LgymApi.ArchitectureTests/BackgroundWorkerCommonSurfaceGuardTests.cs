@@ -13,10 +13,13 @@ public sealed class BackgroundWorkerCommonSurfaceGuardTests
     {
         new("Jobs/IActionMessageJob.cs", "LgymApi.BackgroundWorker.Common.Jobs.IActionMessageJob", TypeKind.Interface, Accessibility.Public, false, "public interface IActionMessageJob {}"),
         new("Jobs/ICommittedIntentDispatchJob.cs", "LgymApi.BackgroundWorker.Common.Jobs.ICommittedIntentDispatchJob", TypeKind.Interface, Accessibility.Public, false, "public interface ICommittedIntentDispatchJob {}"),
+        new("Jobs/IDisabledPushInstallationRetentionCleanupJob.cs", "LgymApi.BackgroundWorker.Common.Jobs.IDisabledPushInstallationRetentionCleanupJob", TypeKind.Interface, Accessibility.Public, false, "public interface IDisabledPushInstallationRetentionCleanupJob {}"),
         new("Jobs/IEmailJob.cs", "LgymApi.BackgroundWorker.Common.Jobs.IEmailJob", TypeKind.Interface, Accessibility.Public, false, "public interface IEmailJob {}"),
         new("Jobs/IExpiredPhotoUploadCleanupJob.cs", "LgymApi.BackgroundWorker.Common.Jobs.IExpiredPhotoUploadCleanupJob", TypeKind.Interface, Accessibility.Public, false, "public interface IExpiredPhotoUploadCleanupJob {}"),
+        new("Jobs/IInAppNotificationRetentionCleanupJob.cs", "LgymApi.BackgroundWorker.Common.Jobs.IInAppNotificationRetentionCleanupJob", TypeKind.Interface, Accessibility.Public, false, "public interface IInAppNotificationRetentionCleanupJob {}"),
         new("Jobs/IInvitationEmailJob.cs", "LgymApi.BackgroundWorker.Common.Jobs.IInvitationEmailJob", TypeKind.Interface, Accessibility.Public, false, "public interface IInvitationEmailJob {}"),
         new("Jobs/IPushNotificationJob.cs", "LgymApi.BackgroundWorker.Common.Jobs.IPushNotificationJob", TypeKind.Interface, Accessibility.Public, false, "public interface IPushNotificationJob {}"),
+        new("Jobs/IPushNotificationMessageRetentionCleanupJob.cs", "LgymApi.BackgroundWorker.Common.Jobs.IPushNotificationMessageRetentionCleanupJob", TypeKind.Interface, Accessibility.Public, false, "public interface IPushNotificationMessageRetentionCleanupJob {}"),
         new("Jobs/IRecurringReportAssignmentProcessingJob.cs", "LgymApi.BackgroundWorker.Common.Jobs.IRecurringReportAssignmentProcessingJob", TypeKind.Interface, Accessibility.Public, false, "public interface IRecurringReportAssignmentProcessingJob {}"),
         new("Jobs/IStalePushInstallationCleanupJob.cs", "LgymApi.BackgroundWorker.Common.Jobs.IStalePushInstallationCleanupJob", TypeKind.Interface, Accessibility.Public, false, "public interface IStalePushInstallationCleanupJob {}"),
         new("Jobs/IWelcomeEmailJob.cs", "LgymApi.BackgroundWorker.Common.Jobs.IWelcomeEmailJob", TypeKind.Interface, Accessibility.Public, false, "public interface IWelcomeEmailJob {}"),

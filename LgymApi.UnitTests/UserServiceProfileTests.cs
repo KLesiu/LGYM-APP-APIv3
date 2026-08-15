@@ -3,6 +3,7 @@ using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Identity.Errors;
 using LgymApi.Application.Features.Tutorial;
 using LgymApi.Application.Features.User.Models;
+using LgymApi.Application.Identity.Contracts.Accounts;
 using LgymApi.Application.Identity.Profile;
 using LgymApi.Application.Identity.Ranking;
 using LgymApi.Application.Mapping;
@@ -28,6 +29,7 @@ public sealed class UserServiceProfileTests
     private IUnitOfWork _unitOfWork = null!;
     private ConfigurableUserRepository _userRepository = null!;
     private IRankService _rankService = null!;
+    private IAccountPushInstallationCleanupPort _accountPushInstallationCleanupPort = null!;
     private UserProfileService _profileService = null!;
 
     [SetUp]
@@ -38,6 +40,7 @@ public sealed class UserServiceProfileTests
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _userRepository = new ConfigurableUserRepository();
         _rankService = Substitute.For<IRankService>();
+        _accountPushInstallationCleanupPort = Substitute.For<IAccountPushInstallationCleanupPort>();
         _userRepository.Update = (_, _) => Task.CompletedTask;
         _unitOfWork.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(1));
         _profileService = new UserProfileService(
@@ -45,6 +48,7 @@ public sealed class UserServiceProfileTests
             _roleRepository,
             _rankService,
             _unitOfWork,
+            _accountPushInstallationCleanupPort,
             new AppDefaultsOptions { PreferredTimeZone = "UTC" },
             _tutorialService,
             BuildMapper());
@@ -108,6 +112,40 @@ public sealed class UserServiceProfileTests
             && call.Argument == user
             && call.CancellationToken == cancellationToken);
         await _unitOfWork.Received(1).SaveChangesAsync(cancellationToken);
+    }
+
+    [Test]
+    public async Task DeleteAccountAsync_StagesPushInstallationRemovalBeforeCommitting()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        var cancellationToken = cancellationSource.Token;
+        var user = CreateUser();
+        var operations = new List<string>();
+        _accountPushInstallationCleanupPort.StageRemoveForAccountAsync(
+                user.Id.Rebind<LgymApi.Identity.Contracts.AccountReference>(),
+                cancellationToken)
+            .Returns(_ =>
+            {
+                operations.Add("cleanup");
+                return Task.CompletedTask;
+            });
+        _userRepository.Update = (_, _) =>
+        {
+            operations.Add("update");
+            return Task.CompletedTask;
+        };
+        _unitOfWork.SaveChangesAsync(cancellationToken).Returns(_ =>
+        {
+            operations.Add("commit");
+            return Task.FromResult(1);
+        });
+
+        await _profileService.DeleteAccountAsync(user, cancellationToken);
+
+        await _accountPushInstallationCleanupPort.Received(1).StageRemoveForAccountAsync(
+            user.Id.Rebind<LgymApi.Identity.Contracts.AccountReference>(),
+            cancellationToken);
+        operations.Should().Equal("cleanup", "update", "commit");
     }
 
     [Test]

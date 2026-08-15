@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using LgymApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,6 +11,12 @@ public sealed class SingleProductionDbContextGuardTests
     private const int PersistedEntityCount = 48;
     private const string MigrationRoot = PersistenceIdentityContract.MigrationRoot;
     private const string SignalRClientTestPackageProject = "LgymApi.IntegrationTests/LgymApi.IntegrationTests.csproj";
+    private static readonly IReadOnlyDictionary<string, string> ApprovedRetentionMigrationLedger = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        [MigrationRoot + "/20260815080018_AddNotificationRetentionIndexes.cs"] = "8661dde0f29629b836a76a5562066bfbc20628455359cbc507597350287e3bac",
+        [MigrationRoot + "/20260815080018_AddNotificationRetentionIndexes.Designer.cs"] = "b16f275e60894b2e245ced98c3366353cca45d611862530a27b74b98972a953f",
+        [MigrationRoot + "/AppDbContextModelSnapshot.cs"] = "c9b15b81472f52c99262fd7e00b356ed0bde797dbee52aaeebbe047cc8527960"
+    };
 
     [Test]
     public void Current_Production_Topology_Should_Have_One_Context_Model_And_Migration_Stream()
@@ -87,7 +94,7 @@ public sealed class SingleProductionDbContextGuardTests
         var headChanges = RunGit(repoRoot, ["diff", "--name-only", "HEAD", "--", MigrationRoot]);
         var untrackedFiles = RunGit(repoRoot, ["ls-files", "--others", "--exclude-standard", "--", MigrationRoot]);
 
-        AssertProductionMigrationWorktreeIsClean(headChanges, untrackedFiles);
+        AssertApprovedRetentionMigrationWorktreeChanges(repoRoot, headChanges, untrackedFiles);
     }
 
     [Test]
@@ -114,7 +121,7 @@ public sealed class SingleProductionDbContextGuardTests
             MigrationRoot
         ]);
 
-        AssertPhysicalTopologyWorktreeIsClean(headChanges, untrackedFiles);
+        AssertApprovedRetentionMigrationWorktreeChanges(repoRoot, headChanges, untrackedFiles);
     }
 
     [Test]
@@ -354,13 +361,37 @@ public sealed class SingleProductionDbContextGuardTests
         AssertPhysicalTopologyWorktreeIsClean(headChanges, untrackedFiles);
     }
 
-    private static void AssertPhysicalTopologyWorktreeIsClean(
+    private static void AssertApprovedRetentionMigrationWorktreeChanges(
+        string repoRoot,
         IEnumerable<string> headChanges,
         IEnumerable<string> untrackedFiles)
     {
+        foreach (var entry in ApprovedRetentionMigrationLedger)
+        {
+            var path = Path.Combine(repoRoot, entry.Key.Replace('/', Path.DirectorySeparatorChar));
+            Assert.That(File.Exists(path), Is.True, $"Approved retention migration ledger path is missing: {entry.Key}");
+            var sourceBytes = File.ReadAllBytes(path);
+            var normalizedSource = sourceBytes
+                .Where((value, index) => value != '\r' || index + 1 >= sourceBytes.Length || sourceBytes[index + 1] != '\n')
+                .ToArray();
+            var hash = Convert.ToHexString(SHA256.HashData(normalizedSource)).ToLowerInvariant();
+            Assert.That(hash, Is.EqualTo(entry.Value), $"Approved retention migration ledger hash changed: {entry.Key}");
+        }
+
+        AssertPhysicalTopologyWorktreeIsClean(headChanges, untrackedFiles, ApprovedRetentionMigrationLedger.Keys);
+    }
+
+    private static void AssertPhysicalTopologyWorktreeIsClean(
+        IEnumerable<string> headChanges,
+        IEnumerable<string> untrackedFiles,
+        IEnumerable<string>? approvedChanges = null)
+    {
+        var approvedChangeSet = approvedChanges?.ToHashSet(StringComparer.OrdinalIgnoreCase)
+            ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var touchedFiles = headChanges
             .Concat(untrackedFiles)
-            .Where(path => !string.Equals(path, SignalRClientTestPackageProject, StringComparison.OrdinalIgnoreCase))
+            .Where(path => !string.Equals(path, SignalRClientTestPackageProject, StringComparison.OrdinalIgnoreCase)
+                && !approvedChangeSet.Contains(path))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 

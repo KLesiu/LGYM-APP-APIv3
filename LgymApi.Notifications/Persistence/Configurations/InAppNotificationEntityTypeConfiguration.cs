@@ -23,5 +23,6 @@ internal sealed class InAppNotificationEntityTypeConfiguration : IEntityTypeConf
         builder.HasIndex(e => new { e.RecipientId, e.Type, e.DeliveryKey })
             .IsUnique()
             .HasFilter(NotificationsConfigurationFilters.ActiveDeliveryKeyFilter);
+        builder.HasIndex(e => e.CreatedAt);
     }
 }

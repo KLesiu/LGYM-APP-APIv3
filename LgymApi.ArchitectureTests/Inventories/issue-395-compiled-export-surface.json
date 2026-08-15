@@ -8,13 +8,13 @@
     },
     {
       "name": "LgymApi.Identity",
-      "exportedTypeCount": 68,
-      "sha256": "bc5c954958a21030af0aabf745bbbf902f7a6be064329a7d452ef2da56158894"
+      "exportedTypeCount": 69,
+      "sha256": "57ab7d2a554763ed2426581cd39647197e86053ba539441073716cdfac057080"
     },
     {
       "name": "LgymApi.Notifications",
-      "exportedTypeCount": 76,
-      "sha256": "c603e94d81ef5bfe1197131db543f8fc84ff68d9d86178e1fe8c513f96678166"
+      "exportedTypeCount": 79,
+      "sha256": "bf9af84ca02e30b548f1f75637af921dc5d518591f194af070241dc981fa3078"
     },
     {
       "name": "LgymApi.Platform",

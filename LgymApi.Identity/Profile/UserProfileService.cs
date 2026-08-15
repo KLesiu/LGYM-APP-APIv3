@@ -3,6 +3,7 @@ using LgymApi.Application.Identity.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Tutorial;
 using LgymApi.Application.Features.User.Models;
+using LgymApi.Application.Identity.Contracts.Accounts;
 using LgymApi.Application.Identity.Contracts.Profile;
 using LgymApi.Application.Identity.Mapping;
 using LgymApi.Application.Mapping.Core;
@@ -10,6 +11,7 @@ using LgymApi.Application.Options;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Services;
 using LgymApi.Resources;
+using LgymApi.Identity.Contracts;
 using UserEntity = LgymApi.Domain.Entities.User;
 
 namespace LgymApi.Application.Identity.Profile;
@@ -20,6 +22,7 @@ internal sealed class UserProfileService : IUserProfileService
     private readonly IRoleRepository _roleRepository;
     private readonly IRankService _rankService;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAccountPushInstallationCleanupPort _accountPushInstallationCleanupPort;
     private readonly AppDefaultsOptions _appDefaultsOptions;
     private readonly ITutorialService _tutorialService;
     private readonly IMapper _mapper;
@@ -29,6 +32,7 @@ internal sealed class UserProfileService : IUserProfileService
         IRoleRepository roleRepository,
         IRankService rankService,
         IUnitOfWork unitOfWork,
+        IAccountPushInstallationCleanupPort accountPushInstallationCleanupPort,
         AppDefaultsOptions appDefaultsOptions,
         ITutorialService tutorialService,
         IMapper mapper)
@@ -37,6 +41,7 @@ internal sealed class UserProfileService : IUserProfileService
         _roleRepository = roleRepository;
         _rankService = rankService;
         _unitOfWork = unitOfWork;
+        _accountPushInstallationCleanupPort = accountPushInstallationCleanupPort;
         _appDefaultsOptions = appDefaultsOptions;
         _tutorialService = tutorialService;
         _mapper = mapper;
@@ -75,6 +80,9 @@ internal sealed class UserProfileService : IUserProfileService
             return Result<Unit, AppError>.Failure(new UserNotFoundError(Messages.DidntFind));
         }
 
+        await _accountPushInstallationCleanupPort.StageRemoveForAccountAsync(
+            currentUser.Id.Rebind<AccountReference>(),
+            cancellationToken);
         currentUser.Email = $"anonymized_{currentUser.Id}@example.com";
         currentUser.Name = $"anonymized_user_{currentUser.Id}";
         currentUser.IsDeleted = true;

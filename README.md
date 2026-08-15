@@ -85,6 +85,49 @@ Push registration and push delivery are separated on purpose.
 - `PushNotifications:StaleTokenCleanupEnabled=true` keeps the recurring stale-token tombstoning job active even when send delivery is disabled.
 - Stale cleanup marks inactive rows with `DisabledAt` and `DisabledReason=InactiveStale`; it does not delete installation rows or historical push message audit data.
 
+### Retention and account lifecycle policy
+
+LGYM retention applies to data in the LGYM database. It does not set or guarantee a retention period for Firebase data.
+
+- Push message history is physically purged after 30 days, based on `CreatedAt` and a strict earlier-than cutoff.
+- Disabled push installations are physically purged 30 days after their non-null `DisabledAt` timestamp. Active installations and installations that are only disassociated by logout are not retention candidates. The stale cleanup flow first marks inactive installations disabled after the configured 45-day inactivity period.
+- In-app notifications are physically purged after 90 days, based on `CreatedAt` and a strict earlier-than cutoff.
+- Retention uses bounded batches of 500 rows by default. Each invocation drains consecutive batches until no eligible rows remain, commits each non-empty batch separately, and stops on a failed batch so a rerun can safely continue after an operator resolves the failure.
+- Account deletion keeps Identity's anonymization behavior and immediately removes all LGYM push installations linked to the account and their dependent LGYM push message history in the same unit-of-work commit. It does not hard-delete the account.
+- Logout disassociates the installation from the ended session. It does not physically delete the installation.
+
+The retention settings are under `PushNotifications` and can be overridden by configuration binding:
+
+- `PushNotifications:MessageHistoryDays`, default `30`
+- `PushNotifications:DisabledInstallationDays`, default `30`
+- `PushNotifications:InAppNotificationDays`, default `90`
+- `PushNotifications:RetentionPurgeBatchSize`, default `500`
+- `PushNotifications:StaleTokenCleanupEnabled`, default `true`
+- `PushNotifications:StaleTokenInactivityDays`, default `45`
+- `PushNotifications:StaleTokenCleanupBatchSize`, default `500`
+
+Non-positive retention or batch values are normalized to these defaults. Non-numeric values fail configuration binding. The retention values do not control Firebase token or Firebase Installation data.
+
+### Retention rollout and operator runbook
+
+The retention indexes are delivered by migration `20260815080018_AddNotificationRetentionIndexes`. Before the first production run, the operator should:
+
+1. Apply the migration through the established offline migration process, using `LGYM_MIGRATION_POSTGRES` only in that deployment environment and `scripts/migrate-db.ps1`. Do not run migration work from the API process.
+2. Confirm the deployment has the expected `PushNotifications` settings, a positive `PushNotifications:RetentionPurgeBatchSize`, and `PushNotifications:StaleTokenCleanupEnabled=true` unless an approved operational exception exists.
+3. Record preflight counts for push message history, all installations, disabled installations, and in-app notifications. Counts should be taken from the LGYM database and retained with the deployment record. Do not export tokens, notification content, or provider payloads.
+4. Confirm the worker has the four expected recurring registrations. `push-stale-installation-cleanup` remains at its existing daily 03:00 schedule. The three retention jobs run daily: `push-notification-message-retention-cleanup`, `push-disabled-installation-retention-cleanup`, and `in-app-notification-retention-cleanup`.
+5. Start with sends disabled when validating a new environment. Confirm registration, migration health, job registration, and controlled delivery separately before enabling outbound sends.
+
+During the first retention run, monitor each job's operation name, cutoff, deleted count, batch count, duration, failure state, and database row counts. Start logs contain operation, cutoff, and configured batch size; success and failure logs add deleted count, batch count, and duration, while failure logs include the exception and are processed by the configured sensitive-data enricher. Logs and operational reports must not contain FCM tokens, notification content, raw provider responses, or credentials. One invocation drains an initial backlog through consecutive bounded batches; expect multiple runs only after a failure, cancellation, or a later-arriving backlog.
+
+If the first run is not healthy, stop or disable the worker's retention execution through the deployment's approved scheduler procedure, preserve the database rows, and investigate the failed batch. Do not manually delete rows or roll back by removing data. A deployment rollback must keep the migration and application state aligned. If the migration itself must be reversed, use the repository's normal migration review and rollback process, and verify the three retention indexes and recurring registrations again before resuming traffic. Account deletion and logout lifecycle behavior must remain enabled while retention execution is paused.
+
+### Firebase boundary
+
+LGYM's immediate account-deletion guarantee covers LGYM database delivery targets and LGYM push history only. The backend does not delete Firebase registration tokens or Firebase Installation IDs, does not control Firebase's retention behavior, and does not claim that Firebase follows the LGYM 30/30/90 periods. Mobile clients own local token and Firebase Installation lifecycle actions, including logout and account deletion cleanup, auto-init handling, and later re-registration. Firebase may retain provider-side data independently of LGYM database retention.
+
+- Required mobile follow-up: [issue #469](https://github.com/withelm/LGYM-APP-APIv3/issues/469) owns client-side deletion of FCM registration tokens and Firebase Installation IDs (FIDs), auto-init gating, and later re-registration on logout or account deletion. LGYM backend ownership remains limited to its own delivery targets and push history.
+
 ### Credentials by environment
 
 Development:

@@ -1,6 +1,7 @@
 using LgymApi.Application.Notifications.Contracts.Events;
 using LgymApi.Application.Notifications;
 using LgymApi.Application.Identity.Contracts.Sessions;
+using LgymApi.Application.Identity.Contracts.Accounts;
 using LgymApi.Application.Features.PasswordReset.Contracts;
 using LgymApi.Application.Notifications.Adapters;
 using LgymApi.Application.Notifications.Contracts.Push;
@@ -31,8 +32,12 @@ public static class NotificationsModule
         services.AddScoped<IPushNotificationService, PushNotificationService>();
         services.AddScoped<IPushNotificationDeliveryService, PushNotificationDeliveryService>();
         services.AddScoped<IStalePushInstallationCleanupService, StalePushInstallationCleanupService>();
+        services.AddScoped<IPushNotificationMessageRetentionCleanupService, PushNotificationMessageRetentionCleanupService>();
+        services.AddScoped<IDisabledPushInstallationRetentionCleanupService, DisabledPushInstallationRetentionCleanupService>();
+        services.AddScoped<IInAppNotificationRetentionCleanupService, InAppNotificationRetentionCleanupService>();
         services.AddScoped<IPushInstallationLifecycleService, PushInstallationLifecycleService>();
         services.AddScoped<IAccountSessionDisassociationPort, PushInstallationSessionDisassociationAdapter>();
+        services.AddScoped<IAccountPushInstallationCleanupPort, PushInstallationAccountCleanupAdapter>();
         services.AddScoped<INotificationEventBridge, NotificationEventBridge>();
         services.AddScoped<IPushInstallationRepository, PushInstallationRepository>();
         services.AddScoped<IPushNotificationMessageRepository, PushNotificationMessageRepository>();
@@ -81,6 +86,7 @@ public static class NotificationsModule
         services.AddHttpClient(nameof(FcmPushSender));
         services.AddSingleton(pushNotificationOptions);
         services.AddSingleton<IStalePushInstallationCleanupSettings, PushInstallationCleanupSettings>();
+        services.AddSingleton<INotificationRetentionSettings, NotificationRetentionSettings>();
         services.AddSingleton<IPushNotificationDeliveryRetrySettings, PushNotificationDeliveryRetrySettings>();
         services.AddScoped<IPushProviderSender, FcmPushSender>();
 

@@ -1,4 +1,5 @@
 using FluentAssertions;
+using LgymApi.Application.Notifications;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Notifications;
 using LgymApi.Domain.ValueObjects;
@@ -87,9 +88,56 @@ public sealed class InAppNotificationRepositoryTests
         db.Entry(entity).State.Should().Be(EntityState.Detached);
     }
 
+    [Test]
+    public async Task GetRetentionCandidatesCreatedBeforeAsync_WhenRowsAreRetentionEligibleIncludingSoftDeleted_RemovesOldestRowsOlderThanTheCutoff()
+    {
+        var databaseName = $"notification-repo-retention-{Id<InAppNotificationRepositoryTests>.New():N}";
+        await using var db = CreateDbContextForDatabase(databaseName);
+        var now = new DateTimeOffset(2026, 8, 15, 12, 0, 0, TimeSpan.Zero);
+        var cutoff = now.AddDays(-90);
+        var userId = Id<User>.New();
+        var oldest = CreateNotification(userId, InAppNotificationTypes.InvitationSent, "oldest", false, false, cutoff.AddDays(-1));
+        oldest.Id = new Id<InAppNotification>(new Guid("00000000-0000-0000-0000-000000000000"));
+        var firstExpired = CreateNotification(userId, InAppNotificationTypes.InvitationSent, "first-expired", false, false, cutoff.AddDays(-1));
+        firstExpired.Id = new Id<InAppNotification>(new Guid("00000000-0000-0000-0000-000000000001"));
+        var secondExpired = CreateNotification(userId, InAppNotificationTypes.InvitationSent, "second-expired", false, false, cutoff.AddDays(-1));
+        secondExpired.Id = new Id<InAppNotification>(new Guid("00000000-0000-0000-0000-000000000002"));
+        var exactCutoff = CreateNotification(userId, InAppNotificationTypes.InvitationSent, "exact-cutoff", false, false, cutoff);
+        var recent = CreateNotification(userId, InAppNotificationTypes.InvitationSent, "recent", false, false, cutoff.AddDays(1));
+        var softDeleted = CreateNotification(userId, InAppNotificationTypes.InvitationSent, "soft-deleted", false, true, cutoff.AddDays(-2));
+        softDeleted.Id = new Id<InAppNotification>(new Guid("00000000-0000-0000-0000-000000000003"));
+        db.InAppNotifications.AddRange(oldest, firstExpired, secondExpired, exactCutoff, recent, softDeleted);
+        await db.SaveChangesAsync();
+
+        IInAppNotificationRepository repository = new InAppNotificationRepository(db);
+
+        var candidates = await repository.GetRetentionCandidatesCreatedBeforeAsync(cutoff, 2);
+
+        candidates.Select(notification => notification.Id).Should().Equal(softDeleted.Id, oldest.Id);
+        repository.RemoveRange(candidates);
+
+        await using (var uncommittedDatabase = CreateDbContextForDatabase(databaseName))
+        {
+            (await uncommittedDatabase.InAppNotifications.Select(notification => notification.Id).ToListAsync())
+                .Should().Contain(oldest.Id).And.Contain(firstExpired.Id);
+        }
+
+        await db.SaveChangesAsync();
+
+        var remainingIds = await db.InAppNotifications
+            .IgnoreQueryFilters()
+            .Select(notification => notification.Id)
+            .ToListAsync();
+        remainingIds.Should().Contain(firstExpired.Id).And.Contain(secondExpired.Id).And.Contain(exactCutoff.Id).And.Contain(recent.Id);
+        remainingIds.Should().NotContain(softDeleted.Id).And.NotContain(oldest.Id);
+    }
+
     private static AppDbContext CreateDbContext(string name)
+        => CreateDbContextForDatabase($"{name}-{Id<InAppNotificationRepositoryTests>.New():N}");
+
+    private static AppDbContext CreateDbContextForDatabase(string databaseName)
         => new(new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase($"{name}-{Id<InAppNotificationRepositoryTests>.New():N}")
+            .UseInMemoryDatabase(databaseName)
             .Options);
 
     private static InAppNotification CreateNotification(Id<User> userId, InAppNotificationType type, string deliveryKey, bool isRead, bool isDeleted, DateTimeOffset createdAt)
