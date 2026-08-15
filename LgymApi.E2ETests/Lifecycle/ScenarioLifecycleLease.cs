@@ -14,7 +14,10 @@ internal sealed record ScenarioLifecycleRequest(
     ApiPublication Publication,
     string RepositoryRoot,
     string CaseId,
-    ScenarioLifecycleObservation? Previous = null);
+    ScenarioLifecycleObservation? Previous = null)
+{
+    internal IReadOnlyList<string> SecretCanaries { get; init; } = [];
+}
 
 internal sealed record ScenarioLifecycleReceipt(
     IReadOnlyList<string> AcquiredCategories,
@@ -810,7 +813,8 @@ internal sealed class DefaultScenarioLifecycleDependencies : IScenarioLifecycleD
                 request.Options,
                 request.RepositoryRoot)
             {
-                ApiRuntimeDirectory = apiRuntime
+                ApiRuntimeDirectory = apiRuntime,
+                SecretCanaries = request.SecretCanaries
             },
             cancellationToken));
 
@@ -825,7 +829,8 @@ internal sealed class DefaultScenarioLifecycleDependencies : IScenarioLifecycleD
             new ExpoWebStartRequest(source, apiBaseAddress)
             {
                 Options = request.Options,
-                RuntimeDirectory = webRuntime
+                RuntimeDirectory = webRuntime,
+                SecretCanaries = request.SecretCanaries
             },
             cancellationToken: cancellationToken));
     }

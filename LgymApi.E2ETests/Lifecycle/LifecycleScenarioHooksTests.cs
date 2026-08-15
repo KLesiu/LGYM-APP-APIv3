@@ -114,6 +114,28 @@ public sealed class LifecycleScenarioHooksTests
         });
     }
 
+    [Test]
+    public void WebBusinessScenarioState_hooks_create_before_lifecycle_and_dispose_before_lifecycle_cleanup()
+    {
+        var hookType = typeof(LifecycleScenarioHooks).Assembly.GetType(
+            "LgymApi.E2ETests.Lifecycle.WebBusinessScenarioHooks");
+
+        Assert.That(hookType, Is.Not.Null);
+        if (hookType is null)
+        {
+            return;
+        }
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(hookType.GetCustomAttribute<BindingAttribute>(), Is.Not.Null);
+            AssertHookTags<BeforeScenarioAttribute>(hookType, "CreateScenarioStateAsync", WebBusinessScenarioHooks.ScenarioStateOrder, ["@auth", "@onboarding", "@session"]);
+            AssertHookTags<AfterScenarioAttribute>(hookType, "DisposeScenarioStateAsync", WebBusinessScenarioHooks.ScenarioStateDisposalOrder, ["@auth", "@onboarding", "@session"]);
+            Assert.That(WebBusinessScenarioHooks.ScenarioStateOrder, Is.LessThan(LifecycleScenarioHooks.ScenarioBeforeOrder));
+            Assert.That(WebBusinessScenarioHooks.ScenarioStateDisposalOrder, Is.LessThan(LifecycleScenarioHooks.ScenarioAfterOrder));
+        });
+    }
+
     private static object CreateCaseIdResolver()
     {
         var resolverType = typeof(LifecycleScenarioHooks).Assembly.GetType(
@@ -177,6 +199,26 @@ public sealed class LifecycleScenarioHooksTests
             {
                 Assert.That(tags.Single(), Is.EqualTo(tag), methodName);
             }
+        });
+    }
+
+    private static void AssertHookTags<TAttribute>(
+        Type hookType,
+        string methodName,
+        int order,
+        IReadOnlyList<string> tags)
+        where TAttribute : HookAttribute
+    {
+        var method = hookType.GetMethod(methodName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+        var attributes = method?.GetCustomAttributes<TAttribute>().ToArray() ?? [];
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(method, Is.Not.Null, methodName);
+            Assert.That(method!.ReturnType, Is.EqualTo(typeof(Task)), methodName);
+            Assert.That(method.IsStatic, Is.False, methodName);
+            Assert.That(attributes.Select(attribute => attribute.Order), Is.All.EqualTo(order));
+            Assert.That(attributes.SelectMany(attribute => attribute.Tags ?? []), Is.EqualTo(tags));
         });
     }
 }

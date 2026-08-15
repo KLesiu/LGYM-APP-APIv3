@@ -1,5 +1,6 @@
 using System.Runtime.ExceptionServices;
 using LgymApi.E2ETests.Configuration;
+using LgymApi.E2ETests.Given;
 using LgymApi.E2ETests.Harness;
 using Microsoft.Playwright;
 using Reqnroll;
@@ -29,7 +30,10 @@ public sealed class LifecycleScenarioHooks
             _scenarioContext.ScenarioInfo.Title,
             _scenarioContext.ScenarioInfo.Tags);
         var run = await LifecycleRunStateHolder.GetOrCreateAsync();
-        var lease = await run.CreateScenarioAsync(caseId);
+        var secretCanaries = _scenarioContext.TryGetValue<WebBusinessScenarioState>(out var state)
+            ? state.SecretCanaries
+            : [];
+        var lease = await run.CreateScenarioAsync(caseId, secretCanaries);
         _scenarioContext.Set(lease);
         _scenarioContext.Set(new LifecycleScenarioCaseId(caseId));
     }
@@ -90,6 +94,43 @@ public sealed class LifecycleScenarioHooks
         }
     }
 
+}
+
+[Binding]
+public sealed class WebBusinessScenarioHooks
+{
+    internal const int ScenarioStateOrder = 50;
+    internal const int ScenarioStateDisposalOrder = 750;
+    private readonly ScenarioContext _scenarioContext;
+
+    public WebBusinessScenarioHooks(ScenarioContext scenarioContext)
+    {
+        _scenarioContext = scenarioContext;
+    }
+
+    [BeforeScenario("@auth", Order = ScenarioStateOrder)]
+    [BeforeScenario("@onboarding", Order = ScenarioStateOrder)]
+    [BeforeScenario("@session", Order = ScenarioStateOrder)]
+    public Task CreateScenarioStateAsync()
+    {
+        var state = WebBusinessScenarioState.Create();
+        _scenarioContext.Set(state);
+        _scenarioContext.Set<IWebLifecycleScenarioState>(state);
+        return Task.CompletedTask;
+    }
+
+    [AfterScenario("@auth", Order = ScenarioStateDisposalOrder)]
+    [AfterScenario("@onboarding", Order = ScenarioStateDisposalOrder)]
+    [AfterScenario("@session", Order = ScenarioStateDisposalOrder)]
+    public Task DisposeScenarioStateAsync()
+    {
+        if (_scenarioContext.TryGetValue<WebBusinessScenarioState>(out var state))
+        {
+            state.Dispose();
+        }
+
+        return Task.CompletedTask;
+    }
 }
 
 internal sealed record LifecycleScenarioCaseId(string Value);
@@ -299,7 +340,9 @@ internal sealed class LifecycleRunState : IAsyncDisposable
         }
     }
 
-    internal async Task<ScenarioLifecycleLease> CreateScenarioAsync(string caseId)
+    internal async Task<ScenarioLifecycleLease> CreateScenarioAsync(
+        string caseId,
+        IReadOnlyList<string> secretCanaries)
     {
         ScenarioLifecycleLease? previous;
         lock (_sync)
@@ -324,7 +367,10 @@ internal sealed class LifecycleRunState : IAsyncDisposable
                     _api.Publication,
                     _api.RepositoryRoot,
                     caseId,
-                    previous?.TryGetObservation()),
+                    previous?.TryGetObservation())
+                {
+                    SecretCanaries = secretCanaries
+                },
                 acquisitionFailureArtifactWriter: new ScenarioFailureArtifactWriter(_api.Publication.Receipt),
                 created: RegisterAcquiringScenario,
                 cancellationToken: scenario.Token);
