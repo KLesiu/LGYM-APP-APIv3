@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 using LgymApi.E2ETests.Configuration;
 using LgymApi.E2ETests.Harness;
+using Microsoft.Playwright;
 using Reqnroll;
 
 namespace LgymApi.E2ETests.Lifecycle;
@@ -9,6 +10,7 @@ namespace LgymApi.E2ETests.Lifecycle;
 public sealed class LifecycleScenarioHooks
 {
     internal const int ScenarioBeforeOrder = 100;
+    internal const int ScenarioResourceAttachmentOrder = 200;
     internal const int FailureProjectionOrder = 700;
     internal const int ScenarioAfterOrder = 800;
     internal const int RunAfterOrder = 1000;
@@ -20,15 +22,19 @@ public sealed class LifecycleScenarioHooks
         _scenarioContext = scenarioContext;
     }
 
-    [BeforeScenario("@Lifecycle", Order = ScenarioBeforeOrder)]
+    [BeforeScenario("@web-lifecycle", Order = ScenarioBeforeOrder)]
     public async Task BeforeLifecycleScenarioAsync()
     {
+        var caseId = LifecycleRunStateHolder.ReserveCaseId(
+            _scenarioContext.ScenarioInfo.Title,
+            _scenarioContext.ScenarioInfo.Tags);
         var run = await LifecycleRunStateHolder.GetOrCreateAsync();
-        var lease = await run.CreateScenarioAsync(CaseIdFor(_scenarioContext));
+        var lease = await run.CreateScenarioAsync(caseId);
         _scenarioContext.Set(lease);
+        _scenarioContext.Set(new LifecycleScenarioCaseId(caseId));
     }
 
-    [AfterScenario("@Lifecycle", Order = FailureProjectionOrder)]
+    [AfterScenario("@web-lifecycle", Order = FailureProjectionOrder)]
     public Task ProjectLifecycleFailureAsync()
     {
         if (_scenarioContext.TestError is not null)
@@ -39,7 +45,7 @@ public sealed class LifecycleScenarioHooks
         return Task.CompletedTask;
     }
 
-    [AfterScenario("@Lifecycle", Order = ScenarioAfterOrder)]
+    [AfterScenario("@web-lifecycle", Order = ScenarioAfterOrder)]
     public async Task AfterLifecycleScenarioAsync()
     {
         if (!_scenarioContext.TryGetValue<ScenarioLifecycleLease>(out var lease))
@@ -54,7 +60,7 @@ public sealed class LifecycleScenarioHooks
             await lease.DisposeAsync();
             if (_scenarioContext.TestError is null)
             {
-                run?.RecordSuccessfulScenario(CaseIdFor(_scenarioContext), lease);
+                run?.RecordSuccessfulScenario(_scenarioContext.Get<LifecycleScenarioCaseId>().Value, lease);
             }
             else if (run is not null)
             {
@@ -84,12 +90,94 @@ public sealed class LifecycleScenarioHooks
         }
     }
 
-    private static string CaseIdFor(ScenarioContext scenarioContext) => scenarioContext.ScenarioInfo.Title switch
+}
+
+internal sealed record LifecycleScenarioCaseId(string Value);
+
+internal interface IWebLifecycleScenarioState
+{
+    void Attach(IPage page, Uri apiBaseAddress);
+}
+
+[Binding]
+public sealed class LifecycleScenarioResourceHooks
+{
+    private readonly ScenarioContext _scenarioContext;
+
+    public LifecycleScenarioResourceHooks(ScenarioContext scenarioContext)
     {
-        "lifecycle-probe-a" => "lifecycle-probe-a",
-        "lifecycle-probe-b" => "lifecycle-probe-b",
-        _ => throw new InvalidOperationException("E2E lifecycle scenario has no canonical case identifier.")
-    };
+        _scenarioContext = scenarioContext;
+    }
+
+    [BeforeScenario("@web-lifecycle", Order = LifecycleScenarioHooks.ScenarioResourceAttachmentOrder)]
+    public Task AttachScenarioResourcesAsync()
+    {
+        if (_scenarioContext.TryGetValue<IWebLifecycleScenarioState>(out var state))
+        {
+            var lease = _scenarioContext.Get<ScenarioLifecycleLease>();
+            AttachResources(state, lease);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    internal static void AttachResources(IWebLifecycleScenarioState state, ScenarioLifecycleLease lease)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(lease);
+        state.Attach(lease.Page, lease.ApiBaseAddress);
+    }
+}
+
+internal sealed class LifecycleScenarioCaseIdRegistry
+{
+    private static readonly IReadOnlyDictionary<string, LifecycleScenarioCaseDefinition> CanonicalCases =
+        new Dictionary<string, LifecycleScenarioCaseDefinition>(StringComparer.Ordinal)
+        {
+            ["lifecycle-probe-a"] = new("lifecycle-probe-a", "Lifecycle"),
+            ["lifecycle-probe-b"] = new("lifecycle-probe-b", "Lifecycle"),
+            ["preload-reaches-the-unauthenticated-state"] = new("preload-reaches-the-unauthenticated-state", "auth"),
+            ["successful-registration-creates-the-account-and-returns-to-login"] = new("successful-registration-creates-the-account-and-returns-to-login", "auth"),
+            ["successful-login-reaches-authenticated-home"] = new("successful-login-reaches-authenticated-home", "auth"),
+            ["wrong-password-remains-unauthenticated-and-shows-the-real-error-toast"] = new("wrong-password-remains-unauthenticated-and-shows-the-real-error-toast", "auth"),
+            ["active-onboarding-starts-and-advances"] = new("active-onboarding-starts-and-advances", "onboarding"),
+            ["logout-remains-effective-after-a-full-page-reload"] = new("logout-remains-effective-after-a-full-page-reload", "session")
+        };
+
+    private readonly HashSet<string> _reservedCaseIds = new(StringComparer.Ordinal);
+
+    internal string ResolveAndReserve(string title, IReadOnlyCollection<string> tags)
+    {
+        if (!CanonicalCases.TryGetValue(title, out var definition) || !HasExpectedTags(definition, tags))
+        {
+            throw InvalidScenarioContract();
+        }
+
+        lock (_reservedCaseIds)
+        {
+            if (!_reservedCaseIds.Add(definition.CaseId))
+            {
+                throw InvalidScenarioContract();
+            }
+        }
+
+        return definition.CaseId;
+    }
+
+    private static bool HasExpectedTags(LifecycleScenarioCaseDefinition definition, IReadOnlyCollection<string> tags)
+    {
+        var expectedTags = definition.Category == "Lifecycle"
+            ? new[] { "serial", "Lifecycle", "web-lifecycle" }
+            : new[] { "serial", "web-lifecycle", definition.Category };
+        var actualTags = new HashSet<string>(tags, StringComparer.Ordinal);
+
+        return actualTags.Count == tags.Count && actualTags.SetEquals(expectedTags);
+    }
+
+    private static InvalidOperationException InvalidScenarioContract() =>
+        new("E2E web lifecycle scenario contract is invalid.");
+
+    private sealed record LifecycleScenarioCaseDefinition(string CaseId, string Category);
 }
 
 [Binding]
@@ -436,6 +524,15 @@ internal static class LifecycleRunStateHolder
     private static readonly object Sync = new();
     private static readonly SemaphoreSlim InitializationGate = new(1, 1);
     private static LifecycleRunState? _state;
+    private static LifecycleScenarioCaseIdRegistry _caseIds = new();
+
+    internal static string ReserveCaseId(string title, IReadOnlyCollection<string> tags)
+    {
+        lock (Sync)
+        {
+            return _caseIds.ResolveAndReserve(title, tags);
+        }
+    }
 
     internal static async Task<LifecycleRunState> GetOrCreateAsync()
     {
@@ -477,6 +574,7 @@ internal static class LifecycleRunStateHolder
         {
             var state = _state;
             _state = null;
+            _caseIds = new LifecycleScenarioCaseIdRegistry();
             return state;
         }
     }
