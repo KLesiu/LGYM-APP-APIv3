@@ -13,9 +13,9 @@ public sealed class SingleProductionDbContextGuardTests
     private const string SignalRClientTestPackageProject = "LgymApi.IntegrationTests/LgymApi.IntegrationTests.csproj";
     private static readonly IReadOnlyDictionary<string, string> ApprovedRetentionMigrationLedger = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
-        [MigrationRoot + "/20260815080018_AddNotificationRetentionIndexes.cs"] = "6166a9c1e27b85e9c821c811dcccf758a2a5ebf3432475677944201878a191be",
-        [MigrationRoot + "/20260815080018_AddNotificationRetentionIndexes.Designer.cs"] = "329b1aab2de4fb89d3599a1b7706e31c6009ddbf2c708e8c47d90ae4b907900c",
-        [MigrationRoot + "/AppDbContextModelSnapshot.cs"] = "e2992816e3970dc5dbdefbd3827c88f1fac1554590bfa48b3caee5f8dee30c6a"
+        [MigrationRoot + "/20260815080018_AddNotificationRetentionIndexes.cs"] = "8661dde0f29629b836a76a5562066bfbc20628455359cbc507597350287e3bac",
+        [MigrationRoot + "/20260815080018_AddNotificationRetentionIndexes.Designer.cs"] = "b16f275e60894b2e245ced98c3366353cca45d611862530a27b74b98972a953f",
+        [MigrationRoot + "/AppDbContextModelSnapshot.cs"] = "c9b15b81472f52c99262fd7e00b356ed0bde797dbee52aaeebbe047cc8527960"
     };
 
     [Test]
@@ -370,7 +370,11 @@ public sealed class SingleProductionDbContextGuardTests
         {
             var path = Path.Combine(repoRoot, entry.Key.Replace('/', Path.DirectorySeparatorChar));
             Assert.That(File.Exists(path), Is.True, $"Approved retention migration ledger path is missing: {entry.Key}");
-            var hash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
+            var sourceBytes = File.ReadAllBytes(path);
+            var normalizedSource = sourceBytes
+                .Where((value, index) => value != '\r' || index + 1 >= sourceBytes.Length || sourceBytes[index + 1] != '\n')
+                .ToArray();
+            var hash = Convert.ToHexString(SHA256.HashData(normalizedSource)).ToLowerInvariant();
             Assert.That(hash, Is.EqualTo(entry.Value), $"Approved retention migration ledger hash changed: {entry.Key}");
         }
 
