@@ -75,6 +75,8 @@ internal sealed class SyntheticCredentials
             Guid.NewGuid().ToString("N"));
     }
 
+    internal static string CreatePassword() => $"E2e!{Guid.NewGuid():N}";
+
     public override string ToString() => "<synthetic-credentials>";
 }
 

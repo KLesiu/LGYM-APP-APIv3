@@ -186,6 +186,33 @@ public sealed class PublicHttpGivenRequestTests
         });
     }
 
+    [Test]
+    public void Web_business_scenario_state_generates_distinct_redacted_credential_canaries()
+    {
+        // Given / When
+        using var first = WebBusinessScenarioState.Create();
+        using var second = WebBusinessScenarioState.Create();
+
+        // Then
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.Credentials.Name, Is.Not.EqualTo(second.Credentials.Name));
+            Assert.That(first.Credentials.Email, Is.Not.EqualTo(second.Credentials.Email));
+            Assert.That(first.Credentials.Password, Is.Not.EqualTo(first.WrongPassword));
+            Assert.That(second.Credentials.Password, Is.Not.EqualTo(second.WrongPassword));
+            Assert.That(first.SecretCanaries, Is.EqualTo([
+                first.Credentials.Name,
+                first.Credentials.Email,
+                first.Credentials.Password,
+                first.WrongPassword,
+                first.Credentials.RegistrationIdempotencyKey
+            ]));
+            Assert.That(first.ToString(), Is.EqualTo("<web-business-scenario-state>"));
+            Assert.That(first.ToString(), Does.Not.Contain(first.Credentials.Password));
+            Assert.That(first.ToString(), Does.Not.Contain(first.WrongPassword));
+        });
+    }
+
     private static PublicHttpGivenRecordingHandler CreateSuccessHandler() =>
         new((_, _) => Task.FromResult(
             PublicHttpGivenRecordingHandler.JsonResponse(HttpStatusCode.OK, "{\"msg\":\"ok\"}")));

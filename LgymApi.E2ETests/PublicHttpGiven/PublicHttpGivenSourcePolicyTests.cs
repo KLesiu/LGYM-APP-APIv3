@@ -34,6 +34,16 @@ public sealed class PublicHttpGivenSourcePolicyTests
         Assert.That(violations, Is.Empty, string.Join(Environment.NewLine, violations));
     }
 
+    [Test]
+    public void Given_source_policy_covers_business_binding_files()
+    {
+        var bindingsPath = Path.Combine(RepositoryRoot.Find(), "LgymApi.E2ETests", "Given", "WebBusinessGivenBindings.cs");
+
+        var violations = FindViolations(bindingsPath, File.ReadAllText(bindingsPath)).ToArray();
+
+        Assert.That(violations, Is.Empty, string.Join(Environment.NewLine, violations));
+    }
+
     [TestCase("using LgymApi.Api;")]
     [TestCase("global::LgymApi.Infrastructure")]
     [TestCase("using Microsoft.EntityFrameworkCore;")]
