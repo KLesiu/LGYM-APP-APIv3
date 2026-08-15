@@ -89,6 +89,21 @@ internal sealed class PushNotificationDeliveryService : IPushNotificationDeliver
                 return;
             }
 
+            if (installation.UserId != message.UserId)
+            {
+                message.Status = PushNotificationStatus.Failed;
+                message.FailureKind = PushNotificationFailureKind.Permanent;
+                message.ProviderStatus = "InstallationUserMismatch";
+                message.ProviderMessageId = null;
+                message.ProviderErrorCode = null;
+                message.ProviderResponseSummary = null;
+                message.LastError = "Push installation is no longer bound to the notification recipient.";
+                message.NextAttemptAt = null;
+                message.SchedulerJobId = null;
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                return;
+            }
+
             deliveryAttemptStarted = true;
             message.Attempts += 1;
             var payload = JsonSerializer.Deserialize<PushEventPayload>(message.PayloadJson, SharedSerializationOptions.Current)
@@ -175,6 +190,7 @@ internal sealed class PushNotificationDeliveryService : IPushNotificationDeliver
                 message.Status = PushNotificationStatus.Failed;
                 message.FailureKind = PushNotificationFailureKind.InvalidToken;
                 message.NextAttemptAt = null;
+                message.SchedulerJobId = null;
                 installation.DisabledAt = DateTimeOffset.UtcNow;
                 installation.DisabledReason = PushInstallationDisabledReasons.InvalidToken;
                 installation.LastSeenAt = DateTimeOffset.UtcNow;
