@@ -109,7 +109,6 @@ public sealed class PinnedWebSourceStagerCleanupTests
     private sealed class BlockingPostArchiveStatusGitRunner(IExternalGitCommandRunner inner, string mutationPath) : IExternalGitCommandRunner
     {
         private bool _archiveCreated;
-        private int _postArchiveStatusChecks;
         internal bool ObservedCancellation { get; private set; }
 
         public async Task<ExternalGitCommandResult<T>> RunAsync<T>(
@@ -119,7 +118,7 @@ public sealed class PinnedWebSourceStagerCleanupTests
             ExternalGitCommandTimeouts timeouts,
             CancellationToken cancellationToken = default)
         {
-            if (_archiveCreated && arguments.FirstOrDefault() == "status" && _postArchiveStatusChecks++ > 0)
+            if (_archiveCreated && cancellationToken.CanBeCanceled)
             {
                 try
                 {

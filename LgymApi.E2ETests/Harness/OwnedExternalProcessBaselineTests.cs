@@ -11,13 +11,16 @@ public sealed class OwnedExternalProcessBaselineTests
     public async Task OwnedExternalProcess_finite_runner_characterization_times_out_and_reaps_tree()
     {
         using var fixture = new ExternalProcessFixture();
-        var runner = new ExternalProcessRunner();
+        using var timeoutCancellation = new CancellationTokenSource();
+        var runner = new ExternalProcessRunner(
+            timeoutCancellationSourceFactory: _ => timeoutCancellation);
         var request = fixture.CreateQuietBlockingTreeRequest(
             WholeSecret,
             SplitSecret,
             TimeSpan.FromMilliseconds(500));
         var runTask = runner.RunAsync(request);
         await fixture.WaitUntilReadyOrFailedAsync(runTask, TimeSpan.FromSeconds(3));
+        timeoutCancellation.Cancel();
 
         var exception = Assert.ThrowsAsync<ExternalProcessTimeoutException>(async () => await runTask);
 

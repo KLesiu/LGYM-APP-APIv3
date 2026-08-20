@@ -14,16 +14,20 @@ internal sealed class ExternalProcessRunner
     internal const string PostLaunchFailureMessage = "The external process failed after launch.";
     private readonly Func<bool> _isWindows;
     private readonly ExternalProcessTermination _termination;
+    private readonly Func<TimeSpan, CancellationTokenSource> _timeoutCancellationSourceFactory;
 
     internal ExternalProcessRunner(
         Func<bool>? isWindows = null,
         ProcessParentIdReader? parentProcessIdReader = null,
         Func<Process, ProcessIdentity>? rootIdentityFactory = null,
-        Func<Process, TimeSpan, Task>? beforeCancellationCleanup = null)
+        Func<Process, TimeSpan, Task>? beforeCancellationCleanup = null,
+        Func<TimeSpan, CancellationTokenSource>? timeoutCancellationSourceFactory = null)
     {
         _isWindows = isWindows ?? OperatingSystem.IsWindows;
         ParentProcessIdReader = parentProcessIdReader ?? ProcessParentIdReader.CreateRuntime();
         _termination = new ExternalProcessTermination();
+        _timeoutCancellationSourceFactory = timeoutCancellationSourceFactory ??
+            (timeout => new CancellationTokenSource(timeout));
         RootIdentityFactory = rootIdentityFactory ??
             (process => new ProcessIdentity(process.Id, process.StartTime.ToUniversalTime()));
         BeforeCancellationCleanup = beforeCancellationCleanup;
@@ -78,7 +82,7 @@ internal sealed class ExternalProcessRunner
         var standardOutputTask = standardOutput.DrainAsync(process.StandardOutput, drainCancellation.Token);
         var standardErrorTask = standardError.DrainAsync(process.StandardError, drainCancellation.Token);
 
-        using var timeoutCancellation = new CancellationTokenSource(request.ExecutionTimeout);
+        using var timeoutCancellation = _timeoutCancellationSourceFactory(request.ExecutionTimeout);
         using var executionCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
             timeoutCancellation.Token);
