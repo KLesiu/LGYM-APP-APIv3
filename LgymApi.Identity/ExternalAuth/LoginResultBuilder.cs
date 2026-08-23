@@ -7,6 +7,8 @@ using LgymApi.Application.Services;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
+using LgymApi.Identity.Contracts.AdultConfirmation;
+using Microsoft.Extensions.Options;
 
 namespace LgymApi.Application.ExternalAuth;
 
@@ -17,19 +19,22 @@ internal sealed class LoginResultBuilder : ILoginResultBuilder
     private readonly ITutorialService _tutorialService;
     private readonly IUserRepository _userRepository;
     private readonly IUserSessionStore _userSessionStore;
+    private readonly AgeGateOptions _ageGateOptions;
 
     public LoginResultBuilder(
         IUserRepository userRepository,
         IUserSessionStore userSessionStore,
         ITokenService tokenService,
         IRankService rankService,
-        ITutorialService tutorialService)
+        ITutorialService tutorialService,
+        IOptions<AgeGateOptions> ageGateOptions)
     {
         _userRepository = userRepository;
         _userSessionStore = userSessionStore;
         _tokenService = tokenService;
         _rankService = rankService;
         _tutorialService = tutorialService;
+        _ageGateOptions = ageGateOptions.Value;
     }
 
     public async Task<Result<LoginResult, AppError>> BuildAsync(User user, string preferredTimeZone, CancellationToken cancellationToken)
@@ -54,29 +59,32 @@ internal sealed class LoginResultBuilder : ILoginResultBuilder
         var token = _tokenService.CreateToken(userWithRoles.Id, session.Id, session.Jti, roles, permissionClaims);
         var nextRank = _rankService.GetNextRank(userWithRoles.ProfileRank);
         var hasActiveTutorials = await _tutorialService.HasActiveTutorialsAsync(userWithRoles.Id, cancellationToken);
+        var userInfo = new UserInfoResult
+        {
+            Name = userWithRoles.Name,
+            Id = userWithRoles.Id,
+            Email = userWithRoles.Email,
+            Avatar = userWithRoles.Avatar,
+            ProfileRank = userWithRoles.ProfileRank,
+            PreferredTimeZone = string.IsNullOrWhiteSpace(userWithRoles.PreferredTimeZone) ? preferredTimeZone : userWithRoles.PreferredTimeZone,
+            CreatedAt = userWithRoles.CreatedAt.UtcDateTime,
+            UpdatedAt = userWithRoles.UpdatedAt.UtcDateTime,
+            Elo = 1000,
+            NextRank = nextRank == null ? null : new RankInfo { Name = nextRank.Name, NeedElo = nextRank.NeedElo },
+            IsDeleted = userWithRoles.IsDeleted,
+            IsVisibleInRanking = userWithRoles.IsVisibleInRanking,
+            Roles = roles,
+            PermissionClaims = permissionClaims,
+            HasActiveTutorials = hasActiveTutorials,
+            AdultConfirmationRequired = _ageGateOptions.Enabled && userWithRoles.AdultConfirmedAt is null
+        };
 
         return Result<LoginResult, AppError>.Success(new LoginResult
         {
             Token = token,
             PermissionClaims = permissionClaims,
-            User = new UserInfoResult
-            {
-                Name = userWithRoles.Name,
-                Id = userWithRoles.Id,
-                Email = userWithRoles.Email,
-                Avatar = userWithRoles.Avatar,
-                ProfileRank = userWithRoles.ProfileRank,
-                PreferredTimeZone = string.IsNullOrWhiteSpace(userWithRoles.PreferredTimeZone) ? preferredTimeZone : userWithRoles.PreferredTimeZone,
-                CreatedAt = userWithRoles.CreatedAt.UtcDateTime,
-                UpdatedAt = userWithRoles.UpdatedAt.UtcDateTime,
-                Elo = 1000,
-                NextRank = nextRank == null ? null : new RankInfo { Name = nextRank.Name, NeedElo = nextRank.NeedElo },
-                IsDeleted = userWithRoles.IsDeleted,
-                IsVisibleInRanking = userWithRoles.IsVisibleInRanking,
-                Roles = roles,
-                PermissionClaims = permissionClaims,
-                HasActiveTutorials = hasActiveTutorials
-            }
+            AdultConfirmationRequired = userInfo.AdultConfirmationRequired,
+            User = userInfo
         });
     }
 }

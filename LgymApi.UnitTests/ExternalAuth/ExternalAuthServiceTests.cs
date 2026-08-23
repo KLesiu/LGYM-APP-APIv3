@@ -128,11 +128,27 @@ public sealed class ExternalAuthServiceTests
         _googleUserRegistrar.Register = (_, _) => Task.FromResult(Result.Success<User, AppError>(createdUser));
         _loginResultBuilder.Build = (_, _, _) => Task.FromResult(Result.Success<LoginResult, AppError>(CreateLoginResult()));
 
-        var result = await _service.GoogleSignInAsync("token", null, CancellationToken.None);
+        var result = await _service.GoogleSignInAsync("token", null, true, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Token.Should().Be("jwt-token");
         _unitOfWork.SaveChangesCalls.Should().Be(1);
+    }
+
+    [Test]
+    public async Task GoogleSignIn_NewUserWithoutAdultConfirmation_DoesNotCreateAccountOrBinding()
+    {
+        _googleTokenValidator.Validate = (_, _, _) => Task.FromResult<GoogleTokenPayload?>(
+            new GoogleTokenPayload("sub123", "test@example.com", true, "Test User", null));
+        _userExternalLoginRepository.FindByProvider = (_, _, _) => Task.FromResult<UserExternalLogin?>(null);
+
+        var result = await _service.GoogleSignInAsync("token", null, CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<AdultConfirmationRequiredForRegistrationError>();
+        _googleUserRegistrar.Calls.Should().BeEmpty();
+        _loginResultBuilder.Calls.Should().BeEmpty();
+        _unitOfWork.SaveChangesCalls.Should().Be(0);
     }
 
     [Test]
@@ -142,7 +158,7 @@ public sealed class ExternalAuthServiceTests
         _userExternalLoginRepository.FindByProvider = (_, _, _) => Task.FromResult<UserExternalLogin?>(null);
         _googleUserRegistrar.Register = (_, _) => Task.FromResult(Result.Failure<User, AppError>(new ConflictError("email conflict")));
 
-        var result = await _service.GoogleSignInAsync("token", null, CancellationToken.None);
+        var result = await _service.GoogleSignInAsync("token", null, true, CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<ConflictError>();
