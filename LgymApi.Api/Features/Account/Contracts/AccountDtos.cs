@@ -3,6 +3,12 @@ using LgymApi.Api.Interfaces;
 
 namespace LgymApi.Api.Features.Account.Contracts;
 
+public sealed class ConfirmAdultRequest : IDto
+{
+    [JsonPropertyName("adultConfirmed")]
+    public bool? AdultConfirmed { get; set; }
+}
+
 public sealed class LinkGoogleRequest : IDto
 {
     [JsonPropertyName("idToken")]
