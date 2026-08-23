@@ -16,6 +16,7 @@ internal sealed class IdentityUserMappingProfile : IMappingProfile
         internal static readonly ContextKey<List<string>> Roles = new("Identity.User.Roles");
         internal static readonly ContextKey<List<string>> PermissionClaims = new("Identity.User.PermissionClaims");
         internal static readonly ContextKey<bool> HasActiveTutorials = new("Identity.User.HasActiveTutorials");
+        internal static readonly ContextKey<bool> AgeGateEnabled = new("Identity.User.AgeGateEnabled");
     }
 
     public void Configure(MappingConfiguration configuration)
@@ -26,6 +27,7 @@ internal sealed class IdentityUserMappingProfile : IMappingProfile
         configuration.AllowContextKey(Keys.Roles);
         configuration.AllowContextKey(Keys.PermissionClaims);
         configuration.AllowContextKey(Keys.HasActiveTutorials);
+        configuration.AllowContextKey(Keys.AgeGateEnabled);
 
         configuration.CreateMap<RankDefinition, RankInfo>((source, _) => new RankInfo
         {
@@ -55,7 +57,8 @@ internal sealed class IdentityUserMappingProfile : IMappingProfile
                 IsVisibleInRanking = source.IsVisibleInRanking,
                 Roles = context?.Get(Keys.Roles) ?? [],
                 PermissionClaims = context?.Get(Keys.PermissionClaims) ?? [],
-                HasActiveTutorials = context?.Get(Keys.HasActiveTutorials) ?? false
+                HasActiveTutorials = context?.Get(Keys.HasActiveTutorials) ?? false,
+                AdultConfirmationRequired = (context?.Get(Keys.AgeGateEnabled) ?? false) && source.AdultConfirmedAt is null
             };
         });
 
