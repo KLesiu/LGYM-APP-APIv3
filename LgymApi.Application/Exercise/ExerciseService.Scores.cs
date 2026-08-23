@@ -83,12 +83,12 @@ public sealed partial class ExerciseService : IExerciseService
                 continue;
             }
 
-            planDaysById.TryGetValue(score.Training.TypePlanDayId, out var planDay);
+            var planDay = planDaysById[score.Training.TypePlanDayId];
 
             var trainingId = score.Training.Id;
             if (!tempMap.TryGetValue(trainingId, out var entry))
             {
-                entry = (score.Training.CreatedAt, score.Training.Gym.Name, planDay?.Name ?? string.Empty, new List<(int, WorkoutProgress.Persistence.WorkoutExerciseScorePersistenceModel)>(), 0);
+                entry = (score.Training.CreatedAt, score.Training.Gym.Name, planDay.Name, new List<(int, WorkoutProgress.Persistence.WorkoutExerciseScorePersistenceModel)>(), 0);
             }
 
             entry.RawScores.Add((score.Series, score));
