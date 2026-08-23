@@ -249,7 +249,8 @@ public sealed class EndpointContractMatrixTests : IntegrationTestBase
             email = "matrix_legacy@example.com",
             password = "password123",
             cpassword = "password123",
-            isVisibleInRanking = true
+            isVisibleInRanking = true,
+            adultConfirmed = true
         };
 
         var repeated = await SendRepeatedRequestAsync("/api/register", registerRequest, "matrix-legacy-register");
