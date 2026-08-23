@@ -16,7 +16,8 @@ public sealed record AccountAccessFacts(
     bool IsDeleted,
     bool IsBlocked,
     IReadOnlyList<string> Roles,
-    IReadOnlyList<string> PermissionClaims);
+    IReadOnlyList<string> PermissionClaims,
+    DateTimeOffset? AdultConfirmedAt = null);
 
 public sealed record AuthenticatedAccountContext(
     Id<AccountReference> Id,
@@ -24,7 +25,8 @@ public sealed record AuthenticatedAccountContext(
     IReadOnlyList<string> Roles,
     IReadOnlyList<string> PermissionClaims,
     bool IsBlocked,
-    bool IsDeleted);
+    bool IsDeleted,
+    DateTimeOffset? AdultConfirmedAt = null);
 
 public sealed record AuthenticatedAccountResolution(
     AuthenticatedAccountResolutionStatus Status,
