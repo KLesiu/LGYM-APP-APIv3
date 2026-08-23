@@ -29,5 +29,9 @@ public class RegisterUserRequestValidator : AbstractValidator<RegisterUserReques
             .WithMessage(Messages.PasswordRequired)
             .Equal(x => x.Password)
             .WithMessage(Messages.SamePassword);
+
+        RuleFor(x => x.AdultConfirmed)
+            .Equal(true)
+            .WithMessage(Messages.AdultConfirmationRequired);
     }
 }

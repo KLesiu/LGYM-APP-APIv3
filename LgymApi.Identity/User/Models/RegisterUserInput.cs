@@ -6,4 +6,5 @@ public sealed record RegisterUserInput(
     string Password,
     string ConfirmPassword,
     bool? IsVisibleInRanking,
-    string? PreferredLanguage);
+    string? PreferredLanguage,
+    bool AdultConfirmed);
