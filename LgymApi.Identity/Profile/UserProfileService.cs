@@ -12,6 +12,8 @@ using LgymApi.Application.Repositories;
 using LgymApi.Application.Services;
 using LgymApi.Resources;
 using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.AdultConfirmation;
+using Microsoft.Extensions.Options;
 using UserEntity = LgymApi.Domain.Entities.User;
 
 namespace LgymApi.Application.Identity.Profile;
@@ -26,6 +28,7 @@ internal sealed class UserProfileService : IUserProfileService
     private readonly AppDefaultsOptions _appDefaultsOptions;
     private readonly ITutorialService _tutorialService;
     private readonly IMapper _mapper;
+    private readonly AgeGateOptions _ageGateOptions;
 
     public UserProfileService(
         IUserRepository userRepository,
@@ -35,7 +38,8 @@ internal sealed class UserProfileService : IUserProfileService
         IAccountPushInstallationCleanupPort accountPushInstallationCleanupPort,
         AppDefaultsOptions appDefaultsOptions,
         ITutorialService tutorialService,
-        IMapper mapper)
+        IMapper mapper,
+        IOptions<AgeGateOptions> ageGateOptions)
     {
         _userRepository = userRepository;
         _roleRepository = roleRepository;
@@ -45,6 +49,7 @@ internal sealed class UserProfileService : IUserProfileService
         _appDefaultsOptions = appDefaultsOptions;
         _tutorialService = tutorialService;
         _mapper = mapper;
+        _ageGateOptions = ageGateOptions.Value;
     }
 
     public async Task<Result<UserInfoResult, AppError>> CheckTokenAsync(
@@ -67,6 +72,7 @@ internal sealed class UserProfileService : IUserProfileService
         mappingContext.Set(IdentityUserMappingProfile.Keys.Roles, roles);
         mappingContext.Set(IdentityUserMappingProfile.Keys.PermissionClaims, permissionClaims);
         mappingContext.Set(IdentityUserMappingProfile.Keys.HasActiveTutorials, hasActiveTutorials);
+        mappingContext.Set(IdentityUserMappingProfile.Keys.AgeGateEnabled, _ageGateOptions.Enabled);
 
         return Result<UserInfoResult, AppError>.Success(_mapper.Map<UserEntity, UserInfoResult>(currentUser, mappingContext));
     }

@@ -15,7 +15,9 @@ using LgymApi.Application.Services;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Services;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts.AdultConfirmation;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using LgymApi.UnitTests.Fakes;
 using NSubstitute;
 
@@ -51,7 +53,8 @@ public sealed class UserServiceProfileTests
             _accountPushInstallationCleanupPort,
             new AppDefaultsOptions { PreferredTimeZone = "UTC" },
             _tutorialService,
-            BuildMapper());
+            BuildMapper(),
+            Options.Create(new AgeGateOptions()));
     }
 
     [Test]

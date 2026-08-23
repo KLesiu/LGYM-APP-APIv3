@@ -36,7 +36,8 @@ public sealed class IdentityApiAdapterMappingProfile : IMappingProfile
             source.IsVisibleInRanking,
             source.Roles,
             source.PermissionClaims,
-            source.HasActiveTutorials));
+            source.HasActiveTutorials,
+            source.AdultConfirmationRequired));
         configuration.CreateMap<AccountProfileProjection, UserInfoResult>((source, context) => new UserInfoResult
         {
             Id = source.Id.Rebind<User>(),
@@ -53,7 +54,8 @@ public sealed class IdentityApiAdapterMappingProfile : IMappingProfile
             IsVisibleInRanking = source.IsVisibleInRanking,
             Roles = source.Roles.ToList(),
             PermissionClaims = source.PermissionClaims.ToList(),
-            HasActiveTutorials = source.HasActiveTutorials
+            HasActiveTutorials = source.HasActiveTutorials,
+            AdultConfirmationRequired = source.AdultConfirmationRequired
         });
         configuration.CreateMap<ExternalLoginInfo, ExternalLoginProjection>((source, _) => new ExternalLoginProjection(source.Provider, source.ProviderEmail));
         configuration.CreateMap<TutorialProgressResult, TutorialProgressProjection>((source, _) => new TutorialProgressProjection(
