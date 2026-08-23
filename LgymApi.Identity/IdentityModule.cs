@@ -26,6 +26,7 @@ using LgymApi.Infrastructure.Repositories;
 using LgymApi.Infrastructure.Services;
 using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.Extensions.DependencyInjection;
+using LgymApi.Identity.Contracts.AdultConfirmation;
 
 namespace LgymApi.Identity;
 
@@ -62,6 +63,7 @@ public static class IdentityModule
         services.AddScoped<IAccountAccessReader, AccountAccessReader>();
         services.AddScoped<IAccountSessionValidator, AccountSessionValidator>();
         services.AddScoped<IAuthenticatedAccountContextResolver, AuthenticatedAccountContextResolver>();
+        services.AddScoped<IAdultConfirmationService, AdultConfirmationService>();
         services.AddScoped<IAuthenticatedAccountCompatibilityPort, AuthenticatedAccountCompatibilityPort>();
         services.AddScoped<IUserRoleAdministrationService, UserRoleAdministrationService>();
         services.AddScoped<IExternalAuthService, ExternalAuthService>();
