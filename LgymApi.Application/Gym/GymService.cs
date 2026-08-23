@@ -113,7 +113,7 @@ public sealed class GymService : IGymService
             .Where(t => t != null)
             .ToDictionary(t => t!.GymId, t => t!);
         var planDays = await _planDayReferences.GetByIdsAsync(
-            lastTrainings.Values.Select(training => training.TypePlanDayId).ToList(),
+            lastTrainings.Values.Select(training => training.TypePlanDayId).Distinct().ToList(),
             cancellationToken);
 
         return Result<GymListContext, AppError>.Success(new GymListContext
