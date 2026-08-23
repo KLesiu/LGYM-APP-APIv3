@@ -70,6 +70,7 @@ public sealed partial class ExerciseService : IExerciseService
             scores
                 .Where(score => score.Training?.Gym != null)
                 .Select(score => score.Training!.TypePlanDayId)
+                .Distinct()
                 .ToList(),
             cancellationToken);
         var planDaysById = planDays.ToDictionary(planDay => planDay.PlanDayId);
