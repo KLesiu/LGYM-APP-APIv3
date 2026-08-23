@@ -111,7 +111,7 @@ When reviewing mapper changes:
 - Middleware order is localization, authentication, conditional rate limiting outside Testing, `UserContextMiddleware`, authorization, and API idempotency. Current persisted account, session, and permission facts in the authenticated context are policy authority; stale JWT permission claims are not.
 - Owner-scoped reads and writes bind the authenticated account to the target resource before materialization or mutation. For Plans, the persistence predicate requires matching Plan ID, owner ID, and non-deleted state. Exercise access distinguishes globally visible Exercises, actor-owned custom Exercises, and current `ManageGlobalExercises` overrides without disclosing foreign custom resources.
 - Development Local photo URLs are signed bearer capabilities. Their verification binds version, HTTP method, normalized storage key, and expiry before decoding or storage access; uploads also enforce MIME and streamed-size policy before an atomic temporary-file promotion.
-- The HTTP matrix has 185 classified routes. Each row has executable semantic evidence for its access class and facets, and the guard rejects unresolved, mismatched, or incomplete route evidence.
+- The HTTP matrix has 186 classified routes. Each row has executable semantic evidence for its access class and facets, and the guard rejects unresolved, mismatched, or incomplete route evidence.
 - SignalR connection state is API-local and keyed by validated account/session pairs. Publishers revalidate each pair and prune invalid entries before direct delivery. This supports sticky single-instance hosting only; a distributed backplane requires separate design work.
 
 ## 6. Contributing a Use Case or Module-Boundary Change
