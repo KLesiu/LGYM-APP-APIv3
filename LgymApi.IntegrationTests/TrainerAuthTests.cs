@@ -23,7 +23,8 @@ public sealed class TrainerAuthTests : IntegrationTestBase
             name = "trainer-one",
             email = "trainer-one@example.com",
             password = "password123",
-            cpassword = "password123"
+            cpassword = "password123",
+            adultConfirmed = true
         };
 
         SetIdempotencyKey("test-register-trainer-one");
@@ -58,7 +59,8 @@ public sealed class TrainerAuthTests : IntegrationTestBase
             name = "trainer-auth",
             email = "trainer-auth@example.com",
             password = "password123",
-            cpassword = "password123"
+            cpassword = "password123",
+            adultConfirmed = true
         });
         ClearIdempotencyKey();
 
