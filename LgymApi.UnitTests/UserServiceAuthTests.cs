@@ -20,8 +20,10 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.Services;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts.AdultConfirmation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using LgymApi.UnitTests.Fakes;
 using LgymApi.TestUtils.Fakes;
 using NSubstitute;
@@ -64,7 +66,8 @@ public sealed class UserServiceAuthTests
             _unitOfWork,
             NullLogger<UserRegistrationService>.Instance,
             new AppDefaultsOptions { PreferredLanguage = "en-US", PreferredTimeZone = "UTC" },
-            _tutorialService);
+            _tutorialService,
+            Options.Create(new AgeGateOptions()));
         _credentialLoginService = new UserCredentialLoginService(
             _userRepository,
             _roleRepository,
@@ -75,7 +78,8 @@ public sealed class UserServiceAuthTests
             _unitOfWork,
             new AppDefaultsOptions { PreferredLanguage = "en-US", PreferredTimeZone = "UTC" },
             _tutorialService,
-            BuildMapper());
+            BuildMapper(),
+            Options.Create(new AgeGateOptions()));
     }
 
     [Test]
@@ -97,7 +101,7 @@ public sealed class UserServiceAuthTests
         _tutorialService.InitializeOnboardingTutorialAsync(Arg.Any<Id<User>>(), cancellationToken).Returns(Result<Unit, AppError>.Success(Unit.Value));
         _unitOfWork.SaveChangesAsync(cancellationToken).Returns(Task.FromResult(1));
 
-        var result = await _registrationService.RegisterAsync(new RegisterUserInput("new-user", " NEW@example.com ", "password123", "password123", null, null), cancellationToken);
+        var result = await _registrationService.RegisterAsync(new RegisterUserInput("new-user", " NEW@example.com ", "password123", "password123", null, null, true), cancellationToken);
 
         result.IsSuccess.Should().BeTrue();
         addedUser.Should().NotBeNull();
@@ -105,6 +109,8 @@ public sealed class UserServiceAuthTests
         addedUser.PreferredLanguage.Should().Be("en-US");
         addedUser.PreferredTimeZone.Should().Be("UTC");
         addedUser.IsVisibleInRanking.Should().BeTrue();
+        addedUser.AdultConfirmedAt.Should().NotBeNull();
+        addedUser.AdultConfirmationVersion.Should().Be("18plus-v1");
         _roleRepository.Calls
             .Where(call =>
                 call.Method == nameof(IRoleRepository.AddUserRolesAsync)
@@ -125,6 +131,18 @@ public sealed class UserServiceAuthTests
     }
 
     [Test]
+    public async Task RegisterAsync_WithoutAdultConfirmation_RejectsBeforeCreatingUser()
+    {
+        var result = await _registrationService.RegisterAsync(
+            new RegisterUserInput("new-user", "new@example.com", "password123", "password123", true, null, false));
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<InvalidUserError>();
+        _userRepository.Calls.Should().NotContain(call => call.Method == nameof(IUserRepository.AddAsync));
+        await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task RegisterAsync_WhenTutorialInitializationThrows_ReturnsSuccessAfterUserSave()
     {
         var defaultRole = new Role { Id = Id<Role>.New(), Name = AuthConstants.Roles.User };
@@ -137,7 +155,7 @@ public sealed class UserServiceAuthTests
             .Returns(Task.FromException<Result<Unit, AppError>>(new InvalidOperationException("tutorial failed")));
 
         var result = await _registrationService.RegisterAsync(
-            new RegisterUserInput("new-user", "new@example.com", "password123", "password123", true, null));
+            new RegisterUserInput("new-user", "new@example.com", "password123", "password123", true, null, true));
 
         result.IsSuccess.Should().BeTrue();
         await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
@@ -164,12 +182,14 @@ public sealed class UserServiceAuthTests
         _commandDispatcher.EnqueueAsync(Arg.Any<UserRegisteredCommand>()).Returns(Task.CompletedTask);
         _tutorialService.InitializeOnboardingTutorialAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>()).Returns(Result<Unit, AppError>.Success(Unit.Value));
 
-        var result = await _registrationService.RegisterTrainerAsync(new RegisterUserInput("trainer", "trainer@example.com", "password123", "password123", true, "pl-PL"));
+        var result = await _registrationService.RegisterTrainerAsync(new RegisterUserInput("trainer", "trainer@example.com", "password123", "password123", true, "pl-PL", true));
 
         result.IsSuccess.Should().BeTrue();
         addedUser.Should().NotBeNull();
         addedUser!.IsVisibleInRanking.Should().BeFalse();
         addedUser.PreferredLanguage.Should().Be("en-US");
+        addedUser.AdultConfirmedAt.Should().NotBeNull();
+        addedUser.AdultConfirmationVersion.Should().Be("18plus-v1");
         _roleRepository.Calls
             .Where(call =>
                 call.Method == nameof(IRoleRepository.AddUserRolesAsync)
@@ -187,7 +207,7 @@ public sealed class UserServiceAuthTests
         _userRepository.Add = (_, _) => Task.CompletedTask;
         _roleRepository.GetByNames = (_, _) => Task.FromResult(new List<Role>());
 
-        var result = await _registrationService.RegisterAsync(new RegisterUserInput("new-user", "new@example.com", "password123", "password123", true, null));
+        var result = await _registrationService.RegisterAsync(new RegisterUserInput("new-user", "new@example.com", "password123", "password123", true, null, true));
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<InternalServerError>();
