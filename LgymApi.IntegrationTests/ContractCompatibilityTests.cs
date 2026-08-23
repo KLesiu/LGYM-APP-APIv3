@@ -19,7 +19,8 @@ public sealed class ContractCompatibilityTests : IntegrationTestBase
             email = "contract_user@example.com",
             password = "password123",
             cpassword = "password123",
-            isVisibleInRanking = true
+            isVisibleInRanking = true,
+            adultConfirmed = true
         };
 
         // Set idempotency key for registration endpoint (required by T9 middleware)
