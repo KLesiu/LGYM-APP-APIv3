@@ -8,7 +8,12 @@ namespace LgymApi.Api.Middleware;
 
 public static class ErrorResponseWriter
 {
-    public static async Task WriteAsync(HttpContext context, int statusCode, string message, CancellationToken cancellationToken = default)
+    public static async Task WriteAsync(
+        HttpContext context,
+        int statusCode,
+        string message,
+        CancellationToken cancellationToken = default,
+        string? code = null)
     {
         if (context.Response.HasStarted)
         {
@@ -26,10 +31,11 @@ public static class ErrorResponseWriter
             ?.Value.SerializerOptions
             ?? CreateDefaultOptions();
 
-        await context.Response.WriteAsJsonAsync(
-            new ResponseMessageDto { Message = message },
-            jsonOptions,
-            cancellationToken);
+        object payload = code is null
+            ? new ResponseMessageDto { Message = message }
+            : new LgymApi.Api.AgeGate.AgeGateErrorResponseDto { Message = message, Code = code };
+
+        await context.Response.WriteAsJsonAsync(payload, jsonOptions, cancellationToken);
     }
 
     private static JsonSerializerOptions CreateDefaultOptions()
