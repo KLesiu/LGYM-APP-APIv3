@@ -39,10 +39,12 @@ using LgymApi.Infrastructure.Repositories.WorkoutProgress;
 using LgymApi.Identity.Contracts.Accounts;
 using LgymApi.Infrastructure.Services;
 using LgymApi.Infrastructure.UnitOfWork;
+using LgymApi.Identity.Contracts.AdultConfirmation;
 using LgymApi.TestUtils.Fakes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using NSubstitute;
 
@@ -123,7 +125,8 @@ public sealed class ServiceCommitBehaviorTests
             unitOfWork,
             NullLogger<UserRegistrationService>.Instance,
             new AppDefaultsOptions(),
-            new NoOpTutorialService());
+            new NoOpTutorialService(),
+            Options.Create(new AgeGateOptions()));
         var progress = new WorkoutProgressReadWriteService(
             Substitute.For<IWorkoutExercisePersistence>(),
             Substitute.For<IWorkoutExerciseScorePersistence>(),
@@ -142,7 +145,8 @@ public sealed class ServiceCommitBehaviorTests
             "password123",
             "password123",
             true,
-            PreferredLanguage: null), trainer: false);
+            PreferredLanguage: null,
+            AdultConfirmed: true), trainer: false);
 
         registerResult.IsSuccess.Should().BeTrue();
 
@@ -186,7 +190,8 @@ public sealed class ServiceCommitBehaviorTests
             unitOfWork,
             NullLogger<UserRegistrationService>.Instance,
             new AppDefaultsOptions(),
-            new NoOpTutorialService());
+            new NoOpTutorialService(),
+            Options.Create(new AgeGateOptions()));
 
         var registerResult = await service.RegisterAsync(new RegisterUserInput(
             "lang-user",
@@ -194,7 +199,8 @@ public sealed class ServiceCommitBehaviorTests
             "password123",
             "password123",
             true,
-            "pl-PL,pl;q=0.9"));
+            "pl-PL,pl;q=0.9",
+            AdultConfirmed: true));
 
         registerResult.IsSuccess.Should().BeTrue();
 
@@ -236,7 +242,8 @@ public sealed class ServiceCommitBehaviorTests
             unitOfWork,
             NullLogger<UserRegistrationService>.Instance,
             defaults,
-            new NoOpTutorialService());
+            new NoOpTutorialService(),
+            Options.Create(new AgeGateOptions()));
 
         var registerResult = await service.RegisterAsync(new RegisterUserInput(
             "fallback-user",
@@ -244,7 +251,8 @@ public sealed class ServiceCommitBehaviorTests
             "password123",
             "password123",
             true,
-            "@@invalid-culture@@"));
+            "@@invalid-culture@@",
+            AdultConfirmed: true));
 
         registerResult.IsSuccess.Should().BeTrue();
 
@@ -300,7 +308,8 @@ public sealed class ServiceCommitBehaviorTests
             Substitute.For<IAccountPushInstallationCleanupPort>(),
             new AppDefaultsOptions(),
             new NoOpTutorialService(),
-            Substitute.For<IMapper>());
+            Substitute.For<IMapper>(),
+            Options.Create(new AgeGateOptions()));
 
         var updateTimeZoneResult = await service.UpdateTimeZoneAsync(user, "Europe/Paris");
         updateTimeZoneResult.IsSuccess.Should().BeTrue();
@@ -355,7 +364,8 @@ public sealed class ServiceCommitBehaviorTests
             Substitute.For<IAccountPushInstallationCleanupPort>(),
             new AppDefaultsOptions(),
             new NoOpTutorialService(),
-            Substitute.For<IMapper>());
+            Substitute.For<IMapper>(),
+            Options.Create(new AgeGateOptions()));
 
         var updateTimeZoneResult = await service.UpdateTimeZoneAsync(user, "Not/ARealTimeZone");
         updateTimeZoneResult.IsFailure.Should().BeTrue();

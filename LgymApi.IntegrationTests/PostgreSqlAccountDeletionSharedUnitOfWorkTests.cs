@@ -15,8 +15,10 @@ using LgymApi.Domain.ValueObjects;
 using LgymApi.Infrastructure.Data;
 using LgymApi.Infrastructure.Repositories;
 using LgymApi.Infrastructure.UnitOfWork;
+using LgymApi.Identity.Contracts.AdultConfirmation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace LgymApi.IntegrationTests;
 
@@ -56,7 +58,8 @@ internal sealed class PostgreSqlAccountDeletionSharedUnitOfWorkTests : PostgreSq
                     unitOfWork)),
                 new AppDefaultsOptions(),
                 serviceScope.ServiceProvider.GetRequiredService<ITutorialService>(),
-                serviceScope.ServiceProvider.GetRequiredService<IMapper>());
+                serviceScope.ServiceProvider.GetRequiredService<IMapper>(),
+                Options.Create(new AgeGateOptions()));
 
             var result = await profileService.DeleteAccountAsync(scopedUser);
 
