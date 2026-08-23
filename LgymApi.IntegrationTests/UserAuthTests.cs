@@ -24,7 +24,8 @@ public sealed class UserAuthTests : IntegrationTestBase
             email = "newuser@example.com",
             password = "password123",
             cpassword = "password123",
-            isVisibleInRanking = true
+            isVisibleInRanking = true,
+            adultConfirmed = true
         };
 
         SetIdempotencyKey("test-register-newuser");
@@ -60,7 +61,8 @@ public sealed class UserAuthTests : IntegrationTestBase
             email = "bob-en@example.com",
             password = "securepass",
             cpassword = "securepass",
-            isVisibleInRanking = true
+            isVisibleInRanking = true,
+            adultConfirmed = true
         };
 
         SetIdempotencyKey("test-register-bob-en");
@@ -96,7 +98,8 @@ public sealed class UserAuthTests : IntegrationTestBase
             email = "alicja-hdr@example.com",
             password = "securepass",
             cpassword = "securepass",
-            isVisibleInRanking = true
+            isVisibleInRanking = true,
+            adultConfirmed = true
         };
 
         var msg = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "/api/register")
@@ -139,7 +142,8 @@ public sealed class UserAuthTests : IntegrationTestBase
             email = "alicja-pl@example.com",
             password = "securepass",
             cpassword = "securepass",
-            isVisibleInRanking = true
+            isVisibleInRanking = true,
+            adultConfirmed = true
         };
 
         var msg = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "/api/register")
@@ -204,7 +208,8 @@ public sealed class UserAuthTests : IntegrationTestBase
             name = "existinguser",
             email = "new@example.com",
             password = "password123",
-            cpassword = "password123"
+            cpassword = "password123",
+            adultConfirmed = true
         };
 
         SetIdempotencyKey("test-register-existingname");
@@ -228,7 +233,8 @@ public sealed class UserAuthTests : IntegrationTestBase
             name = "newuser",
             email = "existing@example.com",
             password = "password123",
-            cpassword = "password123"
+            cpassword = "password123",
+            adultConfirmed = true
         };
 
         SetIdempotencyKey("test-register-existingemail");

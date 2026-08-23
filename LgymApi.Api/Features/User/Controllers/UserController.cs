@@ -69,7 +69,8 @@ public sealed class UserController : ControllerBase
             request.Password,
             request.ConfirmPassword,
             request.IsVisibleInRanking,
-            preferredLanguage);
+            preferredLanguage,
+            request.AdultConfirmed == true);
 
         var result = await _eloRegistryService.RegisterUserAsync(input, trainer: false, cancellationToken);
         if (result.IsFailure)
@@ -106,6 +107,7 @@ public sealed class UserController : ControllerBase
     }
 
     [HttpGet("checkToken")]
+    [LgymApi.Api.AgeGate.AllowAgeGated]
     [ProducesResponseType(typeof(UserInfoDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> CheckToken(CancellationToken cancellationToken = default)
     {
@@ -121,6 +123,7 @@ public sealed class UserController : ControllerBase
     }
 
     [HttpPost("logout")]
+    [LgymApi.Api.AgeGate.AllowAgeGated]
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Logout(CancellationToken cancellationToken = default)
     {
@@ -173,6 +176,7 @@ public sealed class UserController : ControllerBase
     }
 
     [HttpGet("deleteAccount")]
+    [LgymApi.Api.AgeGate.AllowAgeGated]
     [ProducesResponseType(typeof(ResponseMessageDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> DeleteAccount(CancellationToken cancellationToken = default)
     {
