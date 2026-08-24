@@ -471,17 +471,45 @@ public sealed class DietPlansApiTests : IntegrationTestBase
     }
 
     [Test]
+    [AuthorizationEvidence("GET", "/api/trainee/diet-plans/{dietPlanId}/history", "own", "owner-allow")]
+    [AuthorizationEvidence("GET", "/api/trainee/diet-plans/{dietPlanId}/history", "own", "foreign-object-denial-no-mutation")]
+    public async Task TraineeDietHistoryRoute_ReturnsOnlyOwnedActivePlanHistory()
+    {
+        var trainer = await SeedTrainerAsync("trainee-history-trainer", "trainee-history-trainer@example.com");
+        var trainee = await SeedUserAsync("trainee-history-owner", "trainee-history-owner@example.com", "password123");
+        var otherTrainee = await SeedUserAsync("trainee-history-other", "trainee-history-other@example.com", "password123");
+        await LinkTrainerAndTraineeAsync(trainer.Id, trainee.Id);
+
+        SetAuthorizationHeader(trainer.Id);
+        var plan = await CreateDietAsync(trainee.Id, "Visible history", true);
+
+        SetAuthorizationHeader(trainee.Id);
+        using var ownerResponse = await Client.GetAsync($"/api/trainee/diet-plans/{plan.Id}/history");
+        ownerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var history = await ownerResponse.Content.ReadFromJsonAsync<List<DietPlanHistoryResponse>>();
+        history.Should().NotBeNullOrEmpty();
+
+        SetAuthorizationHeader(otherTrainee.Id);
+        using var foreignResponse = await Client.GetAsync($"/api/trainee/diet-plans/{plan.Id}/history");
+        foreignResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await foreignResponse.Content.ReadAsStringAsync()).Should().NotContain("Visible history");
+    }
+
+    [Test]
     [AuthorizationEvidence("GET", "/api/trainee/diet-plan/current", "own", "anonymous-denial")]
     [AuthorizationEvidence("GET", "/api/trainee/diet-plans/current", "own", "anonymous-denial")]
+    [AuthorizationEvidence("GET", "/api/trainee/diet-plans/{dietPlanId}/history", "own", "anonymous-denial")]
     public async Task TraineeCurrentDietRoutes_WithoutAuthentication_AreUnauthorized()
     {
         ClearAuthorizationHeader();
 
         using var singularResponse = await Client.GetAsync("/api/trainee/diet-plan/current");
         using var pluralResponse = await Client.GetAsync("/api/trainee/diet-plans/current");
+        using var historyResponse = await Client.GetAsync($"/api/trainee/diet-plans/{Id<DietPlan>.New()}/history");
 
         singularResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         pluralResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        historyResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Test]

@@ -4,6 +4,10 @@ using LgymApi.Api.Middleware;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Nutrition.ApiAdapters;
 using LgymApi.Application.Nutrition.DietPlans.Models;
+using LgymApi.Domain.Entities;
+using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
+using LgymApi.Resources;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -47,5 +51,26 @@ public sealed class TraineeDietPlanController : ControllerBase
         return result.IsFailure
             ? result.ToActionResult()
             : Ok(_mapper.Map<DietPlanReadModel, DietPlanDto>(result.Value));
+    }
+
+    [HttpGet("diet-plans/{dietPlanId}/history")]
+    [ProducesResponseType(typeof(List<DietPlanHistoryDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetOwnPlanHistory(
+        [FromRoute] string dietPlanId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Id<DietPlan>.TryParse(dietPlanId, out var parsedPlanId))
+        {
+            return BadRequest(_mapper.Map<string, LgymApi.Api.Features.Common.Contracts.ResponseMessageDto>(Messages.FieldRequired));
+        }
+
+        var traineeId = HttpContext.GetAuthenticatedAccountContext()!.Id;
+        var result = await _dietPlans.GetOwnHistoryAsync(
+            traineeId,
+            parsedPlanId,
+            cancellationToken);
+        return result.IsFailure
+            ? result.ToActionResult()
+            : Ok(_mapper.MapList<DietPlanHistoryReadModel, DietPlanHistoryDto>(result.Value));
     }
 }
