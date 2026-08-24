@@ -21,6 +21,7 @@ using LgymApi.Application.Coaching.TraineeNotes.TrainerList;
 using LgymApi.Application.Coaching.TraineeNotes.Update;
 using LgymApi.Application.Coaching.TraineeNotes.VisibleList;
 using LgymApi.Application.Coaching.TraineeNotes.VisibleSingle;
+using LgymApi.Application.Coaching.TraineeNotes.VisibleHistory;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
@@ -70,6 +71,7 @@ public sealed class CoachingApiAdapterMappingProfile : IMappingProfile
             source.TrainerId.Rebind<User>(), source.TraineeId.Rebind<User>(), source.NoteId));
         configuration.CreateMap<ActorAccountInput, ListVisibleTraineeNotesQuery>((source, _) => new(source.ActorId.Rebind<User>()));
         configuration.CreateMap<ActorNoteAccountInput, GetVisibleTraineeNoteQuery>((source, _) => new(source.ActorId.Rebind<User>(), source.NoteId));
+        configuration.CreateMap<ActorNoteAccountInput, GetVisibleTraineeNoteHistoryQuery>((source, _) => new(source.ActorId.Rebind<User>(), source.NoteId));
 
         configuration.CreateMap<ActorInvitationAccountInput, AcceptInvitationCommand>((source, _) => new(source.ActorId.Rebind<User>(), source.InvitationId));
         configuration.CreateMap<ActorInvitationAccountInput, RejectInvitationCommand>((source, _) => new(source.ActorId.Rebind<User>(), source.InvitationId));
