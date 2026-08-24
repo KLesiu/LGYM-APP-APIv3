@@ -70,6 +70,7 @@ public sealed class MainRecordProfile : IMappingProfile
             {
                 Id = source.Exercise.Id.ToString(),
                 Name = source.Exercise.Name,
+                DisplayName = GetDisplayName(context, source.Exercise.Id, source.Exercise.Name),
                 UserId = source.Exercise.UserId?.ToString(),
                 BodyPart = context.Map<BodyParts, EnumLookupDto>(source.Exercise.BodyPart),
                 EloFormula = source.Exercise.EloFormula == null
@@ -95,5 +96,16 @@ public sealed class MainRecordProfile : IMappingProfile
             Unit = context!.Map<WeightUnits, EnumLookupDto>(source.Unit),
             Date = source.Date
         });
+    }
+
+    private static string GetDisplayName(
+        MappingContext context,
+        Id<Exercise> exerciseId,
+        string fallback)
+    {
+        var translations = context.Get(ExerciseProfile.Keys.Translations);
+        return translations is not null && translations.TryGetValue(exerciseId, out var displayName)
+            ? displayName
+            : fallback;
     }
 }
