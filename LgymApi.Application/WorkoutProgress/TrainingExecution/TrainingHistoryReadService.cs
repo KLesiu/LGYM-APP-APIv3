@@ -76,7 +76,7 @@ internal sealed class TrainingHistoryReadService : ITrainingHistoryReadService
 
         var trainingScoreRefs = await _trainingRepository.GetExerciseScoreLinksAsync(trainings.Select(training => training.Id).ToList(), cancellationToken);
         var scores = await _exerciseScoreRepository.GetByIdsAsync(trainingScoreRefs.Select(reference => reference.ExerciseScoreId).Distinct().ToList(), cancellationToken);
-        var planDays = await _planDayReferences.GetByIdsAsync(trainings.Select(training => training.TypePlanDayId).ToList(), cancellationToken);
+        var planDays = await _planDayReferences.GetByIdsAsync(trainings.Select(training => training.TypePlanDayId).Distinct().ToList(), cancellationToken);
         var scoreMap = scores.ToDictionary(score => score.Id, score => score);
         var planDaysById = planDays.ToDictionary(planDay => planDay.PlanDayId);
         var result = new List<TrainingByDateDetails>();
