@@ -73,7 +73,9 @@ internal sealed class CreateTraineeNoteUseCase : ICreateTraineeNoteUseCase
                 DateTimeOffset.UtcNow,
                 null,
                 note.Content,
-                "Created"),
+                "Created",
+                null,
+                note.VisibleToTrainee),
             _mapper.CreateContext());
         await _notes.AddHistoryEntryAsync(history, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);

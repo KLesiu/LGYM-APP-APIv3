@@ -67,7 +67,9 @@ internal sealed class DeleteTraineeNoteUseCase : IDeleteTraineeNoteUseCase
                 DateTimeOffset.UtcNow,
                 existing.Content,
                 existing.Content,
-                "Deleted"),
+                "Deleted",
+                existing.VisibleToTrainee,
+                false),
             _mapper.CreateContext());
         await _notes.AddHistoryEntryAsync(history, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);

@@ -72,7 +72,9 @@ public sealed class TraineeNoteMappingProfile : IMappingProfile
             source.ChangedAt,
             source.PreviousContent,
             source.NewContent,
-            source.ChangeType));
+            source.ChangeType,
+            source.PreviousVisibleToTrainee,
+            source.NewVisibleToTrainee));
     }
 
     private static string? NormalizeNullable(string? value)
@@ -104,4 +106,6 @@ internal sealed record TraineeNoteHistorySource(
     DateTimeOffset ChangedAt,
     string? PreviousContent,
     string NewContent,
-    string ChangeType);
+    string ChangeType,
+    bool? PreviousVisibleToTrainee,
+    bool NewVisibleToTrainee);

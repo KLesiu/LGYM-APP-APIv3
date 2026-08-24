@@ -11,6 +11,7 @@ using LgymApi.Application.Coaching.TraineeNotes.TrainerList;
 using LgymApi.Application.Coaching.TraineeNotes.Update;
 using LgymApi.Application.Coaching.TraineeNotes.VisibleList;
 using LgymApi.Application.Coaching.TraineeNotes.VisibleSingle;
+using LgymApi.Application.Coaching.TraineeNotes.VisibleHistory;
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
@@ -141,6 +142,48 @@ public sealed class CoachingTraineeNoteSliceTests
             Arg.Any<CoachingTraineeNoteWriteModel>(),
             Arg.Any<CancellationToken>());
         await dependencies.UnitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task VisibleHistory_ReturnsOnlyOwnedVisibleNoteHistoryAndHidesUnavailableNotes()
+    {
+        var traineeId = Id<User>.New();
+        var trainerId = Id<User>.New();
+        var visible = Note(trainerId, traineeId, visibleToTrainee: true);
+        var privateNote = Note(trainerId, traineeId);
+        var changedAt = DateTimeOffset.UtcNow;
+        var history = new CoachingTraineeNoteHistoryFact(
+            Id<TraineeNoteHistory>.New(),
+            visible.Id,
+            trainerId,
+            changedAt,
+            null,
+            "Visible content",
+            "Updated",
+            changedAt,
+            changedAt,
+            false,
+            true);
+        var dependencies = new Dependencies();
+        dependencies.Notes.FindNoteByIdAsync(visible.Id, Arg.Any<CancellationToken>()).Returns(visible);
+        dependencies.Notes.FindNoteByIdAsync(privateNote.Id, Arg.Any<CancellationToken>()).Returns(privateNote);
+        dependencies.Notes.GetVisibleNoteHistoryAsync(visible.Id, Arg.Any<CancellationToken>()).Returns([history]);
+        var useCase = Resolve<IGetVisibleTraineeNoteHistoryUseCase>(dependencies.CreateServices());
+
+        var success = await useCase.ExecuteAsync(
+            new GetVisibleTraineeNoteHistoryQuery(traineeId, visible.Id));
+        var hidden = await useCase.ExecuteAsync(
+            new GetVisibleTraineeNoteHistoryQuery(traineeId, privateNote.Id));
+
+        success.IsSuccess.Should().BeTrue();
+        success.Value.Should().ContainSingle().Which.NewContent.Should().Be("Visible content");
+        hidden.Error.Should().BeOfType<NotFoundError>();
+        await dependencies.Notes.Received(1).GetVisibleNoteHistoryAsync(
+            visible.Id,
+            Arg.Any<CancellationToken>());
+        await dependencies.Notes.DidNotReceive().GetVisibleNoteHistoryAsync(
+            privateNote.Id,
+            Arg.Any<CancellationToken>());
     }
 
     [Test]

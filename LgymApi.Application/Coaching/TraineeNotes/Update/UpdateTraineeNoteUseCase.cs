@@ -83,7 +83,9 @@ internal sealed class UpdateTraineeNoteUseCase : IUpdateTraineeNoteUseCase
                 DateTimeOffset.UtcNow,
                 existing.Content,
                 updated.Content,
-                "Updated"),
+                "Updated",
+                existing.VisibleToTrainee,
+                updated.VisibleToTrainee),
             _mapper.CreateContext());
         await _notes.AddHistoryEntryAsync(history, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
