@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using LgymApi.Application.Notifications;
 using LgymApi.Application.Notifications.Contracts.InApp;
@@ -25,26 +24,19 @@ namespace LgymApi.Application.Notifications.InApp
         {
             using var document = JsonDocument.Parse(payloadJson);
             var root = document.RootElement;
-            var traineeId = ReportNotificationActionHelpers.ParseAccountId(
-                root,
-                "traineeId",
-                "Report submission");
-            var trainerId = ReportNotificationActionHelpers.ParseAccountId(
-                root,
-                "trainerId",
-                "Report submission");
             var submissionId = root.GetProperty("submissionId").GetString() ?? string.Empty;
             var templateName = root.GetProperty("templateName").GetString() ?? string.Empty;
-            var trainee = await accountLookupService.GetByIdAsync(traineeId, cancellationToken);
-            var trainer = await accountLookupService.GetByIdAsync(trainerId, cancellationToken);
-            var previousCulture = CultureInfo.CurrentUICulture;
 
-            try
-            {
-                CultureInfo.CurrentUICulture = ReportNotificationActionHelpers.ResolveCulture(
-                    trainer?.PreferredLanguage,
-                    defaults.PreferredLanguage);
-                var traineeName = string.IsNullOrWhiteSpace(trainee?.Name) ? Messages.GenericTraineeDisplayName : trainee.Name;
+            await ReportNotificationActionHelpers.ExecuteWithParticipantsAsync(
+                root,
+                "trainerId",
+                "traineeId",
+                "Report submission",
+                () => Messages.GenericTraineeDisplayName,
+                accountLookupService,
+                defaults,
+                async (trainerId, traineeId, traineeName) =>
+                {
                 var template = string.IsNullOrWhiteSpace(templateName) ? Messages.GenericReportDisplayName : templateName.Trim();
                 await notificationWriter.CreateAsync(
                     trainerId.ToString(),
@@ -54,11 +46,8 @@ namespace LgymApi.Application.Notifications.InApp
                     $"/trainer/members/{traineeId}?tab=reports&submissionId={submissionId}",
                     "ReportSubmissionReceived",
                     cancellationToken);
-            }
-            finally
-            {
-                CultureInfo.CurrentUICulture = previousCulture;
-            }
+                },
+                cancellationToken);
         }
 
     }
