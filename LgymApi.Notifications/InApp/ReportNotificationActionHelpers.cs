@@ -2,12 +2,47 @@ using System.Globalization;
 using System.Text.Json;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
+using LgymApi.Identity.Contracts.Accounts;
+using LgymApi.Application.Options;
 
 namespace LgymApi.Application.Notifications.InApp;
 
 internal static class ReportNotificationActionHelpers
 {
-    public static Id<AccountReference> ParseAccountId(
+    public static async Task ExecuteWithParticipantsAsync(
+        JsonElement root,
+        string recipientProperty,
+        string actorProperty,
+        string notificationName,
+        Func<string> actorFallback,
+        IAccountLookupService accountLookupService,
+        AppDefaultsOptions defaults,
+        Func<Id<AccountReference>, Id<AccountReference>, string, Task> action,
+        CancellationToken cancellationToken)
+    {
+        var recipientId = ParseAccountId(root, recipientProperty, notificationName);
+        var actorId = ParseAccountId(root, actorProperty, notificationName);
+        var recipient = await accountLookupService.GetByIdAsync(recipientId, cancellationToken);
+        var actor = await accountLookupService.GetByIdAsync(actorId, cancellationToken);
+        var previousCulture = CultureInfo.CurrentUICulture;
+
+        try
+        {
+            CultureInfo.CurrentUICulture = ResolveCulture(
+                recipient?.PreferredLanguage,
+                defaults.PreferredLanguage);
+            var actorName = string.IsNullOrWhiteSpace(actor?.Name)
+                ? actorFallback()
+                : actor.Name;
+            await action(recipientId, actorId, actorName);
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = previousCulture;
+        }
+    }
+
+    private static Id<AccountReference> ParseAccountId(
         JsonElement root,
         string propertyName,
         string notificationName)
@@ -22,7 +57,7 @@ internal static class ReportNotificationActionHelpers
         return id;
     }
 
-    public static CultureInfo ResolveCulture(
+    private static CultureInfo ResolveCulture(
         string? preferredLanguage,
         string fallbackLanguage)
     {

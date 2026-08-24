@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using LgymApi.Application.Notifications;
 using LgymApi.Application.Notifications.Contracts.InApp;
@@ -28,28 +27,19 @@ internal sealed class ReportFeedbackAddedActionExecutionPort(
     {
         using var document = JsonDocument.Parse(payloadJson);
         var root = document.RootElement;
-        var traineeId = ReportNotificationActionHelpers.ParseAccountId(
-            root,
-            "traineeId",
-            "Report feedback");
-        var trainerId = ReportNotificationActionHelpers.ParseAccountId(
-            root,
-            "trainerId",
-            "Report feedback");
         var submissionId = root.GetProperty("submissionId").GetString() ?? string.Empty;
         var templateName = root.GetProperty("templateName").GetString() ?? string.Empty;
 
-        var trainee = await accountLookupService.GetByIdAsync(traineeId, cancellationToken);
-        var trainer = await accountLookupService.GetByIdAsync(trainerId, cancellationToken);
-        var previousCulture = CultureInfo.CurrentUICulture;
-        try
-        {
-            CultureInfo.CurrentUICulture = ReportNotificationActionHelpers.ResolveCulture(
-                trainee?.PreferredLanguage,
-                defaults.PreferredLanguage);
-            var trainerName = string.IsNullOrWhiteSpace(trainer?.Name)
-                ? Messages.GenericTrainerDisplayName
-                : trainer.Name;
+        await ReportNotificationActionHelpers.ExecuteWithParticipantsAsync(
+            root,
+            "traineeId",
+            "trainerId",
+            "Report feedback",
+            () => Messages.GenericTrainerDisplayName,
+            accountLookupService,
+            defaults,
+            async (traineeId, trainerId, trainerName) =>
+            {
             var template = string.IsNullOrWhiteSpace(templateName) ? Messages.GenericReportDisplayName : templateName.Trim();
             await notificationWriter.CreateAsync(
                 traineeId.ToString(),
@@ -59,11 +49,8 @@ internal sealed class ReportFeedbackAddedActionExecutionPort(
                 $"/trainer/report-submissions/{submissionId}",
                 "ReportFeedbackReceived",
                 cancellationToken);
-        }
-        finally
-        {
-            CultureInfo.CurrentUICulture = previousCulture;
-        }
+            },
+            cancellationToken);
     }
 
 }
