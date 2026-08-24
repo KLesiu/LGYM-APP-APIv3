@@ -28,6 +28,7 @@ using LgymApi.Application.Coaching.TraineeNotes.TrainerList;
 using LgymApi.Application.Coaching.TraineeNotes.Update;
 using LgymApi.Application.Coaching.TraineeNotes.VisibleList;
 using LgymApi.Application.Coaching.TraineeNotes.VisibleSingle;
+using LgymApi.Application.Coaching.TraineeNotes.VisibleHistory;
 using LgymApi.Application.Coaching.Progress.TrainingDates;
 using LgymApi.Application.Coaching.Progress.TrainingByDate;
 using LgymApi.Application.Coaching.Progress.ExerciseScoresChart;
@@ -86,6 +87,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IGetTraineeNoteHistoryUseCase, GetTraineeNoteHistoryUseCase>();
         services.AddScoped<IListVisibleTraineeNotesUseCase, ListVisibleTraineeNotesUseCase>();
         services.AddScoped<IGetVisibleTraineeNoteUseCase, GetVisibleTraineeNoteUseCase>();
+        services.AddScoped<IGetVisibleTraineeNoteHistoryUseCase, GetVisibleTraineeNoteHistoryUseCase>();
         services.AddScoped<IPlanDayRelationshipAccessPort, PlanDayRelationshipAccessAdapter>();
         services.AddScoped<IMeasurementsRelationshipAccessPort, MeasurementsRelationshipAccessAdapter>();
         return services;
