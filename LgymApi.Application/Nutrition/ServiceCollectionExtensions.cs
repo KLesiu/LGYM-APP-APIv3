@@ -10,6 +10,7 @@ using LgymApi.Application.Nutrition.DietPlans.GetTraineePlan;
 using LgymApi.Application.Nutrition.DietPlans.GetTraineePlanHistory;
 using LgymApi.Application.Nutrition.DietPlans.GetTraineePlanHistory.Contracts;
 using LgymApi.Application.Nutrition.DietPlans.GetTraineePlans;
+using LgymApi.Application.Nutrition.DietPlans.GetOwnPlanHistory;
 using LgymApi.Application.Nutrition.DietPlans.UpdateTraineePlan;
 using LgymApi.Application.Nutrition.DietPlans.UpdateTraineePlan.Contracts;
 using LgymApi.Application.Nutrition.Supplementation.AssignTraineePlan;
@@ -41,6 +42,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IGetTraineeDietPlansUseCase, GetTraineeDietPlansUseCase>();
         services.AddScoped<IGetCurrentDietPlansUseCase, GetCurrentDietPlansUseCase>();
         services.AddScoped<IGetTraineeDietPlanHistoryUseCase, GetTraineeDietPlanHistoryUseCase>();
+        services.AddScoped<IGetOwnDietPlanHistoryUseCase, GetOwnDietPlanHistoryUseCase>();
         services.AddScoped<IGetCurrentDietPlanUseCase, GetCurrentDietPlanUseCase>();
         services.AddScoped<DietPlanHistorySnapshotFactory>();
         services.AddScoped<ICreateTraineeSupplementPlanUseCase, CreateTraineeSupplementPlanUseCase>();
