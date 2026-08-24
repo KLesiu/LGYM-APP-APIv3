@@ -1071,7 +1071,8 @@ public sealed class TrainingTests : IntegrationTestBase
 
             var exercise = training.GetProperty("exercises")[0];
             AssertExactPropertyNames(exercise, "exerciseScoreId", "scoresDetails", "exerciseDetails");
-            AssertExactPropertyNames(exercise.GetProperty("exerciseDetails"), "_id", "name", "user", "bodyPart", "eloFormula", "description");
+            AssertExactPropertyNames(exercise.GetProperty("exerciseDetails"), "_id", "name", "displayName", "user", "bodyPart", "eloFormula", "description");
+            exercise.GetProperty("exerciseDetails").GetProperty("displayName").GetString().Should().NotBeNullOrWhiteSpace();
 
             var score = exercise.GetProperty("scoresDetails")[0];
             AssertExactPropertyNames(score, "_id", "weight", "unit", "reps", "exercise", "series");
