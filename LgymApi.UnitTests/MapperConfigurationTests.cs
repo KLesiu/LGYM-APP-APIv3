@@ -11,6 +11,7 @@ using LgymApi.Application.Features.ExerciseScores.Models;
 using LgymApi.Application.Mapping;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Features.Exercise.Models;
+using LgymApi.Application.WorkoutProgress.ProgressData.Models;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.Enums;
 using LgymApi.Domain.ValueObjects;
@@ -110,6 +111,32 @@ services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
         var input = mapper.Map<ExerciseExtendedFormDto, AddExerciseWithFormulaInput>(dto);
 
         input.EloFormula.Should().Be(ExerciseEloFormula.PullupWeighted);
+    }
+
+    [Test]
+    public void ExerciseResponseDto_UsesLocalizedDisplayNameFromMappingContext()
+    {
+        var services = new ServiceCollection();
+        services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
+        using var provider = services.BuildServiceProvider();
+        var mapper = provider.GetRequiredService<IMapper>();
+        var exerciseId = Id<Exercise>.New();
+        var context = mapper.CreateContext();
+        context.Set(
+            new ContextKey<IReadOnlyDictionary<Id<Exercise>, string>>("Exercise.Translations"),
+            new Dictionary<Id<Exercise>, string> { [exerciseId] = "Polska nazwa" });
+        var exercise = new ProgressExerciseReadModel(
+            exerciseId,
+            "English name",
+            null,
+            BodyParts.Back,
+            null,
+            null,
+            null);
+
+        var dto = context.Map<ProgressExerciseReadModel, ExerciseResponseDto>(exercise);
+
+        dto.DisplayName.Should().Be("Polska nazwa");
     }
 
     [Test]
