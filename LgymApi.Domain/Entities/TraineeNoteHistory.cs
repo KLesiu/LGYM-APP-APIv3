@@ -10,6 +10,8 @@ public sealed class TraineeNoteHistory : EntityBase<TraineeNoteHistory>
     public string? PreviousContent { get; set; }
     public string NewContent { get; set; } = string.Empty;
     public string ChangeType { get; set; } = string.Empty;
+    public bool? PreviousVisibleToTrainee { get; set; }
+    public bool NewVisibleToTrainee { get; set; }
 
     public TraineeNote TraineeNote { get; set; } = null!;
     public User ChangedByUser { get; set; } = null!;
