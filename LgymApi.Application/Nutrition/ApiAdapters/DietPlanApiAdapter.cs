@@ -12,10 +12,14 @@ using LgymApi.Application.Nutrition.DietPlans.GetCurrentDietPlans;
 using LgymApi.Application.Nutrition.DietPlans.GetTraineePlan;
 using LgymApi.Application.Nutrition.DietPlans.GetTraineePlanHistory.Contracts;
 using LgymApi.Application.Nutrition.DietPlans.GetTraineePlanHistory.Models;
+using LgymApi.Application.Nutrition.DietPlans.GetOwnPlanHistory;
 using LgymApi.Application.Nutrition.DietPlans.GetTraineePlans;
 using LgymApi.Application.Nutrition.DietPlans.Models;
 using LgymApi.Application.Nutrition.DietPlans.UpdateTraineePlan;
 using LgymApi.Application.Nutrition.DietPlans.UpdateTraineePlan.Contracts;
+using LgymApi.Domain.Entities;
+using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.Application.Nutrition.ApiAdapters;
 
@@ -28,11 +32,12 @@ internal sealed class DietPlanApiAdapter : IDietPlanAccountApiAdapter
     private readonly IActivateTraineeDietPlanUseCase _activate;
     private readonly IDeleteTraineeDietPlanUseCase _delete;
     private readonly IGetTraineeDietPlanHistoryUseCase _history;
+    private readonly IGetOwnDietPlanHistoryUseCase _ownHistory;
     private readonly IGetCurrentDietPlansUseCase _currentPlans;
     private readonly IGetCurrentDietPlanUseCase _currentPlan;
     private readonly IMapper _mapper;
 
-    public DietPlanApiAdapter(IGetTraineeDietPlansUseCase list, IGetTraineeDietPlanUseCase get, ICreateTraineeDietPlanUseCase create, IUpdateTraineeDietPlanUseCase update, IActivateTraineeDietPlanUseCase activate, IDeleteTraineeDietPlanUseCase delete, IGetTraineeDietPlanHistoryUseCase history, IGetCurrentDietPlansUseCase currentPlans, IGetCurrentDietPlanUseCase currentPlan, IMapper mapper)
+    public DietPlanApiAdapter(IGetTraineeDietPlansUseCase list, IGetTraineeDietPlanUseCase get, ICreateTraineeDietPlanUseCase create, IUpdateTraineeDietPlanUseCase update, IActivateTraineeDietPlanUseCase activate, IDeleteTraineeDietPlanUseCase delete, IGetTraineeDietPlanHistoryUseCase history, IGetOwnDietPlanHistoryUseCase ownHistory, IGetCurrentDietPlansUseCase currentPlans, IGetCurrentDietPlanUseCase currentPlan, IMapper mapper)
     {
         _list = list;
         _get = get;
@@ -41,6 +46,7 @@ internal sealed class DietPlanApiAdapter : IDietPlanAccountApiAdapter
         _activate = activate;
         _delete = delete;
         _history = history;
+        _ownHistory = ownHistory;
         _currentPlans = currentPlans;
         _currentPlan = currentPlan;
         _mapper = mapper;
@@ -53,6 +59,7 @@ internal sealed class DietPlanApiAdapter : IDietPlanAccountApiAdapter
     public Task<Result<Unit, AppError>> ActivateAsync(DietPlanActivateAccountCommand command, CancellationToken cancellationToken = default) => _activate.ExecuteAsync(_mapper.Map<DietPlanActivateAccountCommand, ActivateTraineeDietPlanCommand>(command), cancellationToken);
     public Task<Result<Unit, AppError>> DeleteAsync(DietPlanDeleteAccountCommand command, CancellationToken cancellationToken = default) => _delete.ExecuteAsync(_mapper.Map<DietPlanDeleteAccountCommand, DeleteTraineeDietPlanCommand>(command), cancellationToken);
     public Task<Result<IReadOnlyList<DietPlanHistoryReadModel>, AppError>> GetHistoryAsync(DietPlanHistoryAccountQuery query, CancellationToken cancellationToken = default) => _history.ExecuteAsync(_mapper.Map<DietPlanHistoryAccountQuery, GetTraineeDietPlanHistoryQuery>(query), cancellationToken);
+    public Task<Result<IReadOnlyList<DietPlanHistoryReadModel>, AppError>> GetOwnHistoryAsync(Id<AccountReference> traineeId, Id<DietPlan> dietPlanId, CancellationToken cancellationToken = default) => _ownHistory.ExecuteAsync(_mapper.Map<DietPlanOwnHistoryAccountInput, GetOwnDietPlanHistoryQuery>(new(traineeId, dietPlanId)), cancellationToken);
     public Task<Result<IReadOnlyList<DietPlanReadModel>, AppError>> GetCurrentPlansAsync(DietPlanCurrentAccountQuery query, CancellationToken cancellationToken = default) => _currentPlans.ExecuteAsync(_mapper.Map<DietPlanCurrentAccountQuery, GetCurrentDietPlansQuery>(query), cancellationToken);
     public Task<Result<DietPlanReadModel, AppError>> GetCurrentPlanAsync(DietPlanCurrentAccountQuery query, CancellationToken cancellationToken = default) => _currentPlan.ExecuteAsync(_mapper.Map<DietPlanCurrentAccountQuery, GetCurrentDietPlanQuery>(query), cancellationToken);
 }
