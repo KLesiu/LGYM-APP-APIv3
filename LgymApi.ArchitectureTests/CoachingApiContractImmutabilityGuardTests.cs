@@ -43,8 +43,8 @@ public sealed class CoachingApiContractImmutabilityGuardTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(actualActions, Has.Length.EqualTo(30), $"Coaching must expose exactly 30 actions. {ContractChangeMessage}");
-            Assert.That(actualActions.Select(action => (action.Route, action.Verb)).Distinct().ToArray(), Has.Length.EqualTo(30),
+            Assert.That(actualActions, Has.Length.EqualTo(31), $"Coaching must expose exactly 31 actions. {ContractChangeMessage}");
+            Assert.That(actualActions.Select(action => (action.Route, action.Verb)).Distinct().ToArray(), Has.Length.EqualTo(31),
                 $"Coaching route and verb pairs must be unique. {ContractChangeMessage}");
             AssertActionContractsMatch(actualActions);
             Assert.That(actualResponses, Is.EquivalentTo(ExpectedResponses),
@@ -280,6 +280,7 @@ public sealed class CoachingApiContractImmutabilityGuardTests
         new("TrainerTraineeNotesController", "GetNoteHistory", "api/trainer/trainees/{traineeId}/notes/{noteId}/history", "GET", "AuthConstants.Policies.TrainerAccess", false, "<none>", "List<TraineeNoteHistoryDto>", "StatusCodes.Status200OK"),
         new("TraineeNotesController", "GetVisibleNotes", "api/trainee/notes", "GET", "Authorize", false, "<none>", "List<TraineeNoteDto>", "StatusCodes.Status200OK"),
         new("TraineeNotesController", "GetVisibleNote", "api/trainee/notes/{noteId}", "GET", "Authorize", false, "<none>", "TraineeNoteDto", "StatusCodes.Status200OK"),
+        new("TraineeNotesController", "GetVisibleNoteHistory", "api/trainee/notes/{noteId}/history", "GET", "Authorize", false, "<none>", "List<TraineeNoteHistoryDto>", "StatusCodes.Status200OK"),
         new("PublicInvitationController", "GetInvitationStatus", "api/invitations/{invitationId}", "GET", "AllowAnonymous", false, "string?", "PublicInvitationStatusDto", "StatusCodes.Status200OK")
     ];
 
