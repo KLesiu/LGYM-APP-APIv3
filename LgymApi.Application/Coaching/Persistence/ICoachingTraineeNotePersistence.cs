@@ -12,4 +12,5 @@ public interface ICoachingTraineeNotePersistence
     Task<IReadOnlyList<CoachingTraineeNoteFact>> GetNotesByTrainerAndTraineeAsync(Id<User> trainerId, Id<User> traineeId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CoachingTraineeNoteFact>> GetVisibleNotesByTraineeAsync(Id<User> traineeId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CoachingTraineeNoteHistoryFact>> GetNoteHistoryAsync(Id<TraineeNote> noteId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CoachingTraineeNoteHistoryFact>> GetVisibleNoteHistoryAsync(Id<TraineeNote> noteId, CancellationToken cancellationToken = default);
 }
