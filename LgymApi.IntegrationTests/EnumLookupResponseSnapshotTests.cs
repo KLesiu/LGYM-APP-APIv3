@@ -53,6 +53,7 @@ public sealed class EnumLookupResponseSnapshotTests : IntegrationTestBase
         {
             _id = exerciseId.ToString(),
             name = "Snapshot row",
+            displayName = "Snapshot row",
             user = userId.ToString(),
             bodyPart = new { id = "Back", name = "Back", displayName = "Back" },
             eloFormula = new { id = "Standard", displayName = "Standard" },
@@ -63,6 +64,7 @@ public sealed class EnumLookupResponseSnapshotTests : IntegrationTestBase
         {
             _id = exerciseId.ToString(),
             name = "Snapshot row",
+            displayName = "Snapshot row",
             user = userId.ToString(),
             bodyPart = new { id = "Back", name = "Plecy", displayName = "Plecy" },
             eloFormula = new { id = "Standard", displayName = "Standardowa" },
@@ -107,7 +109,7 @@ public sealed class EnumLookupResponseSnapshotTests : IntegrationTestBase
                 _id = recordId, weight = 102.5, date, unit = new { id = "Kilograms", name = "kg", displayName = "kg" }, exercise = exerciseId.ToString(),
                 exerciseDetails = new
                 {
-                    _id = exerciseId.ToString(), name = "Snapshot row", user = userId.ToString(),
+                    _id = exerciseId.ToString(), name = "Snapshot row", displayName = "Snapshot row", user = userId.ToString(),
                     bodyPart = new { id = "Back", name = "Back", displayName = "Back" },
                     eloFormula = new { id = "Standard", displayName = "Standard" }, description = "Test description", image = (string?)null
                 }
@@ -120,7 +122,7 @@ public sealed class EnumLookupResponseSnapshotTests : IntegrationTestBase
                 _id = recordId, weight = 102.5, date, unit = new { id = "Kilograms", name = "kg", displayName = "kg" }, exercise = exerciseId.ToString(),
                 exerciseDetails = new
                 {
-                    _id = exerciseId.ToString(), name = "Snapshot row", user = userId.ToString(),
+                    _id = exerciseId.ToString(), name = "Snapshot row", displayName = "Snapshot row", user = userId.ToString(),
                     bodyPart = new { id = "Back", name = "Plecy", displayName = "Plecy" },
                     eloFormula = new { id = "Standard", displayName = "Standardowa" }, description = "Test description", image = (string?)null
                 }
