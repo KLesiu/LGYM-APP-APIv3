@@ -15,3 +15,4 @@
 - `CommandEnvelope.CommandTypeFullName` retains its legacy property/column name but stores the canonical legacy `LgymApi.BackgroundWorker.Common.Commands.*` command ID rather than an arbitrary CLR full name. Application CLR names are read aliases only and are never persisted as the canonical ID.
 - Nutrition logically owns `DietPlan`, `DietMeal`, `DietPlanHistory`, `SupplementPlan`, `SupplementPlanItem`, and `SupplementIntakeLog`. They remain physical Domain entities in the shared `AppDbContext`, PostgreSQL database, and migration stream; this ownership cutover adds no entity, schema, migration, or enum change.
 - This logical ownership record leaves Worker behavior and its project document, DataSeeder behavior, every `.csproj`, and the root Project Purpose Map unchanged.
+- `TraineeNoteHistory` records previous and new trainee-visibility state so content revisions created while private cannot be disclosed by later visibility changes.

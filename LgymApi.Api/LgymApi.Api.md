@@ -42,3 +42,4 @@
 - API composition follows the guarded public facade order: Platform, Identity, Training Planning, Notifications, remaining Application, Infrastructure, API adapters, then Worker.
 - Workout & Progress API handoff keeps Exercise and Main Records behind their owner-oriented API adapters because they construct owner input models; Gym, Measurements, Exercise Scores, Training, and ELO Registry controllers inject their existing owner service contracts directly. All seven controllers retain the existing mapping profiles and HTTP contracts.
 - API content links Notifications-owned email templates to `EmailTemplates/<Template>/<en|pl>.email` under the runtime base directory.
+- Trainees can read owner-scoped active diet history and visible note-content history through `/api/trainee/diet-plans/{dietPlanId}/history` and `/api/trainee/notes/{noteId}/history`.
