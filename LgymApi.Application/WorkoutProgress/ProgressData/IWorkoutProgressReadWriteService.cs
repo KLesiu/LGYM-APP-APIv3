@@ -28,6 +28,7 @@ public interface IWorkoutProgressReadWriteService
     Task<Result<Unit, AppError>> DeleteMainRecordAsync(Id<LgymApi.Identity.Contracts.AccountReference> currentUserId, Id<LgymApi.Domain.Entities.MainRecord> recordId, CancellationToken cancellationToken = default);
     Task<Result<Unit, AppError>> UpdateMainRecordAsync(MainRecordUpdateWriteModel input, CancellationToken cancellationToken = default);
     Task<Result<PossibleRecordReadModel, AppError>> GetRecordOrPossibleRecordAsync(Id<LgymApi.Identity.Contracts.AccountReference> userId, Id<LgymApi.Domain.Entities.Exercise> exerciseId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<Id<LgymApi.Domain.Entities.Exercise>, string>> GetExerciseDisplayNamesAsync(IEnumerable<Id<LgymApi.Domain.Entities.Exercise>> exerciseIds, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default);
     Task<Result<List<EloChartPoint>, AppError>> GetEloChartAsync(Id<LgymApi.Identity.Contracts.AccountReference> userId, CancellationToken cancellationToken = default);
     Task<Result<int, AppError>> GetLatestEloAsync(Id<LgymApi.Identity.Contracts.AccountReference> userId, CancellationToken cancellationToken = default);
     Task<int> GetLatestEloOrDefaultAsync(Id<LgymApi.Identity.Contracts.AccountReference> userId, CancellationToken cancellationToken = default);
