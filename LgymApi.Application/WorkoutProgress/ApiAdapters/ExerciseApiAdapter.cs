@@ -25,6 +25,7 @@ public interface IExerciseApiAdapter
     Task<Result<ExercisesWithTranslations, AppError>> GetAllGlobalExercisesAsync(AuthenticatedAccountContext? currentAccount, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default);
     Task<Result<ExercisesWithTranslations, AppError>> GetExerciseByBodyPartAsync(AuthenticatedAccountContext? currentAccount, Id<AccountReference> accountId, BodyParts bodyPart, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default);
     Task<Result<ExerciseWithTranslations, AppError>> GetExerciseAsync(AuthenticatedAccountContext? currentAccount, Id<ExerciseEntity> exerciseId, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<Id<ExerciseEntity>, string>> GetDisplayNamesAsync(IEnumerable<Id<ExerciseEntity>> exerciseIds, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default);
     Task<Result<LastExerciseScoresResult, AppError>> GetLastExerciseScoresAsync(Id<AccountReference> routeAccountId, Id<AccountReference> currentAccountId, Id<ExerciseEntity> exerciseId, int series, Id<LgymApi.Domain.Entities.Gym>? gymId, string exerciseName, CancellationToken cancellationToken = default);
     Task<Result<List<ExerciseTrainingHistoryItem>, AppError>> GetExerciseScoresFromTrainingByExerciseAsync(Id<AccountReference> currentAccountId, Id<ExerciseEntity> exerciseId, CancellationToken cancellationToken = default);
 }
@@ -90,6 +91,9 @@ internal sealed class ExerciseApiAdapter : IExerciseApiAdapter
 
     public Task<Result<ExerciseWithTranslations, AppError>> GetExerciseAsync(AuthenticatedAccountContext? currentAccount, Id<ExerciseEntity> exerciseId, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default)
         => _exerciseService.GetExerciseAsync(currentAccount, exerciseId, cultures, cancellationToken);
+
+    public Task<IReadOnlyDictionary<Id<ExerciseEntity>, string>> GetDisplayNamesAsync(IEnumerable<Id<ExerciseEntity>> exerciseIds, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default)
+        => _exerciseService.GetDisplayNamesAsync(exerciseIds, cultures, cancellationToken);
 
     public Task<Result<LastExerciseScoresResult, AppError>> GetLastExerciseScoresAsync(Id<AccountReference> routeAccountId, Id<AccountReference> currentAccountId, Id<ExerciseEntity> exerciseId, int series, Id<LgymApi.Domain.Entities.Gym>? gymId, string exerciseName, CancellationToken cancellationToken = default)
         => _exerciseService.GetLastExerciseScoresAsync(

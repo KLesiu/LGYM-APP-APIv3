@@ -12,6 +12,17 @@ namespace LgymApi.Application.Features.Exercise;
 
 public sealed partial class ExerciseService : IExerciseService
 {
+    public async Task<IReadOnlyDictionary<Id<Domain.Entities.Exercise>, string>> GetDisplayNamesAsync(
+        IEnumerable<Id<Domain.Entities.Exercise>> exerciseIds,
+        IReadOnlyList<string> cultures,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = exerciseIds.Where(id => !id.IsEmpty).Distinct().ToList();
+        return ids.Count == 0
+            ? new Dictionary<Id<Domain.Entities.Exercise>, string>()
+            : await _exerciseRepository.GetTranslationsAsync(ids, cultures, cancellationToken);
+    }
+
     public async Task<Result<ExercisesWithTranslations, AppError>> GetAllExercisesAsync(AuthenticatedAccountContext? currentAccount, Id<AccountReference> routeAccountId, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default)
     {
         if (routeAccountId.IsEmpty)
