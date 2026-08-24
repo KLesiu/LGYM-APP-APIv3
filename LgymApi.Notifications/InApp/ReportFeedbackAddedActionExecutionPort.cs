@@ -3,8 +3,6 @@ using System.Text.Json;
 using LgymApi.Application.Notifications;
 using LgymApi.Application.Notifications.Contracts.InApp;
 using LgymApi.Application.Options;
-using LgymApi.Domain.ValueObjects;
-using LgymApi.Identity.Contracts;
 using LgymApi.Identity.Contracts.Accounts;
 using LgymApi.Resources;
 
@@ -30,8 +28,14 @@ internal sealed class ReportFeedbackAddedActionExecutionPort(
     {
         using var document = JsonDocument.Parse(payloadJson);
         var root = document.RootElement;
-        var traineeId = ParseAccountId(root, "traineeId");
-        var trainerId = ParseAccountId(root, "trainerId");
+        var traineeId = ReportNotificationActionHelpers.ParseAccountId(
+            root,
+            "traineeId",
+            "Report feedback");
+        var trainerId = ReportNotificationActionHelpers.ParseAccountId(
+            root,
+            "trainerId",
+            "Report feedback");
         var submissionId = root.GetProperty("submissionId").GetString() ?? string.Empty;
         var templateName = root.GetProperty("templateName").GetString() ?? string.Empty;
 
@@ -40,7 +44,9 @@ internal sealed class ReportFeedbackAddedActionExecutionPort(
         var previousCulture = CultureInfo.CurrentUICulture;
         try
         {
-            CultureInfo.CurrentUICulture = ResolveCulture(trainee?.PreferredLanguage);
+            CultureInfo.CurrentUICulture = ReportNotificationActionHelpers.ResolveCulture(
+                trainee?.PreferredLanguage,
+                defaults.PreferredLanguage);
             var trainerName = string.IsNullOrWhiteSpace(trainer?.Name)
                 ? Messages.GenericTrainerDisplayName
                 : trainer.Name;
@@ -60,31 +66,6 @@ internal sealed class ReportFeedbackAddedActionExecutionPort(
         }
     }
 
-    private static Id<AccountReference> ParseAccountId(JsonElement root, string propertyName)
-    {
-        var value = root.GetProperty(propertyName).GetString() ?? string.Empty;
-        if (!Id<AccountReference>.TryParse(value, out var id))
-        {
-            throw new InvalidOperationException($"Report feedback notification payload has an invalid {propertyName}.");
-        }
-
-        return id;
-    }
-
-    private CultureInfo ResolveCulture(string? preferredLanguage)
-    {
-        var cultureName = string.IsNullOrWhiteSpace(preferredLanguage)
-            ? defaults.PreferredLanguage
-            : preferredLanguage;
-        try
-        {
-            return CultureInfo.GetCultureInfo(cultureName);
-        }
-        catch (CultureNotFoundException)
-        {
-            return CultureInfo.GetCultureInfo(defaults.PreferredLanguage);
-        }
-    }
 }
 
 }
