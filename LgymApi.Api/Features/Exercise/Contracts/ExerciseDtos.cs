@@ -60,6 +60,9 @@ public sealed class ExerciseResponseDto : IResultDto
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 
+    [JsonPropertyName("displayName")]
+    public string DisplayName { get; set; } = string.Empty;
+
     [JsonPropertyName("user")]
     public string? UserId { get; set; }
 

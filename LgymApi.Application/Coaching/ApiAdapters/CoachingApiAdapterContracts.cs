@@ -28,6 +28,7 @@ public interface ITrainerDashboardProgressApiPort
     Task<Result<Pagination<TrainerDashboardTraineeReadModel>, AppError>> GetDashboardAsync(AuthenticatedAccountContext trainer, string? search, string? status, string? sortBy, string? sortDirection, int page, int pageSize, CancellationToken cancellationToken = default);
     Task<Result<List<DateTime>, AppError>> GetTrainingDatesAsync(AuthenticatedAccountContext trainer, Id<AccountReference> traineeId, CancellationToken cancellationToken = default);
     Task<Result<List<WorkoutProgressDashboardTrainingReadModel>, AppError>> GetTrainingByDateAsync(AuthenticatedAccountContext trainer, Id<AccountReference> traineeId, DateTime createdAt, CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<Id<Exercise>, string>> GetExerciseDisplayNamesAsync(IEnumerable<Id<Exercise>> exerciseIds, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default);
     Task<Result<List<ExerciseScoreChartPoint>, AppError>> GetExerciseScoresChartAsync(AuthenticatedAccountContext trainer, Id<AccountReference> traineeId, Id<Exercise> exerciseId, CancellationToken cancellationToken = default);
     Task<Result<List<EloChartPoint>, AppError>> GetEloChartAsync(AuthenticatedAccountContext trainer, Id<AccountReference> traineeId, CancellationToken cancellationToken = default);
     Task<Result<List<MainRecordReadModel>, AppError>> GetMainRecordsHistoryAsync(AuthenticatedAccountContext trainer, Id<AccountReference> traineeId, CancellationToken cancellationToken = default);

@@ -86,6 +86,10 @@ public sealed class TrainingProfile : IMappingProfile
                 {
                     Id = exercise.ExerciseDetails.Id,
                     Name = exercise.ExerciseDetails.Name,
+                    DisplayName = GetDisplayName(
+                        context,
+                        exercise.ExerciseDetails.Id,
+                        exercise.ExerciseDetails.Name),
                     UserId = exercise.ExerciseDetails.UserId,
                     BodyPart = context!.Map<BodyParts, EnumLookupDto>(exercise.ExerciseDetails.BodyPart),
                     EloFormula = exercise.ExerciseDetails.EloFormula == null
@@ -116,5 +120,21 @@ public sealed class TrainingProfile : IMappingProfile
                 : new PlanDayChooseDto { Id = source.PlanDay.PlanDayId.ToString(), Name = source.PlanDay.Name }
         });
 
+    }
+
+    private static string GetDisplayName(
+        MappingContext? context,
+        string exerciseId,
+        string fallback)
+    {
+        if (!LgymApi.Domain.ValueObjects.Id<LgymApi.Domain.Entities.Exercise>.TryParse(exerciseId, out var parsedId))
+        {
+            return fallback;
+        }
+
+        var translations = context?.Get(ExerciseProfile.Keys.Translations);
+        return translations is not null && translations.TryGetValue(parsedId, out var displayName)
+            ? displayName
+            : fallback;
     }
 }

@@ -11,6 +11,7 @@ using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Pagination;
 using LgymApi.Application.WorkoutProgress.Dashboard.Models;
 using LgymApi.Application.WorkoutProgress.ProgressData.Models;
+using LgymApi.Application.WorkoutProgress.ProgressData;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
@@ -28,8 +29,9 @@ internal sealed class TrainerDashboardProgressApiAdapter : ITrainerDashboardProg
     private readonly IGetMainRecordsHistoryUseCase _getMainRecordsHistory;
     private readonly IUnlinkTraineeUseCase _unlinkTrainee;
     private readonly IMapper _mapper;
+    private readonly IWorkoutProgressReadWriteService _workoutProgress;
 
-    public TrainerDashboardProgressApiAdapter(IGetTrainerDashboardUseCase getDashboard, IGetTrainingDatesUseCase getTrainingDates, IGetTrainingByDateUseCase getTrainingByDate, IGetExerciseScoresChartUseCase getExerciseScoresChart, IGetEloChartUseCase getEloChart, IGetMainRecordsHistoryUseCase getMainRecordsHistory, IUnlinkTraineeUseCase unlinkTrainee, IMapper mapper)
+    public TrainerDashboardProgressApiAdapter(IGetTrainerDashboardUseCase getDashboard, IGetTrainingDatesUseCase getTrainingDates, IGetTrainingByDateUseCase getTrainingByDate, IGetExerciseScoresChartUseCase getExerciseScoresChart, IGetEloChartUseCase getEloChart, IGetMainRecordsHistoryUseCase getMainRecordsHistory, IUnlinkTraineeUseCase unlinkTrainee, IMapper mapper, IWorkoutProgressReadWriteService workoutProgress)
     {
         _getDashboard = getDashboard;
         _getTrainingDates = getTrainingDates;
@@ -39,6 +41,7 @@ internal sealed class TrainerDashboardProgressApiAdapter : ITrainerDashboardProg
         _getMainRecordsHistory = getMainRecordsHistory;
         _unlinkTrainee = unlinkTrainee;
         _mapper = mapper;
+        _workoutProgress = workoutProgress;
     }
 
     public Task<Result<Pagination<TrainerDashboardTraineeReadModel>, AppError>> GetDashboardAsync(AuthenticatedAccountContext trainer, string? search, string? status, string? sortBy, string? sortDirection, int page, int pageSize, CancellationToken cancellationToken = default)
@@ -49,6 +52,9 @@ internal sealed class TrainerDashboardProgressApiAdapter : ITrainerDashboardProg
 
     public Task<Result<List<WorkoutProgressDashboardTrainingReadModel>, AppError>> GetTrainingByDateAsync(AuthenticatedAccountContext trainer, Id<AccountReference> traineeId, DateTime createdAt, CancellationToken cancellationToken = default)
         => _getTrainingByDate.ExecuteAsync(_mapper.Map<TrainingByDateAccountInput, GetTrainingByDateQuery>(new(trainer.Id, traineeId, createdAt)), cancellationToken);
+
+    public Task<IReadOnlyDictionary<Id<Exercise>, string>> GetExerciseDisplayNamesAsync(IEnumerable<Id<Exercise>> exerciseIds, IReadOnlyList<string> cultures, CancellationToken cancellationToken = default)
+        => _workoutProgress.GetExerciseDisplayNamesAsync(exerciseIds, cultures, cancellationToken);
 
     public Task<Result<List<ExerciseScoreChartPoint>, AppError>> GetExerciseScoresChartAsync(AuthenticatedAccountContext trainer, Id<AccountReference> traineeId, Id<Exercise> exerciseId, CancellationToken cancellationToken = default)
         => _getExerciseScoresChart.ExecuteAsync(_mapper.Map<ExerciseScoresChartAccountInput, GetExerciseScoresChartQuery>(new(trainer.Id, traineeId, exerciseId)), cancellationToken);

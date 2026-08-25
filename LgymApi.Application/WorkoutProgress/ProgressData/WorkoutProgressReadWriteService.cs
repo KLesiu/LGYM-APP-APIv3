@@ -17,6 +17,17 @@ namespace LgymApi.Application.WorkoutProgress.ProgressData;
 
 public sealed partial class WorkoutProgressReadWriteService : IWorkoutProgressReadWriteService
 {
+    public async Task<IReadOnlyDictionary<Id<ExerciseEntity>, string>> GetExerciseDisplayNamesAsync(
+        IEnumerable<Id<ExerciseEntity>> exerciseIds,
+        IReadOnlyList<string> cultures,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = exerciseIds.Where(id => !id.IsEmpty).Distinct().ToList();
+        return ids.Count == 0
+            ? new Dictionary<Id<ExerciseEntity>, string>()
+            : await _exerciseRepository.GetTranslationsAsync(ids, cultures, cancellationToken);
+    }
+
     private readonly IWorkoutExercisePersistence _exerciseRepository;
     private readonly IWorkoutExerciseScorePersistence _exerciseScoreRepository;
     private readonly IWorkoutMeasurementPersistence _measurementRepository;

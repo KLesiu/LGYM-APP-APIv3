@@ -14,6 +14,7 @@ using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.WorkoutProgress.Dashboard.Models;
 using LgymApi.Application.WorkoutProgress.ProgressData.Models;
+using LgymApi.Api.Mapping.Profiles;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
@@ -86,7 +87,23 @@ public sealed class TrainerDashboardProgressController : ControllerBase
         }
 
         var result = await _progress.GetTrainingByDateAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedTraineeId, request.CreatedAt, cancellationToken);
-        return result.IsFailure ? result.ToActionResult() : Ok(_mapper.MapList<WorkoutProgressDashboardTrainingReadModel, TrainingByDateDetailsDto>(result.Value));
+        if (result.IsFailure)
+        {
+            return result.ToActionResult();
+        }
+
+        var exerciseIds = result.Value
+            .SelectMany(training => training.Exercises)
+            .Select(exercise => exercise.ExerciseDetails.Id.ToIdOrEmpty<ExerciseEntity>());
+        var translations = await _progress.GetExerciseDisplayNamesAsync(
+            exerciseIds,
+            HttpContext.GetCulturePreferences(),
+            cancellationToken);
+        var mappingContext = _mapper.CreateContext();
+        mappingContext.Set(ExerciseProfile.Keys.Translations, translations);
+        return Ok(_mapper.MapList<WorkoutProgressDashboardTrainingReadModel, TrainingByDateDetailsDto>(
+            result.Value,
+            mappingContext));
     }
 
     [HttpPost("trainees/{traineeId}/exercise-scores/chart")]

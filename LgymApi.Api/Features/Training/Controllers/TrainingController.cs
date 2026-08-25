@@ -6,6 +6,8 @@ using LgymApi.Api.Middleware;
 using LgymApi.Application.Features.Training;
 using LgymApi.Application.Features.Training.Models;
 using LgymApi.Application.Mapping.Core;
+using LgymApi.Application.WorkoutProgress.ApiAdapters;
+using LgymApi.Api.Mapping.Profiles;
 using ExerciseEntity = LgymApi.Domain.Entities.Exercise;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
@@ -20,11 +22,16 @@ public sealed class TrainingController : ControllerBase
 {
     private readonly ITrainingService _trainingService;
     private readonly IMapper _mapper;
+    private readonly IExerciseApiAdapter _exercises;
 
-    public TrainingController(ITrainingService trainingService, IMapper mapper)
+    public TrainingController(
+        ITrainingService trainingService,
+        IMapper mapper,
+        IExerciseApiAdapter exercises)
     {
         _trainingService = trainingService;
         _mapper = mapper;
+        _exercises = exercises;
     }
 
     [HttpPost("{id}/addTraining")]
@@ -90,7 +97,20 @@ public sealed class TrainingController : ControllerBase
             return result.ToActionResult();
         }
 
-        var mapped = _mapper.MapList<TrainingByDateDetails, TrainingByDateDetailsDto>(result.Value);
+        var exerciseIds = result.Value
+            .SelectMany(training => training.Exercises)
+            .Select(exercise => exercise.ExerciseDetails)
+            .OfType<LgymApi.Application.WorkoutProgress.ProgressData.Models.ProgressExerciseReadModel>()
+            .Select(exercise => exercise.Id);
+        var translations = await _exercises.GetDisplayNamesAsync(
+            exerciseIds,
+            HttpContext.GetCulturePreferences(),
+            cancellationToken);
+        var mappingContext = _mapper.CreateContext();
+        mappingContext.Set(ExerciseProfile.Keys.Translations, translations);
+        var mapped = _mapper.MapList<TrainingByDateDetails, TrainingByDateDetailsDto>(
+            result.Value,
+            mappingContext);
         return Ok(mapped);
     }
 

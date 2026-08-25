@@ -18,11 +18,16 @@ public sealed class MainRecordsController : ControllerBase
 {
     private readonly IMainRecordsApiAdapter _mainRecordsService;
     private readonly IMapper _mapper;
+    private readonly IExerciseApiAdapter _exercises;
 
-    public MainRecordsController(IMainRecordsApiAdapter mainRecordsService, IMapper mapper)
+    public MainRecordsController(
+        IMainRecordsApiAdapter mainRecordsService,
+        IMapper mapper,
+        IExerciseApiAdapter exercises)
     {
         _mainRecordsService = mainRecordsService;
         _mapper = mapper;
+        _exercises = exercises;
     }
 
     [HttpPost("mainRecords/{id}/addNewRecord")]
@@ -73,7 +78,15 @@ public sealed class MainRecordsController : ControllerBase
             return result.ToActionResult();
         }
 
-        var mapped = _mapper.MapList<MainRecordBestReadModel, MainRecordsLastDto>(result.Value);
+        var translations = await _exercises.GetDisplayNamesAsync(
+            result.Value.Select(record => record.Exercise.Id),
+            HttpContext.GetCulturePreferences(),
+            cancellationToken);
+        var mappingContext = _mapper.CreateContext();
+        mappingContext.Set(ExerciseProfile.Keys.Translations, translations);
+        var mapped = _mapper.MapList<MainRecordBestReadModel, MainRecordsLastDto>(
+            result.Value,
+            mappingContext);
         return Ok(mapped);
     }
 
