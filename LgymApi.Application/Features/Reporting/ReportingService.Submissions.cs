@@ -84,6 +84,11 @@ public sealed partial class ReportingService : IReportingService
             await _commandOutboxWriter.StageAsync(acceptedProgressCommand, cancellationToken);
         }
 
+        var submittedRequest = request with { Status = ReportRequestStatus.Submitted, SubmittedAt = submittedAtUtc };
+        var result = await MapAndHydrateSubmissionAsync(
+            ToPersistenceModel(submission, submittedRequest),
+            cancellationToken);
+
         try
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -101,9 +106,7 @@ public sealed partial class ReportingService : IReportingService
             TemplateName = request.Template.Name
         });
 
-        var submittedRequest = request with { Status = ReportRequestStatus.Submitted, SubmittedAt = submittedAtUtc };
-        return Result<ReportSubmissionResult, AppError>.Success(
-            MapSubmission(ToPersistenceModel(submission, submittedRequest)));
+        return Result<ReportSubmissionResult, AppError>.Success(result);
     }
 
     public async Task<Result<ReportSubmissionResult, AppError>> UpdateTrainerFeedbackAsync(
@@ -174,6 +177,14 @@ public sealed partial class ReportingService : IReportingService
             }
         }
 
+        var result = await MapAndHydrateSubmissionAsync(submission with
+        {
+            TrainerOverallComment = overallComment,
+            TrainerFieldCommentsJson = fieldCommentsJson,
+            TrainerFeedbackAddedAt = feedbackAddedAt,
+            TrainerFeedbackReadAt = feedbackReadAt
+        }, cancellationToken);
+
         if (feedbackChanged && hasFeedback)
         {
             await _commandDispatcher.EnqueueAsync(new ReportFeedbackAddedInAppNotificationCommand
@@ -188,13 +199,7 @@ public sealed partial class ReportingService : IReportingService
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return Result<ReportSubmissionResult, AppError>.Success(MapSubmission(submission with
-        {
-            TrainerOverallComment = overallComment,
-            TrainerFieldCommentsJson = fieldCommentsJson,
-            TrainerFeedbackAddedAt = feedbackAddedAt,
-            TrainerFeedbackReadAt = feedbackReadAt
-        }));
+        return Result<ReportSubmissionResult, AppError>.Success(result);
     }
 
     public async Task<Result<ReportSubmissionResult, AppError>> MarkTrainerFeedbackAsReadAsync(
@@ -223,7 +228,8 @@ public sealed partial class ReportingService : IReportingService
 
         if (submission.TrainerFeedbackReadAt.HasValue)
         {
-            return Result<ReportSubmissionResult, AppError>.Success(MapSubmission(submission));
+            return Result<ReportSubmissionResult, AppError>.Success(
+                await MapAndHydrateSubmissionAsync(submission, cancellationToken));
         }
 
         var readAt = DateTimeOffset.UtcNow;
@@ -248,8 +254,11 @@ public sealed partial class ReportingService : IReportingService
                 cancellationToken);
         }
 
+        var result = await MapAndHydrateSubmissionAsync(
+            submission with { TrainerFeedbackReadAt = readAt },
+            cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        return Result<ReportSubmissionResult, AppError>.Success(MapSubmission(submission with { TrainerFeedbackReadAt = readAt }));
+        return Result<ReportSubmissionResult, AppError>.Success(result);
     }
 
 }
