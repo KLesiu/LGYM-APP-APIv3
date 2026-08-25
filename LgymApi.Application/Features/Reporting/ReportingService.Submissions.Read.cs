@@ -25,8 +25,9 @@ public sealed partial class ReportingService
             currentTrainer.Id,
             traineeId,
             cancellationToken);
-        return Result<List<ReportSubmissionResult>, AppError>.Success(
-            _mapper.MapList<ReportSubmissionPersistenceModel, ReportSubmissionResult>(submissions));
+        var results = _mapper.MapList<ReportSubmissionPersistenceModel, ReportSubmissionResult>(submissions);
+        await HydrateSubmissionPhotosAsync(results, cancellationToken);
+        return Result<List<ReportSubmissionResult>, AppError>.Success(results);
     }
 
     public async Task<Result<List<ReportSubmissionResult>, AppError>> GetOwnSubmissionsAsync(
@@ -34,12 +35,22 @@ public sealed partial class ReportingService
         CancellationToken cancellationToken = default)
     {
         var submissions = await _requestSubmissionPersistence.ListSubmissionsByTraineeAsync(currentTrainee.Id, cancellationToken);
-        return Result<List<ReportSubmissionResult>, AppError>.Success(
-            _mapper.MapList<ReportSubmissionPersistenceModel, ReportSubmissionResult>(submissions));
+        var results = _mapper.MapList<ReportSubmissionPersistenceModel, ReportSubmissionResult>(submissions);
+        await HydrateSubmissionPhotosAsync(results, cancellationToken);
+        return Result<List<ReportSubmissionResult>, AppError>.Success(results);
     }
 
     private ReportSubmissionResult MapSubmission(ReportSubmissionPersistenceModel submission)
         => _mapper.Map<ReportSubmissionPersistenceModel, ReportSubmissionResult>(submission);
+
+    private async Task<ReportSubmissionResult> MapAndHydrateSubmissionAsync(
+        ReportSubmissionPersistenceModel submission,
+        CancellationToken cancellationToken)
+    {
+        var result = MapSubmission(submission);
+        await HydrateSubmissionPhotosAsync([result], cancellationToken);
+        return result;
+    }
 
     private static ReportSubmissionPersistenceModel ToPersistenceModel(
         NewReportSubmissionPersistenceModel submission,
