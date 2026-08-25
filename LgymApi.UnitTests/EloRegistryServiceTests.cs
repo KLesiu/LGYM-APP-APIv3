@@ -96,7 +96,7 @@ public sealed class EloRegistryServiceTests
         var cancellationToken = cancellationSource.Token;
         var userId = Id<User>.New();
         var accountId = userId.Rebind<AccountReference>();
-        var input = new RegisterUserInput("new-user", "new@example.com", "password123", "password123", true, null);
+        var input = new RegisterUserInput("new-user", "new@example.com", "password123", "password123", true, null, true);
         var userRegistrationService = Substitute.For<IUserRegistrationService>();
         var progress = Substitute.For<IWorkoutProgressReadWriteService>();
         var unitOfWork = Substitute.For<IUnitOfWork>();
@@ -122,7 +122,7 @@ public sealed class EloRegistryServiceTests
     [Test]
     public async Task RegisterUserAsync_DelegatesTrainerRegistrationToFocusedService()
     {
-        var input = new RegisterUserInput("trainer", "trainer@example.com", "password123", "password123", false, null);
+        var input = new RegisterUserInput("trainer", "trainer@example.com", "password123", "password123", false, null, true);
         var userId = Id<User>.New();
         var accountId = userId.Rebind<AccountReference>();
         var userRegistrationService = Substitute.For<IUserRegistrationService>();
@@ -145,7 +145,7 @@ public sealed class EloRegistryServiceTests
     [Test]
     public async Task RegisterUserAsync_RollsBackWithoutCreatingEloOrCommitting_WhenRegistrationFails()
     {
-        var input = new RegisterUserInput("user", "user@example.com", "password123", "password123", true, null);
+        var input = new RegisterUserInput("user", "user@example.com", "password123", "password123", true, null, true);
         var userRegistrationService = Substitute.For<IUserRegistrationService>();
         var progress = Substitute.For<IWorkoutProgressReadWriteService>();
         var unitOfWork = Substitute.For<IUnitOfWork>();

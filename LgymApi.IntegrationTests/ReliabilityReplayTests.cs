@@ -27,7 +27,8 @@ public sealed class ReliabilityReplayTests : IntegrationTestBase
             email = "replay@example.com",
             password = "password123",
             cpassword = "password123",
-            isVisibleInRanking = true
+            isVisibleInRanking = true,
+            adultConfirmed = true
         };
 
         const string idempotencyKey = "test-replay-001";
@@ -75,7 +76,8 @@ public sealed class ReliabilityReplayTests : IntegrationTestBase
             email = "conflict@example.com", // SAME email for both requests
             password = "password123",
             cpassword = "password123",
-            isVisibleInRanking = true
+            isVisibleInRanking = true,
+            adultConfirmed = true
         };
 
         var secondRequest = new
@@ -84,7 +86,8 @@ public sealed class ReliabilityReplayTests : IntegrationTestBase
             email = "conflict@example.com", // SAME email (same scope)
             password = "password456", // Different password = different fingerprint
             cpassword = "password456",
-            isVisibleInRanking = false // Different visibility = different fingerprint
+            isVisibleInRanking = false, // Different visibility = different fingerprint
+            adultConfirmed = true
         };
 
         const string idempotencyKey = "test-conflict-001";
@@ -191,7 +194,8 @@ public sealed class ReliabilityReplayTests : IntegrationTestBase
             email = "nokey@example.com",
             password = "password123",
             cpassword = "password123",
-            isVisibleInRanking = true
+            isVisibleInRanking = true,
+            adultConfirmed = true
         };
 
         // Act - Send without idempotency key (deliberately don't call SetIdempotencyKey)
@@ -224,7 +228,8 @@ public sealed class ReliabilityReplayTests : IntegrationTestBase
             email = "serial@example.com",
             password = "password123",
             cpassword = "password123",
-            isVisibleInRanking = true
+            isVisibleInRanking = true,
+            adultConfirmed = true
         };
 
         const string idempotencyKey = "test-serial-001";

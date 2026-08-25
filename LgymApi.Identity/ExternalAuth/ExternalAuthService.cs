@@ -32,6 +32,13 @@ internal sealed class ExternalAuthService : IExternalAuthService
     }
 
     public async Task<Result<LoginResult, AppError>> GoogleSignInAsync(string idToken, string? accessToken, CancellationToken cancellationToken)
+        => await GoogleSignInAsync(idToken, accessToken, adultConfirmed: false, cancellationToken);
+
+    public async Task<Result<LoginResult, AppError>> GoogleSignInAsync(
+        string idToken,
+        string? accessToken,
+        bool adultConfirmed,
+        CancellationToken cancellationToken)
     {
         var payload = await _googleTokenValidator.ValidateAsync(idToken, accessToken, cancellationToken);
         if (payload == null)
@@ -69,6 +76,11 @@ internal sealed class ExternalAuthService : IExternalAuthService
             }
 
             return existingResult;
+        }
+
+        if (!adultConfirmed)
+        {
+            return Result<LoginResult, AppError>.Failure(new AdultConfirmationRequiredForRegistrationError());
         }
 
         var createdUserResult = await _googleUserRegistrar.RegisterAsync(payload, cancellationToken);

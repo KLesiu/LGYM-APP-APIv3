@@ -7,6 +7,8 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
+using LgymApi.Identity.Contracts.AdultConfirmation;
+using Microsoft.Extensions.Options;
 
 namespace LgymApi.Application.ExternalAuth;
 
@@ -19,19 +21,22 @@ internal sealed class GoogleUserRegistrar : IGoogleUserRegistrar
     private readonly IUserRepository _userRepository;
     private readonly IRoleRepository _roleRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly AgeGateOptions _ageGateOptions;
 
     public GoogleUserRegistrar(
         IUserRepository userRepository,
         IUserExternalLoginRepository userExternalLoginRepository,
         IRoleRepository roleRepository,
         IUnitOfWork unitOfWork,
-        AppDefaultsOptions appDefaultsOptions)
+        AppDefaultsOptions appDefaultsOptions,
+        IOptions<AgeGateOptions> ageGateOptions)
     {
         _userRepository = userRepository;
         _userExternalLoginRepository = userExternalLoginRepository;
         _roleRepository = roleRepository;
         _unitOfWork = unitOfWork;
         _appDefaultsOptions = appDefaultsOptions;
+        _ageGateOptions = ageGateOptions.Value;
     }
 
     public async Task<Result<User, AppError>> RegisterAsync(GoogleTokenPayload payload, CancellationToken cancellationToken)
@@ -57,7 +62,9 @@ internal sealed class GoogleUserRegistrar : IGoogleUserRegistrar
             IsVisibleInRanking = true,
             ProfileRank = DefaultProfileRank,
             PreferredLanguage = _appDefaultsOptions.PreferredLanguage,
-            PreferredTimeZone = _appDefaultsOptions.PreferredTimeZone
+            PreferredTimeZone = _appDefaultsOptions.PreferredTimeZone,
+            AdultConfirmedAt = DateTimeOffset.UtcNow,
+            AdultConfirmationVersion = _ageGateOptions.ConfirmationVersion
         };
 
         var externalLogin = new UserExternalLogin

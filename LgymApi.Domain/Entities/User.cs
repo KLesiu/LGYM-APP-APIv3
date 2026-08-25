@@ -14,6 +14,8 @@ public sealed class User : EntityBase<User>
     public string? Avatar { get; set; }
     public bool IsVisibleInRanking { get; set; } = true;
     public bool IsBlocked { get; set; }
+    public DateTimeOffset? AdultConfirmedAt { get; set; }
+    public string? AdultConfirmationVersion { get; set; }
 
     public string? LegacyHash { get; set; }
     public string? LegacySalt { get; set; }

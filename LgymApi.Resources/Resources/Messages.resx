@@ -15,6 +15,9 @@
   <data name="Created" xml:space="preserve">
     <value>Created</value>
   </data>
+  <data name="AdultConfirmationRequired" xml:space="preserve">
+    <value>Confirm that you are at least 18 years old to continue.</value>
+  </data>
   <data name="FieldRequired" xml:space="preserve">
     <value>All fields are required.</value>
   </data>

@@ -25,7 +25,8 @@ public sealed record AccountProfileProjection(
     bool IsVisibleInRanking,
     IReadOnlyList<string> Roles,
     IReadOnlyList<string> PermissionClaims,
-    bool HasActiveTutorials);
+    bool HasActiveTutorials,
+    bool AdultConfirmationRequired = false);
 
 public sealed record ExternalLoginProjection(string Provider, string? ProviderEmail);
 

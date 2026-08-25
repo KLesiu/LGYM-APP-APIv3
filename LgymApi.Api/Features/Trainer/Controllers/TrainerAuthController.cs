@@ -50,7 +50,8 @@ public sealed class TrainerAuthController : ControllerBase
             request.Password,
             request.ConfirmPassword,
             IsVisibleInRanking: null,
-            PreferredLanguage: null);
+            PreferredLanguage: null,
+            AdultConfirmed: request.AdultConfirmed == true);
 
         var result = await _eloRegistryService.RegisterUserAsync(input, trainer: true, cancellationToken);
         if (result.IsFailure)
@@ -77,6 +78,7 @@ public sealed class TrainerAuthController : ControllerBase
     }
 
     [HttpGet("checkToken")]
+    [LgymApi.Api.AgeGate.AllowAgeGated]
     [Authorize(Policy = AuthConstants.Policies.TrainerAccess)]
     [ProducesResponseType(typeof(UserInfoDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> CheckToken(CancellationToken cancellationToken = default)

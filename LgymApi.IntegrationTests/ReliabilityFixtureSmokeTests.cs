@@ -49,7 +49,7 @@ public class ReliabilityFixtureSmokeTests : IntegrationTestBase
         // Arrange
         await SeedAdminAsync();
         var idempotencyKey = $"repeated-request-{Id<object>.New():N}";
-        var payload = new { name = "Test User", email = "test@example.com", password = "TempPass123!", cpassword = "TempPass123!", isVisibleInRanking = true };
+        var payload = new { name = "Test User", email = "test@example.com", password = "TempPass123!", cpassword = "TempPass123!", isVisibleInRanking = true, adultConfirmed = true };
 
         // Act
         var (firstResponse, secondResponse) = await SendRepeatedRequestAsync("/api/register", payload, idempotencyKey);

@@ -2,7 +2,10 @@ using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 using LgymApi.Identity.Contracts.Accounts;
+using LgymApi.Identity.Contracts.AdultConfirmation;
+using LgymApi.Api.AgeGate;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Options;
 
 namespace LgymApi.Api.Middleware;
 
@@ -17,7 +20,8 @@ public sealed class UserContextMiddleware
 
     public async Task InvokeAsync(
         HttpContext context,
-        IAuthenticatedAccountContextResolver authenticatedAccountContextResolver)
+        IAuthenticatedAccountContextResolver authenticatedAccountContextResolver,
+        IOptions<AgeGateOptions> ageGateOptions)
     {
         var endpoint = context.GetEndpoint();
         if (endpoint?.Metadata.GetMetadata<IAllowAnonymous>() != null)
@@ -62,6 +66,19 @@ public sealed class UserContextMiddleware
         if (resolution.Status == AuthenticatedAccountResolutionStatus.AccountBlocked)
         {
             await ErrorResponseWriter.WriteAsync(context, StatusCodes.Status403Forbidden, Messages.AccountBlocked, context.RequestAborted);
+            return;
+        }
+
+        var ageGate = ageGateOptions.Value;
+        var ageGateAllowed = endpoint?.Metadata.GetMetadata<AllowAgeGatedAttribute>() != null;
+        if (ageGate.Enabled && resolution.Context?.AdultConfirmedAt is null && !ageGateAllowed)
+        {
+            await ErrorResponseWriter.WriteAsync(
+                context,
+                StatusCodes.Status428PreconditionRequired,
+                Messages.AdultConfirmationRequired,
+                context.RequestAborted,
+                "AdultConfirmationRequired");
             return;
         }
 

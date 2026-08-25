@@ -42,9 +42,11 @@ public abstract class IntegrationTestBase : IDisposable
     [SetUp]
     public void SetUp()
     {
-        Factory = new CustomWebApplicationFactory();
+        Factory = CreateFactory();
         Client = Factory.CreateClient();
     }
+
+    protected virtual CustomWebApplicationFactory CreateFactory() => new();
 
     [TearDown]
     public void TearDown()
@@ -258,7 +260,8 @@ public abstract class IntegrationTestBase : IDisposable
             email,
             password,
             cpassword = password,
-            isVisibleInRanking
+            isVisibleInRanking,
+            adultConfirmed = true
         };
 
         // Set idempotency key for registration endpoint (required by T9 middleware)

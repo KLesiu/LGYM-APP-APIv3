@@ -2110,6 +2110,12 @@ namespace LgymApi.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AdultConfirmationVersion")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("AdultConfirmedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Avatar")
                         .HasColumnType("text");
 

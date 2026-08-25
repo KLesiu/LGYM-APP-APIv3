@@ -1,5 +1,7 @@
 using System.Security.Claims;
+using System.Reflection;
 using FluentAssertions;
+using LgymApi.Api.AgeGate;
 using LgymApi.Api.Authorization;
 using LgymApi.Api.Configuration;
 using LgymApi.Api.Middleware;
@@ -9,6 +11,7 @@ using LgymApi.Identity.Contracts;
 using LgymApi.Identity.Contracts.Accounts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
@@ -26,6 +29,15 @@ public sealed class ApiAuthorizationExtensionsTests
             [AuthConstants.Policies.ManageGlobalExercises] = AuthConstants.Permissions.ManageGlobalExercises,
             [AuthConstants.Policies.TrainerAccess] = AuthConstants.Permissions.TrainerAccess
         };
+
+    private static readonly string[] ExpectedAgeGateAllowlist =
+    [
+        "LgymApi.Api.Features.Account.Controllers.AdultConfirmationController.ConfirmAdult",
+        "LgymApi.Api.Features.Trainer.Controllers.TrainerAuthController.CheckToken",
+        "LgymApi.Api.Features.User.Controllers.UserController.CheckToken",
+        "LgymApi.Api.Features.User.Controllers.UserController.DeleteAccount",
+        "LgymApi.Api.Features.User.Controllers.UserController.Logout"
+    ];
 
     [Test]
     public async Task AddApiAuthorizationPolicies_RegistersOnlyTheCanonicalPermissionPolicies()
@@ -83,6 +95,22 @@ public sealed class ApiAuthorizationExtensionsTests
             AuthConstants.Policies.AdminAccess);
 
         result.Succeeded.Should().BeFalse();
+    }
+
+    [Test]
+    public void AllowAgeGated_IsAppliedOnlyToCanonicalBootstrapAndLifecycleActions()
+    {
+        var allowedActions = typeof(Program).Assembly
+            .GetTypes()
+            .Where(type => typeof(ControllerBase).IsAssignableFrom(type))
+            .SelectMany(type => type
+                .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
+                .Where(method => method.GetCustomAttribute<AllowAgeGatedAttribute>() is not null)
+                .Select(method => $"{type.FullName}.{method.Name}"))
+            .OrderBy(action => action, StringComparer.Ordinal)
+            .ToArray();
+
+        allowedActions.Should().Equal(ExpectedAgeGateAllowlist.OrderBy(action => action, StringComparer.Ordinal));
     }
 
     private static IEnumerable<TestCaseData> GetPolicyCases()

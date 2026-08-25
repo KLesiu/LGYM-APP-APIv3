@@ -8,7 +8,9 @@ using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Repositories;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts.AdultConfirmation;
 using LgymApi.UnitTests.Fakes;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace LgymApi.UnitTests;
@@ -35,7 +37,8 @@ public sealed class UserServiceProfileFailureTests
             _accountPushInstallationCleanupPort,
             new LgymApi.Application.Options.AppDefaultsOptions(),
             Substitute.For<LgymApi.Application.Features.Tutorial.ITutorialService>(),
-            Substitute.For<IMapper>());
+            Substitute.For<IMapper>(),
+            Options.Create(new AgeGateOptions()));
     }
 
     [Test]

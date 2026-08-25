@@ -16,6 +16,8 @@ using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using LgymApi.Identity.Contracts.AdultConfirmation;
 using UserEntity = LgymApi.Domain.Entities.User;
 
 namespace LgymApi.Application.Identity.Registration;
@@ -30,6 +32,7 @@ internal sealed class UserRegistrationService : IUserRegistrationService
     private readonly ILogger<UserRegistrationService> _logger;
     private readonly AppDefaultsOptions _appDefaultsOptions;
     private readonly ITutorialService _tutorialService;
+    private readonly AgeGateOptions _ageGateOptions;
 
     public UserRegistrationService(
         IUserRepository userRepository,
@@ -39,7 +42,8 @@ internal sealed class UserRegistrationService : IUserRegistrationService
         IUnitOfWork unitOfWork,
         ILogger<UserRegistrationService> logger,
         AppDefaultsOptions appDefaultsOptions,
-        ITutorialService tutorialService)
+        ITutorialService tutorialService,
+        IOptions<AgeGateOptions> ageGateOptions)
     {
         _userRepository = userRepository;
         _roleRepository = roleRepository;
@@ -49,6 +53,7 @@ internal sealed class UserRegistrationService : IUserRegistrationService
         _logger = logger;
         _appDefaultsOptions = appDefaultsOptions;
         _tutorialService = tutorialService;
+        _ageGateOptions = ageGateOptions.Value;
     }
 
     public Task<Result<Id<UserEntity>, AppError>> RegisterAsync(
@@ -71,6 +76,11 @@ internal sealed class UserRegistrationService : IUserRegistrationService
         IReadOnlyCollection<string> roleNames,
         CancellationToken cancellationToken)
     {
+        if (!input.AdultConfirmed)
+        {
+            return Result<Id<UserEntity>, AppError>.Failure(new InvalidUserError(Messages.AdultConfirmationRequired));
+        }
+
         if (string.IsNullOrWhiteSpace(input.Name))
         {
             return Result<Id<UserEntity>, AppError>.Failure(new InvalidUserError(Messages.NameIsRequired));
@@ -114,7 +124,9 @@ internal sealed class UserRegistrationService : IUserRegistrationService
             LegacyKeyLength = passwordData.KeyLength,
             LegacyDigest = passwordData.Digest,
             PreferredLanguage = ResolvePreferredLanguage(input.PreferredLanguage),
-            PreferredTimeZone = _appDefaultsOptions.PreferredTimeZone
+            PreferredTimeZone = _appDefaultsOptions.PreferredTimeZone,
+            AdultConfirmedAt = DateTimeOffset.UtcNow,
+            AdultConfirmationVersion = _ageGateOptions.ConfirmationVersion
         };
 
         await _userRepository.AddAsync(user, cancellationToken);

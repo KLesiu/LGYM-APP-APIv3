@@ -244,7 +244,7 @@ public sealed class RuntimeCompositionValidationTests
     {
         var controllerTypes = GetApiControllerTypes();
 
-        controllerTypes.Should().HaveCount(35);
+        controllerTypes.Should().HaveCount(36);
         foreach (var controllerType in controllerTypes)
         {
             serviceProvider.GetRequiredService(controllerType)

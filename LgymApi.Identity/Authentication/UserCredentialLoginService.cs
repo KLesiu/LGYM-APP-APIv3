@@ -12,6 +12,8 @@ using LgymApi.Application.Services;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
+using LgymApi.Identity.Contracts.AdultConfirmation;
+using Microsoft.Extensions.Options;
 using UserEntity = LgymApi.Domain.Entities.User;
 
 namespace LgymApi.Application.Identity.Authentication;
@@ -28,6 +30,7 @@ internal sealed class UserCredentialLoginService : IUserCredentialLoginService
     private readonly AppDefaultsOptions _appDefaultsOptions;
     private readonly ITutorialService _tutorialService;
     private readonly IMapper _mapper;
+    private readonly AgeGateOptions _ageGateOptions;
 
     public UserCredentialLoginService(
         IUserRepository userRepository,
@@ -39,7 +42,8 @@ internal sealed class UserCredentialLoginService : IUserCredentialLoginService
         IUnitOfWork unitOfWork,
         AppDefaultsOptions appDefaultsOptions,
         ITutorialService tutorialService,
-        IMapper mapper)
+        IMapper mapper,
+        IOptions<AgeGateOptions> ageGateOptions)
     {
         _userRepository = userRepository;
         _roleRepository = roleRepository;
@@ -51,6 +55,7 @@ internal sealed class UserCredentialLoginService : IUserCredentialLoginService
         _appDefaultsOptions = appDefaultsOptions;
         _tutorialService = tutorialService;
         _mapper = mapper;
+        _ageGateOptions = ageGateOptions.Value;
     }
 
     public Task<Result<LoginResult, AppError>> LoginAsync(
@@ -119,12 +124,15 @@ internal sealed class UserCredentialLoginService : IUserCredentialLoginService
         mappingContext.Set(IdentityUserMappingProfile.Keys.Roles, roles);
         mappingContext.Set(IdentityUserMappingProfile.Keys.PermissionClaims, permissionClaims);
         mappingContext.Set(IdentityUserMappingProfile.Keys.HasActiveTutorials, hasActiveTutorials);
+        mappingContext.Set(IdentityUserMappingProfile.Keys.AgeGateEnabled, _ageGateOptions.Enabled);
+        var userInfo = _mapper.Map<UserEntity, UserInfoResult>(user, mappingContext);
 
         return Result<LoginResult, AppError>.Success(new LoginResult
         {
             Token = token,
             PermissionClaims = permissionClaims,
-            User = _mapper.Map<UserEntity, UserInfoResult>(user, mappingContext)
+            AdultConfirmationRequired = userInfo.AdultConfirmationRequired,
+            User = userInfo
         });
     }
 }

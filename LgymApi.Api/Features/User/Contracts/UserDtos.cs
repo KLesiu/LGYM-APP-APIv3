@@ -19,6 +19,9 @@ public sealed class RegisterUserRequest : IDto
 
     [JsonPropertyName("isVisibleInRanking")]
     public bool? IsVisibleInRanking { get; set; }
+
+    [JsonPropertyName("adultConfirmed")]
+    public bool? AdultConfirmed { get; set; }
 }
 
 public sealed class LoginRequest : IDto
@@ -136,6 +139,9 @@ public sealed class UserInfoDto : IResultDto
 
     [JsonPropertyName("hasActiveTutorials")]
     public bool HasActiveTutorials { get; set; }
+
+    [JsonPropertyName("adultConfirmationRequired")]
+    public bool AdultConfirmationRequired { get; set; }
 }
 
 public sealed class UserBaseInfoDto : IResultDto
@@ -169,4 +175,7 @@ public sealed class LoginResponseDto : IResultDto
 
     [JsonPropertyName("permissionClaims")]
     public List<string> PermissionClaims { get; set; } = new();
+
+    [JsonPropertyName("adultConfirmationRequired")]
+    public bool AdultConfirmationRequired { get; set; }
 }

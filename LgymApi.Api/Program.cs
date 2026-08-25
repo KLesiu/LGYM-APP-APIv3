@@ -22,6 +22,7 @@ using LgymApi.Api.Serialization;
 using LgymApi.Api.Logging;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using LgymApi.Identity.Contracts.AdultConfirmation;
 using Serilog;
 using Serilog.Debugging;
 
@@ -67,6 +68,15 @@ builder.Services.AddCors(options =>
     });
 });
 builder.Services.AddHttpContextAccessor();
+var ageGateSection = builder.Configuration.GetSection(AgeGateOptions.SectionName);
+builder.Services
+    .AddOptions<AgeGateOptions>()
+    .Bind(ageGateSection)
+    .Validate(_ => ageGateSection.Exists(), $"Configuration section '{AgeGateOptions.SectionName}' is required.")
+    .Validate(
+        options => !string.IsNullOrWhiteSpace(options.ConfirmationVersion) && options.ConfirmationVersion.Length <= 64,
+        $"'{AgeGateOptions.SectionName}:ConfirmationVersion' must contain between 1 and 64 characters.")
+    .ValidateOnStart();
 var localizationOptions = builder.Services.AddApiLocalization();
 builder.Services.AddApplicationMapping(LgymApi.Api.Mapping.MappingAssemblyMarkers.All);
 var isTesting = builder.Environment.IsEnvironment(TestingEnvironment);

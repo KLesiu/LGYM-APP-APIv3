@@ -42,6 +42,8 @@ Common environment variable overrides:
 
 - `ConnectionStrings__Postgres`
 - `Jwt__SigningKey`
+- `AgeGate__Enabled`
+- `AgeGate__ConfirmationVersion`
 - `PhotoStorage__Provider`
 - `PhotoStorage__LocalDevelopmentSigningKey`
 - `PhotoStorage__AccessKeyId`
@@ -51,6 +53,8 @@ Common environment variable overrides:
 - `PushNotifications__Fcm__ProjectId`
 - `PushNotifications__Fcm__CredentialsPath`
 - `PushNotifications__Fcm__CredentialsJson`
+
+`AgeGate__Enabled` controls request gating for existing authenticated accounts. New standard, trainer, and Google registrations always require explicit adult confirmation. Deploy compatible clients first, apply the nullable-column migration, then enable the gate consistently on every API replica. `AgeGate__ConfirmationVersion` is audit metadata and changing it does not force existing accounts to confirm again.
 
 ## Container runtime contract
 

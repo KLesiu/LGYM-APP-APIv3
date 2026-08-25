@@ -16,6 +16,12 @@ namespace LgymApi.IntegrationTests;
 public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly InMemoryDatabaseRoot _databaseRoot = new();
+    private readonly bool _ageGateEnabled;
+
+    public CustomWebApplicationFactory(bool ageGateEnabled = false)
+    {
+        _ageGateEnabled = ageGateEnabled;
+    }
 
     /// <summary>
     /// Gets a unique database name for this test instance.
@@ -72,6 +78,8 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
         builder.UseSetting("Email:InvitationBaseUrl", "https://app.test.local/invitations");
         builder.UseSetting("Email:TemplateRootPath", Path.Combine(AppContext.BaseDirectory, "EmailTemplates"));
         builder.UseSetting("Email:DefaultCulture", "en-US");
+        builder.UseSetting("AgeGate:Enabled", _ageGateEnabled.ToString());
+        builder.UseSetting("AgeGate:ConfirmationVersion", "18plus-v1");
     }
 
     internal static void RemoveAppDbContextRegistrations(IServiceCollection services)

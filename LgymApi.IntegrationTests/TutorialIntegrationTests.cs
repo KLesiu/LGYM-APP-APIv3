@@ -35,7 +35,8 @@ public sealed class TutorialIntegrationTests : IntegrationTestBase
             email = "tutorial@example.com",
             password = "password123",
             cpassword = "password123",
-            isVisibleInRanking = true
+            isVisibleInRanking = true,
+            adultConfirmed = true
         };
 
         SetIdempotencyKey("test-register-tutorial-user");

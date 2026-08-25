@@ -10,4 +10,7 @@ public sealed class GoogleSignInRequest : IDto
 
     [JsonPropertyName("accessToken")]
     public string? AccessToken { get; set; }
+
+    [JsonPropertyName("adultConfirmed")]
+    public bool? AdultConfirmed { get; set; }
 }

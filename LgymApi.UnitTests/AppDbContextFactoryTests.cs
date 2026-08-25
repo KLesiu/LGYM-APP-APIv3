@@ -82,6 +82,9 @@ public sealed class AppDbContextFactoryTests
 
         context.Database.ProviderName.Should().Be("Npgsql.EntityFrameworkCore.PostgreSQL");
         context.Model.GetEntityTypes().Should().HaveCount(48);
+        var userType = context.Model.FindEntityType(typeof(LgymApi.Domain.Entities.User));
+        userType!.FindProperty(nameof(LgymApi.Domain.Entities.User.AdultConfirmedAt))!.IsNullable.Should().BeTrue();
+        userType.FindProperty(nameof(LgymApi.Domain.Entities.User.AdultConfirmationVersion))!.IsNullable.Should().BeTrue();
         context.Database.HasPendingModelChanges().Should().BeFalse();
         migrationsAssembly.Assembly.Should().BeSameAs(typeof(AppDbContext).Assembly);
         migrationsAssembly.ModelSnapshot.Should().NotBeNull();
