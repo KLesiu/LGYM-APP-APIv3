@@ -397,6 +397,7 @@ public sealed class ExerciseScoresTests : IntegrationTestBase
         var body = await response.Content.ReadFromJsonAsync<List<ExerciseHistoryItem>>();
         body.Should().ContainSingle();
         body![0].GymName.Should().Be("Deleted Plan History Gym");
+        body[0].TrainingName.Should().BeEmpty();
         body[0].SeriesScores.Should().ContainSingle();
         body[0].SeriesScores[0].Score.Should().NotBeNull();
         body[0].SeriesScores[0].Score!.Weight.Should().Be(100.0);
