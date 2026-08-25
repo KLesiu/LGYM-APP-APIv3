@@ -306,6 +306,104 @@ public sealed class ExerciseScoresTests : IntegrationTestBase
     }
 
     [Test]
+    public async Task GetExerciseScoresFromTrainingByExercise_WhenScoresSharePlanDay_ReturnsHistory()
+    {
+        var (userId, token) = await RegisterUserViaEndpointAsync(
+            name: "sharedhistoryuser",
+            email: "sharedhistory@example.com",
+            password: "password123");
+
+        Client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+        var exerciseId = await CreateExerciseViaEndpointAsync(userId, "Shared History Exercise", BodyParts.Quads);
+        var firstGymId = await CreateGymViaEndpointAsync(userId, "First Shared History Gym");
+        var secondGymId = await CreateGymViaEndpointAsync(userId, "Second Shared History Gym");
+        var planId = await CreatePlanViaEndpointAsync(userId, "Shared History Plan");
+        var planDayId = await CreatePlanDayViaEndpointAsync(userId, planId, "Shared History Day", new List<PlanDayExerciseInput>
+        {
+            new() { ExerciseId = exerciseId.ToString(), Series = 3, Reps = "10" }
+        });
+        var firstTraining = new
+        {
+            gym = firstGymId.ToString(),
+            type = planDayId.ToString(),
+            createdAt = DateTime.UtcNow.AddMinutes(-1),
+            exercises = new[]
+            {
+                new { exercise = exerciseId.ToString(), series = 1, reps = 10, weight = 100.0, unit = WeightUnits.Kilograms.ToString() }
+            }
+        };
+        var secondTraining = new
+        {
+            gym = secondGymId.ToString(),
+            type = planDayId.ToString(),
+            createdAt = DateTime.UtcNow,
+            exercises = new[]
+            {
+                new { exercise = exerciseId.ToString(), series = 1, reps = 8, weight = 110.0, unit = WeightUnits.Kilograms.ToString() }
+            }
+        };
+        await PostAsJsonWithApiOptionsAsync($"/api/{userId}/addTraining", firstTraining);
+        await PostAsJsonWithApiOptionsAsync($"/api/{userId}/addTraining", secondTraining);
+
+        var request = new { exerciseId = exerciseId.ToString() };
+        var response = await Client.PostAsJsonAsync("/api/exercise/getExerciseScoresFromTrainingByExercise", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<List<ExerciseHistoryItem>>();
+        body.Should().NotBeNull();
+        body.Should().HaveCount(2);
+        body!.Select(item => item.GymName)
+            .Should().BeEquivalentTo("First Shared History Gym", "Second Shared History Gym");
+    }
+
+    [Test]
+    public async Task GetExerciseScoresFromTrainingByExercise_AfterPlanDeletion_KeepsHistory()
+    {
+        var (userId, token) = await RegisterUserViaEndpointAsync(
+            name: "deletedplanhistoryuser",
+            email: "deletedplanhistory@example.com",
+            password: "password123");
+
+        Client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+        var exerciseId = await CreateExerciseViaEndpointAsync(userId, "Deleted Plan History Exercise", BodyParts.Quads);
+        var gymId = await CreateGymViaEndpointAsync(userId, "Deleted Plan History Gym");
+        var planId = await CreatePlanViaEndpointAsync(userId, "Deleted History Plan");
+        var planDayId = await CreatePlanDayViaEndpointAsync(userId, planId, "Deleted History Day", new List<PlanDayExerciseInput>
+        {
+            new() { ExerciseId = exerciseId.ToString(), Series = 1, Reps = "10" }
+        });
+        var trainingResponse = await PostAsJsonWithApiOptionsAsync($"/api/{userId}/addTraining", new
+        {
+            gym = gymId.ToString(),
+            type = planDayId.ToString(),
+            createdAt = DateTime.UtcNow,
+            exercises = new[]
+            {
+                new { exercise = exerciseId.ToString(), series = 1, reps = 10, weight = 100.0, unit = WeightUnits.Kilograms.ToString() }
+            }
+        });
+        trainingResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var deletePlanResponse = await Client.PostAsync($"/api/{planId}/deletePlan", null);
+        deletePlanResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var request = new { exerciseId = exerciseId.ToString() };
+        var response = await Client.PostAsJsonAsync("/api/exercise/getExerciseScoresFromTrainingByExercise", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<List<ExerciseHistoryItem>>();
+        body.Should().ContainSingle();
+        body![0].GymName.Should().Be("Deleted Plan History Gym");
+        body[0].TrainingName.Should().BeEmpty();
+        body[0].SeriesScores.Should().ContainSingle();
+        body[0].SeriesScores[0].Score.Should().NotBeNull();
+        body[0].SeriesScores[0].Score!.Weight.Should().Be(100.0);
+    }
+
+    [Test]
     public async Task ExerciseScoresChartRoute_PreservesLegacyJsonContract()
     {
         var (userId, token) = await RegisterUserViaEndpointAsync(
@@ -416,5 +514,11 @@ public sealed class ExerciseScoresTests : IntegrationTestBase
 
         [JsonPropertyName("gymName")]
         public string GymName { get; set; } = string.Empty;
+
+        [JsonPropertyName("trainingName")]
+        public string TrainingName { get; set; } = string.Empty;
+
+        [JsonPropertyName("seriesScores")]
+        public List<SeriesScoreItem> SeriesScores { get; set; } = new();
     }
 }

@@ -11,6 +11,7 @@ using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Identity.Contracts;
 using LgymApi.Identity.Contracts.Accounts;
+using LgymApi.TrainingPlanning.Contracts;
 using NSubstitute;
 
 namespace LgymApi.UnitTests;
@@ -241,6 +242,68 @@ public sealed class ExerciseServiceTests
         await _exercises.Received(1).UpsertTranslationAsync(exerciseId, "pl-pl", "Przysiad", Arg.Any<CancellationToken>());
         await _accounts.DidNotReceive().GetByIdAsync(Arg.Any<Id<AccountReference>>(), Arg.Any<CancellationToken>());
         await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task GetExerciseScoresFromTrainingByExercise_WhenPlanDayIsMissing_KeepsHistoryWithEmptyName()
+    {
+        var accountId = Id<AccountReference>.New();
+        var exerciseId = Id<Exercise>.New();
+        var trainingId = Id<Training>.New();
+        var gymId = Id<Gym>.New();
+        var planDayId = Id<PlanDayReference>.New();
+        var gym = new WorkoutGymPersistenceModel(
+            gymId,
+            accountId,
+            "History Gym",
+            null,
+            false,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+        var training = new WorkoutTrainingPersistenceModel(
+            trainingId,
+            accountId,
+            planDayId,
+            gymId,
+            DateTimeOffset.UtcNow,
+            gym);
+        var score = new WorkoutExerciseScorePersistenceModel(
+            Id<ExerciseScore>.New(),
+            exerciseId,
+            accountId,
+            8,
+            1,
+            100,
+            WeightUnits.Kilograms,
+            trainingId,
+            0,
+            DateTimeOffset.UtcNow,
+            null,
+            training);
+        _exercises.FindVisibleToAccountAsync(exerciseId, accountId, Arg.Any<CancellationToken>())
+            .Returns(Model(exerciseId, accountId));
+        _scores.GetByAccountAndExerciseAsync(accountId, exerciseId, Arg.Any<CancellationToken>())
+            .Returns([score]);
+        _planDays.GetByIdsAsync(
+                Arg.Is<IReadOnlyList<Id<PlanDayReference>>>(ids => ids.Count == 1 && ids[0] == planDayId),
+                Arg.Any<CancellationToken>())
+            .Returns([
+                new PlanDayReferenceReadModel(
+                    planDayId,
+                    Id<PlanReference>.Empty,
+                    string.Empty,
+                    Exists: false,
+                    IsDeleted: false)
+            ]);
+
+        var result = await _service.GetExerciseScoresFromTrainingByExerciseAsync(accountId, exerciseId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle();
+        result.Value[0].TrainingName.Should().BeEmpty();
+        result.Value[0].GymName.Should().Be("History Gym");
+        result.Value[0].SeriesScores.Should().ContainSingle();
+        result.Value[0].SeriesScores[0].Score!.Weight.Should().Be(100);
     }
 
     private static WorkoutExercisePersistenceModel Model(Id<Exercise> id, Id<AccountReference>? ownerId)

@@ -190,6 +190,55 @@ public sealed class GymTests : IntegrationTestBase
     }
 
     [Test]
+    public async Task GetGyms_WhenLatestTrainingsSharePlanDay_ReturnsBothGyms()
+    {
+        var (userId, _) = await RegisterUserViaEndpointAsync(
+            name: "sharedplandayuser",
+            email: "sharedplanday@example.com",
+            password: "password123");
+
+        var exerciseId = await CreateExerciseViaEndpointAsync(userId, "Shared Plan Day Exercise", BodyParts.Back);
+        var firstGymId = await CreateGymViaEndpointAsync(userId, "First Shared Plan Day Gym");
+        var secondGymId = await CreateGymViaEndpointAsync(userId, "Second Shared Plan Day Gym");
+        var planId = await CreatePlanViaEndpointAsync(userId, "Shared Plan Day Plan");
+        var planDayId = await CreatePlanDayViaEndpointAsync(userId, planId, "Shared Plan Day", new List<PlanDayExerciseInput>
+        {
+            new() { ExerciseId = exerciseId.ToString(), Series = 3, Reps = "10" }
+        });
+        var firstTraining = new
+        {
+            gym = firstGymId.ToString(),
+            type = planDayId.ToString(),
+            createdAt = DateTime.UtcNow.AddMinutes(-1),
+            exercises = new[]
+            {
+                new { exercise = exerciseId.ToString(), series = 1, reps = 10, weight = 50.0, unit = WeightUnits.Kilograms.ToString() }
+            }
+        };
+        var secondTraining = new
+        {
+            gym = secondGymId.ToString(),
+            type = planDayId.ToString(),
+            createdAt = DateTime.UtcNow,
+            exercises = new[]
+            {
+                new { exercise = exerciseId.ToString(), series = 1, reps = 10, weight = 55.0, unit = WeightUnits.Kilograms.ToString() }
+            }
+        };
+        await PostAsJsonWithApiOptionsAsync($"/api/{userId}/addTraining", firstTraining);
+        await PostAsJsonWithApiOptionsAsync($"/api/{userId}/addTraining", secondTraining);
+
+        var response = await Client.GetAsync($"/api/gym/{userId}/getGyms");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<List<GymChoiceInfoResponse>>();
+        body.Should().NotBeNull();
+        body.Should().HaveCount(2);
+        body!.Select(gym => gym.LastTrainingInfo?.Type?.Id)
+            .Should().OnlyContain(id => id == planDayId.ToString());
+    }
+
+    [Test]
     public async Task GetGyms_ExcludesDeletedGyms()
     {
         var user = await SeedUserAsync(name: "gymuser", email: "gym@example.com");

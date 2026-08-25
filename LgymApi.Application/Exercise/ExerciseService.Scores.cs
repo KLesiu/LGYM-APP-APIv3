@@ -70,6 +70,7 @@ public sealed partial class ExerciseService : IExerciseService
             scores
                 .Where(score => score.Training?.Gym != null)
                 .Select(score => score.Training!.TypePlanDayId)
+                .Distinct()
                 .ToList(),
             cancellationToken);
         var planDaysById = planDays.ToDictionary(planDay => planDay.PlanDayId);
@@ -77,15 +78,20 @@ public sealed partial class ExerciseService : IExerciseService
         var tempMap = new Dictionary<Id<LgymApi.Domain.Entities.Training>, (DateTimeOffset Date, string GymName, string TrainingName, List<(int Series, WorkoutProgress.Persistence.WorkoutExerciseScorePersistenceModel Score)> RawScores, int MaxSeries)>();
         foreach (var score in scores)
         {
-            if (score.Training?.Gym == null || !planDaysById.TryGetValue(score.Training.TypePlanDayId, out var planDay) || !planDay.Exists || planDay.IsDeleted)
+            if (score.Training?.Gym == null)
             {
                 continue;
             }
 
+            var planDay = planDaysById[score.Training.TypePlanDayId];
+            var trainingName = planDay.Exists && !planDay.IsDeleted
+                ? planDay.Name
+                : string.Empty;
+
             var trainingId = score.Training.Id;
             if (!tempMap.TryGetValue(trainingId, out var entry))
             {
-                entry = (score.Training.CreatedAt, score.Training.Gym.Name, planDay.Name, new List<(int, WorkoutProgress.Persistence.WorkoutExerciseScorePersistenceModel)>(), 0);
+                entry = (score.Training.CreatedAt, score.Training.Gym.Name, trainingName, new List<(int, WorkoutProgress.Persistence.WorkoutExerciseScorePersistenceModel)>(), 0);
             }
 
             entry.RawScores.Add((score.Series, score));
