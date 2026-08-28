@@ -82,7 +82,7 @@ public sealed class CoachingPersistenceRepositoryTests
         await noteRepository.AddNoteAsync(new CoachingTraineeNoteWriteModel(
             noteId, trainerId, traineeId, "Title", "Content", true, true, trainerId, now));
         await noteRepository.AddHistoryEntryAsync(new CoachingTraineeNoteHistoryWriteModel(
-            historyId, noteId, trainerId, now, null, "Content", "Created"));
+            historyId, noteId, trainerId, now, "Private", "Content", "Created", false, true));
 
         database.ChangeTracker.Entries().Where(entry => entry.State == EntityState.Added).Should().HaveCount(4);
         await database.SaveChangesAsync();
@@ -92,6 +92,8 @@ public sealed class CoachingPersistenceRepositoryTests
         (await linkRepository.FindByTrainerAndTraineeAsync(trainerId, traineeId))!.Id.Should().Be(linkId);
         (await noteRepository.FindNoteByIdAsync(noteId))!.Content.Should().Be("Content");
         (await noteRepository.GetNoteHistoryAsync(noteId)).Should().ContainSingle(entry => entry.Id == historyId);
+        (await noteRepository.GetVisibleNoteHistoryAsync(noteId)).Should().ContainSingle(entry =>
+            entry.Id == historyId && entry.PreviousContent == null);
         database.ChangeTracker.Entries().Should().BeEmpty();
 
         await noteRepository.UpdateNoteAsync(new CoachingTraineeNoteWriteModel(

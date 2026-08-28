@@ -78,7 +78,9 @@ public sealed record CoachingTraineeNoteHistoryWriteModel(
     DateTimeOffset ChangedAt,
     string? PreviousContent,
     string NewContent,
-    string ChangeType);
+    string ChangeType,
+    bool? PreviousVisibleToTrainee = null,
+    bool NewVisibleToTrainee = false);
 
 public sealed record CoachingTraineeNoteFact(
     Id<TraineeNoteEntity> Id,
@@ -102,4 +104,6 @@ public sealed record CoachingTraineeNoteHistoryFact(
     string NewContent,
     string ChangeType,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    bool? PreviousVisibleToTrainee = null,
+    bool NewVisibleToTrainee = false);

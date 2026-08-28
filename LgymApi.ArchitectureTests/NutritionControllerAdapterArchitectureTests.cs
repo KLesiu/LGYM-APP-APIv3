@@ -26,7 +26,8 @@ public sealed class NutritionControllerAdapterArchitectureTests
         new(typeof(TraineeDietPlanController),
         [
             new("GetCurrentPlans", "GET", "diet-plans/current", StatusCodes.Status200OK),
-            new("GetCurrentPlan", "GET", "diet-plan/current", StatusCodes.Status200OK)
+            new("GetCurrentPlan", "GET", "diet-plan/current", StatusCodes.Status200OK),
+            new("GetOwnPlanHistory", "GET", "diet-plans/{dietPlanId}/history", StatusCodes.Status200OK)
         ]),
         new(typeof(TrainerSupplementationController),
         [
@@ -46,7 +47,7 @@ public sealed class NutritionControllerAdapterArchitectureTests
     ];
 
     [Test]
-    public void Nutrition_Controllers_Should_Keep_The_Exact_Eighteen_Action_Manifest()
+    public void Nutrition_Controllers_Should_Keep_The_Exact_Nineteen_Action_Manifest()
     {
         var actualActions = Controllers.SelectMany(specification => specification.Actions.Select(action =>
         {
@@ -68,7 +69,7 @@ public sealed class NutritionControllerAdapterArchitectureTests
             new ActionSpec(specification.Controller.FullName!, action.Name, action.HttpMethod, action.Template, true))).ToArray();
 
         Assert.That(actualActions, Is.EquivalentTo(expectedActions));
-        Assert.That(actualActions, Has.Length.EqualTo(18));
+        Assert.That(actualActions, Has.Length.EqualTo(19));
     }
 
     [Test]

@@ -15,7 +15,9 @@ public sealed class SingleProductionDbContextGuardTests
     {
         [MigrationRoot + "/20260815080018_AddNotificationRetentionIndexes.cs"] = "8661dde0f29629b836a76a5562066bfbc20628455359cbc507597350287e3bac",
         [MigrationRoot + "/20260815080018_AddNotificationRetentionIndexes.Designer.cs"] = "b16f275e60894b2e245ced98c3366353cca45d611862530a27b74b98972a953f",
-        [MigrationRoot + "/AppDbContextModelSnapshot.cs"] = "c9b15b81472f52c99262fd7e00b356ed0bde797dbee52aaeebbe047cc8527960"
+        [MigrationRoot + "/20260824141625_AddTraineeNoteHistoryVisibility.cs"] = "9cc49829073809f22da508524562716bd37be40952b0d5ea22a9f4dbf6a757ee",
+        [MigrationRoot + "/20260824141625_AddTraineeNoteHistoryVisibility.Designer.cs"] = "6f2beaf6d11ddcd9e6af85fd7b1db94e9eae85733a79852159204d04b1aab4f8",
+        [MigrationRoot + "/AppDbContextModelSnapshot.cs"] = "6d95e69f4ec888067f44d937783bc0835dbfe8c3bdf4ac55c779940c81923cae"
     };
 
     [Test]

@@ -1,5 +1,7 @@
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
+using LgymApi.Domain.ValueObjects;
+using LgymApi.Identity.Contracts;
 
 namespace LgymApi.Application.Nutrition.ApiAdapters;
 
@@ -14,6 +16,7 @@ public sealed class NutritionApiAdapterMappingProfile : IMappingProfile
         configuration.CreateMap<DietPlanActivateAccountCommand, LgymApi.Application.Nutrition.DietPlans.ActivateTraineePlan.Models.ActivateTraineeDietPlanCommand>((source, _) => new(source.TrainerId.Rebind<User>(), source.TraineeId.Rebind<User>(), source.DietPlanId));
         configuration.CreateMap<DietPlanDeleteAccountCommand, LgymApi.Application.Nutrition.DietPlans.DeleteTraineePlan.Models.DeleteTraineeDietPlanCommand>((source, _) => new(source.TrainerId.Rebind<User>(), source.TraineeId.Rebind<User>(), source.DietPlanId));
         configuration.CreateMap<DietPlanHistoryAccountQuery, LgymApi.Application.Nutrition.DietPlans.GetTraineePlanHistory.Models.GetTraineeDietPlanHistoryQuery>((source, _) => new(source.TrainerId.Rebind<User>(), source.TraineeId.Rebind<User>(), source.DietPlanId));
+        configuration.CreateMap<DietPlanOwnHistoryAccountInput, LgymApi.Application.Nutrition.DietPlans.GetOwnPlanHistory.GetOwnDietPlanHistoryQuery>((source, _) => new(source.TraineeId.Rebind<User>(), source.DietPlanId));
         configuration.CreateMap<DietPlanCurrentAccountQuery, LgymApi.Application.Nutrition.DietPlans.GetCurrentDietPlans.GetCurrentDietPlansQuery>((source, _) => new(source.TraineeId.Rebind<User>()));
         configuration.CreateMap<DietPlanCurrentAccountQuery, LgymApi.Application.Nutrition.DietPlans.GetCurrentDietPlan.GetCurrentDietPlanQuery>((source, _) => new(source.TraineeId.Rebind<User>()));
         configuration.CreateMap<SupplementPlanListAccountQuery, LgymApi.Application.Nutrition.Supplementation.GetTraineePlans.GetTraineeSupplementPlansQuery>((source, _) => new(source.TrainerId.Rebind<User>(), source.TraineeId.Rebind<User>()));
@@ -27,3 +30,7 @@ public sealed class NutritionApiAdapterMappingProfile : IMappingProfile
         configuration.CreateMap<SupplementCheckOffAccountCommand, LgymApi.Application.Nutrition.Supplementation.CheckOffIntake.Models.CheckOffSupplementIntakeCommand>((source, _) => new(source.TraineeId.Rebind<User>(), source.PlanItemId, source.IntakeDate, source.TakenAt));
     }
 }
+
+internal sealed record DietPlanOwnHistoryAccountInput(
+    Id<AccountReference> TraineeId,
+    Id<DietPlan> DietPlanId);

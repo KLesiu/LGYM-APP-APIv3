@@ -92,7 +92,9 @@ public sealed class CoachingPersistenceMappingProfile : IMappingProfile
             ChangedAt = source.ChangedAt,
             PreviousContent = source.PreviousContent,
             NewContent = source.NewContent,
-            ChangeType = source.ChangeType
+            ChangeType = source.ChangeType,
+            PreviousVisibleToTrainee = source.PreviousVisibleToTrainee,
+            NewVisibleToTrainee = source.NewVisibleToTrainee
         });
         configuration.CreateMap<TraineeNoteHistoryEntity, CoachingTraineeNoteHistoryFact>((source, _) => new CoachingTraineeNoteHistoryFact(
             source.Id,
@@ -103,6 +105,8 @@ public sealed class CoachingPersistenceMappingProfile : IMappingProfile
             source.NewContent,
             source.ChangeType,
             source.CreatedAt,
-            source.UpdatedAt));
+            source.UpdatedAt,
+            source.PreviousVisibleToTrainee,
+            source.NewVisibleToTrainee));
     }
 }

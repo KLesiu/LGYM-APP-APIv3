@@ -90,4 +90,23 @@ public sealed class CoachingTraineeNotePersistenceRepository : ICoachingTraineeN
 
         return _mapper.MapList<TraineeNoteHistory, CoachingTraineeNoteHistoryFact>(historyEntries, _mapper.CreateContext());
     }
+
+    public async Task<IReadOnlyList<CoachingTraineeNoteHistoryFact>> GetVisibleNoteHistoryAsync(Id<TraineeNote> noteId, CancellationToken cancellationToken = default)
+    {
+        var historyEntries = await _dbContext.TraineeNoteHistories
+            .AsNoTracking()
+            .Where(historyEntry => historyEntry.TraineeNoteId == noteId && historyEntry.NewVisibleToTrainee)
+            .OrderByDescending(historyEntry => historyEntry.ChangedAt)
+            .ToListAsync(cancellationToken);
+
+        foreach (var historyEntry in historyEntries)
+        {
+            if (historyEntry.PreviousVisibleToTrainee != true)
+            {
+                historyEntry.PreviousContent = null;
+            }
+        }
+
+        return _mapper.MapList<TraineeNoteHistory, CoachingTraineeNoteHistoryFact>(historyEntries, _mapper.CreateContext());
+    }
 }

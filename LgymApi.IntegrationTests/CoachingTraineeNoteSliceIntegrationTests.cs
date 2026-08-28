@@ -322,7 +322,64 @@ public sealed class CoachingTraineeNoteSliceIntegrationTests : IntegrationTestBa
     }
 
     [Test]
+    [Authorization.AuthorizationEvidence("GET", "/api/trainee/notes/{noteId}/history", "own", "owner-allow")]
+    [Authorization.AuthorizationEvidence("GET", "/api/trainee/notes/{noteId}/history", "own", "foreign-object-denial-no-mutation")]
+    public async Task TraineeNoteHistoryRoute_ReturnsVisibleRevisionsWithoutPrivateEraContent()
+    {
+        var trainer = await SeedUserAsync("http-note-history-trainer", "http-note-history-trainer@example.test");
+        var trainee = await SeedUserAsync("http-note-history-trainee", "http-note-history-trainee@example.test");
+        var otherTrainee = await SeedUserAsync("http-note-history-other", "http-note-history-other@example.test");
+        var note = VisibleNote(trainer.Id, trainee.Id, "Current visible content", DateTimeOffset.UtcNow);
+        var privateHistory = new TraineeNoteHistory
+        {
+            Id = Id<TraineeNoteHistory>.New(),
+            TraineeNoteId = note.Id,
+            ChangedByUserId = trainer.Id,
+            ChangedAt = DateTimeOffset.UtcNow.AddMinutes(-2),
+            PreviousContent = null,
+            NewContent = "Private historical content",
+            ChangeType = "Created",
+            PreviousVisibleToTrainee = null,
+            NewVisibleToTrainee = false
+        };
+        var visibleHistory = new TraineeNoteHistory
+        {
+            Id = Id<TraineeNoteHistory>.New(),
+            TraineeNoteId = note.Id,
+            ChangedByUserId = trainer.Id,
+            ChangedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            PreviousContent = "Private historical content",
+            NewContent = "Current visible content",
+            ChangeType = "Updated",
+            PreviousVisibleToTrainee = false,
+            NewVisibleToTrainee = true
+        };
+
+        using (var seedScope = Factory.Services.CreateScope())
+        {
+            var database = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            database.TraineeNotes.Add(note);
+            database.TraineeNoteHistories.AddRange(privateHistory, visibleHistory);
+            await database.SaveChangesAsync();
+        }
+
+        SetAuthorizationHeader(trainee.Id);
+        using var response = await Client.GetAsync($"/api/trainee/notes/{note.Id}/history");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var history = await response.Content.ReadFromJsonAsync<List<TraineeNoteHistoryDto>>();
+        history.Should().ContainSingle();
+        history![0].PreviousContent.Should().BeNull();
+        history[0].NewContent.Should().Be("Current visible content");
+        (await response.Content.ReadAsStringAsync()).Should().NotContain("Private historical content");
+
+        SetAuthorizationHeader(otherTrainee.Id);
+        using var foreignResponse = await Client.GetAsync($"/api/trainee/notes/{note.Id}/history");
+        foreignResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Test]
     [Authorization.AuthorizationEvidence("GET", "/api/trainee/notes/{noteId}", "own", "anonymous-denial")]
+    [Authorization.AuthorizationEvidence("GET", "/api/trainee/notes/{noteId}/history", "own", "anonymous-denial")]
     public async Task TraineeNoteDetailRoute_WithoutAuthentication_ReturnsUnauthorizedWithoutProtectedContent()
     {
         var trainer = await SeedUserAsync("http-anonymous-detail-trainer", "http-anonymous-detail-trainer@example.test");
@@ -338,8 +395,10 @@ public sealed class CoachingTraineeNoteSliceIntegrationTests : IntegrationTestBa
 
         ClearAuthorizationHeader();
         using var response = await Client.GetAsync($"/api/trainee/notes/{visible.Id}");
+        using var historyResponse = await Client.GetAsync($"/api/trainee/notes/{visible.Id}/history");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        historyResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         var responseText = await response.Content.ReadAsStringAsync();
         responseText.Should().NotContain(visible.Id.ToString());
         responseText.Should().NotContain(visible.Content);

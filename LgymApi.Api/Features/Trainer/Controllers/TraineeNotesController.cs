@@ -48,4 +48,24 @@ public sealed class TraineeNotesController : ControllerBase
         var result = await _notes.GetVisibleNoteAsync(HttpContext.GetAuthenticatedAccountContext()!, parsedNoteId, cancellationToken);
         return result.IsFailure ? result.ToActionResult() : Ok(_mapper.Map<TraineeNoteReadModel, TraineeNoteDto>(result.Value));
     }
+
+    [HttpGet("notes/{noteId}/history")]
+    [ProducesResponseType(typeof(List<TraineeNoteHistoryDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetVisibleNoteHistory(
+        [FromRoute] string noteId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!LgymApi.Domain.ValueObjects.Id<TraineeNote>.TryParse(noteId, out var parsedNoteId))
+        {
+            return BadRequest(_mapper.Map<string, ResponseMessageDto>(Messages.FieldRequired));
+        }
+
+        var result = await _notes.GetVisibleHistoryAsync(
+            HttpContext.GetAuthenticatedAccountContext()!,
+            parsedNoteId,
+            cancellationToken);
+        return result.IsFailure
+            ? result.ToActionResult()
+            : Ok(_mapper.MapList<TraineeNoteHistoryReadModel, TraineeNoteHistoryDto>(result.Value));
+    }
 }

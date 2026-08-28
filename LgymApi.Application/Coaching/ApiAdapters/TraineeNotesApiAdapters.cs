@@ -8,6 +8,7 @@ using LgymApi.Application.Coaching.TraineeNotes.TrainerList;
 using LgymApi.Application.Coaching.TraineeNotes.Update;
 using LgymApi.Application.Coaching.TraineeNotes.VisibleList;
 using LgymApi.Application.Coaching.TraineeNotes.VisibleSingle;
+using LgymApi.Application.Coaching.TraineeNotes.VisibleHistory;
 using LgymApi.Application.Mapping.Core;
 using LgymApi.Domain.Entities;
 using LgymApi.Domain.ValueObjects;
@@ -55,12 +56,14 @@ internal sealed class TraineeNotesApiAdapter : ITraineeNotesApiPort
 {
     private readonly IListVisibleTraineeNotesUseCase _listNotes;
     private readonly IGetVisibleTraineeNoteUseCase _getNote;
+    private readonly IGetVisibleTraineeNoteHistoryUseCase _getHistory;
     private readonly IMapper _mapper;
 
-    public TraineeNotesApiAdapter(IListVisibleTraineeNotesUseCase listNotes, IGetVisibleTraineeNoteUseCase getNote, IMapper mapper)
+    public TraineeNotesApiAdapter(IListVisibleTraineeNotesUseCase listNotes, IGetVisibleTraineeNoteUseCase getNote, IGetVisibleTraineeNoteHistoryUseCase getHistory, IMapper mapper)
     {
         _listNotes = listNotes;
         _getNote = getNote;
+        _getHistory = getHistory;
         _mapper = mapper;
     }
 
@@ -69,4 +72,7 @@ internal sealed class TraineeNotesApiAdapter : ITraineeNotesApiPort
 
     public Task<Result<TraineeNoteReadModel, AppError>> GetVisibleNoteAsync(AuthenticatedAccountContext trainee, Id<TraineeNote> noteId, CancellationToken cancellationToken = default)
         => _getNote.ExecuteAsync(_mapper.Map<ActorNoteAccountInput, GetVisibleTraineeNoteQuery>(new(trainee.Id, noteId)), cancellationToken);
+
+    public Task<Result<IReadOnlyList<TraineeNoteHistoryReadModel>, AppError>> GetVisibleHistoryAsync(AuthenticatedAccountContext trainee, Id<TraineeNote> noteId, CancellationToken cancellationToken = default)
+        => _getHistory.ExecuteAsync(_mapper.Map<ActorNoteAccountInput, GetVisibleTraineeNoteHistoryQuery>(new(trainee.Id, noteId)), cancellationToken);
 }

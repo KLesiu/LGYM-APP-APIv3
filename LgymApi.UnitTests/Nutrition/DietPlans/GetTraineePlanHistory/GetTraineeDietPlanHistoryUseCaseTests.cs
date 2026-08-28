@@ -6,6 +6,7 @@ using LgymApi.Application.Mapping.Core;
 using LgymApi.Application.Nutrition.DietPlans.GetTraineePlanHistory;
 using LgymApi.Application.Nutrition.DietPlans.GetTraineePlanHistory.Contracts;
 using LgymApi.Application.Nutrition.DietPlans.GetTraineePlanHistory.Models;
+using LgymApi.Application.Nutrition.DietPlans.GetOwnPlanHistory;
 using LgymApi.Application.Nutrition.DietPlans.Models;
 using LgymApi.Application.Nutrition.Persistence;
 using LgymApi.Domain.Entities;
@@ -123,6 +124,53 @@ public sealed class GetTraineeDietPlanHistoryUseCaseTests
         dependencies.Mapper.ReceivedCalls().Should().BeEmpty();
     }
 
+    [Test]
+    public async Task OwnHistory_WhenActivePlanBelongsToTrainee_ReturnsHistoryWithoutRelationshipLookup()
+    {
+        var traineeId = Id<User>.New();
+        var plan = CreatePlan(Id<User>.New(), traineeId);
+        var history = CreateHistory(plan.Id, DateTimeOffset.UtcNow, "{\"Name\":\"Plan\"}");
+        var mapped = CreateReadModel(history);
+        var dependencies = new Dependencies();
+        dependencies.Plans.GetPlanByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        dependencies.Plans.ListPlanHistoryAsync(plan.Id, Arg.Any<CancellationToken>()).Returns([history]);
+        dependencies.Mapper.MapList<DietPlanHistory, DietPlanHistoryReadModel>(
+                Arg.Any<IEnumerable<DietPlanHistory>>(), Arg.Any<MappingContext?>())
+            .Returns([mapped]);
+
+        var result = await dependencies.CreateOwnUseCase().ExecuteAsync(
+            new GetOwnDietPlanHistoryQuery(traineeId, plan.Id));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle().Which.Should().Be(mapped);
+        await dependencies.Access.DidNotReceiveWithAnyArgs().GetAccessDecisionAsync(default, default, default);
+    }
+
+    [Test]
+    public async Task OwnHistory_WhenPlanIsMissingForeignOrInactive_ReturnsSameNotFoundWithoutHistoryRead()
+    {
+        var traineeId = Id<User>.New();
+        var planId = Id<DietPlan>.New();
+        var foreign = CreatePlan(Id<User>.New(), Id<User>.New(), planId);
+        var inactive = CreatePlan(Id<User>.New(), traineeId, planId);
+        inactive.IsActive = false;
+        var dependencies = new Dependencies();
+        dependencies.Plans.GetPlanByIdAsync(planId, Arg.Any<CancellationToken>())
+            .Returns(null, foreign, inactive);
+
+        foreach (var _ in Enumerable.Range(0, 3))
+        {
+            var result = await dependencies.CreateOwnUseCase().ExecuteAsync(
+                new GetOwnDietPlanHistoryQuery(traineeId, planId));
+            result.Error.Should().BeOfType<NotFoundError>();
+            result.Error.Message.Should().Be(Messages.DidntFind);
+        }
+
+        await dependencies.Plans.DidNotReceive().ListPlanHistoryAsync(
+            Arg.Any<Id<DietPlan>>(),
+            Arg.Any<CancellationToken>());
+    }
+
     private static async Task AssertNoReadsAsync(Dependencies dependencies)
     {
         await dependencies.Plans.DidNotReceiveWithAnyArgs().GetPlanByIdAsync(default, default);
@@ -138,6 +186,7 @@ public sealed class GetTraineeDietPlanHistoryUseCaseTests
             TraineeId = traineeId,
             Name = "Nutrition plan",
             StartDate = new DateOnly(2026, 7, 23),
+            IsActive = true,
             IsDeleted = isDeleted
         };
 
@@ -163,5 +212,8 @@ public sealed class GetTraineeDietPlanHistoryUseCaseTests
 
         public IGetTraineeDietPlanHistoryUseCase CreateUseCase()
             => new GetTraineeDietPlanHistoryUseCase(Access, Plans, Mapper);
+
+        public IGetOwnDietPlanHistoryUseCase CreateOwnUseCase()
+            => new GetOwnDietPlanHistoryUseCase(Plans, Mapper);
     }
 }
