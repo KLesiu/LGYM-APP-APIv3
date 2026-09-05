@@ -43,6 +43,24 @@ public sealed class ReportPhotoPersistenceRepository : IReportPhotoPersistence
                 .OrderBy(photo => photo.ViewType),
             cancellationToken);
 
+    public async Task<IReadOnlyList<ReportPhotoPersistenceModel>> ListByRequestsAsync(
+        IReadOnlyCollection<Id<ReportRequest>> requestIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (requestIds.Count == 0)
+        {
+            return [];
+        }
+
+        var entities = await _dbContext.Photos
+            .AsNoTracking()
+            .Where(photo => requestIds.Contains(photo.ReportRequestId) && !photo.IsDeleted)
+            .OrderBy(photo => photo.ReportRequestId)
+            .ThenBy(photo => photo.ViewType)
+            .ToListAsync(cancellationToken);
+        return entities.Select(ReportingPersistenceProjection.Photo).ToList();
+    }
+
     public async Task<long> GetActiveStorageBytesAsync(CancellationToken cancellationToken = default)
         => await _dbContext.Photos
             .AsNoTracking()

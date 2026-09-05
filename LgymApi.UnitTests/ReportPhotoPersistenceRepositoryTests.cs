@@ -92,6 +92,27 @@ public sealed class ReportPhotoPersistenceRepositoryTests
         rows.Single(photo => photo.Id == replacement.Id).IsDeleted.Should().BeFalse();
     }
 
+    [Test]
+    public async Task ListByRequests_ReturnsOnlyActivePhotosFromRequestedReports()
+    {
+        await using var db = CreateDbContext("requests");
+        var persistence = new ReportPhotoPersistenceRepository(db);
+        var ownerId = Id<AccountReference>.New();
+        var firstRequestId = Id<ReportRequest>.New();
+        var secondRequestId = Id<ReportRequest>.New();
+        var excludedRequestId = Id<ReportRequest>.New();
+        await persistence.SaveAsync(NewPhoto(firstRequestId, ownerId, "photos/first.jpg"));
+        await persistence.SaveAsync(NewPhoto(secondRequestId, ownerId, "photos/second.jpg"));
+        await persistence.SaveAsync(NewPhoto(excludedRequestId, ownerId, "photos/excluded.jpg"));
+        await db.SaveChangesAsync();
+        db.Photos.Single(photo => photo.ReportRequestId == secondRequestId).IsDeleted = true;
+        await db.SaveChangesAsync();
+
+        var photos = await persistence.ListByRequestsAsync([firstRequestId, secondRequestId]);
+
+        photos.Select(photo => photo.StorageKey).Should().Equal("photos/first.jpg");
+    }
+
     private static AppDbContext CreateDbContext(string name)
         => new(new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase($"report-photo-{name}-{Id<ReportPhotoPersistenceRepositoryTests>.New():N}")
