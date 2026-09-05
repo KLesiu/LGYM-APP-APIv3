@@ -1,5 +1,6 @@
 using LgymApi.Application.BuildingBlocks.Errors;
 using LgymApi.Application.BuildingBlocks.Results;
+using LgymApi.Application.Features.Tutorial;
 using LgymApi.Application.Options;
 using LgymApi.Application.Repositories;
 using LgymApi.Application.Services;
@@ -7,6 +8,7 @@ using LgymApi.Domain.Entities;
 using LgymApi.Domain.Security;
 using LgymApi.Domain.ValueObjects;
 using LgymApi.Resources;
+using Microsoft.Extensions.Logging;
 
 namespace LgymApi.Application.ExternalAuth;
 
@@ -19,19 +21,25 @@ internal sealed class GoogleUserRegistrar : IGoogleUserRegistrar
     private readonly IUserRepository _userRepository;
     private readonly IRoleRepository _roleRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ITutorialService _tutorialService;
+    private readonly ILogger<GoogleUserRegistrar> _logger;
 
     public GoogleUserRegistrar(
         IUserRepository userRepository,
         IUserExternalLoginRepository userExternalLoginRepository,
         IRoleRepository roleRepository,
         IUnitOfWork unitOfWork,
-        AppDefaultsOptions appDefaultsOptions)
+        AppDefaultsOptions appDefaultsOptions,
+        ITutorialService tutorialService,
+        ILogger<GoogleUserRegistrar> logger)
     {
         _userRepository = userRepository;
         _userExternalLoginRepository = userExternalLoginRepository;
         _roleRepository = roleRepository;
         _unitOfWork = unitOfWork;
         _appDefaultsOptions = appDefaultsOptions;
+        _tutorialService = tutorialService;
+        _logger = logger;
     }
 
     public async Task<Result<User, AppError>> RegisterAsync(GoogleTokenPayload payload, CancellationToken cancellationToken)
@@ -80,6 +88,18 @@ internal sealed class GoogleUserRegistrar : IGoogleUserRegistrar
         catch (Exception ex) when (ex.GetType().Name == "DbUpdateException")
         {
             return Result<User, AppError>.Failure(new ConflictError(Messages.GoogleEmailConflict));
+        }
+
+        try
+        {
+            await _tutorialService.InitializeOnboardingTutorialAsync(user.Id, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Failed to initialize onboarding tutorial for Google user {UserId}. Registration is still successful.",
+                user.Id);
         }
 
         var createdUser = await _userRepository.FindByIdWithRolesAsync(user.Id, cancellationToken);
