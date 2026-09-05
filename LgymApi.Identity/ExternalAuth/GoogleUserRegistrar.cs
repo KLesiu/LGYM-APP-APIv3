@@ -96,8 +96,7 @@ internal sealed class GoogleUserRegistrar : IGoogleUserRegistrar
         if (tutorialInitialization.IsFailure)
         {
             _logger.LogError(
-                "Failed to initialize onboarding tutorial for Google user {UserId} with error {ErrorType}.",
-                user.Id,
+                "Failed to initialize onboarding tutorial for Google registration with error {ErrorType}.",
                 tutorialInitialization.Error!.GetType().Name);
             await transaction.RollbackAsync(cancellationToken);
             return Result<User, AppError>.Failure(tutorialInitialization.Error!);

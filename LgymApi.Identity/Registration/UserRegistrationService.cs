@@ -133,8 +133,7 @@ internal sealed class UserRegistrationService : IUserRegistrationService
         if (tutorialInitialization.IsFailure)
         {
             _logger.LogError(
-                "Failed to initialize onboarding tutorial for user {UserId} with error {ErrorType}.",
-                user.Id,
+                "Failed to initialize onboarding tutorial with error {ErrorType}.",
                 tutorialInitialization.Error!.GetType().Name);
             return Result<Id<UserEntity>, AppError>.Failure(tutorialInitialization.Error!);
         }
