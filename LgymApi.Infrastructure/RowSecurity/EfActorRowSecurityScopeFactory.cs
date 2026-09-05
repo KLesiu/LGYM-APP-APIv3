@@ -33,16 +33,25 @@ internal sealed class EfActorRowSecurityScopeFactory : IActorRowSecurityScopeFac
             return await _unitOfWork.BeginTransactionAsync(cancellationToken);
         }
 
+        if (_dbContext.Database.CurrentTransaction is { } currentTransaction)
+        {
+            await SetActorAsync(
+                GetNpgsqlConnection(),
+                GetNpgsqlTransaction(currentTransaction),
+                actorId,
+                cancellationToken);
+            return NonOwningActorRowSecurityScope.Instance;
+        }
+
         var unitOfWorkTransaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
         try
         {
-            var transaction = _dbContext.Database.CurrentTransaction?.GetDbTransaction() as NpgsqlTransaction
-                ?? throw new NotSupportedException("Actor row-security scopes require the PostgreSQL Npgsql provider.");
-            var connection = _dbContext.Database.GetDbConnection() as NpgsqlConnection
-                ?? throw new NotSupportedException("Actor row-security scopes require the PostgreSQL Npgsql provider.");
-
-            await SetActorAsync(connection, transaction, actorId, cancellationToken);
+            await SetActorAsync(
+                GetNpgsqlConnection(),
+                GetNpgsqlTransaction(_dbContext.Database.CurrentTransaction),
+                actorId,
+                cancellationToken);
             return unitOfWorkTransaction;
         }
         catch
@@ -50,6 +59,18 @@ internal sealed class EfActorRowSecurityScopeFactory : IActorRowSecurityScopeFac
             await unitOfWorkTransaction.DisposeAsync();
             throw;
         }
+    }
+
+    private NpgsqlConnection GetNpgsqlConnection()
+    {
+        return _dbContext.Database.GetDbConnection() as NpgsqlConnection
+            ?? throw new NotSupportedException("Actor row-security scopes require the PostgreSQL Npgsql provider.");
+    }
+
+    private static NpgsqlTransaction GetNpgsqlTransaction(IDbContextTransaction? transaction)
+    {
+        return transaction?.GetDbTransaction() as NpgsqlTransaction
+            ?? throw new NotSupportedException("Actor row-security scopes require the PostgreSQL Npgsql provider.");
     }
 
     private static async Task SetActorAsync(

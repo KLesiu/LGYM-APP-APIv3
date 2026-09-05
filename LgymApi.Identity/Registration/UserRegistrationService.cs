@@ -129,16 +129,13 @@ internal sealed class UserRegistrationService : IUserRegistrationService
         await _commandDispatcher.EnqueueAsync(new UserRegisteredCommand { UserId = user.Id });
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        try
+        var tutorialInitialization = await _tutorialService.InitializeOnboardingTutorialAsync(user.Id, cancellationToken);
+        if (tutorialInitialization.IsFailure)
         {
-            await _tutorialService.InitializeOnboardingTutorialAsync(user.Id, cancellationToken);
-        }
-        catch (Exception exception)
-        {
-            _logger.LogWarning(
-                exception,
-                "Failed to initialize onboarding tutorial for user {UserId}. Registration is still successful.",
-                user.Id);
+            _logger.LogError(
+                "Failed to initialize onboarding tutorial with error {ErrorType}.",
+                tutorialInitialization.Error!.GetType().Name);
+            return Result<Id<UserEntity>, AppError>.Failure(tutorialInitialization.Error!);
         }
 
         return Result<Id<UserEntity>, AppError>.Success(user.Id);
