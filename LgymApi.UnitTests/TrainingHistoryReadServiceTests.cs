@@ -53,6 +53,31 @@ public sealed class TrainingHistoryReadServiceTests
         result.Value[0].PlanDay.Should().BeNull();
     }
 
+    [Test]
+    public async Task GetTrainingByDateAsync_ReturnsAllTrainingsWhenTheyShareAPlanDay()
+    {
+        var accountId = Id<AccountReference>.New();
+        var planDayId = Id<PlanDayReference>.New();
+        var planId = Id<PlanReference>.New();
+        var trainings = new[] { Training(accountId, planDayId), Training(accountId, planDayId) };
+        var planDays = Substitute.For<IPlanDayReferenceReadService>();
+        planDays.GetByIdsAsync(Arg.Any<IReadOnlyList<Id<PlanDayReference>>>(), CancellationToken.None)
+            .Returns(call => call.Arg<IReadOnlyList<Id<PlanDayReference>>>()
+                .Select(id => new PlanDayReferenceReadModel(id, planId, "Push", true, false))
+                .ToList());
+        var service = CreateService(accountId, trainings, planDays);
+
+        var result = await service.GetTrainingByDateAsync(accountId, trainings[0].CreatedAt.UtcDateTime);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(2);
+        result.Value.Select(training => training.Id).Should().BeEquivalentTo(trainings.Select(training => training.Id));
+        result.Value.Should().OnlyContain(training => training.PlanDay == new PlanDayReferenceReadModel(planDayId, planId, "Push", true, false));
+        await planDays.Received(1).GetByIdsAsync(
+            Arg.Is<IReadOnlyList<Id<PlanDayReference>>>(ids => ids.SequenceEqual(new[] { planDayId })),
+            CancellationToken.None);
+    }
+
     private static TrainingHistoryReadService CreateService(
         Id<AccountReference> accountId,
         IReadOnlyList<WorkoutTrainingPersistenceModel> trainings,
