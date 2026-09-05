@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using LgymApi.Api.Features.User.Contracts;
+using LgymApi.Application.BuildingBlocks.Errors;
+using LgymApi.Application.BuildingBlocks.Results;
 using LgymApi.Application.Features.Tutorial;
 using LgymApi.Application.Platform.Contracts.Serialization;
 using LgymApi.Application.Repositories;
@@ -13,6 +15,7 @@ using LgymApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
 
 namespace LgymApi.IntegrationTests;
 
@@ -134,6 +137,80 @@ internal sealed class PostgreSqlTutorialRegistrationTests : PostgreSqlIntegratio
             .AsNoTracking()
             .AnyAsync(progress => progress.UserId == user.Id);
         tutorialExists.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task RegisterAsync_WhenOnboardingFails_RollsBackNewAccount()
+    {
+        var suffix = $"{Id<User>.New():N}";
+        var email = $"tutorial-register-failure-{suffix}@example.test";
+        var tutorialService = CreateFailingTutorialService();
+        using var factory = Factory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<ITutorialService>();
+                services.AddSingleton(tutorialService);
+            }));
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("Idempotency-Key", $"tutorial-register-failure-{suffix}");
+
+        var response = await client.PostAsJsonAsync("/api/register", new
+        {
+            name = $"tutorial-register-failure-{suffix}",
+            email,
+            password = "UserSecret123!",
+            cpassword = "UserSecret123!",
+            isVisibleInRanking = true
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        await AssertAccountWasRolledBackAsync(email);
+    }
+
+    [Test]
+    public async Task GoogleSignInAsync_WhenOnboardingFails_RollsBackNewAccount()
+    {
+        var suffix = $"{Id<User>.New():N}";
+        var email = $"tutorial-google-failure-{suffix}@example.test";
+        var tokenValidator = new GoogleTokenValidatorStub(new GoogleTokenPayload(
+            $"tutorial-google-failure-{suffix}",
+            email,
+            true,
+            "Tutorial Google Failure",
+            null));
+        var tutorialService = CreateFailingTutorialService();
+        using var factory = Factory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IGoogleTokenValidator>();
+                services.AddSingleton<IGoogleTokenValidator>(tokenValidator);
+                services.RemoveAll<ITutorialService>();
+                services.AddSingleton(tutorialService);
+            }));
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/auth/google", new { idToken = "valid-token" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        await AssertAccountWasRolledBackAsync(email);
+    }
+
+    private async Task AssertAccountWasRolledBackAsync(string email)
+    {
+        await using var scope = Factory.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var accountExists = await database.Users
+            .AsNoTracking()
+            .AnyAsync(user => user.Email == email);
+        accountExists.Should().BeFalse();
+    }
+
+    private static ITutorialService CreateFailingTutorialService()
+    {
+        var tutorialService = Substitute.For<ITutorialService>();
+        tutorialService.InitializeOnboardingTutorialAsync(Arg.Any<Id<User>>(), Arg.Any<CancellationToken>())
+            .Returns(Result<Unit, AppError>.Failure(new InternalServerError("Forced tutorial failure.")));
+        return tutorialService;
     }
 
     private sealed class GoogleTokenValidatorStub(GoogleTokenPayload payload) : IGoogleTokenValidator
