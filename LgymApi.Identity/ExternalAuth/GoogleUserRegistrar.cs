@@ -77,6 +77,7 @@ internal sealed class GoogleUserRegistrar : IGoogleUserRegistrar
             ProviderEmail = normalizedEmail.Value
         };
 
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
         await _userRepository.AddAsync(user, cancellationToken);
         await _userExternalLoginRepository.AddAsync(externalLogin, cancellationToken);
         await _roleRepository.AddUserRolesAsync(user.Id, [userRole[0].Id], cancellationToken);
@@ -87,25 +88,30 @@ internal sealed class GoogleUserRegistrar : IGoogleUserRegistrar
         }
         catch (Exception ex) when (ex.GetType().Name == "DbUpdateException")
         {
+            await transaction.RollbackAsync(cancellationToken);
             return Result<User, AppError>.Failure(new ConflictError(Messages.GoogleEmailConflict));
         }
 
-        try
+        var tutorialInitialization = await _tutorialService.InitializeOnboardingTutorialAsync(user.Id, cancellationToken);
+        if (tutorialInitialization.IsFailure)
         {
-            await _tutorialService.InitializeOnboardingTutorialAsync(user.Id, cancellationToken);
-        }
-        catch (Exception exception)
-        {
-            _logger.LogWarning(
-                exception,
-                "Failed to initialize onboarding tutorial for Google user {UserId}. Registration is still successful.",
-                user.Id);
+            _logger.LogError(
+                "Failed to initialize onboarding tutorial for Google user {UserId} with error {ErrorType}.",
+                user.Id,
+                tutorialInitialization.Error!.GetType().Name);
+            await transaction.RollbackAsync(cancellationToken);
+            return Result<User, AppError>.Failure(tutorialInitialization.Error!);
         }
 
         var createdUser = await _userRepository.FindByIdWithRolesAsync(user.Id, cancellationToken);
-        return createdUser == null
-            ? Result<User, AppError>.Failure(new InternalServerError(Messages.UserLoadFailed))
-            : Result<User, AppError>.Success(createdUser);
+        if (createdUser == null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return Result<User, AppError>.Failure(new InternalServerError(Messages.UserLoadFailed));
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return Result<User, AppError>.Success(createdUser);
     }
 
     private async Task<string> GenerateUniqueUserNameAsync(string email, CancellationToken cancellationToken)
