@@ -71,6 +71,7 @@ public sealed class TrainingHistoryReadServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().HaveCount(2);
+        result.Value.Select(training => training.Id).Should().BeEquivalentTo(trainings.Select(training => training.Id));
         result.Value.Should().OnlyContain(training => training.PlanDay == new PlanDayReferenceReadModel(planDayId, planId, "Push", true, false));
         await planDays.Received(1).GetByIdsAsync(
             Arg.Is<IReadOnlyList<Id<PlanDayReference>>>(ids => ids.SequenceEqual(new[] { planDayId })),
